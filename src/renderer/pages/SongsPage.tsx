@@ -87,6 +87,8 @@ export const SongsPage = (): JSX.Element => {
   }, [loadTracks]);
 
   useEffect(() => {
+    // Phase 1.2: transport controls operate on the loaded SongsPage window only.
+    // Do not expand this into a full playback queue until Library Core owns queue state.
     setQueue(tracks);
   }, [setQueue, tracks]);
 

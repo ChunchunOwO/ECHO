@@ -1,152 +1,206 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AlbumsPage } from './AlbumsPage';
+import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
+import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
+
+const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
+  id,
+  albumKey: `artist/${id}`,
+  title: `Album ${id}`,
+  albumArtist: 'Artist',
+  year: 2026,
+  trackCount: 1,
+  duration: 120,
+  coverId: null,
+  coverThumb: null,
+  ...overrides,
+});
+
+const page = (items: LibraryAlbum[], overrides: Partial<LibraryPage<LibraryAlbum>> = {}): LibraryPage<LibraryAlbum> => ({
+  items,
+  page: 1,
+  pageSize: 60,
+  total: items.length,
+  hasMore: false,
+  ...overrides,
+});
+
+const track = (id: string, overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
+  id,
+  path: `D:\\Music\\${id}.flac`,
+  title: `Track ${id}`,
+  artist: 'Artist',
+  album: 'Album',
+  albumArtist: 'Artist',
+  trackNo: 1,
+  discNo: 1,
+  year: 2026,
+  genre: null,
+  duration: 180,
+  codec: 'flac',
+  sampleRate: 96000,
+  bitDepth: 24,
+  bitrate: 900000,
+  coverId: null,
+  coverThumb: null,
+  fieldSources: {},
+  ...overrides,
+});
+
+const trackPage = (items: LibraryTrack[], overrides: Partial<LibraryPage<LibraryTrack>> = {}): LibraryPage<LibraryTrack> => ({
+  items,
+  page: 1,
+  pageSize: 100,
+  total: items.length,
+  hasMore: false,
+  ...overrides,
+});
+
+const installLibrary = (getAlbums: ReturnType<typeof vi.fn>, getTracks = vi.fn(), getAlbumTracks = vi.fn().mockResolvedValue(trackPage([]))): void => {
+  window.echo = {
+    library: {
+      getAlbums,
+      getTracks,
+      getAlbumTracks,
+      getSummary: vi.fn(),
+      chooseFolder: vi.fn(),
+      addFolder: vi.fn(),
+      getFolders: vi.fn(),
+      removeFolder: vi.fn(),
+      scanFolder: vi.fn(),
+      getScanStatus: vi.fn(),
+      cancelScan: vi.fn(),
+      getDiagnostics: vi.fn(),
+    },
+    playback: {
+      getStatus: vi.fn(),
+      playLocalFile: vi.fn().mockResolvedValue({
+        state: 'playing',
+        currentTrackId: 'track-1',
+        filePath: 'D:\\Music\\track-1.flac',
+        positionMs: 0,
+        durationMs: 180000,
+        error: null,
+      }),
+      play: vi.fn(),
+      pause: vi.fn(),
+      stop: vi.fn(),
+      seek: vi.fn(),
+      openLocalAudioFile: vi.fn(),
+    },
+    audio: {
+      getStatus: vi.fn(),
+      listDevices: vi.fn(),
+      setOutput: vi.fn(),
+    },
+  } as unknown as Window['echo'];
+};
+
+const renderAlbumsPage = (): ReturnType<typeof render> =>
+  render(
+    <PlaybackQueueProvider>
+      <AlbumsPage />
+    </PlaybackQueueProvider>,
+  );
+
+const setScrollableAlbumWall = (element: HTMLElement): void => {
+  Object.defineProperty(element, 'scrollHeight', { configurable: true, value: 2000 });
+  Object.defineProperty(element, 'clientHeight', { configurable: true, value: 900 });
+};
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('AlbumsPage', () => {
-  it('reads paged albums without grouping tracks in the renderer', async () => {
-    const getAlbums = vi.fn().mockResolvedValue({
-      items: [],
-      page: 1,
-      pageSize: 60,
-      total: 0,
-      hasMore: false,
-    });
+  it('initially reads only getAlbums page 1 without grouping tracks in the renderer', async () => {
+    const getAlbums = vi.fn().mockResolvedValue(page([], { total: 120, hasMore: true }));
     const getTracks = vi.fn();
+    installLibrary(getAlbums, getTracks);
 
-    window.echo = {
-      library: {
-        getAlbums,
-        getTracks,
-        getAlbumTracks: vi.fn(),
-        getSummary: vi.fn(),
-        chooseFolder: vi.fn(),
-        addFolder: vi.fn(),
-        getFolders: vi.fn(),
-        removeFolder: vi.fn(),
-        scanFolder: vi.fn(),
-        getScanStatus: vi.fn(),
-        cancelScan: vi.fn(),
-        getDiagnostics: vi.fn(),
-      },
-    } as unknown as Window['echo'];
+    renderAlbumsPage();
 
-    render(<AlbumsPage />);
-
-    await waitFor(() => expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 60, search: '', sort: 'title' }));
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 60, search: '', sort: 'title' });
     expect(getTracks).not.toHaveBeenCalled();
   });
 
-  it('loads every album page up front so the album wall has a stable final height', async () => {
+  it('loads page 2 only after the album wall scrolls near the bottom', async () => {
     const getAlbums = vi
       .fn()
-      .mockResolvedValueOnce({
-        items: [
-          {
-            id: 'album-1',
-            albumKey: 'artist/album-1',
-            title: 'Album 1',
-            albumArtist: 'Artist',
-            year: 2026,
-            trackCount: 1,
-            duration: 120,
-            coverId: null,
-            coverThumb: null,
-          },
-        ],
-        page: 1,
-        pageSize: 60,
-        total: 2,
-        hasMore: true,
-      })
-      .mockResolvedValueOnce({
-        items: [
-          {
-            id: 'album-2',
-            albumKey: 'artist/album-2',
-            title: 'Album 2',
-            albumArtist: 'Artist',
-            year: 2026,
-            trackCount: 1,
-            duration: 120,
-            coverId: null,
-            coverThumb: null,
-          },
-        ],
-        page: 2,
-        pageSize: 60,
-        total: 2,
-        hasMore: false,
-      });
+      .mockResolvedValueOnce(page([album('1')], { page: 1, total: 2, hasMore: true }))
+      .mockResolvedValueOnce(page([album('2')], { page: 2, total: 2, hasMore: false }));
+    installLibrary(getAlbums);
 
-    window.echo = {
-      library: {
-        getAlbums,
-        getTracks: vi.fn(),
-        getAlbumTracks: vi.fn(),
-        getSummary: vi.fn(),
-        chooseFolder: vi.fn(),
-        addFolder: vi.fn(),
-        getFolders: vi.fn(),
-        removeFolder: vi.fn(),
-        scanFolder: vi.fn(),
-        getScanStatus: vi.fn(),
-        cancelScan: vi.fn(),
-        getDiagnostics: vi.fn(),
-      },
-    } as unknown as Window['echo'];
+    renderAlbumsPage();
 
-    render(<AlbumsPage />);
+    const wall = await screen.findByLabelText('Album list');
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
+
+    setScrollableAlbumWall(wall);
+    wall.scrollTop = 760;
+    fireEvent.scroll(wall);
 
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
-    expect(getAlbums).toHaveBeenNthCalledWith(1, { page: 1, pageSize: 60, search: '', sort: 'title' });
     expect(getAlbums).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 60, search: '', sort: 'title' });
+    expect(screen.getByText('Album 1')).toBeTruthy();
+    expect(screen.getByText('Album 2')).toBeTruthy();
+  });
+
+  it('search and sort changes reset loading to page 1', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('1')], { page: 1, total: 120, hasMore: true }))
+      .mockResolvedValueOnce(page([album('search')], { page: 1, total: 1, hasMore: false }))
+      .mockResolvedValueOnce(page([album('artist-sort')], { page: 1, total: 1, hasMore: false }));
+    installLibrary(getAlbums);
+
+    renderAlbumsPage();
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByPlaceholderText('Search albums / artists'), { target: { value: 'search' } });
+    await new Promise((resolve) => window.setTimeout(resolve, 275));
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 60, search: 'search', sort: 'title' });
+
+    fireEvent.change(screen.getByDisplayValue('Title'), { target: { value: 'artist' } });
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(3));
+    expect(getAlbums).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 60, search: 'search', sort: 'artist' });
+  });
+
+  it('library:changed reloads page 1', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('1')], { page: 1, total: 2, hasMore: true }))
+      .mockResolvedValueOnce(page([album('fresh')], { page: 1, total: 1, hasMore: false }));
+    installLibrary(getAlbums);
+
+    renderAlbumsPage();
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event('library:changed'));
+
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 60, search: '', sort: 'title' });
   });
 
   it('renders album coverThumb as a lazy image and stops rendering it after error', async () => {
-    const getAlbums = vi.fn().mockResolvedValue({
-      items: [
-        {
-          id: 'album-1',
-          albumKey: 'artist/album',
+    const getAlbums = vi.fn().mockResolvedValue(
+      page([
+        album('1', {
           title: 'Album',
-          albumArtist: 'Artist',
-          year: 2026,
-          trackCount: 1,
-          duration: 120,
           coverId: 'cover-1',
           coverThumb: 'echo-cover://album/cover-1',
-        },
-      ],
-      page: 1,
-      pageSize: 60,
-      total: 1,
-      hasMore: false,
-    });
+        }),
+      ]),
+    );
+    installLibrary(getAlbums);
 
-    window.echo = {
-      library: {
-        getAlbums,
-        getTracks: vi.fn(),
-        getAlbumTracks: vi.fn(),
-        getSummary: vi.fn(),
-        chooseFolder: vi.fn(),
-        addFolder: vi.fn(),
-        getFolders: vi.fn(),
-        removeFolder: vi.fn(),
-        scanFolder: vi.fn(),
-        getScanStatus: vi.fn(),
-        cancelScan: vi.fn(),
-        getDiagnostics: vi.fn(),
-      },
-    } as unknown as Window['echo'];
-
-    const { container } = render(<AlbumsPage />);
+    const { container } = renderAlbumsPage();
 
     await waitFor(() => expect(container.querySelector('.album-cover img')).toBeTruthy());
     const img = container.querySelector('.album-cover img') as HTMLImageElement;
@@ -160,5 +214,29 @@ describe('AlbumsPage', () => {
     fireEvent.error(img);
     expect(container.querySelector('.album-cover img')).toBeNull();
     expect(container.querySelector('.album-cover')?.getAttribute('data-empty')).toBe('true');
+  });
+
+  it('clicking an album opens detail view and Back restores the album wall state', async () => {
+    const getAlbums = vi.fn().mockResolvedValue(
+      page([album('1', { coverId: 'cover-1', coverThumb: 'echo-cover://album/cover-1' })], { page: 1, total: 1, hasMore: false }),
+    );
+    const getAlbumTracks = vi.fn().mockResolvedValue(trackPage([track('track-1')]));
+    installLibrary(getAlbums, vi.fn(), getAlbumTracks);
+
+    const { container } = renderAlbumsPage();
+
+    await screen.findByText('Album 1');
+    fireEvent.change(screen.getByPlaceholderText('Search albums / artists'), { target: { value: 'kept search' } });
+    fireEvent.change(screen.getByDisplayValue('Title'), { target: { value: 'artist' } });
+    fireEvent.click(screen.getByText('Album 1'));
+
+    await screen.findByLabelText('Album 1 album details');
+    expect(getAlbumTracks).toHaveBeenCalledWith('1', { page: 1, pageSize: 100 });
+    expect(container.querySelector('.album-detail-cover img')?.getAttribute('src')).toBe('echo-cover://album/cover-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
+    expect((screen.getByPlaceholderText('Search albums / artists') as HTMLInputElement).value).toBe('kept search');
+    expect(screen.getByDisplayValue('Artist')).toBeTruthy();
+    expect(screen.getByText('Album 1')).toBeTruthy();
   });
 });

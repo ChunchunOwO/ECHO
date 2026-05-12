@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import readline from 'node:readline';
 import { Writable } from 'node:stream';
 import electron from 'electron';
+import { getEqBridge } from './EqBridge';
 import type {
   NativeBridgeReadyMessage,
   NativeBridgeReadyResult,
@@ -183,6 +184,7 @@ export class NativeOutputBridge extends EventEmitter {
   private stopRequested = false;
   private readyTimer: NodeJS.Timeout | null = null;
   private readyMessage: NativeBridgeReadyMessage | null = null;
+  private eqControlPort: number | null = null;
 
   constructor(dependencies: NativeOutputBridgeDependencies = {}) {
     super();
@@ -237,6 +239,7 @@ export class NativeOutputBridge extends EventEmitter {
       this.ended = false;
       this.stopRequested = false;
       this.readyMessage = null;
+      this.eqControlPort = getEqBridge().reserveControlPort();
 
       const args = this.createSpawnArgs(options);
       const stderrLines: string[] = [];
@@ -369,6 +372,8 @@ export class NativeOutputBridge extends EventEmitter {
       this.proc = null;
     }
 
+    getEqBridge().disconnect();
+    this.eqControlPort = null;
     this.ready = false;
   }
 
@@ -397,6 +402,10 @@ export class NativeOutputBridge extends EventEmitter {
       args.push('-vol', String(Math.max(0, Math.min(1, volume))));
     }
 
+    if (this.eqControlPort) {
+      args.push('-eq-port', String(this.eqControlPort));
+    }
+
     return args;
   }
 
@@ -419,6 +428,14 @@ export class NativeOutputBridge extends EventEmitter {
 
       if (typeof message.sampleRate === 'number' && message.sampleRate > 0) {
         this.actualDeviceSampleRate = message.sampleRate;
+      }
+
+      const eqControlPort =
+        typeof message.eqControlPort === 'number' && message.eqControlPort > 0
+          ? message.eqControlPort
+          : this.eqControlPort;
+      if (eqControlPort) {
+        getEqBridge().connect(eqControlPort);
       }
 
       const result: NativeBridgeReadyResult = {

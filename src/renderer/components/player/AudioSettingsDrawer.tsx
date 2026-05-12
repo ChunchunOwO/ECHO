@@ -54,7 +54,7 @@ export const AudioSettingsDrawer = ({
   const engineBadges = useMemo(() => {
     const badges: string[] = [];
     const bitrate = formatBitrate(status?.bitrate);
-    const hasEq = status?.warnings.some((warning) => /eq|equalizer/i.test(warning)) ?? false;
+    const hasEq = status?.dspActive || status?.eqEnabled || status?.warnings.some((warning) => /eq|equalizer/i.test(warning));
 
     if (bitrate) {
       badges.push(bitrate);
@@ -69,7 +69,7 @@ export const AudioSettingsDrawer = ({
     }
 
     return badges;
-  }, [status?.bitrate, status?.resampling, status?.sampleRateMismatch, status?.warnings]);
+  }, [status?.bitrate, status?.dspActive, status?.eqEnabled, status?.resampling, status?.sampleRateMismatch, status?.warnings]);
 
   const refresh = useCallback(async (): Promise<void> => {
     const audio = window.echo?.audio;

@@ -26,10 +26,11 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 - album grouping by album title, album artist/folder fallback, and year
 - persisted album wall data that survives restart
 - `SongsPage` with paged API reads and virtualized rows
-- `AlbumsPage` with paged album-wall reads from SQLite
+- `AlbumsPage` with paged album-wall reads from SQLite; page 1 first, append on scroll, never full-library fetch
 - `FoldersPage` for folder management, plus focused `ImportFolderPage`
 - SongsPage folder-plus navigation to `ImportFolderPage`
 - TrackRow single-track playback through `playback.playLocalFile({ filePath, trackId })`
+- Phase 1.2 playback queue scope is the visible/loaded SongsPage window only
 - PlayerBar status readout for playback and audio sample-rate fields
 - dev-only Library Diagnostics through `library.getDiagnostics()`
 - `benchmark:library` fake-data pressure script for 3000 and 10000 tracks plus 3000 and 10000 albums
@@ -58,6 +59,9 @@ Deferred beyond the minimal Phase 1 loop:
 - decide from measurements whether `FileScanner` needs native implementation
 - keep Renderer, IPC, SQLite schema, and paginated APIs unchanged while swapping worker implementations
 - verify `getTracks` first page stays under the 200 ms target and `getAlbums` first page stays under the 300 ms target
+- add AlbumWall grid virtualization with `@tanstack/react-virtual` only if paged 3000/10000 album smoke tests still show scroll jank
+- replace PlayerBar polling with throttled playback/audio IPC push events
+- design the real queue service after Library Core owns full-library queue state
 - enter native cover work if generating 1000 album thumbs keeps CPU above 50%, 3000/10000 cover generation has unacceptable memory peaks, Electron `sharp` rebuilds are unstable, or cover cache hits remain slow
 
 ## Phase 2: Audio Core
@@ -76,8 +80,18 @@ Deferred beyond the minimal Phase 1 loop:
 - ASIO
 - bit-perfect output path
 - sample-rate switching
+- EQ Phase 1: 10-band graphic EQ, preamp, built-in/user presets, native JUCE DSP, and clear bit-perfect disabled status
 - gapless playback
 - output format verification
+
+Deferred EQ expansion:
+
+- full parametric bands
+- realtime analyzer implementation
+- dynamic EQ
+- auto gain
+- A/B compare storage
+- per-output and per-headphone profiles
 
 ## Phase 4: Experience
 

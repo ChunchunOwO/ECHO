@@ -37,6 +37,17 @@ const echoApi: EchoApi = {
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: (settings) => ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings),
   },
+  eq: {
+    getState: () => ipcRenderer.invoke(IpcChannels.EqGetState),
+    setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.EqSetEnabled, enabled),
+    setBandGain: (request) => ipcRenderer.invoke(IpcChannels.EqSetBandGain, request),
+    setPreamp: (preampDb) => ipcRenderer.invoke(IpcChannels.EqSetPreamp, preampDb),
+    setPreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqSetPreset, presetId),
+    reset: () => ipcRenderer.invoke(IpcChannels.EqReset),
+    listPresets: () => ipcRenderer.invoke(IpcChannels.EqListPresets),
+    savePreset: (request) => ipcRenderer.invoke(IpcChannels.EqSavePreset, request),
+    deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
+  },
 };
 
 contextBridge.exposeInMainWorld('echo', echoApi);

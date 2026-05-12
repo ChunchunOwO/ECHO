@@ -45,6 +45,12 @@ export type AudioStatus = {
   resampling: boolean;
   bitPerfectCandidate: boolean;
   sampleRateMismatch: boolean;
+  eqEnabled: boolean;
+  dspActive: boolean;
+  preampDb: number;
+  eqPresetName: string | null;
+  clippingRisk: boolean;
+  bitPerfectDisabledReason: string | null;
   warnings: string[];
   error: string | null;
 };

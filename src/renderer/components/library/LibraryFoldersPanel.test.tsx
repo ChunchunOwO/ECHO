@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { LibraryFoldersPanel } from './LibraryFoldersPanel';
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
+import type { EqPreset, EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../../../shared/types/eq';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { LibraryFolder, LibraryScanStatus, LibrarySummary } from '../../../shared/types/library';
 
@@ -36,6 +37,17 @@ type EchoMock = {
     getStatus: () => Promise<AudioStatus>;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
+  };
+  eq: {
+    getState: () => Promise<EqState>;
+    setEnabled: (enabled: boolean) => Promise<EqState>;
+    setBandGain: (request: EqSetBandGainRequest) => Promise<EqState>;
+    setPreamp: (preampDb: number) => Promise<EqState>;
+    setPreset: (presetId: string) => Promise<EqState>;
+    reset: () => Promise<EqState>;
+    listPresets: () => Promise<EqPreset[]>;
+    savePreset: (request: EqSavePresetRequest) => Promise<EqPreset>;
+    deletePreset: (presetId: string) => Promise<EqPreset[]>;
   };
 };
 
@@ -122,9 +134,28 @@ const audioStatus = (overrides: Partial<AudioStatus> = {}): AudioStatus => ({
   resampling: false,
   bitPerfectCandidate: false,
   sampleRateMismatch: false,
+  eqEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: 'Flat',
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
   warnings: [],
   error: null,
   ...overrides,
+});
+
+const eqState = (): EqState => ({
+  enabled: false,
+  preampDb: 0,
+  presetId: 'flat',
+  presetName: 'Flat',
+  clippingRisk: false,
+  bands: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
+    frequencyHz,
+    gainDb: 0,
+    q: 1,
+  })),
 });
 
 let libraryMock: EchoMock['library'];
@@ -162,6 +193,17 @@ beforeEach(() => {
       getStatus: vi.fn().mockResolvedValue(audioStatus()),
       listDevices: vi.fn().mockResolvedValue([]),
       setOutput: vi.fn().mockResolvedValue(audioStatus()),
+    },
+    eq: {
+      getState: vi.fn().mockResolvedValue(eqState()),
+      setEnabled: vi.fn().mockResolvedValue(eqState()),
+      setBandGain: vi.fn().mockResolvedValue(eqState()),
+      setPreamp: vi.fn().mockResolvedValue(eqState()),
+      setPreset: vi.fn().mockResolvedValue(eqState()),
+      reset: vi.fn().mockResolvedValue(eqState()),
+      listPresets: vi.fn().mockResolvedValue([]),
+      savePreset: vi.fn().mockResolvedValue({ id: 'custom', name: 'Custom', preampDb: 0, bands: eqState().bands, createdAt: '', updatedAt: '', readonly: false }),
+      deletePreset: vi.fn().mockResolvedValue([]),
     },
   } satisfies EchoMock;
 

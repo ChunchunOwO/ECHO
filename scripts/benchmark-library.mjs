@@ -343,7 +343,7 @@ export const runBenchmark = (trackCount, options = {}) => {
       getAlbumsPage10ItemCount: getAlbumsPage10.result.length,
       averageCoverThumbLength,
       getAlbumsPage1PayloadBytes: Buffer.byteLength(getAlbumsPayload),
-      getAlbumsReturnsLargeOrOriginal: /large|original/i.test(getAlbumsPayload),
+      getAlbumsReturnsForbiddenCoverPayload: /large|original|base64/i.test(getAlbumsPayload),
       unchangedScanSkipDurationMs: unchangedScanSkip.durationMs,
       unchangedScanSkipped: unchangedScanSkip.result,
       memory: {
@@ -383,7 +383,7 @@ const printResult = (result) => {
   console.log(`payload item count page1 / page10: ${result.getAlbumsPage1ItemCount} / ${result.getAlbumsPage10ItemCount}`);
   console.log(`average coverThumb string length: ${result.averageCoverThumbLength.toFixed(2)}`);
   console.log(`getAlbums page1 payload bytes: ${result.getAlbumsPage1PayloadBytes}`);
-  console.log(`getAlbums returns large/original: ${result.getAlbumsReturnsLargeOrOriginal}`);
+  console.log(`getAlbums returns large/original/base64: ${result.getAlbumsReturnsForbiddenCoverPayload}`);
   console.log(`unchanged scan skip: ${result.unchangedScanSkipped} in ${result.unchangedScanSkipDurationMs.toFixed(2)} ms`);
   console.log(`memory rss / heapUsed: ${result.memory.rss} / ${result.memory.heapUsed}`);
   console.log(`database size: ${result.databaseSizeBytes}`);

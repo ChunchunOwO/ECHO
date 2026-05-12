@@ -191,7 +191,9 @@ IPC handlers validate input and call `LibraryService`. SQL, scanning, metadata, 
 
 `SongsPage` reads paged tracks with `pageSize = 100`, keeps search debounced, and renders a virtualized `TrackList`. Track rows receive `coverThumb` only.
 
-`AlbumsPage` reads paged albums with `pageSize = 60` from the persisted `albums` table. It never regroups tracks in Renderer.
+`AlbumsPage` reads albums with `pageSize = 60` from the persisted `albums` table. It loads page 1 first and appends later pages only when the album wall scrolls near the bottom. It must not loop through every page or put the full album library into Renderer state. It never regroups tracks in Renderer.
+
+Current AlbumWall rendering is paged grid + lazy image loading. TODO: if 3000/10000 album smoke tests still show scroll jank after pagination, replace the grid with `@tanstack/react-virtual` grid virtualization.
 
 Folders, Settings, and Import Folder share the same `LibraryFoldersPanel`. It supports:
 
@@ -228,19 +230,20 @@ window.echo.playback.playLocalFile({
 });
 ```
 
-`SongsPage` updates only `currentTrackId` from the returned playback status. It does not subscribe to playback progress, so position polling cannot rerender the song list.
+`SongsPage` updates only `currentTrackId` from the returned playback status. It does not subscribe to playback progress, so position polling cannot rerender the song list. The current `usePlaybackQueue` queue is only the visible/loaded SongsPage window; the full-library queue belongs in a later LibraryService or queue service, not in Phase 1.2.
 
-`PlayerBar` owns lightweight 1s polling of `playback.getStatus()` and `audio.getStatus()` until push IPC exists. It displays current file, track id, state, position/duration, codec, `fileSampleRate`, `actualDeviceSampleRate`, `outputMode`, and `sampleRateMismatch`.
+`PlayerBar` owns lightweight 500 ms polling of `playback.getStatus()` and `audio.getStatus()` until push IPC exists. It displays current file, track id, state, position/duration, codec, `fileSampleRate`, `actualDeviceSampleRate`, `outputMode`, and `sampleRateMismatch`. TODO: replace polling with `playback:onStatus` and `audio:onStatus` IPC push events, throttle high-frequency position updates, and keep those updates out of SongsPage.
 
 `library.getDiagnostics()` returns counts, last scan counters, last paged query timings, approximate average album payload size, database path/size, cover cache path/size, and cover cache version. It never triggers a scan and never returns track lists or full cover payloads. The diagnostics panel is dev-only in Settings > Library.
 
-`npm run benchmark:library` generates 3000 and 10000 fake tracks and 3000 and 10000 fake albums with cover cache rows. It measures SQLite insertion, album grouping, first-page track/album queries, album page 10, album total count, coverThumb payload length, unchanged scan skip simulation, memory, and database size. It does not need real audio files.
+`npm run benchmark:library` generates 3000 and 10000 fake tracks and 3000 and 10000 fake albums with cover cache rows. It measures SQLite insertion, album grouping, first-page track/album queries, album page 10, album total count, coverThumb payload length, forbidden cover payload checks (`large`, `original`, `base64`), unchanged scan skip simulation, memory, and database size. It does not need real audio files.
 
 ## Performance Budget
 
 - startup does not scan the full library
 - `getTracks` first page target: under 200 ms
 - `getAlbums` first page target: under 300 ms
+- AlbumsPage must request page 1 first and must not request every album page up front
 - unchanged scan skip rate should approach 100%
 - cover thumbs are generated during scan, not UI scroll
 - album wall reads `albums` after restart

@@ -30,6 +30,9 @@ juce_add_console_app(echo-audio-host
 
 target_sources(echo-audio-host
   PRIVATE
+    ../audio-engine/EqMessageProtocol.cpp
+    ../audio-engine/EqPresetStore.cpp
+    ../audio-engine/EqProcessor.cpp
     src/main.cpp
 )
 

@@ -3,23 +3,20 @@ import type { ReactNode } from 'react';
 import {
   Check,
   Download,
-  FileAudio,
   Globe2,
   Headphones,
   Info,
   Link2,
   MessageSquare,
   Palette,
-  Pause,
-  RefreshCw,
   Search,
   SlidersHorizontal,
-  Square,
   Trash2,
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
+import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 
@@ -44,7 +41,7 @@ type SettingSectionProps = {
 
 type SettingRowProps = {
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
 };
 
@@ -83,6 +80,10 @@ const statusRows = (status: AudioStatus | null): Array<{ label: string; value: s
   { label: 'outputDeviceName', value: status?.outputDeviceName ?? 'n/a' },
   { label: 'resampling', value: formatBool(status?.resampling ?? false) },
   { label: 'bitPerfectCandidate', value: formatBool(status?.bitPerfectCandidate ?? false) },
+  { label: 'dspActive', value: formatBool(status?.dspActive ?? false) },
+  { label: 'eqEnabled', value: formatBool(status?.eqEnabled ?? false) },
+  { label: 'preampDb', value: `${status?.preampDb ?? 0} dB` },
+  { label: 'bitPerfectDisabledReason', value: status?.bitPerfectDisabledReason ?? 'n/a' },
   { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
 ];
 
@@ -100,7 +101,7 @@ const SettingRow = ({ title, description, children }: SettingRowProps): JSX.Elem
   <div className="setting-row">
     <div className="setting-info">
       <h3>{title}</h3>
-      <p>{description}</p>
+      {description ? <p>{description}</p> : null}
     </div>
     {children}
   </div>
@@ -134,8 +135,6 @@ export const SettingsPage = (): JSX.Element => {
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>('shared');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [lastOpenedFile, setLastOpenedFile] = useState<string | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const visibleNavItems = useMemo(() => {
@@ -152,8 +151,6 @@ export const SettingsPage = (): JSX.Element => {
     () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
     [devices, outputMode],
   );
-  const selectedDevice = compatibleDevices.find((device) => device.id === selectedDeviceId) ?? null;
-
   const refreshStatus = useCallback(async () => {
     try {
       setStatus(await window.echo.audio.getStatus());
@@ -204,19 +201,6 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, [compatibleDevices, selectedDeviceId]);
 
-  const createOutputSettings = useCallback((): AudioOutputSettings => {
-    const output: AudioOutputSettings = {
-      outputMode,
-    };
-
-    if (selectedDevice) {
-      output.deviceIndex = selectedDevice.index;
-      output.deviceName = selectedDevice.name;
-    }
-
-    return output;
-  }, [outputMode, selectedDevice]);
-
   const applyOutputSettings = useCallback(
     async (nextOutputMode = outputMode, nextDeviceId = selectedDeviceId) => {
       const nextDevice =
@@ -251,43 +235,6 @@ export const SettingsPage = (): JSX.Element => {
   const handleDeviceChange = (nextDeviceId: string): void => {
     setSelectedDeviceId(nextDeviceId);
     void applyOutputSettings(outputMode, nextDeviceId);
-  };
-
-  const handleOpenAndPlay = async (): Promise<void> => {
-    setIsBusy(true);
-    setError(null);
-
-    try {
-      const filePath = await window.echo.playback.openLocalAudioFile();
-
-      if (!filePath) {
-        return;
-      }
-
-      const output = createOutputSettings();
-      setStatus(await window.echo.audio.setOutput(output));
-      await window.echo.playback.playLocalFile({
-        filePath,
-        output,
-      });
-      setLastOpenedFile(filePath);
-      await refreshStatus();
-    } catch (playError) {
-      setError(playError instanceof Error ? playError.message : String(playError));
-      await refreshStatus();
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handlePause = async (): Promise<void> => {
-    await window.echo.playback.pause();
-    await refreshStatus();
-  };
-
-  const handleStop = async (): Promise<void> => {
-    await window.echo.playback.stop();
-    await refreshStatus();
   };
 
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
@@ -342,11 +289,8 @@ export const SettingsPage = (): JSX.Element => {
                   <ChipButton>日本語</ChipButton>
                 </div>
               </SettingRow>
-              <SettingRow title="关闭按钮行为" description="选择点击右上角关闭按钮时，是直接退出应用还是隐藏到系统托盘。">
-                <div className="settings-chip-row">
-                  <ChipButton>隐藏到托盘</ChipButton>
-                  <ChipButton active>直接退出</ChipButton>
-                </div>
+              <SettingRow title="关闭时隐藏到托盘">
+                <ToggleButton />
               </SettingRow>
               <SettingRow title="设置参数备份" description="导出或导入 ECHO Next 设置参数，用于迁移到新设备或恢复配置。">
                 <div className="settings-chip-row">
@@ -386,23 +330,6 @@ export const SettingsPage = (): JSX.Element => {
                   </select>
                 </label>
               </SettingRow>
-              <SettingRow title="本地音频验收" description="开发期入口，用于打开本地音频并检查 44.1k / 48k / 96k 采样率状态。">
-                <div className="settings-chip-row">
-                  <button className="settings-action-button" type="button" onClick={() => void handleOpenAndPlay()} disabled={!isDevBuild || isBusy || status?.host === 'unavailable'}>
-                    <FileAudio size={15} />
-                    打开音频
-                  </button>
-                  <button className="settings-icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void handlePause()}>
-                    <Pause size={15} />
-                  </button>
-                  <button className="settings-icon-button" type="button" aria-label="停止" title="停止" onClick={() => void handleStop()}>
-                    <Square size={15} />
-                  </button>
-                  <button className="settings-icon-button" type="button" aria-label="刷新音频状态" title="刷新音频状态" onClick={() => void refreshStatus()}>
-                    <RefreshCw size={15} />
-                  </button>
-                </div>
-              </SettingRow>
               <SettingRow title="无线播放" description="后续 HiFi 引擎阶段再接入；当前阶段不迁移 gapless / automix / 流媒体。">
                 <ToggleButton />
               </SettingRow>
@@ -419,7 +346,6 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
-              {lastOpenedFile ? <p className="settings-inline-note">{lastOpenedFile}</p> : null}
               {error ? <p className="settings-inline-error">{error}</p> : null}
               {status?.warnings.length ? (
                 <p className="settings-inline-error">warnings: {status.warnings.join(', ')}</p>
@@ -442,12 +368,7 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title="EQ">
-              <SettingRow title="均衡器" description="EQ、VST、DSD 等 HiFi 扩展不在当前 Library Core 阶段实现。">
-                <ToggleButton />
-              </SettingRow>
-              <SettingRow title="输出安全" description="未来开启 EQ 前需要明确的增益与削波保护。">
-                <ChipButton active>安全模式</ChipButton>
-              </SettingRow>
+              <EqPanel audioStatus={status} onAudioStatusRefresh={refreshStatus} />
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title="外观">

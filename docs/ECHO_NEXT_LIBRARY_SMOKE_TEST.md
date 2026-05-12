@@ -59,16 +59,20 @@ Record:
 4. Confirm generated default covers are stable and reused.
 5. Open the album wall at 100, 1000, 3000, and 10000 albums when available.
 6. Confirm first screen load time is acceptable and record it.
-7. Scroll the album wall and confirm CPU does not stay high after images settle.
-8. Confirm list rows request only `echo-cover://thumb/*` and album cards request only `echo-cover://album/*`.
-9. Confirm no list or album-wall request uses `large`, `original`, file paths, binary data, or base64.
-10. Restart and confirm the album wall reads `albums` and `covers` rows directly instead of regrouping tracks or regenerating covers.
-11. Rescan an unchanged library and confirm cover generation is skipped.
-12. Confirm cover extraction errors are recorded but do not interrupt track metadata writes.
+7. Confirm AlbumsPage requests page 1 first and does not request every page immediately.
+8. Scroll near the bottom and confirm the next album page loads only then.
+9. Scroll the album wall and confirm CPU does not stay high after images settle.
+10. Confirm list rows request only `echo-cover://thumb/*` and album cards request only `echo-cover://album/*`.
+11. Confirm no list or album-wall request uses `large`, `original`, file paths, binary data, or base64.
+12. Restart and confirm the album wall reads `albums` and `covers` rows directly instead of regrouping tracks or regenerating covers.
+13. Rescan an unchanged library and confirm cover generation is skipped.
+14. Confirm cover extraction errors are recorded but do not interrupt track metadata writes.
 
 Record:
 
 - album wall first-screen load time
+- `getAlbums` page 1 and page 10 duration
+- whether AlbumsPage ever requested all pages without scrolling
 - CPU while scrolling after covers have cached
 - whether any `large` or `original` cover request appears during list or album-wall scrolling
 - restart album wall load time
@@ -111,10 +115,13 @@ Record:
 3. Confirm the real local file starts playback.
 4. Confirm PlayerBar shows current file, track id, state, position/duration, codec, file sample rate, actual device sample rate, output mode, and sample-rate mismatch warning.
 5. Test 44.1k, 48k, and 96k files.
+6. Confirm next/previous currently operate only over the visible/loaded SongsPage window.
+7. Confirm PlayerBar polling does not rerender SongsPage while position changes.
 
 Record:
 
 - whether playback starts from SongsPage
+- current visible/loaded queue size
 - fileSampleRate for each file
 - actualDeviceSampleRate for each file
 - sampleRateMismatch state
@@ -129,3 +136,5 @@ npm run benchmark:library
 ```
 
 Keep the 3000/10000 track and 3000/10000 album output with the smoke-test notes. Phase 1.5 should enter Go/C#/Rust CoverWorker work only if real smoke data or the benchmark proves TS+sharp is not enough: sustained CPU above 50% while generating 1000 album thumbs, unacceptable memory peaks at 3000/10000 covers, unstable Electron `sharp` rebuilds, or slow cover-cache hits.
+
+Also keep the album-wall pagination notes: page 1 duration, page 10 duration, average album payload size, and confirmation that `getAlbums` does not return `large`, `original`, or base64 payloads.

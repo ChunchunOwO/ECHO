@@ -114,7 +114,6 @@ export const TrackRow = memo(
         role="listitem"
         tabIndex={onPlay ? 0 : undefined}
         onClick={handlePlay}
-        onDoubleClick={handlePlay}
         onKeyDown={handleKeyDown}
       >
         <div className="track-cover" data-empty={!shouldShowCover} aria-hidden="true">

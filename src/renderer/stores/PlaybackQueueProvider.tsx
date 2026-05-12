@@ -49,6 +49,8 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   );
 
   const setQueue = useCallback((nextTracks: LibraryTrack[]): void => {
+    // Phase 1.2 queue scope: this is the visible/loaded SongsPage window, not the full-library playback queue.
+    // A later LibraryService-backed queue service should own the real queue.
     setTracks(nextTracks);
   }, []);
 

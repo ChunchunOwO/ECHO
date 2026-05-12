@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../../shared/types/audio';
+import type { EqState } from '../../../shared/types/eq';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { PlayerBar } from './PlayerBar';
@@ -54,8 +55,27 @@ const audioStatus = (track: LibraryTrack): AudioStatus => ({
   resampling: false,
   bitPerfectCandidate: false,
   sampleRateMismatch: false,
+  eqEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: 'Flat',
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
   warnings: [],
   error: null,
+});
+
+const eqState = (): EqState => ({
+  enabled: false,
+  preampDb: 0,
+  presetId: 'flat',
+  presetName: 'Flat',
+  clippingRisk: false,
+  bands: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
+    frequencyHz,
+    gainDb: 0,
+    q: 1,
+  })),
 });
 
 const QueueSeed = ({ tracks }: { tracks: LibraryTrack[] }): JSX.Element => {
@@ -112,6 +132,17 @@ describe('PlayerBar', () => {
         getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
+      },
+      eq: {
+        getState: vi.fn().mockResolvedValue(eqState()),
+        setEnabled: vi.fn().mockResolvedValue(eqState()),
+        setBandGain: vi.fn().mockResolvedValue(eqState()),
+        setPreamp: vi.fn().mockResolvedValue(eqState()),
+        setPreset: vi.fn().mockResolvedValue(eqState()),
+        reset: vi.fn().mockResolvedValue(eqState()),
+        listPresets: vi.fn().mockResolvedValue([]),
+        savePreset: vi.fn(),
+        deletePreset: vi.fn().mockResolvedValue([]),
       },
       library: {
         getTracks: vi.fn(),

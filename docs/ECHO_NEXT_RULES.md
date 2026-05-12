@@ -49,6 +49,8 @@ Current Phase 1 list defaults:
 - albums: `pageSize = 60`
 - track rows are virtualized with an estimated 70px row height
 - list and album-wall images must use lazy loading and async decoding
+- AlbumsPage must request page 1 first and append more pages only near scroll bottom; it must not loop through every album page up front
+- AlbumWall may stay paged + lazy image for Phase 1.2; add grid virtualization later only if large-library smoke tests prove it is needed
 
 ## Preload Rules
 
@@ -67,6 +69,8 @@ Preload must not:
 - know which worker implementation backs Library Core
 
 Renderer must not open Electron dialogs directly. Folder chooser UX must go through preload and IPC, not from React components calling `dialog`.
+
+Renderer EQ UI may render controls, curves, warnings, and preset actions. It must not process audio buffers, calculate native filter coefficients, read/write preset files directly, or bypass the typed `window.echo.eq` preload API.
 
 ## Native Worker Boundary
 
@@ -225,4 +229,10 @@ SongsPage must stay a list view, not an import wizard. Its folder-plus button ma
 
 TrackRow may start single-track local playback through a callback passed down from SongsPage. SongsPage may store `currentTrackId`, but high-frequency playback position and audio status must stay out of App.tsx and must not rerender the song list.
 
+The current playback queue is only the visible/loaded SongsPage window. Do not expand it into a full playback queue until a LibraryService-backed queue service exists.
+
+PlayerBar polling is temporary. Future playback/audio status should use throttled IPC push events such as `playback:onStatus` and `audio:onStatus`, and position updates must not rerender SongsPage or TrackList.
+
 Library diagnostics are dev-only. They must use `library.getDiagnostics()`, must not trigger scans, and must not return full track lists, full cover records, binary cover data, or base64 cover data.
+
+EQ changes must preserve the audio-thread boundary. Preset JSON storage belongs to main/native non-realtime code, not the JUCE callback. Native EQ parameters must be passed through atomic or lock-free state, smoothed before use, and must keep disabled/bypassed output bit-transparent once the bypass fade completes.

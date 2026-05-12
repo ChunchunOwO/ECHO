@@ -3,6 +3,9 @@
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../../audio-engine/EqMessageProtocol.h"
+#include "../../audio-engine/EqProcessor.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -44,6 +47,7 @@ struct Options
     int channels = 2;
     int deviceIndex = -1;
     int bufferSize = 0;
+    int eqControlPort = 0;
     double volume = 1.0;
     juce::String deviceName;
 };
@@ -201,6 +205,10 @@ Options parseOptions(const std::vector<juce::String>& args)
         else if ((arg == "-buffer" || arg == "-buffer-size") && i + 1 < args.size())
         {
             options.bufferSize = std::max(0, parseInt(args[++i], options.bufferSize));
+        }
+        else if (arg == "-eq-port" && i + 1 < args.size())
+        {
+            options.eqControlPort = std::max(0, parseInt(args[++i], options.eqControlPort));
         }
         else if (arg == "-vol" && i + 1 < args.size())
         {
@@ -526,17 +534,24 @@ std::vector<DeviceDescriptor> buildOpenCandidates(const Options& options, const 
 class PcmRingAudioSource final : public juce::AudioSource
 {
 public:
-    PcmRingAudioSource(int channelCount, int capacityFrames, double gainToUse)
+    PcmRingAudioSource(int channelCount, int capacityFrames, double gainToUse, echo::EqProcessor& eqProcessorToUse)
         : channels(channelCount),
           gain(static_cast<float>(gainToUse)),
           fifo(capacityFrames),
-          buffer(static_cast<size_t>(capacityFrames * channelCount), 0.0f)
+          buffer(static_cast<size_t>(capacityFrames * channelCount), 0.0f),
+          eqProcessor(eqProcessorToUse)
     {
     }
 
-    void prepareToPlay(int, double) override {}
+    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override
+    {
+        eqProcessor.prepare(sampleRate, samplesPerBlockExpected, channels);
+    }
 
-    void releaseResources() override {}
+    void releaseResources() override
+    {
+        eqProcessor.reset();
+    }
 
     void getNextAudioBlock(const juce::AudioSourceChannelInfo& info) override
     {
@@ -575,6 +590,8 @@ public:
             framesNeeded -= framesRead;
             outputOffset += framesRead;
         }
+
+        eqProcessor.processBlock(*info.buffer, info.startSample, info.numSamples);
     }
 
     bool push(const float* samples, int frameCount)
@@ -679,11 +696,113 @@ private:
     const float gain;
     juce::AbstractFifo fifo;
     std::vector<float> buffer;
+    echo::EqProcessor& eqProcessor;
     std::atomic<bool> inputEnded { false };
     std::atomic<bool> stopRequested { false };
     std::atomic<uint64_t> framesPlayed { 0 };
     std::atomic<uint64_t> underrunCallbacks { 0 };
     std::atomic<uint64_t> underrunFrames { 0 };
+};
+
+class EqControlServer final
+{
+public:
+    EqControlServer(int portToUse, echo::EqProcessor& processorToUse)
+        : port(portToUse),
+          processor(processorToUse)
+    {
+    }
+
+    ~EqControlServer()
+    {
+        stop();
+    }
+
+    void start()
+    {
+        if (port <= 0)
+            return;
+
+        running.store(true, std::memory_order_release);
+        worker = std::thread([this]
+        {
+            run();
+        });
+    }
+
+    void stop()
+    {
+        running.store(false, std::memory_order_release);
+        listener.close();
+
+        if (client != nullptr)
+            client->close();
+
+        if (worker.joinable())
+            worker.join();
+    }
+
+private:
+    void run()
+    {
+        if (! listener.createListener(port, "127.0.0.1"))
+        {
+            logLine("EQ control listener failed on port " + std::to_string(port));
+            return;
+        }
+
+        logLine("EQ control listener ready on port " + std::to_string(port));
+
+        while (running.load(std::memory_order_acquire))
+        {
+            std::unique_ptr<juce::StreamingSocket> nextClient(listener.waitForNextConnection());
+
+            if (nextClient == nullptr)
+                continue;
+
+            client = nextClient.get();
+            handleClient(*nextClient);
+            client = nullptr;
+        }
+    }
+
+    void handleClient(juce::StreamingSocket& socket)
+    {
+        std::string pending;
+        char bytes[1024] {};
+
+        while (running.load(std::memory_order_acquire) && socket.isConnected())
+        {
+            const int read = socket.read(bytes, sizeof(bytes), true);
+
+            if (read <= 0)
+                break;
+
+            pending.append(bytes, bytes + read);
+
+            size_t newline = pending.find('\n');
+            while (newline != std::string::npos)
+            {
+                const auto line = pending.substr(0, newline);
+                pending.erase(0, newline + 1);
+
+                if (! line.empty())
+                {
+                    const auto response = echo::EqMessageProtocol::handleJsonLine(line, processor) + "\n";
+                    socket.write(response.data(), static_cast<int>(response.size()));
+                }
+
+                newline = pending.find('\n');
+            }
+        }
+    }
+
+    const int port = 0;
+    echo::EqProcessor& processor;
+    juce::StreamingSocket listener;
+    juce::StreamingSocket* client = nullptr;
+    std::thread worker;
+    std::atomic<bool> running { false };
 };
 
 void stdinReader(PcmRingAudioSource& source, int channels)
@@ -899,10 +1018,15 @@ int runHost(const Options& options)
     auto openedDescriptor = descriptor;
     auto device = openSelectedDevice(options, descriptor, types, openedDescriptor, actualSampleRate);
 
+    echo::EqProcessor eqProcessor;
+    EqControlServer eqControlServer(options.eqControlPort, eqProcessor);
+    eqControlServer.start();
+
     PcmRingAudioSource source(
         options.channels,
         std::max(actualSampleRate / 5, 4096),
-        options.volume);
+        options.volume,
+        eqProcessor);
     juce::AudioSourcePlayer player;
     player.setSource(&source);
 
@@ -915,6 +1039,8 @@ int runHost(const Options& options)
         + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
         + ",\"channels\":" + std::to_string(options.channels)
         + ",\"exclusive\":" + std::string(openedExclusive ? "true" : "false")
+        + ",\"eqControlPort\":" + std::to_string(options.eqControlPort)
+        + ",\"dspActive\":" + std::string(eqProcessor.isEnabled() ? "true" : "false")
         + ",\"backend\":\"" + getBackendName(options, openedDescriptor.typeName)
         + "\",\"deviceType\":\""
         + jsonEscape(openedDescriptor.typeName) + "\",\"deviceName\":\""
@@ -969,6 +1095,7 @@ int runHost(const Options& options)
     device->stop();
     player.setSource(nullptr);
     source.requestStop();
+    eqControlServer.stop();
 
     return 0;
 }

@@ -25,6 +25,15 @@ export const IpcChannels = {
   AudioGetStatus: 'audio:get-status',
   AudioListDevices: 'audio:list-devices',
   AudioSetOutput: 'audio:set-output',
+  EqGetState: 'eq:get-state',
+  EqSetEnabled: 'eq:set-enabled',
+  EqSetBandGain: 'eq:set-band-gain',
+  EqSetPreamp: 'eq:set-preamp',
+  EqSetPreset: 'eq:set-preset',
+  EqReset: 'eq:reset',
+  EqListPresets: 'eq:list-presets',
+  EqSavePreset: 'eq:save-preset',
+  EqDeletePreset: 'eq:delete-preset',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

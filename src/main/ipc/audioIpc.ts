@@ -1,7 +1,9 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
+import type { EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
+import { getEqBridge } from '../audio/EqBridge';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 
@@ -46,4 +48,21 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> =>
     getAudioSession().setOutput(normalizeOutputSettings(settings)),
   );
+  ipcMain.handle(IpcChannels.EqGetState, (): EqState => getEqBridge().getState());
+  ipcMain.handle(IpcChannels.EqSetEnabled, async (_event, enabled: unknown): Promise<EqState> =>
+    getEqBridge().setEnabled(Boolean(enabled)),
+  );
+  ipcMain.handle(IpcChannels.EqSetBandGain, async (_event, request: EqSetBandGainRequest): Promise<EqState> =>
+    getEqBridge().setBandGain(request),
+  );
+  ipcMain.handle(IpcChannels.EqSetPreamp, async (_event, preampDb: unknown): Promise<EqState> =>
+    getEqBridge().setPreamp(Number(preampDb)),
+  );
+  ipcMain.handle(IpcChannels.EqSetPreset, async (_event, presetId: unknown): Promise<EqState> =>
+    getEqBridge().setPreset(String(presetId)),
+  );
+  ipcMain.handle(IpcChannels.EqReset, async (): Promise<EqState> => getEqBridge().reset());
+  ipcMain.handle(IpcChannels.EqListPresets, () => getEqBridge().listPresets());
+  ipcMain.handle(IpcChannels.EqSavePreset, (_event, request: EqSavePresetRequest) => getEqBridge().savePreset(request));
+  ipcMain.handle(IpcChannels.EqDeletePreset, (_event, presetId: unknown) => getEqBridge().deletePreset(String(presetId)));
 };

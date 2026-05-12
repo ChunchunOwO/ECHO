@@ -105,6 +105,20 @@ Packaging still needs an explicit check before release: `ffmpeg-static` binaries
 - reads JSON events from stdout
 - handles ready, position, ended, and error events
 
+`EqBridge`
+
+- owns Electron IPC for `eq:*` commands
+- persists user EQ presets under Electron `userData`
+- sends realtime parameter changes to the native host through a localhost JSON-line control socket
+- never writes EQ preset JSON from the audio callback
+
+`EqProcessor`
+
+- lives in `native/audio-engine`
+- owns the realtime 10-band graphic EQ, preamp smoothing, and bypass crossfade
+- reads atomic targets from the control thread and processes audio inside the JUCE output callback
+- does not talk to Electron, React, files, JSON storage, or UI state
+
 `DeviceService`
 
 - lists audio devices
@@ -141,10 +155,21 @@ The first audio phase should implement:
 - sample-rate switching
 - gapless
 - automix
-- EQ
+- EQ Phase 1: 10-band graphic EQ, preamp, presets, curve view, and bit-perfect transparency
 - VST
 - DSD
 - CUE
+
+## EQ And Bit-Perfect Status
+
+EQ is a DSP feature. When `eqEnabled = true`, Audio Status must report:
+
+- `dspActive = true`
+- `bitPerfectCandidate = false`
+- `bitPerfectDisabledReason = eq_enabled`
+- `warnings` includes `eq_enabled_bit_perfect_disabled`
+
+Exclusive and ASIO output may still be used with EQ, but the UI must state that the path is no longer bit-perfect. When EQ is bypassed, the native processor crossfades back to the dry signal and does not alter samples after the bypass smoothing reaches zero.
 
 ## Renderer Contract
 

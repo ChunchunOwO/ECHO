@@ -3,6 +3,7 @@ import { Transform } from 'node:stream';
 import type { Writable } from 'node:stream';
 import { DeviceService } from './DeviceService';
 import { DecoderPipeline } from './DecoderPipeline';
+import { getEqBridge } from './EqBridge';
 import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutputBridge';
 import { PlaybackClock } from './PlaybackClock';
 import type {
@@ -133,6 +134,12 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   resampling: false,
   bitPerfectCandidate: false,
   sampleRateMismatch: false,
+  eqEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: 'Flat',
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
   warnings: [],
   error: null,
 });
@@ -215,6 +222,9 @@ export class AudioSession extends EventEmitter {
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.on('error', () => undefined);
+    getEqBridge().on('state', () => {
+      this.emitStatus();
+    });
   }
 
   listDevices(): AudioDeviceInfo[] {
@@ -483,6 +493,18 @@ export class AudioSession extends EventEmitter {
 
     const status = defaultStatus(this.isNativeHostAvailable());
     const plan = this.currentPlan;
+    const eqState = getEqBridge().getState();
+    const dspActive = eqState.enabled;
+    const bitPerfectDisabledReason = dspActive ? 'eq_enabled' : null;
+    const warnings = [...(plan?.warnings ?? [])];
+
+    if (dspActive) {
+      warnings.push('eq_enabled_bit_perfect_disabled');
+    }
+
+    if (eqState.clippingRisk) {
+      warnings.push('eq_clipping_risk');
+    }
 
     return {
       ...status,
@@ -508,9 +530,15 @@ export class AudioSession extends EventEmitter {
       actualDeviceSampleRate: plan?.actualDeviceSampleRate ?? null,
       sharedDeviceSampleRate: plan?.sharedDeviceSampleRate ?? this.currentDevice?.sharedDeviceSampleRate ?? null,
       resampling: plan?.resampling ?? false,
-      bitPerfectCandidate: plan?.bitPerfectCandidate ?? false,
+      bitPerfectCandidate: (plan?.bitPerfectCandidate ?? false) && !dspActive,
       sampleRateMismatch: plan?.sampleRateMismatch ?? false,
-      warnings: plan?.warnings ?? [],
+      eqEnabled: eqState.enabled,
+      dspActive,
+      preampDb: eqState.preampDb,
+      eqPresetName: eqState.presetName,
+      clippingRisk: eqState.clippingRisk,
+      bitPerfectDisabledReason,
+      warnings,
       error: this.errorMessage,
     };
   }

@@ -54,6 +54,8 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
   useEffect(() => {
     void refreshStatus();
+    // TODO: Replace this polling with playback:onStatus / audio:onStatus IPC push events.
+    // Position updates must be throttled and must not cause SongsPage or TrackList rerenders.
     const timer = window.setInterval(() => {
       void refreshStatus();
     }, 500);

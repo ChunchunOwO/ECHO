@@ -79,6 +79,7 @@ export type NativeBridgeReadyMessage = Record<string, unknown> & {
   backend?: string;
   deviceType?: string;
   deviceName?: string;
+  eqControlPort?: number;
 };
 
 export type NativeBridgeReadyResult = {

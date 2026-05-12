@@ -1,4 +1,5 @@
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus } from '../shared/types/audio';
+import type { EqPreset, EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type {
   LibraryAlbum,
   LibraryDiagnostics,
@@ -48,6 +49,17 @@ export type EchoApi = {
     getStatus: () => Promise<AudioStatus>;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
+  };
+  eq: {
+    getState: () => Promise<EqState>;
+    setEnabled: (enabled: boolean) => Promise<EqState>;
+    setBandGain: (request: EqSetBandGainRequest) => Promise<EqState>;
+    setPreamp: (preampDb: number) => Promise<EqState>;
+    setPreset: (presetId: string) => Promise<EqState>;
+    reset: () => Promise<EqState>;
+    listPresets: () => Promise<EqPreset[]>;
+    savePreset: (request: EqSavePresetRequest) => Promise<EqPreset>;
+    deletePreset: (presetId: string) => Promise<EqPreset[]>;
   };
 };
 

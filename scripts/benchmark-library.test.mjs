@@ -16,7 +16,7 @@ describe('benchmark-library', () => {
     expect(result.albumsCount).toBeGreaterThan(0);
     expect(result.getAlbumsPage1ItemCount).toBeGreaterThan(0);
     expect(result.averageCoverThumbLength).toBeGreaterThan(0);
-    expect(result.getAlbumsReturnsLargeOrOriginal).toBe(false);
+    expect(result.getAlbumsReturnsForbiddenCoverPayload).toBe(false);
     expect(result.unchangedScanSkipped).toBe(25);
   });
 
@@ -29,6 +29,6 @@ describe('benchmark-library', () => {
     expect(result.getAlbumsPage1ItemCount).toBe(60);
     expect(result.getAlbumsPage10ItemCount).toBe(0);
     expect(result.averageCoverThumbLength).toBeGreaterThan(0);
-    expect(result.getAlbumsReturnsLargeOrOriginal).toBe(false);
+    expect(result.getAlbumsReturnsForbiddenCoverPayload).toBe(false);
   });
 });

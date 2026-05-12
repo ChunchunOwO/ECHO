@@ -955,7 +955,7 @@ describe('NativeOutputBridge diagnostics', () => {
         channels: 2,
       }),
     ).rejects.toThrow(
-      'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2"; stderr="[echo-audio-host] Failed to initialize output device"',
+      'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2 -eq-port',
     );
   });
 

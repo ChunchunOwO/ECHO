@@ -73,18 +73,18 @@ describe('TrackRow', () => {
     expect(container.querySelector('.track-cover img')).toBeNull();
   });
 
-  it('calls onPlay from click and double click without action button bubbling', () => {
+  it('calls onPlay once from row click without action button bubbling', () => {
     const onPlay = vi.fn();
     render(<TrackRow isPlaying={false} track={track()} onPlay={onPlay} />);
 
     fireEvent.click(screen.getByRole('listitem'));
+    expect(onPlay).toHaveBeenCalledTimes(1);
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
 
     onPlay.mockClear();
     fireEvent.doubleClick(screen.getByRole('listitem'));
-    expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
+    expect(onPlay).not.toHaveBeenCalled();
 
-    onPlay.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '喜欢 Afraid' }));
     expect(onPlay).not.toHaveBeenCalled();
   });

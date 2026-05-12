@@ -19,6 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -32,6 +33,7 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
+import { getAppBridge, getAudioBridge } from '../utils/echoBridge';
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
@@ -98,6 +100,7 @@ type SettingSectionProps = {
 };
 
 type SettingRowProps = {
+  className?: string;
   title: string;
   description?: string;
   children: ReactNode;
@@ -128,20 +131,16 @@ const statusRows = (
   formatBool: (value: boolean) => string,
 ): Array<{ label: string; value: string }> => [
   { label: 'state', value: status?.state ?? 'loading' },
+  { label: 'outputMode', value: status?.outputMode ?? 'shared' },
+  { label: 'outputBackend', value: status?.outputBackend ?? 'n/a' },
   { label: 'fileSampleRate', value: formatRate(status?.fileSampleRate ?? null) },
   { label: 'decoderOutputSampleRate', value: formatRate(status?.decoderOutputSampleRate ?? null) },
   { label: 'requestedOutputSampleRate', value: formatRate(status?.requestedOutputSampleRate ?? null) },
   { label: 'actualDeviceSampleRate', value: formatRate(status?.actualDeviceSampleRate ?? null) },
   { label: 'sharedDeviceSampleRate', value: formatRate(status?.sharedDeviceSampleRate ?? null) },
-  { label: 'outputMode', value: status?.outputMode ?? 'shared' },
-  { label: 'outputBackend', value: status?.outputBackend ?? 'n/a' },
-  { label: 'outputDeviceType', value: status?.outputDeviceType ?? 'n/a' },
   { label: 'outputDeviceName', value: status?.outputDeviceName ?? 'n/a' },
   { label: 'resampling', value: formatBool(status?.resampling ?? false) },
   { label: 'bitPerfectCandidate', value: formatBool(status?.bitPerfectCandidate ?? false) },
-  { label: 'dspActive', value: formatBool(status?.dspActive ?? false) },
-  { label: 'eqEnabled', value: formatBool(status?.eqEnabled ?? false) },
-  { label: 'preampDb', value: `${status?.preampDb ?? 0} dB` },
   { label: 'bitPerfectDisabledReason', value: status?.bitPerfectDisabledReason ?? 'n/a' },
   { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
 ];
@@ -156,8 +155,8 @@ const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingS
   </section>
 );
 
-const SettingRow = ({ title, description, children }: SettingRowProps): JSX.Element => (
-  <div className="setting-row">
+const SettingRow = ({ className, title, description, children }: SettingRowProps): JSX.Element => (
+  <div className={`setting-row ${className ?? ''}`.trim()}>
     <div className="setting-info">
       <h3>{title}</h3>
       {description ? <p>{description}</p> : null}
@@ -181,8 +180,16 @@ const ChipButton = ({
   </button>
 );
 
-const ToggleButton = ({ active }: { active?: boolean }): JSX.Element => (
-  <button className={`toggle-btn ${active ? 'active' : ''}`} type="button" aria-pressed={active}>
+const ToggleButton = ({
+  active,
+  disabled,
+  onClick,
+}: {
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}): JSX.Element => (
+  <button className={`toggle-btn ${active ? 'active' : ''}`} type="button" aria-pressed={active} disabled={disabled} onClick={onClick}>
     <span />
   </button>
 );
@@ -279,6 +286,11 @@ export const SettingsPage = (): JSX.Element => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [defaultCacheDirectory, setDefaultCacheDirectory] = useState<string | null>(null);
+  const [pendingCacheDirectory, setPendingCacheDirectory] = useState<string | null | undefined>(undefined);
+  const [cacheDirectoryBusy, setCacheDirectoryBusy] = useState(false);
+  const [cacheDirectoryResult, setCacheDirectoryResult] = useState<CoverCacheMigrationResult | null>(null);
+  const [cacheDirectoryMessage, setCacheDirectoryMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
@@ -301,7 +313,15 @@ export const SettingsPage = (): JSX.Element => {
 
   const refreshStatus = useCallback(async () => {
     try {
-      setStatus(await window.echo.audio.getStatus());
+      const audio = getAudioBridge();
+
+      if (!audio) {
+        setStatus(null);
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to inspect audio settings.');
+        return;
+      }
+
+      setStatus(await audio.getStatus());
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     }
@@ -309,7 +329,14 @@ export const SettingsPage = (): JSX.Element => {
 
   const refreshDevices = useCallback(async () => {
     try {
-      const nextDevices = await window.echo.audio.listDevices();
+      const audio = getAudioBridge();
+
+      if (!audio) {
+        setDevices([]);
+        return;
+      }
+
+      const nextDevices = await audio.listDevices();
       setDevices(nextDevices);
       setError(null);
     } catch (refreshError) {
@@ -321,7 +348,9 @@ export const SettingsPage = (): JSX.Element => {
   useEffect(() => {
     void refreshStatus();
     void refreshDevices();
-    void window.echo.app.getSettings().then(setAppSettings).catch(() => undefined);
+    const app = getAppBridge();
+    void app?.getSettings().then(setAppSettings).catch(() => undefined);
+    void app?.getDefaultCacheDirectory().then(setDefaultCacheDirectory).catch(() => undefined);
     const timer = window.setInterval(() => {
       void refreshStatus();
     }, 1000);
@@ -382,7 +411,14 @@ export const SettingsPage = (): JSX.Element => {
         output.deviceName = nextDevice.name;
       }
 
-      setStatus(await window.echo.audio.setOutput(output));
+      const audio = getAudioBridge();
+
+      if (!audio) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to change audio output.');
+        return;
+      }
+
+      setStatus(await audio.setOutput(output));
     },
     [devices, outputMode, selectedDeviceId],
   );
@@ -414,9 +450,92 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const patchAppSettings = (patch: Partial<AppSettings>): void => {
-    void window.echo.app.setSettings(patch).then(setAppSettings).catch((settingsError) => {
+    const app = getAppBridge();
+
+    if (!app) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save app settings.');
+      return;
+    }
+
+    void app.setSettings(patch).then(setAppSettings).catch((settingsError) => {
       setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
     });
+  };
+
+  const currentCacheDirectory = appSettings?.coverCacheDir ?? defaultCacheDirectory ?? '';
+  const currentCacheDirectoryLabel = appSettings?.coverCacheDir
+    ? appSettings.coverCacheDir
+    : defaultCacheDirectory
+      ? `默认：${defaultCacheDirectory}`
+      : '默认目录读取中';
+  const pendingResolvedCacheDirectory =
+    pendingCacheDirectory === undefined ? null : pendingCacheDirectory ?? defaultCacheDirectory;
+
+  const handleCacheDirectoryChoose = async (): Promise<void> => {
+    try {
+      const app = getAppBridge();
+
+      if (!app) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose a cache directory.');
+        return;
+      }
+
+      const directory = await app.chooseCacheDirectory();
+      if (!directory) {
+        return;
+      }
+
+      setPendingCacheDirectory(directory);
+      setCacheDirectoryResult(null);
+      setCacheDirectoryMessage(null);
+      setError(null);
+    } catch (cacheError) {
+      setError(cacheError instanceof Error ? cacheError.message : String(cacheError));
+    }
+  };
+
+  const handleCacheDirectoryApply = async (migrate: boolean): Promise<void> => {
+    if (pendingCacheDirectory === undefined) {
+      return;
+    }
+
+    try {
+      const app = getAppBridge();
+
+      if (!app) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to change the cache directory.');
+        return;
+      }
+
+      setCacheDirectoryBusy(true);
+      setCacheDirectoryResult(null);
+      setCacheDirectoryMessage(null);
+      const result = await app.setCoverCacheDirectory({
+        directory: pendingCacheDirectory,
+        migrate,
+      });
+      setCacheDirectoryResult(result);
+
+      if (result?.errors.length) {
+        setCacheDirectoryMessage('迁移未完成，缓存目录没有切换。请查看错误摘要后重试。');
+        return;
+      }
+
+      const settings = await app.getSettings();
+      setAppSettings(settings);
+      setPendingCacheDirectory(undefined);
+      setCacheDirectoryMessage(migrate ? '缓存目录已切换，封面缓存路径已更新。' : '缓存目录已切换，后续扫描会按需重新生成封面缓存。');
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (cacheError) {
+      setError(cacheError instanceof Error ? cacheError.message : String(cacheError));
+    } finally {
+      setCacheDirectoryBusy(false);
+    }
+  };
+
+  const handleCloseToTrayToggle = (): void => {
+    const nextHideToTrayOnClose = !(appSettings?.hideToTrayOnClose ?? false);
+    patchAppSettings({ hideToTrayOnClose: nextHideToTrayOnClose });
   };
 
   const toggleNetworkProvider = (provider: AppSettings['networkMetadataProviders'][number]): void => {
@@ -427,8 +546,14 @@ export const SettingsPage = (): JSX.Element => {
 
   const handlePlaybackSpeedModeChange = (playbackSpeedMode: PlaybackSpeedMode): void => {
     const playbackSpeed = appSettings?.playbackSpeed ?? status?.playbackRate ?? 1;
+    const audio = getAudioBridge();
     patchAppSettings({ playbackSpeedMode });
-    void window.echo.audio
+
+    if (!audio) {
+      return;
+    }
+
+    void audio
       .setOutput({ playbackRate: playbackSpeed, playbackSpeedMode })
       .then(setStatus)
       .catch((speedError) => {
@@ -461,7 +586,14 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     try {
-      const fontFile = await window.echo.app.chooseFontFile();
+      const app = getAppBridge();
+
+      if (!app) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose local font files.');
+        return;
+      }
+
+      const fontFile = await app.chooseFontFile();
 
       if (!fontFile) {
         return;
@@ -541,7 +673,11 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.general.closeToTray')}>
-                <ToggleButton />
+                <ToggleButton
+                  active={appSettings?.hideToTrayOnClose ?? false}
+                  disabled={!appSettings}
+                  onClick={handleCloseToTrayToggle}
+                />
               </SettingRow>
               <SettingRow title={t('settings.general.backup.title')} description={t('settings.general.backup.description')}>
                 <div className="settings-chip-row">
@@ -600,8 +736,12 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow title={t('settings.playback.followCurrent.title')} description={t('settings.playback.followCurrent.description')}>
                 <ToggleButton />
               </SettingRow>
-              <SettingRow title={t('settings.playback.audioStatus.title')} description={t('settings.playback.audioStatus.description')}>
-                <div className="settings-status-grid">
+              <SettingRow
+                className="setting-row--full setting-row--audio-status"
+                title={t('settings.playback.audioStatus.title')}
+                description={t('settings.playback.audioStatus.description')}
+              >
+                <div className="settings-status-grid settings-status-grid--audio">
                   {statusRows(status, formatBool).map((row) => (
                     <span key={row.label}>
                       <em>{row.label}</em>
@@ -702,6 +842,98 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <LibraryFoldersPanel />
+              <SettingRow
+                className="setting-row--full"
+                title="封面缓存目录"
+                description="迁移只会复制缓存，不会移动或删除你的音乐文件。"
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-cache-path">
+                    <em>当前缓存目录</em>
+                    <strong title={currentCacheDirectoryLabel}>{currentCacheDirectoryLabel}</strong>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={() => void handleCacheDirectoryChoose()} disabled={cacheDirectoryBusy}>
+                      <FolderOpen size={15} />
+                      选择目录
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => {
+                        setPendingCacheDirectory(null);
+                        setCacheDirectoryResult(null);
+                        setCacheDirectoryMessage(null);
+                      }}
+                      disabled={cacheDirectoryBusy || !defaultCacheDirectory}
+                    >
+                      恢复默认
+                    </button>
+                  </div>
+                  {pendingCacheDirectory !== undefined ? (
+                    <div className="settings-cache-confirm">
+                      <span>
+                        <em>当前</em>
+                        <strong title={currentCacheDirectory}>{currentCacheDirectory || '读取中'}</strong>
+                      </span>
+                      <span>
+                        <em>新目录</em>
+                        <strong title={pendingResolvedCacheDirectory ?? ''}>{pendingResolvedCacheDirectory ?? '默认目录读取中'}</strong>
+                      </span>
+                      <p>迁移会复制封面缓存并更新数据库路径，不会删除旧缓存目录。</p>
+                      <div className="settings-chip-row settings-chip-row--left">
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          onClick={() => void handleCacheDirectoryApply(true)}
+                          disabled={cacheDirectoryBusy || !pendingResolvedCacheDirectory}
+                        >
+                          迁移到新目录
+                        </button>
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          onClick={() => void handleCacheDirectoryApply(false)}
+                          disabled={cacheDirectoryBusy || !pendingResolvedCacheDirectory}
+                        >
+                          仅切换不迁移
+                        </button>
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          onClick={() => setPendingCacheDirectory(undefined)}
+                          disabled={cacheDirectoryBusy}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {cacheDirectoryMessage ? <p className="settings-inline-note">{cacheDirectoryMessage}</p> : null}
+                  {cacheDirectoryResult ? (
+                    <div className="settings-cache-result">
+                      <span>
+                        <em>复制</em>
+                        <strong>{cacheDirectoryResult.copiedFiles}</strong>
+                      </span>
+                      <span>
+                        <em>跳过</em>
+                        <strong>{cacheDirectoryResult.skippedFiles}</strong>
+                      </span>
+                      <span>
+                        <em>更新记录</em>
+                        <strong>{cacheDirectoryResult.updatedCoverRows}</strong>
+                      </span>
+                      {cacheDirectoryResult.warnings.length ? (
+                        <p>警告：{cacheDirectoryResult.warnings.slice(0, 3).join('；')}</p>
+                      ) : null}
+                      {cacheDirectoryResult.errors.length ? (
+                        <p className="settings-inline-error">错误：{cacheDirectoryResult.errors.slice(0, 3).join('；')}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.library.network.title')} description={t('settings.library.network.description')}>
                 <button
                   className={`toggle-btn ${appSettings?.networkMetadataEnabled ? 'active' : ''}`}

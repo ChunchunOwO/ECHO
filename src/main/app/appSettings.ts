@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { app } from 'electron';
 import type { AppSettings } from '../../shared/types/appSettings';
 
-const defaultSettings: AppSettings = {
+export const defaultSettings: AppSettings = {
+  coverCacheDir: null,
   hideToTrayOnClose: false,
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
@@ -16,9 +17,22 @@ let cachedSettings: AppSettings | null = null;
 
 const getSettingsPath = (): string => join(app.getPath('userData'), 'echo-settings.json');
 
-const normalizeSettings = (value: unknown): AppSettings => {
+const normalizeCoverCacheDir = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? resolve(trimmed) : null;
+};
+
+export const normalizeSettings = (value: unknown): AppSettings => {
   if (!value || typeof value !== 'object') {
-    return defaultSettings;
+    return { ...defaultSettings };
   }
 
   const settings = value as Partial<AppSettings>;
@@ -40,6 +54,7 @@ const normalizeSettings = (value: unknown): AppSettings => {
     : defaultSettings.networkMetadataProviders;
 
   return {
+    coverCacheDir: normalizeCoverCacheDir(settings.coverCacheDir),
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
@@ -59,14 +74,14 @@ export const getAppSettings = (): AppSettings => {
   const settingsPath = getSettingsPath();
 
   if (!existsSync(settingsPath)) {
-    cachedSettings = defaultSettings;
+    cachedSettings = { ...defaultSettings };
     return cachedSettings;
   }
 
   try {
     cachedSettings = normalizeSettings(JSON.parse(readFileSync(settingsPath, 'utf8')));
   } catch {
-    cachedSettings = defaultSettings;
+    cachedSettings = { ...defaultSettings };
   }
 
   return cachedSettings;

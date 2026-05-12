@@ -15,7 +15,7 @@ const normalize = (value: string | null | undefined): string =>
     .toLocaleLowerCase()
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
     .trim();
 
 const dice = (left: string, right: string): number => {

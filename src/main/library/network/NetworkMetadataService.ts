@@ -22,6 +22,19 @@ export type NetworkRepairResult = NetworkCandidateList & {
   errors: string[];
 };
 
+const runWithConcurrency = async (tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> => {
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, tasks.length)) }, async () => {
+    while (nextIndex < tasks.length) {
+      const task = tasks[nextIndex];
+      nextIndex += 1;
+      await task();
+    }
+  });
+
+  await Promise.all(workers);
+};
+
 export class NetworkMetadataService {
   private readonly store: NetworkMetadataStore;
   private readonly merge: NetworkMetadataMerge;
@@ -91,17 +104,16 @@ export class NetworkMetadataService {
       const targets = this.store.findMissingMetadataTargets(limit);
       const providers = this.providers.filter((provider) => !providerNames?.length || providerNames.includes(provider.name));
       const errors: string[] = [];
-
-      for (const target of targets) {
+      const tasks = targets.flatMap((target) => {
         if (target.embeddedMetadataStatus === 'pending' || target.embeddedMetadataStatus === 'reading') {
-          continue;
+          return [];
         }
 
-        for (const provider of providers) {
+        return providers.map((provider) => async () => {
           try {
             const candidates = await provider.findMetadata(target);
             for (const candidate of candidates) {
-            const score = matchScore(target, candidate);
+              const score = matchScore(target, candidate);
               const missingArtistCandidate = target.reasons.includes('unknown_artist') && Boolean(candidate.artist);
               if (score >= NETWORK_VISIBLE_CANDIDATE_THRESHOLD || (missingArtistCandidate && score >= 0.6)) {
                 this.store.upsertMetadataCandidate(target.trackId, null, candidate, score);
@@ -110,8 +122,10 @@ export class NetworkMetadataService {
           } catch (error) {
             errors.push(`${target.track.title || target.track.path}: ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
           }
-        }
-      }
+        });
+      });
+
+      await runWithConcurrency(tasks, 2);
 
       const items = targets.map((target) => ({
         track: target.track,

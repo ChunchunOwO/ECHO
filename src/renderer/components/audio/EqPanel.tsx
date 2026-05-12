@@ -3,6 +3,7 @@ import { RotateCcw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import type { EqPreset, EqState } from '../../../shared/types/eq';
 import { eqMaxFrequencyHz, eqMinFrequencyHz } from '../../../shared/types/eq';
+import { getEqBridge } from '../../utils/echoBridge';
 import { EqCurveView } from './EqCurveView';
 import { EqPresetSelector } from './EqPresetSelector';
 
@@ -44,7 +45,15 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const [nextState, nextPresets] = await Promise.all([window.echo.eq.getState(), window.echo.eq.listPresets()]);
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setPresets([]);
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+        return;
+      }
+
+      const [nextState, nextPresets] = await Promise.all([eq.getState(), eq.listPresets()]);
       setState(nextState);
       setPresets(nextPresets);
       setError(null);
@@ -66,15 +75,29 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const setEnabled = (enabled: boolean): void => {
+    const eq = getEqBridge();
     setState((current) => ({ ...current, enabled }));
-    void window.echo.eq.setEnabled(enabled).then(commitState).catch((toggleError: unknown) => {
+
+    if (!eq) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+      return;
+    }
+
+    void eq.setEnabled(enabled).then(commitState).catch((toggleError: unknown) => {
       setError(toggleError instanceof Error ? toggleError.message : String(toggleError));
     });
   };
 
   const sendBandGain = useCallback(
     (band: number, gainDb: number): void => {
-      void window.echo.eq.setBandGain({ band, gainDb }).then(commitState).catch((bandError: unknown) => {
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+        return;
+      }
+
+      void eq.setBandGain({ band, gainDb }).then(commitState).catch((bandError: unknown) => {
         setError(bandError instanceof Error ? bandError.message : String(bandError));
       });
     },
@@ -102,7 +125,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const sendBandFrequency = useCallback(
     (band: number, frequencyHz: number): void => {
-      void window.echo.eq.setBandFrequency({ band, frequencyHz }).then(commitState).catch((bandError: unknown) => {
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+        return;
+      }
+
+      void eq.setBandFrequency({ band, frequencyHz }).then(commitState).catch((bandError: unknown) => {
         setError(bandError instanceof Error ? bandError.message : String(bandError));
       });
     },
@@ -131,20 +161,42 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handlePreampChange = (preampDb: number): void => {
+    const eq = getEqBridge();
     setState((current) => ({ ...current, preampDb, presetId: 'custom', presetName: 'Custom' }));
-    void window.echo.eq.setPreamp(preampDb).then(commitState).catch((preampError: unknown) => {
+
+    if (!eq) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+      return;
+    }
+
+    void eq.setPreamp(preampDb).then(commitState).catch((preampError: unknown) => {
       setError(preampError instanceof Error ? preampError.message : String(preampError));
     });
   };
 
   const setPreset = (presetId: string): void => {
-    void window.echo.eq.setPreset(presetId).then(commitState).catch((presetError: unknown) => {
+    const eq = getEqBridge();
+
+    if (!eq) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+      return;
+    }
+
+    void eq.setPreset(presetId).then(commitState).catch((presetError: unknown) => {
       setError(presetError instanceof Error ? presetError.message : String(presetError));
     });
   };
 
   const reset = (): void => {
-    void window.echo.eq.reset().then(commitState).catch((resetError: unknown) => {
+    const eq = getEqBridge();
+
+    if (!eq) {
+      setState(fallbackState);
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.');
+      return;
+    }
+
+    void eq.reset().then(commitState).catch((resetError: unknown) => {
       setError(resetError instanceof Error ? resetError.message : String(resetError));
     });
   };
@@ -156,13 +208,20 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }
 
     try {
-      await window.echo.eq.savePreset({
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to save EQ presets.');
+        return;
+      }
+
+      await eq.savePreset({
         name: saveName,
         preampDb: state.preampDb,
         bands: state.bands,
       });
       setSaveName('');
-      setPresets(await window.echo.eq.listPresets());
+      setPresets(await eq.listPresets());
       setError(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -171,7 +230,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const deletePreset = async (): Promise<void> => {
     try {
-      setPresets(await window.echo.eq.deletePreset(state.presetId));
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to delete EQ presets.');
+        return;
+      }
+
+      setPresets(await eq.deletePreset(state.presetId));
       await reset();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError));

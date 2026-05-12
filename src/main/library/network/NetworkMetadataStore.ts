@@ -52,6 +52,8 @@ export class NetworkMetadataStore {
   }
 
   getTrackLookup(trackId: string): NetworkTrackLookup | null {
+    this.repairStaleReadiness(trackId);
+
     const row = this.getRow(
       `SELECT id, path, title, artist, album, album_artist, duration, track_no, year,
         field_sources_json, embedded_metadata_status, embedded_cover_status
@@ -83,6 +85,8 @@ export class NetworkMetadataStore {
   }
 
   findMissingMetadataTargets(limit = 25): NetworkMissingMetadataTarget[] {
+    this.repairStaleReadiness();
+
     const rows = this.allRows(
       `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
@@ -102,7 +106,7 @@ export class NetworkMetadataStore {
         OR json_extract(tracks.field_sources_json, '$.title') IN ('unknown', 'filename_fallback')
         OR json_extract(tracks.field_sources_json, '$.artist') IN ('unknown', 'filename_fallback')
         OR json_extract(tracks.field_sources_json, '$.album') IN ('unknown', 'filename_fallback')
-        OR json_extract(tracks.field_sources_json, '$.albumArtist') IN ('unknown', 'filename_fallback')
+        OR json_extract(tracks.field_sources_json, '$.albumArtist') IN ('unknown', 'artist_fallback', 'filename_fallback')
        )
        ORDER BY tracks.path COLLATE NOCASE ASC
        LIMIT ?`,
@@ -284,6 +288,66 @@ export class NetworkMetadataStore {
     return Boolean(row);
   }
 
+  repairStaleReadiness(trackId?: string): void {
+    if (this.hasActiveScanJob() || !this.hasFinishedScanJob()) {
+      return;
+    }
+
+    const whereTrack = trackId ? 'AND tracks.id = ?' : '';
+    const rows = this.allRows(
+      `SELECT tracks.id, tracks.field_sources_json, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        covers.source_type
+       FROM tracks
+       LEFT JOIN covers ON covers.id = tracks.cover_id
+       WHERE tracks.missing = 0
+       ${whereTrack}
+       AND (
+        tracks.embedded_metadata_status IN ('pending', 'reading')
+        OR tracks.embedded_cover_status IN ('pending', 'reading')
+       )`,
+      ...(trackId ? [trackId] : []),
+    );
+
+    const statement = this.database.prepare(
+      `UPDATE tracks SET embedded_metadata_status = ?, embedded_cover_status = ?, updated_at = ?
+       WHERE id = ?`,
+    );
+    const timestamp = nowIso();
+
+    for (const row of rows) {
+      const fieldSources = parseJsonObject(row.field_sources_json);
+      const hasEmbeddedMetadata = ['title', 'artist', 'album', 'albumArtist', 'trackNo', 'discNo', 'year', 'genre'].some(
+        (key) => fieldSources[key] === 'embedded',
+      );
+      const currentMetadataStatus = this.embeddedStatus(row.embedded_metadata_status);
+      const currentCoverStatus = this.embeddedStatus(row.embedded_cover_status);
+      const nextMetadataStatus =
+        currentMetadataStatus === 'pending' || currentMetadataStatus === 'reading'
+          ? hasEmbeddedMetadata
+            ? 'present'
+            : 'missing'
+          : currentMetadataStatus;
+      const nextCoverStatus =
+        currentCoverStatus === 'pending' || currentCoverStatus === 'reading'
+          ? row.source_type === 'embedded'
+            ? 'present'
+            : 'missing'
+          : currentCoverStatus;
+
+      statement.run(nextMetadataStatus, nextCoverStatus, timestamp, String(row.id));
+    }
+  }
+
+  private hasActiveScanJob(): boolean {
+    const row = this.getRow("SELECT id FROM scan_jobs WHERE status IN ('queued', 'running') LIMIT 1");
+    return Boolean(row);
+  }
+
+  private hasFinishedScanJob(): boolean {
+    const row = this.getRow("SELECT id FROM scan_jobs WHERE status IN ('completed', 'failed', 'cancelled') LIMIT 1");
+    return Boolean(row);
+  }
+
   private embeddedStatus(value: unknown): NetworkTrackLookup['embeddedMetadataStatus'] {
     if (value === 'pending' || value === 'reading' || value === 'present' || value === 'missing' || value === 'error') {
       return value;
@@ -306,7 +370,7 @@ export class NetworkMetadataStore {
     }
 
     for (const key of ['title', 'artist', 'album', 'albumArtist'] as const) {
-      if (fieldSources[key] === 'filename_fallback') {
+      if (fieldSources[key] === 'filename_fallback' || fieldSources[key] === 'artist_fallback') {
         reasons.add('filename_fallback');
       }
 

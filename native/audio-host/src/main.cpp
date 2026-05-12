@@ -924,7 +924,7 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
         if (lastError.isEmpty())
         {
             actualSampleRate = static_cast<int>(std::round(device->getCurrentSampleRate()));
-            if ((options.exclusive || options.asio) && actualSampleRate != options.sampleRate)
+            if (options.exclusive && actualSampleRate != options.sampleRate)
             {
                 device->close();
                 throw std::runtime_error(
@@ -933,6 +933,15 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
                     + " Hz, opened "
                     + std::to_string(actualSampleRate)
                     + " Hz");
+            }
+            if (options.asio && actualSampleRate != options.sampleRate)
+            {
+                logLine(
+                    "ASIO opened at hardware sample rate "
+                    + std::to_string(actualSampleRate)
+                    + " Hz instead of requested "
+                    + std::to_string(options.sampleRate)
+                    + " Hz; decoder-side resampling will be required");
             }
             return device;
         }

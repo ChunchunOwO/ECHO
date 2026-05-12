@@ -9,6 +9,7 @@ import type {
   MetadataResult,
   ScannedAudioFile,
   ScannedFile,
+  ScanJobUpdate,
   StoredTrackCoverState,
 } from './libraryTypes';
 import type { CoverExtractor } from './workers/CoverExtractor';
@@ -39,6 +40,15 @@ type ScanJobQueueOptions = {
   coverConcurrency?: number;
 };
 
+const progressFlushIntervalMs = 300;
+const progressFlushFileDelta = 64;
+const maxStoredScanErrors = 200;
+
+type ScanProgressReporter = {
+  update: (patch: ScanJobUpdate) => LibraryScanStatus | null;
+  flushNow: (patch?: ScanJobUpdate) => LibraryScanStatus;
+};
+
 class ScanCancelledError extends Error {
   constructor() {
     super('scan_cancelled');
@@ -49,7 +59,7 @@ export class ScanJobQueue {
   private readonly runningJobs = new Map<string, Promise<void>>();
   private readonly metadataConcurrency: number;
   private readonly coverConcurrency: number;
-  private readonly coverCacheDir: string;
+  private coverCacheDir: string;
 
   constructor(
     private readonly store: LibraryStore,
@@ -62,6 +72,14 @@ export class ScanJobQueue {
     this.metadataConcurrency = options.metadataConcurrency ?? 2;
     this.coverConcurrency = options.coverConcurrency ?? 2;
     this.coverCacheDir = options.coverCacheDir;
+  }
+
+  hasRunningJobs(): boolean {
+    return this.runningJobs.size > 0;
+  }
+
+  updateCoverCacheDir(coverCacheDir: string): void {
+    this.coverCacheDir = coverCacheDir;
   }
 
   scanFolder(folder: LibraryFolder): LibraryScanStatus {
@@ -113,16 +131,17 @@ export class ScanJobQueue {
     let removedTracks = 0;
     let coverCount = 0;
     const errors: string[] = [];
+    const progress = this.createProgressReporter(jobId);
 
     try {
-      this.store.updateScanJob(jobId, {
+      progress.flushNow({
         status: 'running',
         phase: 'discovering',
         startedAt,
       });
 
-      const files = await this.discoverFiles(jobId, folder, errors);
-      this.store.updateScanJob(jobId, {
+      const files = await this.discoverFiles(jobId, folder, errors, progress);
+      progress.flushNow({
         phase: 'checking_cache',
         totalFiles: files.length,
         errors,
@@ -140,7 +159,7 @@ export class ScanJobQueue {
           if (this.hasCompleteCoverCache(existing)) {
             processedFiles += 1;
             skippedFiles += 1;
-            this.store.updateScanJob(jobId, {
+            progress.update({
               processedFiles,
               skippedFiles,
             });
@@ -169,7 +188,7 @@ export class ScanJobQueue {
         });
       }
 
-      this.store.updateScanJob(jobId, {
+      progress.flushNow({
         phase: 'reading_metadata',
         processedFiles,
         skippedFiles,
@@ -177,6 +196,7 @@ export class ScanJobQueue {
       });
 
       const parsedItems: ParsedScanItem[] = [];
+      const coverTimestamp = new Date().toISOString();
 
       await this.processWithConcurrency(changedFiles, this.metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
@@ -184,34 +204,48 @@ export class ScanJobQueue {
         try {
           const metadata = await this.metadataReader.read(item.file.path);
           this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
+          let cover: CoverResult | null = null;
+
+          try {
+            cover = await this.coverExtractor.extract(item.file.path, {
+              cacheRoot: this.coverCacheDir,
+              metadata,
+              now: coverTimestamp,
+            });
+            this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
+            coverCount += 1;
+          } catch (error) {
+            errors.push(`${item.file.path}: cover: ${error instanceof Error ? error.message : String(error)}`);
+          }
+
           parsedItems.push({
             ...item,
-            metadata,
-            cover: null,
+            metadata: this.stripEmbeddedCoverData(metadata),
+            cover,
           });
         } catch (error) {
           errors.push(`${item.file.path}: metadata: ${error instanceof Error ? error.message : String(error)}`);
         }
 
         processedFiles += 1;
-        this.store.updateScanJob(jobId, {
+        progress.update({
           phase: 'reading_metadata',
           processedFiles,
           skippedFiles,
+          coverCount,
           errors,
         });
       });
 
       this.throwIfCancelled(jobId);
 
-      this.store.updateScanJob(jobId, {
+      progress.flushNow({
         phase: 'extracting_covers',
         processedFiles,
         skippedFiles,
+        coverCount,
         errors,
       });
-
-      const coverTimestamp = new Date().toISOString();
 
       await this.processWithConcurrency(coverRepairItems, this.coverConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
@@ -240,32 +274,7 @@ export class ScanJobQueue {
         }
 
         processedFiles += 1;
-        this.store.updateScanJob(jobId, {
-          phase: 'extracting_covers',
-          processedFiles,
-          skippedFiles,
-          coverCount,
-          errors,
-        });
-      });
-
-      await this.processWithConcurrency(parsedItems, this.coverConcurrency, async (item) => {
-        this.throwIfCancelled(jobId);
-
-        try {
-          const cover = await this.coverExtractor.extract(item.file.path, {
-            cacheRoot: this.coverCacheDir,
-            metadata: item.metadata,
-            now: coverTimestamp,
-          });
-          this.collectWorkerMessages(errors, item.file.path, 'cover', cover.warnings, cover.errors);
-          item.cover = cover;
-          coverCount += 1;
-        } catch (error) {
-          errors.push(`${item.file.path}: cover: ${error instanceof Error ? error.message : String(error)}`);
-        }
-
-        this.store.updateScanJob(jobId, {
+        progress.update({
           phase: 'extracting_covers',
           processedFiles,
           skippedFiles,
@@ -304,7 +313,8 @@ export class ScanJobQueue {
             id: item.existingTrackId ?? randomUUID(),
             coverId,
             fieldSources: item.metadata.fieldSources,
-            embeddedCover: item.metadata.embeddedCover,
+            embeddedMetadataStatus: item.metadata.embeddedMetadataStatus,
+            embeddedCoverStatus: item.metadata.embeddedCoverStatus,
             metadataStatus: item.metadata.status,
             warnings: item.metadata.warnings,
             errors: item.metadata.errors,
@@ -318,7 +328,7 @@ export class ScanJobQueue {
           }
         }
 
-        this.store.updateScanJob(jobId, {
+        progress.flushNow({
           phase: 'grouping_albums',
           processedFiles,
           skippedFiles,
@@ -330,7 +340,7 @@ export class ScanJobQueue {
         });
         this.store.refreshAlbums(this.albumService, timestamp);
         this.store.refreshArtists();
-        this.store.updateScanJob(jobId, {
+        progress.flushNow({
           phase: 'writing_database',
           processedFiles,
           skippedFiles,
@@ -341,7 +351,7 @@ export class ScanJobQueue {
           errors,
         });
         this.store.finishFolderScan(folder.id, timestamp);
-        this.store.updateScanJob(jobId, {
+        progress.flushNow({
           status: 'completed',
           phase: 'finished',
           processedFiles,
@@ -356,7 +366,7 @@ export class ScanJobQueue {
       });
     } catch (error) {
       if (error instanceof ScanCancelledError) {
-        this.store.updateScanJob(jobId, {
+        progress.flushNow({
           status: 'cancelled',
           phase: 'cancelled',
           processedFiles,
@@ -372,7 +382,7 @@ export class ScanJobQueue {
       }
 
       errors.push(error instanceof Error ? error.message : String(error));
-      this.store.updateScanJob(jobId, {
+      progress.flushNow({
         status: 'failed',
         phase: 'failed',
         processedFiles,
@@ -387,7 +397,12 @@ export class ScanJobQueue {
     }
   }
 
-  private async discoverFiles(jobId: string, folder: LibraryFolder, errors: string[]): Promise<ScannedAudioFile[]> {
+  private async discoverFiles(
+    jobId: string,
+    folder: LibraryFolder,
+    errors: string[],
+    progress: ScanProgressReporter,
+  ): Promise<ScannedAudioFile[]> {
     const files: ScannedAudioFile[] = [];
 
     try {
@@ -396,7 +411,7 @@ export class ScanJobQueue {
         files.push(this.withFolderId(file, folder.id));
 
         if (files.length % 100 === 0) {
-          this.store.updateScanJob(jobId, {
+          progress.update({
             phase: 'discovering',
             totalFiles: files.length,
             errors,
@@ -409,6 +424,81 @@ export class ScanJobQueue {
     }
 
     return files;
+  }
+
+  private createProgressReporter(jobId: string): ScanProgressReporter {
+    let pending: ScanJobUpdate = {};
+    let lastFlushAt = 0;
+    let lastProcessedFiles = 0;
+    let lastCoverCount = 0;
+    let lastTotalFiles = 0;
+
+    const mergePatch = (patch?: ScanJobUpdate): void => {
+      if (!patch) {
+        return;
+      }
+
+      pending = {
+        ...pending,
+        ...patch,
+        errors: patch.errors ?? pending.errors,
+      };
+    };
+
+    const sanitizePatch = (patch: ScanJobUpdate): ScanJobUpdate => {
+      if (!patch.errors) {
+        return patch;
+      }
+
+      return {
+        ...patch,
+        errorCount: patch.errorCount ?? patch.errors.length,
+        errors: patch.errors.slice(0, maxStoredScanErrors),
+      };
+    };
+
+    const flush = (): LibraryScanStatus => {
+      const patch = sanitizePatch(pending);
+      pending = {};
+      const status = this.store.updateScanJob(jobId, patch);
+      lastFlushAt = Date.now();
+      lastProcessedFiles = status.processedFiles;
+      lastCoverCount = status.coverCount ?? lastCoverCount;
+      lastTotalFiles = status.totalFiles;
+      return status;
+    };
+
+    return {
+      update: (patch: ScanJobUpdate): LibraryScanStatus | null => {
+        mergePatch(patch);
+
+        const now = Date.now();
+        const nextProcessedFiles = pending.processedFiles ?? lastProcessedFiles;
+        const nextCoverCount = pending.coverCount ?? lastCoverCount;
+        const nextTotalFiles = pending.totalFiles ?? lastTotalFiles;
+        const shouldFlush =
+          now - lastFlushAt >= progressFlushIntervalMs ||
+          nextProcessedFiles - lastProcessedFiles >= progressFlushFileDelta ||
+          nextCoverCount - lastCoverCount >= progressFlushFileDelta ||
+          nextTotalFiles - lastTotalFiles >= progressFlushFileDelta;
+
+        return shouldFlush ? flush() : null;
+      },
+      flushNow: (patch?: ScanJobUpdate): LibraryScanStatus => {
+        mergePatch(patch);
+        return flush();
+      },
+    };
+  }
+
+  private stripEmbeddedCoverData(metadata: MetadataResult): MetadataResult {
+    if (!metadata.embeddedCover) {
+      return metadata;
+    }
+
+    const lightweightMetadata = { ...metadata };
+    delete lightweightMetadata.embeddedCover;
+    return lightweightMetadata;
   }
 
   private withFolderId(file: ScannedFile, folderId: string): ScannedAudioFile {

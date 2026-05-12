@@ -12,6 +12,9 @@ const echoApi: EchoApi = {
     setSettings: (patch) => ipcRenderer.invoke(IpcChannels.AppSetSettings, patch),
     chooseFontFile: () => ipcRenderer.invoke(IpcChannels.AppChooseFontFile),
     loadFontFile: (path) => ipcRenderer.invoke(IpcChannels.AppLoadFontFile, path),
+    chooseCacheDirectory: () => ipcRenderer.invoke(IpcChannels.AppChooseCacheDirectory),
+    getDefaultCacheDirectory: () => ipcRenderer.invoke(IpcChannels.AppGetDefaultCacheDirectory),
+    setCoverCacheDirectory: (request) => ipcRenderer.invoke(IpcChannels.AppSetCoverCacheDirectory, request),
   },
   library: {
     chooseFolder: () => ipcRenderer.invoke(IpcChannels.LibraryChooseFolder),
@@ -27,6 +30,8 @@ const echoApi: EchoApi = {
     getAlbumTracks: (albumId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumTracks, albumId, query),
     getSummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetSummary),
     getDiagnostics: () => ipcRenderer.invoke(IpcChannels.LibraryGetDiagnostics),
+    chooseTrackCover: () => ipcRenderer.invoke(IpcChannels.LibraryChooseTrackCover),
+    loadEmbeddedTrackTags: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryLoadEmbeddedTrackTags, trackId),
     updateTrackTags: (request) => ipcRenderer.invoke(IpcChannels.LibraryUpdateTrackTags, request),
     recordTrackPlayback: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryRecordTrackPlayback, trackId),
     openTrackInFolder: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryOpenTrackInFolder, trackId),

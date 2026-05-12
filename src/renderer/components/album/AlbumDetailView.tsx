@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowLeft, Disc3, Play } from 'lucide-react';
+import { ArrowLeft, Disc3, Heart, MoreHorizontal, Play } from 'lucide-react';
 import type { LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { AlbumTrackList } from './AlbumTrackList';
@@ -59,6 +59,8 @@ const formatTechnicalSummary = (track: LibraryTrack | null): string | null => {
 const uniqueValues = (values: Array<string | null | undefined>): string[] =>
   Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
 
+const formatTrackCount = (count: number): string => `${count} ${count === 1 ? 'track' : 'tracks'}`;
+
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
   const { currentTrackId, playTrack, setQueue } = usePlaybackQueue();
   const [firstTrack, setFirstTrack] = useState<LibraryTrack | null>(null);
@@ -72,7 +74,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     () =>
       [
         album.year ? String(album.year) : null,
-        `${album.trackCount} ${album.trackCount === 1 ? 'track' : 'tracks'}`,
+        formatTrackCount(album.trackCount),
         duration,
         formatSummary,
       ].filter((item): item is string => Boolean(item)),
@@ -90,15 +92,6 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         : [],
     [firstTrack],
   );
-  const libraryItems = useMemo(
-    () =>
-      [
-        album.year ? `Released ${album.year}` : null,
-        `${album.trackCount} ${album.trackCount === 1 ? 'track' : 'tracks'}`,
-        duration,
-      ].filter((item): item is string => Boolean(item)),
-    [album.trackCount, album.year, duration],
-  );
   const textureItems = useMemo(() => {
     const genres = uniqueValues(loadedTracks.map((track) => track.genre)).slice(0, 3);
     const discs = new Set(loadedTracks.map((track) => track.discNo).filter((discNo): discNo is number => Boolean(discNo && discNo > 0)));
@@ -109,6 +102,15 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       loadedTotal > loadedTracks.length ? `${loadedTracks.length} loaded` : null,
     ].filter((item): item is string => Boolean(item));
   }, [loadedTotal, loadedTracks]);
+  const albumFacts = useMemo(
+    () => [
+      { label: 'Format', value: signalItems.join(' / ') || 'Reading signal' },
+      { label: 'Genre', value: textureItems[0] ?? 'Unknown genre' },
+      { label: 'Released', value: album.year ? String(album.year) : 'Unknown year' },
+      { label: 'Library', value: `${loadedTotal > 0 ? `${loadedTracks.length}/${loadedTotal}` : formatTrackCount(album.trackCount)} ready` },
+    ],
+    [album.trackCount, album.year, loadedTotal, loadedTracks.length, signalItems, textureItems],
+  );
 
   const handleFirstTrackChange = useCallback((track: LibraryTrack | null, isLoading: boolean): void => {
     setFirstTrack(track);
@@ -179,46 +181,49 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <div className="album-detail-actions">
             <button className="album-primary-action" type="button" disabled={!firstTrack || isLoadingFirstTrack} onClick={handlePlayNow}>
               <Play size={16} fill="currentColor" />
-              {isLoadingFirstTrack ? 'Reading album' : 'Play Album'}
+              {isLoadingFirstTrack ? 'Reading album' : 'Play Now'}
             </button>
-            <span className="album-action-note">{loadedTotal > 0 ? `${loadedTracks.length}/${loadedTotal} tracks ready` : 'Waiting for tracks'}</span>
-          </div>
-
-          <div className="album-console-grid" aria-label="Album signal summary">
-            <section className="album-console-panel">
-              <span>Signal</span>
-              <strong>{signalItems[0] ?? 'Pending'}</strong>
-              <small>{signalItems.slice(1).join(' / ') || 'Reading first track'}</small>
-            </section>
-            <section className="album-console-panel">
-              <span>Library</span>
-              <strong>{album.trackCount} {album.trackCount === 1 ? 'track' : 'tracks'}</strong>
-              <small>{libraryItems.join(' / ')}</small>
-            </section>
-            {textureItems.length > 0 ? (
-              <section className="album-console-panel">
-                <span>Texture</span>
-                <strong>{textureItems[0]}</strong>
-                <small>{textureItems.slice(1).join(' / ') || 'Tagged locally'}</small>
-              </section>
-            ) : null}
+            <button className="album-icon-action" type="button" aria-label="Like album" title="Like album">
+              <Heart size={16} />
+            </button>
+            <button className="album-icon-action" type="button" aria-label="More album actions" title="More album actions">
+              <MoreHorizontal size={17} />
+            </button>
           </div>
 
           {playError ? <p className="album-detail-error">{playError}</p> : null}
         </div>
+
+        <aside className="album-detail-facts" aria-label="Album info">
+          {albumFacts.map((fact) => (
+            <div className="album-fact" key={fact.label}>
+              <span>{fact.label}</span>
+              <strong>{fact.value}</strong>
+            </div>
+          ))}
+        </aside>
       </section>
 
       <section className="album-detail-track-console" aria-label={`${album.title} track console`}>
-        <header className="album-track-heading">
-          <div>
-            <span>Tracks</span>
-            <h2>{album.title}</h2>
-          </div>
-          <small>{formatSummary ?? 'Signal appears after the first track loads'}</small>
+        <header className="album-detail-tabs" aria-label="Album sections">
+          <button className="album-detail-tab" type="button" aria-current="page">
+            Tracks
+          </button>
+          <button className="album-detail-tab" type="button">
+            Credits
+          </button>
+          <button className="album-detail-tab" type="button">
+            Related
+          </button>
         </header>
         <AlbumTrackList
           albumId={album.id}
           currentTrackId={currentTrackId}
+          summary={{
+            duration: duration ?? 'Unknown length',
+            signal: formatSummary ?? 'Reading signal',
+            totalLabel: loadedTotal > 0 ? formatTrackCount(loadedTotal) : formatTrackCount(album.trackCount),
+          }}
           onFirstTrackChange={handleFirstTrackChange}
           onLoadedTracksChange={handleLoadedTracksChange}
           onPlayTrack={handlePlayTrack}

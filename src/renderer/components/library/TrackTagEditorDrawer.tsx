@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { ImagePlus, RefreshCw, Save, Tag, X } from 'lucide-react';
-import type { EditableTrackTags, LibraryTrack } from '../../../shared/types/library';
+import type { EditableTrackTags, LibraryTrack, TrackCoverSelection } from '../../../shared/types/library';
 
 type TrackTagEditorDrawerProps = {
   track: LibraryTrack | null;
@@ -9,7 +10,7 @@ type TrackTagEditorDrawerProps = {
   isSaving: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (track: LibraryTrack, tags: EditableTrackTags) => void;
+  onSave: (track: LibraryTrack, tags: EditableTrackTags, coverPath: string | null) => void;
 };
 
 type TagFormState = {
@@ -46,11 +47,19 @@ const numberOrNull = (value: string): number | null => {
 
 export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, onSave }: TrackTagEditorDrawerProps): JSX.Element | null => {
   const [form, setForm] = useState<TagFormState>(() => stateFromTrack(track));
+  const [selectedCover, setSelectedCover] = useState<TrackCoverSelection | null>(null);
+  const [loadedCoverThumb, setLoadedCoverThumb] = useState<string | null>(null);
+  const [isLoadingEmbedded, setIsLoadingEmbedded] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const fileName = useMemo(() => track?.path.split(/[\\/]/).pop() ?? '', [track?.path]);
+  const previewCover = selectedCover?.dataUrl ?? loadedCoverThumb ?? track?.coverThumb ?? null;
 
   useEffect(() => {
     if (track) {
       setForm(stateFromTrack(track));
+      setSelectedCover(null);
+      setLoadedCoverThumb(null);
+      setLocalError(null);
     }
   }, [track]);
 
@@ -88,10 +97,62 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
       discNo: numberOrNull(form.discNo),
       year: numberOrNull(form.year),
       genre: form.genre.trim() || null,
-    });
+    }, selectedCover?.path ?? null);
   };
 
-  return (
+  const handleChooseCover = async (): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library?.chooseTrackCover) {
+      setLocalError('当前运行环境不支持选择封面。');
+      return;
+    }
+
+    try {
+      setLocalError(null);
+      const selection = await library.chooseTrackCover();
+      if (selection) {
+        setSelectedCover(selection);
+        setLoadedCoverThumb(null);
+      }
+    } catch (chooseError) {
+      setLocalError(chooseError instanceof Error ? chooseError.message : String(chooseError));
+    }
+  };
+
+  const handleLoadEmbedded = async (): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library?.loadEmbeddedTrackTags) {
+      setLocalError('当前运行环境不支持读取内嵌标签。');
+      return;
+    }
+
+    setIsLoadingEmbedded(true);
+    setLocalError(null);
+
+    try {
+      const result = await library.loadEmbeddedTrackTags(track.id);
+      setForm({
+        title: result.tags.title,
+        artist: result.tags.artist,
+        album: result.tags.album,
+        albumArtist: result.tags.albumArtist,
+        trackNo: result.tags.trackNo ? String(result.tags.trackNo) : '',
+        discNo: result.tags.discNo ? String(result.tags.discNo) : '',
+        year: result.tags.year ? String(result.tags.year) : '',
+        genre: result.tags.genre ?? '',
+      });
+      setSelectedCover(null);
+      setLoadedCoverThumb(result.coverThumb);
+    } catch (loadError) {
+      setLocalError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setIsLoadingEmbedded(false);
+    }
+  };
+
+  const editor = (
     <div className="tag-editor-root" data-open={isOpen}>
       <button className="tag-editor-scrim" type="button" aria-label="关闭编辑标签" onClick={onClose} />
       <form className="tag-editor-drawer" onSubmit={handleSubmit}>
@@ -106,20 +167,20 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
         </header>
 
         <section className="tag-editor-cover-card">
-          <div className="tag-editor-cover" data-empty={!track.coverThumb}>
-            {track.coverThumb ? <img alt="" src={track.coverThumb} /> : <Tag size={42} />}
+          <div className="tag-editor-cover" data-empty={!previewCover}>
+            {previewCover ? <img alt="" src={previewCover} /> : <Tag size={42} />}
           </div>
           <div className="tag-editor-file">
             <strong>{fileName}</strong>
             <span>{track.path}</span>
-            <button type="button" disabled title="即将接入封面写入">
+            <button type="button" onClick={() => void handleChooseCover()} disabled={isSaving || isLoadingEmbedded}>
               <ImagePlus size={18} />
               选择封面
             </button>
-            <small>留空会保留当前内嵌封面。</small>
-            <button type="button" disabled title="当前封面已随曲库缓存读取">
+            <small>{selectedCover ? selectedCover.path : '留空会保留当前内嵌封面。'}</small>
+            <button type="button" onClick={() => void handleLoadEmbedded()} disabled={isSaving || isLoadingEmbedded}>
               <RefreshCw size={18} />
-              从内嵌标签加载
+              {isLoadingEmbedded ? '读取中' : '从内嵌标签加载'}
             </button>
           </div>
         </section>
@@ -159,7 +220,7 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
           </label>
         </div>
 
-        {error ? <p className="tag-editor-error">{error}</p> : null}
+        {error || localError ? <p className="tag-editor-error">{error ?? localError}</p> : null}
 
         <footer className="tag-editor-actions">
           <span>更改会写入源音频文件，并立即反映到媒体库。</span>
@@ -174,4 +235,6 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
       </form>
     </div>
   );
+
+  return createPortal(editor, document.body);
 };

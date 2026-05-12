@@ -7,7 +7,7 @@ import type { AppliedNetworkFields, NetworkApplyResult, StoredNetworkMetadataCan
 
 type DbRow = Record<string, unknown>;
 
-const writableSources = new Set<FieldSource>(['unknown', 'filename_fallback', 'network']);
+const writableSources = new Set<FieldSource>(['unknown', 'artist_fallback', 'filename_fallback', 'network']);
 const protectedSources = new Set<FieldSource>(['manual', 'embedded', 'sidecar', 'folder_structure']);
 
 const parseFieldSources = (value: unknown): FieldSources => {
@@ -96,6 +96,7 @@ export class NetworkMetadataMerge {
   }
 
   private applyCandidateInTransaction(candidate: StoredNetworkMetadataCandidate, force: boolean): NetworkApplyResult {
+    this.store.repairStaleReadiness(candidate.trackId);
     const row = this.database.prepare<[string], DbRow>('SELECT * FROM tracks WHERE id = ? AND missing = 0').get(candidate.trackId);
 
     if (!row) {

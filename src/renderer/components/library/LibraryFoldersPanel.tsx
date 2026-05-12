@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderPlus, RefreshCw, RotateCw, Trash2, XCircle } from 'lucide-react';
 import type { LibraryFolder, LibraryScanStatus } from '../../../shared/types/library';
+import { getLibraryBridge } from '../../utils/echoBridge';
 
 type ScanStatusByFolder = Record<string, LibraryScanStatus>;
 
@@ -32,8 +33,6 @@ const formatFolderError = (error: unknown): string => {
 
   return message || 'Import failed';
 };
-
-const getLibraryBridge = (): Window['echo']['library'] | null => window.echo?.library ?? null;
 
 export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelProps): JSX.Element => {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);

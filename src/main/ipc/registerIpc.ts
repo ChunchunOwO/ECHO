@@ -1,12 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, extname } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
 import type { FontFileAsset } from '../../preload/apiTypes';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
 import { destroyTray, ensureTray } from '../app/tray';
+import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
+import { getLibraryService } from '../library/LibraryService';
 import { registerAudioIpc } from './audioIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerPlaybackIpc } from './playbackIpc';
@@ -51,6 +54,21 @@ const loadFontFile = (fontPathInput: unknown): FontFileAsset => {
   };
 };
 
+const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('cover cache directory request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const directory =
+    typeof input.directory === 'string' && input.directory.trim().length > 0 ? resolve(input.directory.trim()) : null;
+
+  return {
+    directory,
+    migrate: input.migrate === true,
+  };
+};
+
 export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppGetVersion, () => app.getVersion());
   ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {
@@ -75,7 +93,9 @@ export const registerIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.AppGetSettings, (): AppSettings => getAppSettings());
   ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): AppSettings => {
-    const settings = setAppSettings(patch);
+    const settingsPatch = { ...patch };
+    delete settingsPatch.coverCacheDir;
+    const settings = setAppSettings(settingsPatch);
 
     if (settings.hideToTrayOnClose) {
       ensureTray();
@@ -95,6 +115,45 @@ export const registerIpc = (): void => {
     return result.canceled ? null : loadFontFile(result.filePaths[0]);
   });
   ipcMain.handle(IpcChannels.AppLoadFontFile, (_event: IpcMainInvokeEvent, fontPath: unknown): FontFileAsset => loadFontFile(fontPath));
+  ipcMain.handle(IpcChannels.AppChooseCacheDirectory, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: '选择封面缓存目录',
+      properties: ['openDirectory'],
+    });
+
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle(IpcChannels.AppGetDefaultCacheDirectory, (): string => getLibraryService().getDefaultCoverCacheDir());
+  ipcMain.handle(
+    IpcChannels.AppSetCoverCacheDirectory,
+    async (_event: IpcMainInvokeEvent, rawRequest: unknown): Promise<CoverCacheMigrationResult | null> => {
+      const request = normalizeCoverCacheRequest(rawRequest);
+      const libraryService = getLibraryService();
+
+      if (libraryService.hasRunningJobs()) {
+        throw new Error('Cannot change cover cache directory while a library scan is running.');
+      }
+
+      const nextDir = request.directory ?? libraryService.getDefaultCoverCacheDir();
+
+      if (request.migrate) {
+        const result = await libraryService.migrateCoverCacheDir(nextDir);
+
+        if (result.errors.length > 0) {
+          return result;
+        }
+
+        setAppSettings({ coverCacheDir: request.directory });
+        libraryService.setCoverCacheDir(nextDir);
+        return result;
+      }
+
+      await ensureCoverCacheDirectory(nextDir);
+      setAppSettings({ coverCacheDir: request.directory });
+      libraryService.setCoverCacheDir(nextDir);
+      return null;
+    },
+  );
 
   registerLibraryIpc();
   registerPlaybackIpc();

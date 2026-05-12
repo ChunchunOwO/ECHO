@@ -101,7 +101,7 @@ const fallbackFields = (filePath: string): MetadataResult => {
       title: 'filename_fallback',
       artist: filenameGuess.artist ? 'filename_fallback' : 'unknown',
       album: folderAlbum ? 'folder_structure' : 'unknown',
-      albumArtist: filenameGuess.artist ? 'filename_fallback' : 'unknown',
+      albumArtist: filenameGuess.artist ? 'artist_fallback' : 'unknown',
       trackNo: 'unknown',
       discNo: 'unknown',
       year: 'unknown',
@@ -173,7 +173,7 @@ export class TsMetadataReader implements MetadataReader {
     const title = pickText('title', embeddedTitle, filenameGuess.title, 'filename_fallback');
     const artist = pickText('artist', embeddedArtist, filenameGuess.artist ?? unknownArtist, filenameGuess.artist ? 'filename_fallback' : 'unknown');
     const album = pickText('album', embeddedAlbum, folderAlbum ?? unknownAlbum, folderAlbum ? 'folder_structure' : 'unknown');
-    const albumArtist = pickText('albumArtist', embeddedAlbumArtist, artist, fieldSources.artist);
+    const albumArtist = pickText('albumArtist', embeddedAlbumArtist, artist, 'artist_fallback');
     const trackNo = pickNumber('trackNo', numberOrNull(common.track?.no));
     const discNo = pickNumber('discNo', numberOrNull(common.disk?.no));
     const year = pickNumber('year', yearFromMetadata(common.year ?? common.date));

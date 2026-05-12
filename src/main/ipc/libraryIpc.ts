@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { EditableTrackTags, LibraryPageQuery, LibrarySort, LibraryTrackTagUpdateRequest } from '../../shared/types/library';
@@ -104,7 +104,24 @@ const normalizeTagUpdateRequest = (value: unknown): LibraryTrackTagUpdateRequest
       year: optionalNumber(tagsRecord.year),
       genre: typeof tagsRecord.genre === 'string' && tagsRecord.genre.trim().length > 0 ? tagsRecord.genre : null,
     },
+    coverPath: typeof input.coverPath === 'string' && input.coverPath.trim().length > 0 ? input.coverPath : null,
   };
+};
+
+const coverMimeType = (filePath: string): string => {
+  const extension = filePath.split('.').pop()?.toLocaleLowerCase();
+
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    default:
+      throw new Error(`Unsupported cover image type: ${filePath}`);
+  }
 };
 
 const getExistingTrack = (trackId: unknown) => {
@@ -168,6 +185,29 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
+  ipcMain.handle(IpcChannels.LibraryChooseTrackCover, async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择封面',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    });
+
+    if (result.canceled) {
+      return null;
+    }
+
+    const filePath = result.filePaths[0];
+    if (!filePath) {
+      return null;
+    }
+
+    const mimeType = coverMimeType(filePath);
+    const dataUrl = `data:${mimeType};base64,${readFileSync(filePath).toString('base64')}`;
+    return { path: filePath, mimeType, dataUrl };
+  });
+  ipcMain.handle(IpcChannels.LibraryLoadEmbeddedTrackTags, (_event, trackId: unknown) =>
+    getLibraryService().loadEmbeddedTrackTags(requireText(trackId, 'trackId')),
+  );
   ipcMain.handle(IpcChannels.LibraryUpdateTrackTags, (_event, request: unknown) =>
     getLibraryService().updateTrackTags(normalizeTagUpdateRequest(request)),
   );

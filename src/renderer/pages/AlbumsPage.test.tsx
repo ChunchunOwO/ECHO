@@ -279,8 +279,11 @@ describe('AlbumsPage', () => {
     await screen.findByText('Album 1');
     fireEvent.click(screen.getByText('Album 1'));
 
-    const playButton = await screen.findByRole('button', { name: 'Play Album' });
+    const playButton = await screen.findByRole('button', { name: 'Play Now' });
     await waitFor(() => expect(playButton.hasAttribute('disabled')).toBe(false));
+    expect(screen.getByLabelText('Album info').textContent).toContain('FLAC / 24bit / 96kHz / 900kbps');
+    expect(screen.getByLabelText('Track summary').textContent).toContain('2 tracks');
+    expect(screen.getByLabelText('Track summary').textContent).toContain('FLAC / 24bit / 96kHz');
     fireEvent.click(playButton);
 
     await waitFor(() => expect(window.echo.playback.playLocalFile).toHaveBeenCalledTimes(1));

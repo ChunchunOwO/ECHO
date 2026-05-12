@@ -8,6 +8,11 @@ type AlbumTrackListProps = {
   onFirstTrackChange?: (track: LibraryTrack | null, isLoading: boolean) => void;
   onLoadedTracksChange?: (tracks: LibraryTrack[], total: number, isLoading: boolean) => void;
   onPlayTrack: (track: LibraryTrack) => void | Promise<void>;
+  summary?: {
+    duration: string;
+    signal: string;
+    totalLabel: string;
+  };
 };
 
 const pageSize = 100;
@@ -36,6 +41,7 @@ const technicalTags = (track: LibraryTrack): string[] =>
     track.codec?.toUpperCase() ?? null,
     track.bitDepth ? `${track.bitDepth}bit` : null,
     formatSampleRate(track.sampleRate),
+    track.bitrate ? (track.bitrate >= 1000000 ? `${(track.bitrate / 1000000).toFixed(1)}Mbps` : `${Math.round(track.bitrate / 1000)}kbps`) : null,
   ].filter((tag): tag is string => Boolean(tag));
 
 export const AlbumTrackList = ({
@@ -44,6 +50,7 @@ export const AlbumTrackList = ({
   onFirstTrackChange,
   onLoadedTracksChange,
   onPlayTrack,
+  summary,
 }: AlbumTrackListProps): JSX.Element => {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [page, setPage] = useState(1);
@@ -127,6 +134,11 @@ export const AlbumTrackList = ({
   return (
     <section className="album-track-section" aria-label="Album tracks">
       <div className="album-track-toolbar">
+        <div className="album-track-summary" aria-label="Track summary">
+          <span>{summary?.totalLabel ?? (tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`)}</span>
+          <span>{summary?.duration ?? 'Unknown length'}</span>
+          <span>{summary?.signal ?? 'Reading signal'}</span>
+        </div>
         <span>{tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`}</span>
       </div>
 

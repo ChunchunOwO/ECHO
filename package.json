@@ -14,6 +14,7 @@
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
+    "build:win": "npm run rebuild:native && npm run build:audio-host && npm run build",
     "check:encoding": "node scripts/check-encoding.mjs",
     "lint": "npm run check:encoding && eslint .",
     "pretest": "npm run rebuild:native:node",

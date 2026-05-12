@@ -44,6 +44,7 @@ export type FieldSource =
   | 'folder_structure'
   | 'network'
   | 'technical'
+  | 'artist_fallback'
   | 'filename_fallback'
   | 'unknown';
 
@@ -97,7 +98,7 @@ export type ParsedTrackMetadata = MetadataFields & {
   metadataStatus?: MetadataStatus;
 };
 
-export type TrackWrite = ParsedTrackMetadata &
+export type TrackWrite = Omit<ParsedTrackMetadata, 'embeddedCover'> &
   ScannedAudioFile & {
     id: string;
     coverId: string | null;

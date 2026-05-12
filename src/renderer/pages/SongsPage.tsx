@@ -46,9 +46,11 @@ export const SongsPage = (): JSX.Element => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
   const [editingTrack, setEditingTrack] = useState<LibraryTrack | null>(null);
+  const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const requestIdRef = useRef(0);
+  const tagEditorCloseTimerRef = useRef<number | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, setQueue, appendToQueue, playTrackNext, removeFromQueue } = usePlaybackQueue();
 
@@ -257,7 +259,13 @@ export const SongsPage = (): JSX.Element => {
             return;
           case 'edit-tags':
             setTagEditorError(null);
+            if (tagEditorCloseTimerRef.current !== null) {
+              window.clearTimeout(tagEditorCloseTimerRef.current);
+              tagEditorCloseTimerRef.current = null;
+            }
+            setIsTagEditorOpen(false);
             setEditingTrack(track);
+            window.requestAnimationFrame(() => setIsTagEditorOpen(true));
             return;
           case 'go-to-album':
             setSearchInput(track.album);
@@ -304,7 +312,18 @@ export const SongsPage = (): JSX.Element => {
     [appendToQueue, playTrackNext, removeFromQueue],
   );
 
-  const handleSaveTags = useCallback(async (track: LibraryTrack, tags: EditableTrackTags): Promise<void> => {
+  const closeTagEditor = useCallback((): void => {
+    setIsTagEditorOpen(false);
+    if (tagEditorCloseTimerRef.current !== null) {
+      window.clearTimeout(tagEditorCloseTimerRef.current);
+    }
+    tagEditorCloseTimerRef.current = window.setTimeout(() => {
+      setEditingTrack(null);
+      tagEditorCloseTimerRef.current = null;
+    }, 280);
+  }, []);
+
+  const handleSaveTags = useCallback(async (track: LibraryTrack, tags: EditableTrackTags, coverPath: string | null): Promise<void> => {
     const library = window.echo?.library;
 
     if (!library) {
@@ -316,16 +335,16 @@ export const SongsPage = (): JSX.Element => {
     setTagEditorError(null);
 
     try {
-      const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags });
+      const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags, coverPath });
       setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
       window.dispatchEvent(new Event('library:changed'));
-      setEditingTrack(null);
+      closeTagEditor();
     } catch (saveError) {
       setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setIsSavingTags(false);
     }
-  }, []);
+  }, [closeTagEditor]);
 
   return (
     <div className="songs-page">
@@ -436,11 +455,11 @@ export const SongsPage = (): JSX.Element => {
 
       <TrackTagEditorDrawer
         track={editingTrack}
-        isOpen={Boolean(editingTrack)}
+        isOpen={isTagEditorOpen}
         isSaving={isSavingTags}
         error={tagEditorError}
-        onClose={() => setEditingTrack(null)}
-        onSave={(track, tags) => void handleSaveTags(track, tags)}
+        onClose={closeTagEditor}
+        onSave={(track, tags, coverPath) => void handleSaveTags(track, tags, coverPath)}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WheelEvent } from 'react';
-import { Gauge } from 'lucide-react';
+import { Gauge, RotateCcw } from 'lucide-react';
 import type { AudioStatus, PlaybackSpeedMode } from '../../../shared/types/audio';
 
 type PlayerSpeedControlProps = {
@@ -131,7 +131,19 @@ export const PlayerSpeedControl = ({
       </button>
       {isOpen ? (
         <div className="speed-popover">
-          <span>{formatSpeed(playbackRate)}</span>
+          <div className="speed-popover-header">
+            <span>{formatSpeed(playbackRate)}</span>
+            <button
+              className="speed-reset-button"
+              type="button"
+              aria-label="重置播放速度"
+              title="重置播放速度"
+              disabled={playbackRate === 1}
+              onClick={() => void commitSpeed(1)}
+            >
+              <RotateCcw size={12} />
+            </button>
+          </div>
           <input
             aria-label="播放速度"
             max={2}

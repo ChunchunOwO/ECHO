@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { LibraryDiagnostics } from '../../../shared/types/library';
+import { getLibraryBridge } from '../../utils/echoBridge';
 
 const formatBytes = (value: number | null): string => {
   if (value === null) {
@@ -26,7 +27,15 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
 
   const refreshDiagnostics = useCallback(async (): Promise<void> => {
     try {
-      setDiagnostics(await window.echo.library.getDiagnostics());
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setDiagnostics(null);
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to inspect library diagnostics.');
+        return;
+      }
+
+      setDiagnostics(await library.getDiagnostics());
       setError(null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));

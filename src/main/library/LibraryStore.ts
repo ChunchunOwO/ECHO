@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
 import type { AlbumService } from './AlbumService';
+import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import type {
   CoverSource,
   CoverResult,
@@ -192,6 +193,7 @@ export class LibraryStore {
       ...update,
       errors: update.errors ?? current.errors,
     };
+    const errorCount = update.errorCount ?? next.errors.length;
 
     this.run(
       `UPDATE scan_jobs SET
@@ -226,7 +228,7 @@ export class LibraryStore {
       next.addedTracks,
       next.updatedTracks,
       next.removedTracks,
-      next.errors.length,
+      errorCount,
       JSON.stringify(next.errors),
       typeof update.cancelRequested === 'boolean' ? (update.cancelRequested ? 1 : 0) : null,
       next.startedAt,
@@ -466,6 +468,10 @@ export class LibraryStore {
     this.run('UPDATE tracks SET cover_id = ?, updated_at = ? WHERE id = ?', coverId, timestamp, trackId);
   }
 
+  updateCoverCachePaths(oldDir: string, newDir: string, warnings: string[] = []): number {
+    return this.transaction(() => updateCoverPathsInDatabase(this.database, oldDir, newDir, warnings));
+  }
+
   recordTrackPlayback(trackId: string, timestamp = nowIso()): void {
     this.run(
       'UPDATE tracks SET play_count = COALESCE(play_count, 0) + 1, last_played_at = ? WHERE id = ? AND missing = 0',
@@ -647,7 +653,7 @@ export class LibraryStore {
     this.run('DELETE FROM albums');
 
     const tracks = this.allRows(
-      `SELECT id, path, artist, album, album_artist, year, duration, cover_id, disc_no, track_no
+      `SELECT id, path, artist, album, album_artist, year, duration, cover_id, disc_no, track_no, field_sources_json
        FROM tracks
        WHERE missing = 0
        ORDER BY album_artist COLLATE NOCASE, album COLLATE NOCASE, disc_no, track_no, title COLLATE NOCASE`,
@@ -674,10 +680,12 @@ export class LibraryStore {
       const title = String(track.album || '');
       const albumArtist = String(track.album_artist || '');
       const year = numberOrNull(track.year);
+      const fieldSources = parseJsonObject(track.field_sources_json);
       const albumKey = albumService.makeAlbumKey({
         albumTitle: title,
         albumArtist,
         fallbackArtist: String(track.artist || ''),
+        albumArtistSource: fieldSources.albumArtist,
         year,
         filePath: String(track.path),
         trackId,

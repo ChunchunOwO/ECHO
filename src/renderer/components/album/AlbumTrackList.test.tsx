@@ -112,4 +112,24 @@ describe('AlbumTrackList', () => {
     expect(onPlayTrack).toHaveBeenCalledTimes(1);
     expect(onPlayTrack).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
   });
+
+  it('renders the compact album summary and empty state', async () => {
+    const getAlbumTracks = vi.fn().mockResolvedValue(page([]));
+    installLibrary(getAlbumTracks);
+
+    render(
+      <AlbumTrackList
+        albumId="album-1"
+        currentTrackId={null}
+        summary={{ duration: '42 min', signal: 'DSF / 1bit / 5645kHz', totalLabel: '2 tracks' }}
+        onPlayTrack={vi.fn()}
+      />,
+    );
+
+    const summary = await screen.findByLabelText('Track summary');
+    expect(summary.textContent).toContain('2 tracks');
+    expect(summary.textContent).toContain('42 min');
+    expect(summary.textContent).toContain('DSF / 1bit / 5645kHz');
+    expect(await screen.findByText('No tracks found for this album.')).toBeTruthy();
+  });
 });

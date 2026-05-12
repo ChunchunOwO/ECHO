@@ -139,9 +139,22 @@ export type EditableTrackTags = {
   genre: string | null;
 };
 
+export type TrackCoverSelection = {
+  path: string;
+  mimeType: string;
+  dataUrl: string;
+};
+
+export type EmbeddedTrackTagsLoadResult = {
+  tags: EditableTrackTags;
+  coverId: string | null;
+  coverThumb: string | null;
+};
+
 export type LibraryTrackTagUpdateRequest = {
   trackId: string;
   tags: EditableTrackTags;
+  coverPath?: string | null;
 };
 
 export type LibraryAlbum = {

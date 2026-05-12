@@ -73,6 +73,20 @@ const baseMetadata = (overrides: Partial<ParsedTrackMetadata> = {}): ParsedTrack
   ...overrides,
 });
 
+const metadataWithSources = (
+  overrides: Partial<ParsedTrackMetadata>,
+  fieldSources: Partial<ParsedTrackMetadata['fieldSources']>,
+): ParsedTrackMetadata => {
+  const mergedSources = { ...baseMetadata().fieldSources };
+  for (const [key, value] of Object.entries(fieldSources)) {
+    if (value) {
+      mergedSources[key] = value;
+    }
+  }
+
+  return baseMetadata({ ...overrides, fieldSources: mergedSources });
+};
+
 class MockMetadataService extends MetadataService {
   readonly calls: string[] = [];
   readonly overrides = new Map<string, Partial<ParsedTrackMetadata>>();
@@ -566,12 +580,26 @@ describe('Library Core', () => {
     expect(parsed.fieldSources.album).toBe('embedded');
   });
 
-  it('album grouping same albumArtist merges', async () => {
+  it('missing embedded albumArtist is marked as artist fallback', () => {
+    const metadataService = new MetadataService();
+    const parsed = metadataService.normalize(join('Folder Album', 'Artist - Song.flac'), {
+      common: {
+        artist: 'Embedded Artist',
+        album: 'Embedded Album',
+      },
+      format: {},
+    } as Parameters<MetadataService['normalize']>[1]);
+
+    expect(parsed.albumArtist).toBe('Embedded Artist');
+    expect(parsed.fieldSources.albumArtist).toBe('artist_fallback');
+  });
+
+  it('album grouping same embedded albumArtist merges even when track artists differ', async () => {
     const harness = createHarness();
     const first = writeAudioFile(harness.folder, 'A.flac');
     const second = writeAudioFile(harness.folder, 'B.flac');
-    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', album: 'Same Album', albumArtist: 'Same Artist' }));
-    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', album: 'Same Album', albumArtist: 'Same Artist' }));
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'A', artist: 'Track Artist One', album: 'Same Album', albumArtist: 'Same Artist' }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'B', artist: 'Track Artist Two', album: 'Same Album', albumArtist: 'Same Artist' }));
     harness.addFolder();
 
     await harness.scanFolder();
@@ -579,6 +607,65 @@ describe('Library Core', () => {
 
     expect(albums.total).toBe(1);
     expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
+  it('album grouping same folder and same album uses folder when albumArtist is artist fallback', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'A.flac');
+    const second = writeAudioFile(harness.folder, 'B.flac');
+    harness.metadataService.overrides.set(
+      first,
+      metadataWithSources(
+        { title: 'A', artist: 'Track Artist One', album: 'Same Album', albumArtist: 'Track Artist One', year: 2024 },
+        { albumArtist: 'artist_fallback' },
+      ),
+    );
+    harness.metadataService.overrides.set(
+      second,
+      metadataWithSources(
+        { title: 'B', artist: 'Track Artist Two', album: 'Same Album', albumArtist: 'Track Artist Two', year: 2024 },
+        { albumArtist: 'artist_fallback' },
+      ),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].trackCount).toBe(2);
+    harness.cleanup();
+  });
+
+  it('album grouping same album with artist fallback stays split across folders', async () => {
+    const harness = createHarness();
+    const firstFolder = join(harness.folder, 'disc-a');
+    const secondFolder = join(harness.folder, 'disc-b');
+    mkdirSync(firstFolder, { recursive: true });
+    mkdirSync(secondFolder, { recursive: true });
+    const first = writeAudioFile(firstFolder, 'A.flac');
+    const second = writeAudioFile(secondFolder, 'B.flac');
+    harness.metadataService.overrides.set(
+      first,
+      metadataWithSources(
+        { title: 'A', artist: 'Track Artist One', album: 'Same Album', albumArtist: 'Track Artist One', year: 2024 },
+        { albumArtist: 'artist_fallback' },
+      ),
+    );
+    harness.metadataService.overrides.set(
+      second,
+      metadataWithSources(
+        { title: 'B', artist: 'Track Artist Two', album: 'Same Album', albumArtist: 'Track Artist Two', year: 2024 },
+        { albumArtist: 'artist_fallback' },
+      ),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(2);
     harness.cleanup();
   });
 
@@ -609,6 +696,50 @@ describe('Library Core', () => {
     const albums = harness.service.getAlbums({ pageSize: 10 });
 
     expect(albums.total).toBe(2);
+    harness.cleanup();
+  });
+
+  it('Unknown Album values do not merge by folder', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'Loose A.flac');
+    const second = writeAudioFile(harness.folder, 'Loose B.flac');
+    harness.metadataService.overrides.set(
+      first,
+      metadataWithSources({ title: 'Loose A', artist: 'Artist One', album: 'Unknown Album', albumArtist: 'Artist One' }, { albumArtist: 'artist_fallback' }),
+    );
+    harness.metadataService.overrides.set(
+      second,
+      metadataWithSources({ title: 'Loose B', artist: 'Artist Two', album: 'Unknown Album', albumArtist: 'Artist Two' }, { albumArtist: 'artist_fallback' }),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(2);
+    harness.cleanup();
+  });
+
+  it('manual albumArtist source groups by manual Album Artist', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'A.flac');
+    const second = writeAudioFile(harness.folder, 'B.flac');
+    harness.metadataService.overrides.set(
+      first,
+      metadataWithSources({ title: 'A', artist: 'Track Artist One', album: 'Same Album', albumArtist: 'Manual Album Artist' }, { albumArtist: 'manual' }),
+    );
+    harness.metadataService.overrides.set(
+      second,
+      metadataWithSources({ title: 'B', artist: 'Track Artist Two', album: 'Same Album', albumArtist: 'Manual Album Artist' }, { albumArtist: 'manual' }),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].albumArtist).toBe('Manual Album Artist');
+    expect(albums.items[0].trackCount).toBe(2);
     harness.cleanup();
   });
 

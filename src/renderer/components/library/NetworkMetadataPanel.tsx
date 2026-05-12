@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { RefreshCw, Search, Wand2 } from 'lucide-react';
 import type { LibraryTrack, MissingMetadataScanItem, NetworkCandidateList } from '../../../shared/types/library';
 import { useI18n } from '../../i18n/I18nProvider';
+import { getAudioBridge, getLibraryBridge, getPlaybackBridge } from '../../utils/echoBridge';
 import { NetworkCandidateCard } from './NetworkCandidateCard';
 
 export const NetworkMetadataPanel = (): JSX.Element => {
@@ -13,12 +14,19 @@ export const NetworkMetadataPanel = (): JSX.Element => {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const findTrackById = useCallback(async (targetTrackId: string): Promise<LibraryTrack | null> => {
+  const findTrackByExactId = useCallback(async (targetTrackId: string): Promise<LibraryTrack | null> => {
+    const library = getLibraryBridge();
+
+    if (!library) {
+      setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+      return null;
+    }
+
     let page = 1;
     let total = Number.POSITIVE_INFINITY;
 
     while ((page - 1) * 500 < total) {
-      const tracks = await window.echo.library.getTracks({ page, pageSize: 500 });
+      const tracks = await library.getTracks({ page, pageSize: 500 });
       const found = tracks.items.find((item) => item.id === targetTrackId) ?? null;
 
       if (found) {
@@ -32,19 +40,54 @@ export const NetworkMetadataPanel = (): JSX.Element => {
     return null;
   }, []);
 
+  const findTrackByInput = useCallback(
+    async (input: string): Promise<LibraryTrack | null> => {
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+        return null;
+      }
+
+      const exactMatch = await findTrackByExactId(input);
+      if (exactMatch) {
+        return exactMatch;
+      }
+
+      const query = input.trim();
+      if (!query) {
+        return null;
+      }
+
+      const tracks = await library.getTracks({ search: query, page: 1, pageSize: 20 });
+      return tracks.items[0] ?? null;
+    },
+    [findTrackByExactId],
+  );
+
   const resolveTargetTrackId = useCallback(async (): Promise<string | null> => {
     const typedTrackId = trackId.trim();
     if (typedTrackId) {
-      return typedTrackId;
+      const found = await findTrackByInput(typedTrackId);
+      setTrack(found);
+      return found?.id ?? null;
+    }
+
+    const playback = getPlaybackBridge();
+    const audio = getAudioBridge();
+
+    if (!playback && !audio) {
+      setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+      return null;
     }
 
     const [playbackStatus, audioStatus] = await Promise.all([
-      window.echo.playback.getStatus().catch(() => null),
-      window.echo.audio.getStatus().catch(() => null),
+      playback?.getStatus().catch(() => null) ?? Promise.resolve(null),
+      audio?.getStatus().catch(() => null) ?? Promise.resolve(null),
     ]);
 
     return playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
-  }, [trackId]);
+  }, [findTrackByInput, trackId]);
 
   const loadTrack = useCallback(async (): Promise<LibraryTrack | null> => {
     const targetTrackId = await resolveTargetTrackId();
@@ -53,46 +96,96 @@ export const NetworkMetadataPanel = (): JSX.Element => {
       return null;
     }
 
-    const found = await findTrackById(targetTrackId);
+    const found = await findTrackByExactId(targetTrackId);
     setTrack(found);
     return found;
-  }, [findTrackById, resolveTargetTrackId]);
+  }, [findTrackByExactId, resolveTargetTrackId]);
 
   const refreshCandidates = useCallback(async (): Promise<void> => {
-    const found = await loadTrack();
-    if (!found) {
-      setMessage(t('settings.library.networkPanel.trackNotFound'));
-      return;
-    }
+    try {
+      const found = await loadTrack();
+      if (!found) {
+        setMessage(t('settings.library.networkPanel.trackNotFound'));
+        return;
+      }
 
-    setCandidates(await window.echo.library.showNetworkCandidates(found.id));
-    setMessage(null);
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+        return;
+      }
+
+      const nextCandidates = await library.showNetworkCandidates(found.id);
+      setCandidates(nextCandidates);
+      setMessage(
+        nextCandidates.metadata.length + nextCandidates.covers.length
+          ? null
+          : 'No candidates yet. Run repair or scan missing metadata first.',
+      );
+    } catch (refreshError) {
+      setMessage(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    }
   }, [loadTrack, t]);
 
   const repair = useCallback(async (): Promise<void> => {
-    const found = await loadTrack();
-    if (!found) {
-      setMessage(t('settings.library.networkPanel.trackNotFound'));
-      return;
-    }
+    setBusy(true);
 
-    const result = await window.echo.library.repairMissingMetadata(found.id);
-    setCandidates({ metadata: result.metadata, covers: result.covers });
-    setMessage(result.errors.length ? result.errors.join(', ') : `${t('settings.library.networkPanel.appliedCount')} ${result.applied.length}`);
+    try {
+      const found = await loadTrack();
+      if (!found) {
+        setMessage(t('settings.library.networkPanel.trackNotFound'));
+        return;
+      }
+
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+        return;
+      }
+
+      const result = await library.repairMissingMetadata(found.id);
+      const candidateCount = result.metadata.length + result.covers.length;
+      setCandidates({ metadata: result.metadata, covers: result.covers });
+      setMessage(
+        result.errors.length
+          ? result.errors.join(', ')
+          : result.applied.length
+            ? `${t('settings.library.networkPanel.appliedCount')} ${result.applied.length}`
+            : candidateCount
+              ? 'Candidates found, but confidence was below auto-apply. Review and apply selected fields.'
+              : 'No candidates found from the enabled providers.',
+      );
+    } catch (repairError) {
+      setMessage(repairError instanceof Error ? repairError.message : String(repairError));
+    } finally {
+      setBusy(false);
+    }
   }, [loadTrack, t]);
 
   const scanMissing = useCallback(async (): Promise<void> => {
     setBusy(true);
+    setMessage('正在扫描缺失元数据，网络来源较慢时可能需要几十秒...');
+    setTrack(null);
+    setCandidates({ metadata: [], covers: [] });
 
     try {
-      const result = await window.echo.library.scanMissingMetadata(100);
+      const library = getLibraryBridge();
+
+      if (!library) {
+        setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+        return;
+      }
+
+      const result = await library.scanMissingMetadata(30);
       setScanItems(result.items);
-      setTrack(null);
-      setCandidates({ metadata: [], covers: [] });
       setMessage(
         result.errors.length
           ? `${t('settings.library.networkPanel.scanDone')} ${result.scannedCount}; ${t('settings.library.networkPanel.candidates')} ${result.candidateCount}; ${t('settings.library.networkPanel.providerErrors')} ${result.errors.length}`
-          : `${t('settings.library.networkPanel.scanDone')} ${result.scannedCount}; ${t('settings.library.networkPanel.candidates')} ${result.candidateCount}`,
+          : result.candidateCount
+            ? `${t('settings.library.networkPanel.scanDone')} ${result.scannedCount}; ${t('settings.library.networkPanel.candidates')} ${result.candidateCount}`
+            : `${t('settings.library.networkPanel.scanDone')} ${result.scannedCount}; no candidates found from the enabled providers`,
       );
     } catch (scanError) {
       setMessage(scanError instanceof Error ? scanError.message : String(scanError));
@@ -103,29 +196,56 @@ export const NetworkMetadataPanel = (): JSX.Element => {
 
   const mutateCandidate = useCallback(
     async (candidateId: string, action: 'missing' | 'selected' | 'reject'): Promise<void> => {
-      const scanItem = scanItems.find((item) =>
-        item.candidates.metadata.some((candidate) => candidate.id === candidateId) ||
-        item.candidates.covers.some((candidate) => candidate.id === candidateId),
-      );
-      const result =
-        action === 'missing'
-          ? await window.echo.library.applyNetworkMissingOnly(candidateId)
-          : action === 'selected'
-            ? await window.echo.library.applyNetworkSelected(candidateId)
-            : await window.echo.library.rejectNetworkCandidate(candidateId);
-      setMessage(result.reason ?? result.status);
+      try {
+        const library = getLibraryBridge();
 
-      if (scanItem) {
-        const nextCandidates = await window.echo.library.showNetworkCandidates(scanItem.track.id);
-        setScanItems((items) =>
-          items.map((item) => (item.track.id === scanItem.track.id ? { ...item, candidates: nextCandidates } : item)),
+        if (!library) {
+          setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+          return;
+        }
+
+        const scanItem = scanItems.find((item) =>
+          item.candidates.metadata.some((candidate) => candidate.id === candidateId) ||
+          item.candidates.covers.some((candidate) => candidate.id === candidateId),
         );
-        return;
-      }
+        const result =
+          action === 'missing'
+            ? await library.applyNetworkMissingOnly(candidateId)
+            : action === 'selected'
+              ? await library.applyNetworkSelected(candidateId)
+              : await library.rejectNetworkCandidate(candidateId);
+        const appliedKeys = Object.keys(result.appliedFields);
+        setMessage(
+          appliedKeys.length
+            ? `${result.status}: ${appliedKeys.join(', ')}`
+            : `${result.status}${result.reason ? `: ${result.reason}` : ''}`,
+        );
 
-      await refreshCandidates();
+        if (scanItem) {
+          const nextCandidates = await library.showNetworkCandidates(scanItem.track.id);
+          const nextTrack = await findTrackByExactId(scanItem.track.id);
+          setScanItems((items) =>
+            items.map((item) =>
+              item.track.id === scanItem.track.id
+                ? { ...item, track: nextTrack ?? item.track, candidates: nextCandidates }
+                : item,
+            ),
+          );
+          return;
+        }
+
+        const refreshedTrack = track ? await findTrackByExactId(track.id) : null;
+        if (refreshedTrack) {
+          setTrack(refreshedTrack);
+          setCandidates(await library.showNetworkCandidates(refreshedTrack.id));
+        } else {
+          await refreshCandidates();
+        }
+      } catch (mutationError) {
+        setMessage(mutationError instanceof Error ? mutationError.message : String(mutationError));
+      }
     },
-    [refreshCandidates, scanItems],
+    [findTrackByExactId, refreshCandidates, scanItems, track],
   );
 
   const repairScanItem = useCallback(
@@ -133,11 +253,19 @@ export const NetworkMetadataPanel = (): JSX.Element => {
       setBusy(true);
 
       try {
-        const result = await window.echo.library.repairMissingMetadata(item.track.id);
+        const library = getLibraryBridge();
+
+        if (!library) {
+          setMessage('Desktop bridge unavailable. Open ECHO Next in Electron to repair metadata.');
+          return;
+        }
+
+        const result = await library.repairMissingMetadata(item.track.id);
+        const nextTrack = await findTrackByExactId(item.track.id);
         setScanItems((items) =>
           items.map((scanItem) =>
             scanItem.track.id === item.track.id
-              ? { ...scanItem, candidates: { metadata: result.metadata, covers: result.covers } }
+              ? { ...scanItem, track: nextTrack ?? scanItem.track, candidates: { metadata: result.metadata, covers: result.covers } }
               : scanItem,
           ),
         );
@@ -148,7 +276,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
         setBusy(false);
       }
     },
-    [t],
+    [findTrackByExactId, t],
   );
 
   return (
@@ -171,21 +299,27 @@ export const NetworkMetadataPanel = (): JSX.Element => {
 
       <label className="settings-search">
         <Search size={15} aria-hidden="true" />
-        <input value={trackId} onChange={(event) => setTrackId(event.target.value)} placeholder={t('settings.library.networkPanel.trackId')} />
+        <input
+          value={trackId}
+          onChange={(event) => setTrackId(event.target.value)}
+          placeholder={`${t('settings.library.networkPanel.trackId')} / title / artist`}
+        />
       </label>
 
       <div className="settings-chip-row">
         <button className="settings-action-button" type="button" disabled={busy} onClick={() => void scanMissing()}>
           <Wand2 size={15} />
-          {t('settings.library.networkPanel.scanMissing')}
+          {busy ? '扫描中...' : t('settings.library.networkPanel.scanMissing')}
         </button>
-        <button className="settings-action-button" type="button" onClick={() => void repair()}>
+        <button className="settings-action-button" type="button" disabled={busy} onClick={() => void repair()}>
           {t('settings.library.networkPanel.repairMissing')}
         </button>
-        <button className="settings-action-button" type="button" onClick={() => void refreshCandidates()}>
+        <button className="settings-action-button" type="button" disabled={busy} onClick={() => void refreshCandidates()}>
           {t('settings.library.networkPanel.showCandidates')}
         </button>
       </div>
+
+      {message ? <p className="settings-inline-note network-panel-message">{message}</p> : null}
 
       {track ? (
         <div className="settings-status-grid">
@@ -274,7 +408,6 @@ export const NetworkMetadataPanel = (): JSX.Element => {
         </div>
       ) : null}
 
-      {message ? <p className="settings-inline-note">{message}</p> : null}
     </section>
   );
 };

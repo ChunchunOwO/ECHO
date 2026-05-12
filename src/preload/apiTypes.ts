@@ -1,22 +1,25 @@
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus } from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
+import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type {
+  EmbeddedTrackTagsLoadResult,
   LibraryAlbum,
   LibraryArtist,
+  LibraryCleanupResult,
   LibraryDiagnostics,
   LibraryTrackTagUpdateRequest,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
-  LibraryCleanupResult,
   LibraryScanStatus,
   LibrarySummary,
   LibraryTrack,
+  MissingMetadataScanResult,
   NetworkApplyResult,
   NetworkCandidateList,
-  MissingMetadataScanResult,
   NetworkRepairResult,
+  TrackCoverSelection,
 } from '../shared/types/library';
 import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
 
@@ -36,6 +39,9 @@ export type EchoApi = {
     setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
     chooseFontFile: () => Promise<FontFileAsset | null>;
     loadFontFile: (path: string) => Promise<FontFileAsset>;
+    chooseCacheDirectory: () => Promise<string | null>;
+    getDefaultCacheDirectory: () => Promise<string>;
+    setCoverCacheDirectory: (request: SetCoverCacheDirectoryRequest) => Promise<CoverCacheMigrationResult | null>;
   };
   library: {
     chooseFolder: () => Promise<string | null>;
@@ -54,6 +60,8 @@ export type EchoApi = {
     ) => Promise<LibraryPage<LibraryTrack>>;
     getSummary: () => Promise<LibrarySummary>;
     getDiagnostics: () => Promise<LibraryDiagnostics>;
+    chooseTrackCover: () => Promise<TrackCoverSelection | null>;
+    loadEmbeddedTrackTags: (trackId: string) => Promise<EmbeddedTrackTagsLoadResult>;
     updateTrackTags: (request: LibraryTrackTagUpdateRequest) => Promise<LibraryTrack>;
     recordTrackPlayback: (trackId: string) => Promise<void>;
     openTrackInFolder: (trackId: string) => Promise<void>;

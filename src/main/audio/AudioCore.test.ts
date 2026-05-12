@@ -395,6 +395,34 @@ describe('Audio Core sample-rate regression guard', () => {
     });
   });
 
+  it('keeps ASIO playback alive when the driver opens at its hardware sample rate', async () => {
+    const decoder = new FakeDecoder(new Map([['asio.flac', probe('asio.flac', 44100)]]));
+    const bridge = new FakeBridge(48000);
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'asio.flac',
+      output: { outputMode: 'asio', deviceName: 'Realtek ASIO' },
+    });
+
+    expect(status.outputMode).toBe('asio');
+    expect(status.requestedOutputSampleRate).toBe(44100);
+    expect(status.actualDeviceSampleRate).toBe(48000);
+    expect(status.decoderOutputSampleRate).toBe(48000);
+    expect(status.resampling).toBe(true);
+    expect(status.bitPerfectCandidate).toBe(false);
+    expect(status.warnings).toContain('actual_device_sample_rate_mismatch:44100->48000');
+    expect(decoder.decodeRequests[0]).toMatchObject({
+      filePath: 'asio.flac',
+      decoderOutputSampleRate: 48000,
+    });
+  });
+
   it('falls back to the default ASIO device when a selected ASIO driver refuses to open', async () => {
     const devices: AudioDeviceInfo[] = [
       {

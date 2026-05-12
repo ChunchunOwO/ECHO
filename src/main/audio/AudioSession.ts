@@ -642,7 +642,7 @@ export class AudioSession extends EventEmitter {
         ? explicitRequestedSampleRate ?? sharedDeviceSampleRate ?? sourceSampleRate
         : explicitRequestedSampleRate ?? sourceSampleRate;
     const decoderOutputSampleRate =
-      outputMode === 'shared'
+      outputMode === 'shared' || outputMode === 'asio'
         ? actualDeviceSampleRate ?? requestedOutputSampleRate
         : requestedOutputSampleRate;
     const warnings: string[] = [];
@@ -760,7 +760,7 @@ export class AudioSession extends EventEmitter {
   private assertReadySampleRateConsistent(): void {
     const plan = this.currentPlan;
 
-    if (!plan || plan.outputMode === 'shared' || plan.actualDeviceSampleRate === null) {
+    if (!plan || plan.outputMode !== 'exclusive' || plan.actualDeviceSampleRate === null) {
       return;
     }
 

@@ -5,6 +5,7 @@ import { NetworkMetadataMerge } from './NetworkMetadataMerge';
 import { NetworkMetadataService } from './NetworkMetadataService';
 import { NetworkMetadataStore } from './NetworkMetadataStore';
 import type { NetworkMetadataProvider } from './NetworkMetadataProvider';
+import { matchScore, NETWORK_VISIBLE_CANDIDATE_THRESHOLD } from './matchScore';
 
 const now = '2026-05-12T00:00:00.000Z';
 
@@ -249,6 +250,71 @@ describe('Network metadata required guards', () => {
     new NetworkMetadataMerge(database).applyMissingOnly(insertCandidate(database));
     expect(track(database).artist).toBe('Network Artist');
     database.close();
+  });
+
+  it('repairs stale pending readiness before applying selected network metadata', () => {
+    const database = db();
+    insertTrack(database, {
+      embeddedMetadataStatus: 'pending',
+      embeddedCoverStatus: 'pending',
+      title: 'Filename Guess',
+      artist: 'Unknown Artist',
+      fieldSources: sources({ title: 'filename_fallback', artist: 'unknown' }),
+    });
+    database
+      .prepare(
+        `INSERT INTO scan_jobs (id, folder_id, status, phase, errors_json, created_at, updated_at, finished_at)
+         VALUES ('job', 'folder', 'completed', 'finished', '[]', ?, ?, ?)`,
+      )
+      .run(now, now, now);
+
+    const result = new NetworkMetadataMerge(database).applyMissingOnly(insertCandidate(database, 0.89), true);
+    const updated = track(database);
+
+    expect(result.status).toBe('applied_missing_only');
+    expect(updated.embedded_metadata_status).toBe('missing');
+    expect(updated.artist).toBe('Network Artist');
+    database.close();
+  });
+
+  it('does not repair pending readiness while a scan is active', () => {
+    const database = db();
+    insertTrack(database, {
+      embeddedMetadataStatus: 'pending',
+      fieldSources: sources({ artist: 'unknown' }),
+    });
+    database
+      .prepare(
+        `INSERT INTO scan_jobs (id, folder_id, status, phase, errors_json, created_at, updated_at)
+         VALUES ('job', 'folder', 'running', 'reading_metadata', '[]', ?, ?)`,
+      )
+      .run(now, now);
+
+    const result = new NetworkMetadataMerge(database).applyMissingOnly(insertCandidate(database), true);
+
+    expect(result.reason).toBe('embedded_metadata_not_ready');
+    expect(track(database).embedded_metadata_status).toBe('pending');
+    database.close();
+  });
+
+  it('scores Chinese metadata candidates instead of stripping CJK text', () => {
+    const score = matchScore(
+      {
+        title: '晴天',
+        artist: '周杰伦',
+        album: '叶惠美',
+        duration: 269,
+        filename: '晴天.flac',
+      },
+      {
+        title: '晴天',
+        artist: '周杰伦',
+        album: '叶惠美',
+        duration: 269,
+      },
+    );
+
+    expect(score).toBeGreaterThanOrEqual(NETWORK_VISIBLE_CANDIDATE_THRESHOLD);
   });
 
   it('scans missing metadata targets and lists candidates without applying them', async () => {

@@ -4,6 +4,7 @@ import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '.
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type {
   EmbeddedTrackTagsLoadResult,
+  ImportPathClassification,
   LibraryAlbum,
   LibraryAlbumDetail,
   LibraryArtist,
@@ -45,6 +46,8 @@ import type {
 } from '../shared/types/library';
 import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
 import type { LastCrashSummary, RendererErrorPayload } from '../shared/types/diagnostics';
+import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
+import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
 
 export type FontFileAsset = {
@@ -71,6 +74,7 @@ export type EchoApi = {
   library: {
     chooseFolder: () => Promise<string | null>;
     addFolder: (path: string) => Promise<LibraryFolder>;
+    classifyImportPaths: (paths: string[]) => Promise<ImportPathClassification>;
     getFolders: () => Promise<LibraryFolder[]>;
     getFolderOverviews: () => Promise<LibraryFolderOverview[]>;
     getFolderChildren: (query: LibraryFolderChildrenQuery) => Promise<LibraryFolderNode[]>;
@@ -150,8 +154,24 @@ export type EchoApi = {
   smtc: {
     onCommand: (handler: (command: SmtcCommand) => void) => () => void;
   };
+  discordPresence: {
+    getStatus: () => Promise<DiscordPresenceStatus>;
+    setEnabled: (enabled: boolean) => Promise<DiscordPresenceStatus>;
+  };
+  lastfm: {
+    getStatus: () => Promise<LastFmStatus>;
+    setEnabled: (enabled: boolean) => Promise<LastFmStatus>;
+    setNowPlayingEnabled: (enabled: boolean) => Promise<LastFmStatus>;
+    setScrobbleEnabled: (enabled: boolean) => Promise<LastFmStatus>;
+    createAuthToken: () => Promise<LastFmAuthStartResult>;
+    openAuthUrl: (token: string) => Promise<void>;
+    completeAuth: (token: string) => Promise<LastFmStatus>;
+    authenticatePassword: (username: string, password: string) => Promise<LastFmStatus>;
+    disconnect: () => Promise<LastFmStatus>;
+  };
   audio: {
     getStatus: () => Promise<AudioStatus>;
+    onStatus: (handler: (status: AudioStatus) => void) => () => void;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
   };

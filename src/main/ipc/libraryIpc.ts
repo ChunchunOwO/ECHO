@@ -1,9 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
+import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
   EditableTrackTags,
   FinishPlaybackHistoryRequest,
+  ImportPathClassification,
   LibraryFolderChildrenQuery,
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
@@ -48,6 +50,45 @@ const requireText = (value: unknown, name: string): string => {
   }
 
   return value;
+};
+
+const normalizePathList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    throw new Error('paths must be an array');
+  }
+
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+};
+
+export const classifyImportPaths = (paths: string[]): ImportPathClassification => {
+  const classification: ImportPathClassification = {
+    folders: [],
+    audioFiles: [],
+    unsupportedFiles: [],
+    missingPaths: [],
+  };
+
+  for (const filePath of paths) {
+    try {
+      const fileStat = statSync(filePath);
+
+      if (fileStat.isDirectory()) {
+        classification.folders.push(filePath);
+        continue;
+      }
+
+      if (fileStat.isFile() && isSupportedAudioExtension(filePath)) {
+        classification.audioFiles.push(filePath);
+        continue;
+      }
+
+      classification.unsupportedFiles.push(filePath);
+    } catch {
+      classification.missingPaths.push(filePath);
+    }
+  }
+
+  return classification;
 };
 
 const normalizeQuery = (value: unknown): LibraryPageQuery => {
@@ -408,6 +449,9 @@ export const registerLibraryIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.LibraryAddFolder, (_event, folderPath: unknown) =>
     getLibraryService().addFolder(requireText(folderPath, 'folderPath')),
+  );
+  ipcMain.handle(IpcChannels.LibraryClassifyImportPaths, (_event, paths: unknown) =>
+    classifyImportPaths(normalizePathList(paths)),
   );
   ipcMain.handle(IpcChannels.LibraryGetFolders, () => getLibraryService().getFolders());
   ipcMain.handle(IpcChannels.LibraryGetFolderOverviews, () => getLibraryService().getFolderOverviews());

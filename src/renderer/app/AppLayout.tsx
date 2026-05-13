@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
+import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
 import { readRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
@@ -23,11 +24,25 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previousRouteIdRef = useRef<AppRouteId>('songs');
   const activeRoute = useMemo(
     () => routes.find((route) => route.id === activeRouteId) ?? routes[0],
     [activeRouteId, routes],
   );
   const pageContent: ReactNode = activeRoute.element;
+  const isStandaloneRoute = activeRoute.chrome === 'standalone';
+  const isLyricsRoute = activeRouteId === 'lyrics';
+
+  const navigateRoute = useCallback(
+    (routeId: AppRouteId): void => {
+      if (routeId === 'lyrics' && activeRouteId !== 'lyrics') {
+        previousRouteIdRef.current = activeRouteId;
+      }
+
+      setActiveRouteId(routeId);
+    },
+    [activeRouteId],
+  );
 
   useEffect(() => {
     const folderInput = folderInputRef.current;
@@ -61,19 +76,34 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   useEffect(() => {
     const handleNavigateImportFolder = (): void => {
-      setActiveRouteId('import-folder');
+      navigateRoute('import-folder');
     };
     const handleNavigateQueue = (): void => {
-      setActiveRouteId('queue');
+      navigateRoute('queue');
+    };
+    const handleNavigateNowPlaying = (): void => {
+      navigateRoute('queue');
+    };
+    const handleNavigateLyrics = (): void => {
+      navigateRoute('lyrics');
+    };
+    const handleNavigateLyricsBack = (): void => {
+      setActiveRouteId(previousRouteIdRef.current);
     };
 
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
+    window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
+    window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
+    window.addEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
     return () => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
+      window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
+      window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
+      window.removeEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
     };
-  }, []);
+  }, [navigateRoute]);
 
   useEffect(() => {
     const audio = window.echo?.audio;
@@ -166,16 +196,19 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
   }, [t]);
 
-  const handleWindowAction = useCallback(async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
-    const appApi = window.echo?.app;
+  const handleWindowAction = useCallback(
+    async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
+      const appApi = window.echo?.app;
 
-    if (!appApi) {
-      setChromeNotice(t('notice.windowControlsDesktop'));
-      return;
-    }
+      if (!appApi) {
+        setChromeNotice(t('notice.windowControlsDesktop'));
+        return;
+      }
 
-    await appApi[action]();
-  }, [t]);
+      await appApi[action]();
+    },
+    [t],
+  );
 
   const handleExportDiagnostics = useCallback(async (): Promise<void> => {
     try {
@@ -211,28 +244,31 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''}`}>
       <AppTitleBar
         activeRouteId={activeRouteId}
-        onRouteChange={setActiveRouteId}
-        onImportFile={() => void handleImportFile()}
+        onRouteChange={navigateRoute}
         onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
         onMinimize={() => void handleWindowAction('minimize')}
         onToggleMaximize={() => void handleWindowAction('toggleMaximize')}
         onClose={() => void handleWindowAction('close')}
       />
 
-      <Sidebar
-        routes={routes}
-        activeRouteId={activeRouteId}
-        onRouteChange={setActiveRouteId}
-        onImportFolder={() => void handleImportFolder()}
-        onImportFile={() => void handleImportFile()}
-      />
+      {isStandaloneRoute ? null : (
+        <Sidebar
+          routes={routes}
+          activeRouteId={activeRouteId}
+          onRouteChange={navigateRoute}
+          onImportFolder={() => void handleImportFolder()}
+          onImportFile={() => void handleImportFile()}
+        />
+      )}
 
-      <main className="page-surface" key={activeRoute.id}>
+      <main className={`page-surface ${isStandaloneRoute ? 'page-surface--standalone' : ''}`} key={activeRoute.id}>
         {pageContent}
       </main>
+
+      {isStandaloneRoute ? null : <DragDropImportOverlay onNotice={setChromeNotice} />}
 
       <input
         ref={folderInputRef}
@@ -247,7 +283,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         ref={fileInputRef}
         className="browser-preview-picker"
         type="file"
-        accept=".flac,.mp3,.wav,.m4a,.ogg,audio/*"
+        accept=".flac,.mp3,.wav,.m4a,.aac,.ogg,.opus,.wma,.alac,.aiff,.aif,.ape,.wv,.tta,.tak,.caf,.dsf,.dff,.mka,.mkv,.mp4,.mov,.webm,.mp2,.mp1,.mpc,.ofr,.ofs,.spx,.amr,.ac3,.dts,audio/*"
         aria-hidden="true"
         tabIndex={-1}
         onChange={(event) => handleBrowserFilePicked(event.target.files)}
@@ -261,13 +297,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       {diagnosticsNotice ? (
         <div className="chrome-notice chrome-notice--diagnostics" role="status">
-          <span>ECHO 上次似乎没有正常退出。你可以导出诊断包帮助定位问题。</span>
+          <span>ECHO did not close normally last time. Export diagnostics to help locate the issue.</span>
           <div className="chrome-notice-actions">
             <button type="button" onClick={() => void handleExportDiagnostics()}>
-              导出诊断包
+              Export diagnostics
             </button>
             <button type="button" onClick={() => void handleDismissDiagnosticsNotice()}>
-              忽略
+              Dismiss
             </button>
           </div>
         </div>
@@ -280,7 +316,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         onStatusChange={setAudioDrawerStatus}
       />
 
-      <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
+      {isStandaloneRoute && !isLyricsRoute ? null : <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />}
     </div>
   );
 };

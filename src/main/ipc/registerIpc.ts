@@ -10,8 +10,12 @@ import { defaultSettings, getAppSettings, setAppSettings } from '../app/appSetti
 import { destroyTray, ensureTray } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
+import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
+import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { registerAudioIpc } from './audioIpc';
 import { registerDiagnosticsIpc } from './diagnosticsIpc';
+import { registerDiscordPresenceIpc } from './discordPresenceIpc';
+import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerPlaybackIpc } from './playbackIpc';
 
@@ -117,7 +121,10 @@ export const registerIpc = (): void => {
     await ensureCoverCacheDirectory(defaultCoverCacheDir);
     libraryService.setCoverCacheDir(defaultCoverCacheDir);
     destroyTray();
-    return setAppSettings({ ...defaultSettings });
+    const settings = setAppSettings({ ...defaultSettings });
+    await setDiscordPresenceEnabled(settings.discordRichPresenceEnabled);
+    getLastFmService().disconnect();
+    return settings;
   });
   ipcMain.handle(IpcChannels.AppChooseFontFile, async (): Promise<FontFileAsset | null> => {
     const result = await dialog.showOpenDialog({
@@ -170,6 +177,8 @@ export const registerIpc = (): void => {
   );
 
   registerDiagnosticsIpc();
+  registerDiscordPresenceIpc();
+  registerLastFmIpc();
   registerLibraryIpc();
   registerPlaybackIpc();
   registerAudioIpc();

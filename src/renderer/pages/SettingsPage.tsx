@@ -21,6 +21,8 @@ import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
+import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
+import type { LastFmStatus } from '../../shared/types/lastfm';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -34,7 +36,7 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
-import { getAppBridge, getAudioBridge, getDiagnosticsBridge, getLibraryBridge } from '../utils/echoBridge';
+import { getAppBridge, getAudioBridge, getDiagnosticsBridge, getDiscordPresenceBridge, getLastFmBridge, getLibraryBridge } from '../utils/echoBridge';
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
@@ -288,6 +290,9 @@ export const SettingsPage = (): JSX.Element => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
+  const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
+  const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
@@ -356,9 +361,41 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshDiscordPresenceStatus = useCallback(async () => {
+    try {
+      const discordPresence = getDiscordPresenceBridge();
+
+      if (!discordPresence) {
+        setDiscordPresenceStatus(null);
+        return;
+      }
+
+      setDiscordPresenceStatus(await discordPresence.getStatus());
+    } catch {
+      setDiscordPresenceStatus(null);
+    }
+  }, []);
+
+  const refreshLastFmStatus = useCallback(async () => {
+    try {
+      const lastfm = getLastFmBridge();
+
+      if (!lastfm) {
+        setLastFmStatus(null);
+        return;
+      }
+
+      setLastFmStatus(await lastfm.getStatus());
+    } catch {
+      setLastFmStatus(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatus();
     void refreshDevices();
+    void refreshDiscordPresenceStatus();
+    void refreshLastFmStatus();
     const app = getAppBridge();
     const diagnostics = getDiagnosticsBridge();
     void app?.getSettings().then(setAppSettings).catch(() => undefined);
@@ -370,7 +407,7 @@ export const SettingsPage = (): JSX.Element => {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [refreshDevices, refreshStatus]);
+  }, [refreshDevices, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshStatus]);
 
   useEffect(() => {
     setOutputMode(status?.outputMode ?? 'shared');
@@ -480,6 +517,149 @@ export const SettingsPage = (): JSX.Element => {
     void app.setSettings(patch).then(setAppSettings).catch((settingsError) => {
       setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
     });
+  };
+
+  const handleDiscordPresenceToggle = async (): Promise<void> => {
+    const discordPresence = getDiscordPresenceBridge();
+
+    if (!discordPresence) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to change Discord Rich Presence.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextEnabled = !(discordPresenceStatus?.enabled ?? appSettings?.discordRichPresenceEnabled ?? false);
+      const nextStatus = await discordPresence.setEnabled(nextEnabled);
+      setDiscordPresenceStatus(nextStatus);
+      setAppSettings((current) => (current ? { ...current, discordRichPresenceEnabled: nextStatus.enabled } : current));
+    } catch (presenceError) {
+      setError(presenceError instanceof Error ? presenceError.message : String(presenceError));
+    }
+  };
+
+  const handleLastFmToggle = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+
+    if (!lastfm) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to change Last.fm settings.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextEnabled = !(lastFmStatus?.enabled ?? appSettings?.lastFmEnabled ?? false);
+      const nextStatus = await lastfm.setEnabled(nextEnabled);
+      setLastFmStatus(nextStatus);
+      setAppSettings((current) => (current ? { ...current, lastFmEnabled: nextStatus.enabled } : current));
+    } catch (lastFmError) {
+      setError(lastFmError instanceof Error ? lastFmError.message : String(lastFmError));
+    }
+  };
+
+  const handleLastFmNowPlayingToggle = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+
+    if (!lastfm) {
+      return;
+    }
+
+    const nextStatus = await lastfm.setNowPlayingEnabled(!(lastFmStatus?.nowPlayingEnabled ?? true));
+    setLastFmStatus(nextStatus);
+  };
+
+  const handleLastFmScrobbleToggle = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+
+    if (!lastfm) {
+      return;
+    }
+
+    const nextStatus = await lastfm.setScrobbleEnabled(!(lastFmStatus?.scrobbleEnabled ?? true));
+    setLastFmStatus(nextStatus);
+  };
+
+  const handleLastFmConnect = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+
+    if (!lastfm) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to connect Last.fm.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const result = await lastfm.createAuthToken();
+      if (!result.ok || !result.token) {
+        setError(result.error ?? 'Unable to start Last.fm authorization.');
+        return;
+      }
+
+      setLastFmAuthToken(result.token);
+      await lastfm.openAuthUrl(result.token);
+      void refreshLastFmStatus();
+    } catch (lastFmError) {
+      setError(lastFmError instanceof Error ? lastFmError.message : String(lastFmError));
+    }
+  };
+
+  const handleLastFmCompleteAuth = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+    const token = lastFmAuthToken ?? appSettings?.lastFmAuthToken ?? '';
+
+    if (!lastfm) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to complete Last.fm authorization.');
+      return;
+    }
+
+    if (!token && !lastFmStatus?.authPending) {
+      setError('Start Last.fm authorization first, then click complete after allowing access in the browser.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextStatus = await lastfm.completeAuth(token);
+      setLastFmStatus(nextStatus);
+      setLastFmAuthToken(null);
+      setAppSettings((current) =>
+        current
+          ? {
+              ...current,
+              lastFmEnabled: nextStatus.enabled,
+              lastFmUsername: nextStatus.username,
+              lastFmAuthToken: null,
+            }
+          : current,
+      );
+      if (!nextStatus.connected) {
+        setError(nextStatus.lastError ?? 'Last.fm authorization did not complete. Click Connect Last.fm again, allow access, then click Complete authorization.');
+      }
+    } catch (lastFmError) {
+      setError(lastFmError instanceof Error ? lastFmError.message : String(lastFmError));
+    }
+  };
+
+  const handleLastFmDisconnect = async (): Promise<void> => {
+    const lastfm = getLastFmBridge();
+
+    if (!lastfm) {
+      return;
+    }
+
+    const nextStatus = await lastfm.disconnect();
+    setLastFmStatus(nextStatus);
+    setLastFmAuthToken(null);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            lastFmUsername: null,
+            lastFmSessionKey: null,
+            lastFmAuthToken: null,
+          }
+        : current,
+    );
   };
 
   const handleDiagnosticsExport = async (): Promise<void> => {
@@ -811,6 +991,49 @@ export const SettingsPage = (): JSX.Element => {
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
   const formatBool = (value: boolean): string => (value ? t('common.yes') : t('common.no'));
   const activeFontValue = fontPickerTarget === 'chinese' ? appearancePreferences.chineseFontFamily : appearancePreferences.mainFontFamily;
+  const formatLastFmTimestamp = (value: string | null | undefined): string => {
+    if (!value) {
+      return t('settings.integrations.lastfm.never');
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return t('settings.integrations.lastfm.never');
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  };
+  const discordPresenceLabel = !discordPresenceStatus?.enabled
+    ? 'Disabled'
+    : discordPresenceStatus.connected
+      ? 'Connected'
+      : discordPresenceStatus.lastError
+        ? `Error: ${discordPresenceStatus.lastError}`
+        : discordPresenceStatus.available
+          ? 'Enabled'
+          : 'Discord not running';
+  const lastFmLabel = !lastFmStatus?.enabled
+    ? t('common.disabled')
+    : lastFmStatus.connected
+      ? t('settings.integrations.lastfm.status.connected', { username: lastFmStatus.username ?? '' }).trim()
+      : lastFmStatus.authPending
+        ? t('settings.integrations.lastfm.status.pending')
+      : lastFmStatus.lastError
+        ? t('settings.integrations.lastfm.status.error', { error: lastFmStatus.lastError })
+        : t('settings.integrations.lastfm.status.notConnected');
+  const lastFmActiveLabel = lastFmStatus?.activeTrack
+    ? t('settings.integrations.lastfm.activeProgress', {
+        artist: lastFmStatus.activeTrack.artist,
+        title: lastFmStatus.activeTrack.title,
+        played: lastFmStatus.activeTrack.playedSeconds,
+        threshold: lastFmStatus.activeTrack.thresholdSeconds,
+      })
+    : t('settings.integrations.lastfm.noActiveTrack');
 
   return (
     <div className="settings-page no-drag">
@@ -949,7 +1172,65 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
               <SettingRow title={t('settings.integrations.discord.title')} description={t('settings.integrations.discord.description')}>
-                <ToggleButton />
+                <div className="settings-chip-row">
+                  <ChipButton active>{discordPresenceLabel}</ChipButton>
+                  <button className="settings-action-button" type="button" onClick={() => void refreshDiscordPresenceStatus()}>
+                    {t('settings.integrations.discord.action.refresh')}
+                  </button>
+                  <ToggleButton
+                    active={discordPresenceStatus?.enabled ?? appSettings?.discordRichPresenceEnabled ?? false}
+                    disabled={!appSettings}
+                    onClick={() => void handleDiscordPresenceToggle()}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow title={t('settings.integrations.lastfm.title')} description={t('settings.integrations.lastfm.description')}>
+                <div className="settings-chip-row">
+                  <ChipButton active>{lastFmLabel}</ChipButton>
+                  <ToggleButton active={lastFmStatus?.enabled ?? appSettings?.lastFmEnabled ?? false} disabled={!appSettings} onClick={() => void handleLastFmToggle()} />
+                </div>
+              </SettingRow>
+              <SettingRow className="setting-row--full" title={t('settings.integrations.lastfm.connection.title')} description={t('settings.integrations.lastfm.connection.description')}>
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={() => void handleLastFmConnect()}>
+                      {t('settings.integrations.lastfm.action.connect')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleLastFmCompleteAuth()}>
+                      {t('settings.integrations.lastfm.action.completeAuth')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void refreshLastFmStatus()}>
+                      {t('settings.integrations.lastfm.action.refresh')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleLastFmDisconnect()} disabled={!lastFmStatus?.connected}>
+                      {t('settings.integrations.lastfm.action.disconnect')}
+                    </button>
+                  </div>
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>{t('settings.integrations.lastfm.lastNowPlaying')}</em>
+                      <strong>{formatLastFmTimestamp(lastFmStatus?.lastNowPlayingAt)}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.integrations.lastfm.lastScrobble')}</em>
+                      <strong>{formatLastFmTimestamp(lastFmStatus?.lastScrobbleAt)}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.integrations.lastfm.activeTrack')}</em>
+                      <strong title={lastFmActiveLabel}>{lastFmActiveLabel}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.integrations.lastfm.statusLabel')}</em>
+                      <strong>{lastFmLabel}</strong>
+                    </span>
+                  </div>
+                </div>
+              </SettingRow>
+              <SettingRow title={t('settings.integrations.lastfm.nowPlaying.title')} description={t('settings.integrations.lastfm.nowPlaying.description')}>
+                <ToggleButton active={lastFmStatus?.nowPlayingEnabled ?? true} disabled={!lastFmStatus} onClick={() => void handleLastFmNowPlayingToggle()} />
+              </SettingRow>
+              <SettingRow title={t('settings.integrations.lastfm.scrobbling.title')} description={t('settings.integrations.lastfm.scrobbling.description')}>
+                <ToggleButton active={lastFmStatus?.scrobbleEnabled ?? true} disabled={!lastFmStatus} onClick={() => void handleLastFmScrobbleToggle()} />
               </SettingRow>
               <SettingRow title={t('settings.integrations.mobile.title')} description={t('settings.integrations.mobile.description')}>
                 <ToggleButton />

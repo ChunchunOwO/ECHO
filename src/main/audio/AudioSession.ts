@@ -1068,10 +1068,25 @@ export class AudioSession extends EventEmitter {
       this.currentProbe?.channels ?? 2,
       this.currentOutputSettings?.playbackRate ?? this.outputSettings.playbackRate,
     );
+    let inputEnded = false;
+    const signalNativeInputEnded = (): void => {
+      if (inputEnded || this.runToken !== token || this.decoderRun !== run) {
+        return;
+      }
+
+      inputEnded = true;
+      try {
+        writable.end();
+      } catch {
+        // The native host may already have been stopped by pause/seek/stop.
+      }
+    };
+
     this.decoderRun = run;
     this.gainTransform = gainTransform;
     run.stream.pipe(gainTransform).pipe(speedTransform).pipe(writable, { end: false });
-    run.done.catch((error: unknown) => {
+    speedTransform.once('end', signalNativeInputEnded);
+    run.done.then(signalNativeInputEnded).catch((error: unknown) => {
       if (this.runToken === token) {
         this.handleError(error instanceof Error ? error : new Error(String(error)));
       }

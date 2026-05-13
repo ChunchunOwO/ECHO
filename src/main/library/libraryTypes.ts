@@ -153,7 +153,7 @@ export type CoverResult = {
   errors: string[];
 };
 
-export type CoverVariant = 'thumb' | 'album' | 'large';
+export type CoverVariant = 'thumb' | 'album' | 'large' | 'original';
 
 export type CoverExtractOptions = {
   cacheRoot: string;

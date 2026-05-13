@@ -142,7 +142,7 @@ export const QueuePage = (): JSX.Element => {
     try {
       const result = await library.getTracks({
         page: 1,
-        pageSize: 100,
+        pageSize: 500,
         sort: 'random',
       });
 
@@ -154,6 +154,10 @@ export const QueuePage = (): JSX.Element => {
       queue.replaceQueue(result.items, {
         source: { type: 'manual', label: t('queue.randomSource') },
       });
+      queue.setRepeatMode('off');
+      if (!queue.isShuffleEnabled) {
+        queue.toggleShuffle();
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {

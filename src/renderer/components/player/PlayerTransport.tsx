@@ -24,6 +24,7 @@ type PlayerTransportProps = {
   onToggleShuffle: () => void;
   onCycleRepeatMode: () => void;
   onOpenQueue: () => void;
+  onOpenLyrics: () => void;
 };
 
 export const PlayerTransport = ({
@@ -38,6 +39,7 @@ export const PlayerTransport = ({
   onToggleShuffle,
   onCycleRepeatMode,
   onOpenQueue,
+  onOpenLyrics,
 }: PlayerTransportProps): JSX.Element => (
   <div className="transport">
     <button className="icon-button" type="button" aria-label="Playback queue" title="Playback queue" onClick={onOpenQueue}>
@@ -72,7 +74,7 @@ export const PlayerTransport = ({
     >
       {repeatMode === 'one' ? <Repeat1 size={17} /> : <Repeat2 size={17} />}
     </button>
-    <button className="icon-button" type="button" aria-label="Lyrics" title="Lyrics">
+    <button className="icon-button" type="button" aria-label="Lyrics" title="Lyrics" onClick={onOpenLyrics}>
       <Mic2 size={17} />
     </button>
     <button className="icon-button" type="button" aria-label="Like" title="Like">

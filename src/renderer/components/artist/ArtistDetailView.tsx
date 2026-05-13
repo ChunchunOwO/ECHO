@@ -223,6 +223,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
 
       <ArtistTrackList
         artistId={displayArtist.id}
+        artistName={displayArtist.name}
         currentTrackId={currentTrackId}
         onAppendToQueue={handleAppendTrack}
         onLoadedTracksChange={handleLoadedTracksChange}

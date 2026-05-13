@@ -84,8 +84,13 @@ class FailingDecoder extends FakeDecoder {
 }
 
 class FakeBridge extends EventEmitter {
+  inputEnded = false;
   readonly writable = new Writable({
     write(_chunk, _encoding, callback) {
+      callback();
+    },
+    final: (callback) => {
+      this.inputEnded = true;
       callback();
     },
   });
@@ -216,6 +221,18 @@ describe('Audio Core sample-rate regression guard', () => {
 
     expect(status.requestedOutputSampleRate).toBe(48000);
     expect(bridges[0].startOptions?.requestedOutputSampleRate).toBe(48000);
+  });
+
+  it('closes native input when the decoder reaches EOF', async () => {
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'shared' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(bridges[0].inputEnded).toBe(true);
   });
 
   it('96k file + exclusive requests 96000', async () => {

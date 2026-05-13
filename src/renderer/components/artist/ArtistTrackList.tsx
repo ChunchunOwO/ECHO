@@ -9,6 +9,7 @@ import { TrackTagEditorDrawer } from '../library/TrackTagEditorDrawer';
 
 type ArtistTrackListProps = {
   artistId: string;
+  artistName: string;
   currentTrackId: string | null;
   onAppendToQueue: (track: LibraryTrack) => void;
   onLoadedTracksChange?: (tracks: LibraryTrack[], total: number, isLoading: boolean) => void;
@@ -51,6 +52,7 @@ const technicalTags = (track: LibraryTrack): string[] =>
 
 export const ArtistTrackList = ({
   artistId,
+  artistName,
   currentTrackId,
   onAppendToQueue,
   onLoadedTracksChange,
@@ -349,11 +351,11 @@ export const ArtistTrackList = ({
   );
 
   return (
-    <section className="artist-section artist-track-section" aria-label="Songs by artist">
+    <section className="artist-section artist-track-section" aria-label={`Songs by ${artistName}`}>
       <header>
         <div>
           <span>Songs</span>
-          <h2>Songs by Artist</h2>
+          <h2>Songs by {artistName}</h2>
         </div>
         <small>{tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`}</small>
       </header>

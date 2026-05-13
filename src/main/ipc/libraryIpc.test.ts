@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -144,6 +144,31 @@ describe('library IPC', () => {
     const result = await handlers[IpcChannels.LibraryChooseFolder]!();
 
     expect(result).toBe('D:\\Music');
+  });
+
+  it('classifies dropped import paths as folders, audio files, unsupported files, or missing paths', async () => {
+    const root = makeTempRoot();
+    const folderPath = join(root, 'Album');
+    const audioPath = join(root, 'song.opus');
+    const unsupportedPath = join(root, 'cover.jpg');
+    const missingPath = join(root, 'missing.flac');
+    mkdirSync(folderPath, { recursive: true });
+    writeFileSync(audioPath, 'audio');
+    writeFileSync(unsupportedPath, 'image');
+
+    const result = await handlers[IpcChannels.LibraryClassifyImportPaths]!(null, [
+      folderPath,
+      audioPath,
+      unsupportedPath,
+      missingPath,
+    ]);
+
+    expect(result).toEqual({
+      folders: [folderPath],
+      audioFiles: [audioPath],
+      unsupportedFiles: [unsupportedPath],
+      missingPaths: [missingPath],
+    });
   });
 
   it('copies a generated song card image to the clipboard', async () => {

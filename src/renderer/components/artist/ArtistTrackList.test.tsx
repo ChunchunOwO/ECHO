@@ -71,6 +71,7 @@ describe('ArtistTrackList', () => {
     render(
       <ArtistTrackList
         artistId="artist-1"
+        artistName="Archouchou"
         currentTrackId={null}
         onAppendToQueue={onAppendToQueue}
         onOpenAlbum={vi.fn()}

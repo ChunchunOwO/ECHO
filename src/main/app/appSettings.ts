@@ -37,6 +37,14 @@ export const defaultSettings: AppSettings = {
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
+  discordRichPresenceEnabled: false,
+  lastFmEnabled: false,
+  lastFmUsername: null,
+  lastFmSessionKey: null,
+  lastFmScrobbleEnabled: true,
+  lastFmNowPlayingEnabled: true,
+  lastFmMinScrobbleSeconds: 30,
+  lastFmAuthToken: null,
   smtcEnabled: true,
 };
 
@@ -55,6 +63,15 @@ const normalizeCoverCacheDir = (value: unknown): string | null => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? resolve(trimmed) : null;
+};
+
+const normalizeOptionalText = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceState => {
@@ -131,6 +148,19 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.playbackSpeed,
     playbackSpeedMode,
     scanPerformanceMode,
+    discordRichPresenceEnabled: settings.discordRichPresenceEnabled === true,
+    lastFmEnabled: settings.lastFmEnabled === true,
+    lastFmUsername: normalizeOptionalText(settings.lastFmUsername),
+    lastFmSessionKey: normalizeOptionalText(settings.lastFmSessionKey),
+    lastFmScrobbleEnabled: settings.lastFmScrobbleEnabled !== false,
+    lastFmNowPlayingEnabled: settings.lastFmNowPlayingEnabled !== false,
+    lastFmMinScrobbleSeconds:
+      typeof settings.lastFmMinScrobbleSeconds === 'number' &&
+      Number.isFinite(settings.lastFmMinScrobbleSeconds) &&
+      settings.lastFmMinScrobbleSeconds > 0
+        ? Math.max(1, Math.min(240, Math.round(settings.lastFmMinScrobbleSeconds)))
+        : defaultSettings.lastFmMinScrobbleSeconds,
+    lastFmAuthToken: normalizeOptionalText(settings.lastFmAuthToken),
     smtcEnabled: settings.smtcEnabled !== false,
   };
 };

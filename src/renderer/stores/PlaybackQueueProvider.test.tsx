@@ -87,3 +87,38 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(startPlaybackHistory).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('PlaybackQueueProvider playback modes', () => {
+  it('turns off repeat-all when shuffle is enabled', async () => {
+    const ModeProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <span data-testid="shuffle">{queue.isShuffleEnabled ? 'on' : 'off'}</span>
+          <span data-testid="repeat">{queue.repeatMode}</span>
+          <button type="button" onClick={() => queue.setRepeatMode('all')}>
+            repeat all
+          </button>
+          <button type="button" onClick={queue.toggleShuffle}>
+            shuffle
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <ModeProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'repeat all' }));
+    expect(screen.getByTestId('repeat').textContent).toBe('all');
+
+    fireEvent.click(screen.getByRole('button', { name: 'shuffle' }));
+
+    await waitFor(() => expect(screen.getByTestId('shuffle').textContent).toBe('on'));
+    expect(screen.getByTestId('repeat').textContent).toBe('off');
+  });
+});

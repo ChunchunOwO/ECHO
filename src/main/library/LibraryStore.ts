@@ -2693,12 +2693,15 @@ export class LibraryStore {
     const thumbPath = textOrNull(row.thumb_path);
     const albumPath = textOrNull(row.album_path);
     const largePath = textOrNull(row.large_path);
+    const originalRef = textOrNull(row.original_ref);
     const candidates =
       variant === 'thumb'
         ? [thumbPath, albumPath, largePath]
         : variant === 'album'
           ? [albumPath, thumbPath, largePath]
-          : [largePath, albumPath, thumbPath];
+          : variant === 'large'
+            ? [largePath, albumPath, thumbPath]
+            : [originalRef, largePath, albumPath, thumbPath];
     const filePath = candidates.find((candidate): candidate is string => Boolean(candidate)) ?? null;
 
     return filePath

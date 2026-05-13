@@ -1,8 +1,10 @@
 .album-detail-page {
   display: grid;
+  width: 100%;
   min-height: 100%;
   align-content: start;
   gap: 26px;
+  padding: 38px 42px 28px;
   color: #172235;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 249, 252, 0.92) 58%, rgba(241, 246, 251, 0.9)),
@@ -444,6 +446,7 @@
 @media (max-width: 980px) {
   .album-detail-page {
     gap: 22px;
+    padding: 26px 22px;
   }
 
   .album-detail-hero {

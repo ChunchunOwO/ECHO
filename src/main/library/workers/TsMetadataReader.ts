@@ -123,6 +123,8 @@ const fallbackFields = (filePath: string): MetadataResult => {
 export class TsMetadataReader implements MetadataReader {
   async read(filePath: string): Promise<MetadataResult> {
     try {
+      // TODO: Add a cue sheet parser that expands .cue sources into virtual tracks.
+      // Until then, parser failures fall back to filename metadata like other formats.
       const metadata = await parseFile(filePath, {
         duration: true,
         skipCovers: false,

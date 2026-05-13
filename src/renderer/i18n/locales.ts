@@ -74,6 +74,8 @@ export type TranslationKey =
   | 'route.artists.label'
   | 'route.audioSettings.description'
   | 'route.audioSettings.label'
+  | 'route.downloads.description'
+  | 'route.downloads.label'
   | 'route.folders.description'
   | 'route.folders.label'
   | 'route.history.description'
@@ -84,6 +86,8 @@ export type TranslationKey =
   | 'route.importFolder.label'
   | 'route.liked.description'
   | 'route.liked.label'
+  | 'route.lyrics.description'
+  | 'route.lyrics.label'
   | 'route.lyricsSettings.description'
   | 'route.lyricsSettings.label'
   | 'route.playlists.description'
@@ -138,7 +142,31 @@ export type TranslationKey =
   | 'settings.general.language.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
+  | 'settings.integrations.discord.action.refresh'
   | 'settings.integrations.discord.title'
+  | 'settings.integrations.lastfm.action.completeAuth'
+  | 'settings.integrations.lastfm.action.connect'
+  | 'settings.integrations.lastfm.action.disconnect'
+  | 'settings.integrations.lastfm.action.refresh'
+  | 'settings.integrations.lastfm.activeProgress'
+  | 'settings.integrations.lastfm.activeTrack'
+  | 'settings.integrations.lastfm.connection.description'
+  | 'settings.integrations.lastfm.connection.title'
+  | 'settings.integrations.lastfm.description'
+  | 'settings.integrations.lastfm.lastNowPlaying'
+  | 'settings.integrations.lastfm.lastScrobble'
+  | 'settings.integrations.lastfm.never'
+  | 'settings.integrations.lastfm.noActiveTrack'
+  | 'settings.integrations.lastfm.nowPlaying.description'
+  | 'settings.integrations.lastfm.nowPlaying.title'
+  | 'settings.integrations.lastfm.scrobbling.description'
+  | 'settings.integrations.lastfm.scrobbling.title'
+  | 'settings.integrations.lastfm.status.connected'
+  | 'settings.integrations.lastfm.status.error'
+  | 'settings.integrations.lastfm.status.notConnected'
+  | 'settings.integrations.lastfm.status.pending'
+  | 'settings.integrations.lastfm.statusLabel'
+  | 'settings.integrations.lastfm.title'
   | 'settings.integrations.mobile.description'
   | 'settings.integrations.mobile.title'
   | 'settings.library.network.description'
@@ -278,6 +306,8 @@ const zhCN: TranslationMap = {
   'route.artists.label': '艺术家',
   'route.audioSettings.description': '输出与解码设置。',
   'route.audioSettings.label': '音频设置',
+  'route.downloads.description': '下载任务占位。',
+  'route.downloads.label': '下载',
   'route.folders.description': '本地导入根目录。',
   'route.folders.label': '文件夹',
   'route.history.description': '播放历史。',
@@ -288,6 +318,8 @@ const zhCN: TranslationMap = {
   'route.importFolder.label': '导入文件夹',
   'route.liked.description': '收藏曲目。',
   'route.liked.label': '喜欢',
+  'route.lyrics.description': '歌词与沉浸播放。',
+  'route.lyrics.label': '歌词',
   'route.lyricsSettings.description': '歌词偏好设置。',
   'route.lyricsSettings.label': '歌词设置',
   'route.playlists.description': '用户歌单。',
@@ -341,8 +373,32 @@ const zhCN: TranslationMap = {
   'settings.general.language.description': '选择菜单、应用内设置与系统对话框的显示语言。',
   'settings.general.language.title': '显示语言',
   'settings.header.searchPlaceholder': '搜索设置...',
+  'settings.integrations.discord.action.refresh': '刷新状态',
   'settings.integrations.discord.description': 'Phase 1 暂不接入联动服务，保留设置位置。',
   'settings.integrations.discord.title': 'Discord 状态',
+  'settings.integrations.lastfm.action.completeAuth': '完成授权',
+  'settings.integrations.lastfm.action.connect': '连接 Last.fm',
+  'settings.integrations.lastfm.action.disconnect': '断开连接',
+  'settings.integrations.lastfm.action.refresh': '刷新状态',
+  'settings.integrations.lastfm.activeProgress': '{artist} - {title} · {played}/{threshold} 秒',
+  'settings.integrations.lastfm.activeTrack': '当前曲目',
+  'settings.integrations.lastfm.connection.description': '推荐使用浏览器授权。在 Last.fm 点 Allow 后，回到 ECHO Next 完成授权。',
+  'settings.integrations.lastfm.connection.title': 'Last.fm 连接',
+  'settings.integrations.lastfm.description': '在主进程记录本地播放，不发送文件路径、歌词或封面。',
+  'settings.integrations.lastfm.lastNowPlaying': '上次 Now Playing',
+  'settings.integrations.lastfm.lastScrobble': '上次 Scrobble',
+  'settings.integrations.lastfm.never': '尚未发送',
+  'settings.integrations.lastfm.noActiveTrack': '无活跃曲目',
+  'settings.integrations.lastfm.nowPlaying.description': '开始播放时发送一次当前曲目信息。',
+  'settings.integrations.lastfm.nowPlaying.title': 'Last.fm Now Playing',
+  'settings.integrations.lastfm.scrobbling.description': '曲目达到 Last.fm 记录阈值后提交播放记录。',
+  'settings.integrations.lastfm.scrobbling.title': 'Last.fm Scrobbling',
+  'settings.integrations.lastfm.status.connected': '已连接 {username}',
+  'settings.integrations.lastfm.status.error': '错误：{error}',
+  'settings.integrations.lastfm.status.notConnected': '未连接',
+  'settings.integrations.lastfm.status.pending': '等待完成授权',
+  'settings.integrations.lastfm.statusLabel': '状态',
+  'settings.integrations.lastfm.title': 'Last.fm',
   'settings.integrations.mobile.description': '未来外部设备能力会走受控 IPC，不让 Renderer 直连系统资源。',
   'settings.integrations.mobile.title': '手机遥控',
   'settings.library.network.description': '手动弱补全；本地内嵌元数据始终优先。',
@@ -419,10 +475,14 @@ const zhTW: TranslationMap = {
   'route.albums.label': '專輯',
   'route.artists.label': '演出者',
   'route.audioSettings.label': '音訊設定',
+  'route.downloads.description': '下載任務佔位。',
+  'route.downloads.label': '下載',
   'route.folders.label': '資料夾',
   'route.importFile.label': '匯入檔案',
   'route.importFolder.label': '匯入資料夾',
   'route.liked.label': '喜歡',
+  'route.lyrics.description': '歌詞與沉浸播放。',
+  'route.lyrics.label': '歌詞',
   'route.lyricsSettings.label': '歌詞設定',
   'route.playlists.label': '播放清單',
   'route.queue.label': '佇列',
@@ -491,7 +551,31 @@ const zhTW: TranslationMap = {
   'settings.playback.outputDevice.empty': '沒有可用裝置',
   'settings.playback.wireless.title': '無線播放',
   'settings.playback.audioStatus.title': '音訊狀態',
+  'settings.integrations.discord.action.refresh': '重新整理狀態',
   'settings.integrations.discord.title': 'Discord 狀態',
+  'settings.integrations.lastfm.action.completeAuth': '完成授權',
+  'settings.integrations.lastfm.action.connect': '連接 Last.fm',
+  'settings.integrations.lastfm.action.disconnect': '斷開連接',
+  'settings.integrations.lastfm.action.refresh': '重新整理狀態',
+  'settings.integrations.lastfm.activeProgress': '{artist} - {title} · {played}/{threshold} 秒',
+  'settings.integrations.lastfm.activeTrack': '目前曲目',
+  'settings.integrations.lastfm.connection.description': '建議使用瀏覽器授權。在 Last.fm 點 Allow 後，回到 ECHO Next 完成授權。',
+  'settings.integrations.lastfm.connection.title': 'Last.fm 連接',
+  'settings.integrations.lastfm.description': '在主行程記錄本地播放，不傳送檔案路徑、歌詞或封面。',
+  'settings.integrations.lastfm.lastNowPlaying': '上次 Now Playing',
+  'settings.integrations.lastfm.lastScrobble': '上次 Scrobble',
+  'settings.integrations.lastfm.never': '尚未傳送',
+  'settings.integrations.lastfm.noActiveTrack': '沒有活躍曲目',
+  'settings.integrations.lastfm.nowPlaying.description': '開始播放時傳送一次目前曲目資訊。',
+  'settings.integrations.lastfm.nowPlaying.title': 'Last.fm Now Playing',
+  'settings.integrations.lastfm.scrobbling.description': '曲目達到 Last.fm 記錄門檻後提交播放記錄。',
+  'settings.integrations.lastfm.scrobbling.title': 'Last.fm Scrobbling',
+  'settings.integrations.lastfm.status.connected': '已連接 {username}',
+  'settings.integrations.lastfm.status.error': '錯誤：{error}',
+  'settings.integrations.lastfm.status.notConnected': '未連接',
+  'settings.integrations.lastfm.status.pending': '等待完成授權',
+  'settings.integrations.lastfm.statusLabel': '狀態',
+  'settings.integrations.lastfm.title': 'Last.fm',
   'settings.integrations.mobile.title': '手機遙控',
   'settings.remote.library.title': '遠端音樂庫',
   'settings.remote.library.description': '本階段禁止網路硬碟 / 遠端 / 串流，只保留設定分組佔位。',
@@ -542,6 +626,8 @@ const jaJP: TranslationMap = {
   'route.artists.label': 'アーティスト',
   'route.audioSettings.description': '出力とデコーダー設定。',
   'route.audioSettings.label': '音声設定',
+  'route.downloads.description': 'ダウンロードタスクのプレースホルダー。',
+  'route.downloads.label': 'ダウンロード',
   'route.folders.description': 'ローカル取り込み元。',
   'route.folders.label': 'フォルダ',
   'route.history.description': '再生履歴。',
@@ -552,6 +638,8 @@ const jaJP: TranslationMap = {
   'route.importFolder.label': 'フォルダを取り込む',
   'route.liked.description': '保存した曲。',
   'route.liked.label': 'お気に入り',
+  'route.lyrics.description': '歌詞と没入再生。',
+  'route.lyrics.label': '歌詞',
   'route.lyricsSettings.description': '歌詞の設定。',
   'route.lyricsSettings.label': '歌詞設定',
   'route.playlists.description': 'ユーザープレイリスト。',
@@ -641,8 +729,32 @@ const jaJP: TranslationMap = {
   'settings.playback.followCurrent.description': '有効にすると、曲変更時に左側の現在リストを再生中の曲へ自動スクロールします。',
   'settings.playback.audioStatus.title': '音声状態',
   'settings.playback.audioStatus.description': 'サンプルレート欄を分けて表示し、旧 ECHO の排他モード 48k 固定の再発を避けます。',
+  'settings.integrations.discord.action.refresh': '状態を更新',
   'settings.integrations.discord.title': 'Discord ステータス',
   'settings.integrations.discord.description': 'Phase 1 では連携サービスに接続せず、設定位置のみ保持します。',
+  'settings.integrations.lastfm.action.completeAuth': '認証を完了',
+  'settings.integrations.lastfm.action.connect': 'Last.fm に接続',
+  'settings.integrations.lastfm.action.disconnect': '切断',
+  'settings.integrations.lastfm.action.refresh': '状態を更新',
+  'settings.integrations.lastfm.activeProgress': '{artist} - {title} · {played}/{threshold} 秒',
+  'settings.integrations.lastfm.activeTrack': '現在の曲',
+  'settings.integrations.lastfm.connection.description': 'ブラウザー認証を推奨します。Last.fm で Allow を押した後、ECHO Next に戻って認証を完了してください。',
+  'settings.integrations.lastfm.connection.title': 'Last.fm 接続',
+  'settings.integrations.lastfm.description': 'メインプロセスでローカル再生を記録し、ファイルパス、歌詞、アートワークは送信しません。',
+  'settings.integrations.lastfm.lastNowPlaying': '前回の Now Playing',
+  'settings.integrations.lastfm.lastScrobble': '前回の Scrobble',
+  'settings.integrations.lastfm.never': '未送信',
+  'settings.integrations.lastfm.noActiveTrack': 'アクティブな曲なし',
+  'settings.integrations.lastfm.nowPlaying.description': '再生開始時に現在の曲情報を一度送信します。',
+  'settings.integrations.lastfm.nowPlaying.title': 'Last.fm Now Playing',
+  'settings.integrations.lastfm.scrobbling.description': '曲が Last.fm の記録しきい値に達したら再生記録を送信します。',
+  'settings.integrations.lastfm.scrobbling.title': 'Last.fm Scrobbling',
+  'settings.integrations.lastfm.status.connected': '接続済み {username}',
+  'settings.integrations.lastfm.status.error': 'エラー: {error}',
+  'settings.integrations.lastfm.status.notConnected': '未接続',
+  'settings.integrations.lastfm.status.pending': '認証完了待ち',
+  'settings.integrations.lastfm.statusLabel': '状態',
+  'settings.integrations.lastfm.title': 'Last.fm',
   'settings.integrations.mobile.title': 'スマホリモコン',
   'settings.integrations.mobile.description': '将来の外部デバイス機能は制御された IPC を通し、Renderer がシステムリソースへ直接接続しないようにします。',
   'settings.remote.library.title': 'リモート音楽ライブラリ',
@@ -698,6 +810,8 @@ const enUS: TranslationMap = {
   'route.artists.label': 'Artists',
   'route.audioSettings.description': 'Output and decoder settings.',
   'route.audioSettings.label': 'Audio Settings',
+  'route.downloads.description': 'Download queue placeholder.',
+  'route.downloads.label': 'Downloads',
   'route.folders.description': 'Local import roots.',
   'route.folders.label': 'Folders',
   'route.history.description': 'Playback history.',
@@ -708,6 +822,8 @@ const enUS: TranslationMap = {
   'route.importFolder.label': 'Import Folder',
   'route.liked.description': 'Saved tracks.',
   'route.liked.label': 'Liked',
+  'route.lyrics.description': 'Lyrics and immersive playback.',
+  'route.lyrics.label': 'Lyrics',
   'route.lyricsSettings.description': 'Lyrics preferences.',
   'route.lyricsSettings.label': 'Lyrics Settings',
   'route.playlists.description': 'User playlists.',
@@ -797,8 +913,32 @@ const enUS: TranslationMap = {
   'settings.playback.followCurrent.description': 'When enabled, the current list scrolls to the playing track after track changes.',
   'settings.playback.audioStatus.title': 'Audio Status',
   'settings.playback.audioStatus.description': 'Sample-rate fields stay separated to prevent the old ECHO exclusive-mode 48k lock regression.',
+  'settings.integrations.discord.action.refresh': 'Refresh status',
   'settings.integrations.discord.title': 'Discord Status',
   'settings.integrations.discord.description': 'Phase 1 does not connect integration services yet; this setting keeps the slot reserved.',
+  'settings.integrations.lastfm.action.completeAuth': 'Complete authorization',
+  'settings.integrations.lastfm.action.connect': 'Connect Last.fm',
+  'settings.integrations.lastfm.action.disconnect': 'Disconnect',
+  'settings.integrations.lastfm.action.refresh': 'Refresh status',
+  'settings.integrations.lastfm.activeProgress': '{artist} - {title} · {played}/{threshold}s',
+  'settings.integrations.lastfm.activeTrack': 'Active track',
+  'settings.integrations.lastfm.connection.description': 'Browser authorization is recommended. Click complete after allowing ECHO Next on Last.fm.',
+  'settings.integrations.lastfm.connection.title': 'Last.fm connection',
+  'settings.integrations.lastfm.description': 'Scrobble local playback from the main process without sending file paths, lyrics, or artwork.',
+  'settings.integrations.lastfm.lastNowPlaying': 'Last Now Playing',
+  'settings.integrations.lastfm.lastScrobble': 'Last Scrobble',
+  'settings.integrations.lastfm.never': 'Not sent yet',
+  'settings.integrations.lastfm.noActiveTrack': 'No active track',
+  'settings.integrations.lastfm.nowPlaying.description': 'Send one current-track update when playback starts.',
+  'settings.integrations.lastfm.nowPlaying.title': 'Last.fm Now Playing',
+  'settings.integrations.lastfm.scrobbling.description': 'Submit a play after the track passes the Last.fm timing threshold.',
+  'settings.integrations.lastfm.scrobbling.title': 'Last.fm Scrobbling',
+  'settings.integrations.lastfm.status.connected': 'Connected {username}',
+  'settings.integrations.lastfm.status.error': 'Error: {error}',
+  'settings.integrations.lastfm.status.notConnected': 'Not connected',
+  'settings.integrations.lastfm.status.pending': 'Authorization pending',
+  'settings.integrations.lastfm.statusLabel': 'Status',
+  'settings.integrations.lastfm.title': 'Last.fm',
   'settings.integrations.mobile.title': 'Mobile Remote',
   'settings.integrations.mobile.description': 'Future external-device features will go through controlled IPC instead of direct Renderer system access.',
   'settings.library.network.description': 'Manual weak completion only; local embedded metadata always keeps priority.',

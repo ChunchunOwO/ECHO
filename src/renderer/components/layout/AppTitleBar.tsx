@@ -1,6 +1,4 @@
 import {
-  Disc3,
-  FileAudio,
   Headphones,
   Library,
   Minus,
@@ -14,7 +12,6 @@ import { useI18n } from '../../i18n/I18nProvider';
 type AppTitleBarProps = {
   activeRouteId: AppRouteId;
   onRouteChange: (routeId: AppRouteId) => void;
-  onImportFile: () => void;
   onOpenAudioSettings: () => void;
   onMinimize: () => void;
   onToggleMaximize: () => void;
@@ -32,7 +29,6 @@ type TitleBarAction = {
 export const AppTitleBar = ({
   activeRouteId,
   onRouteChange,
-  onImportFile,
   onOpenAudioSettings,
   onMinimize,
   onToggleMaximize,
@@ -46,19 +42,6 @@ export const AppTitleBar = ({
       icon: Library,
       active: activeRouteId === 'songs',
       onClick: () => onRouteChange('songs'),
-    },
-    {
-      id: 'albums',
-      label: t('route.albums.label'),
-      icon: Disc3,
-      active: activeRouteId === 'albums',
-      onClick: () => onRouteChange('albums'),
-    },
-    {
-      id: 'import-file',
-      label: t('route.importFile.label'),
-      icon: FileAudio,
-      onClick: onImportFile,
     },
     {
       id: 'audio-settings',

@@ -49,6 +49,14 @@ vi.mock('../app/appSettings', () => ({
     playbackSpeed: 1,
     playbackSpeedMode: 'nightcore',
     scanPerformanceMode: 'balanced',
+    discordRichPresenceEnabled: false,
+    lastFmEnabled: false,
+    lastFmUsername: null,
+    lastFmSessionKey: null,
+    lastFmScrobbleEnabled: true,
+    lastFmNowPlayingEnabled: true,
+    lastFmMinScrobbleSeconds: 30,
+    lastFmAuthToken: null,
     smtcEnabled: true,
   },
   getAppSettings: vi.fn(() => ({ coverCacheDir: null, hideToTrayOnClose: false })),
@@ -82,6 +90,24 @@ vi.mock('./audioIpc', () => ({
 
 vi.mock('./diagnosticsIpc', () => ({
   registerDiagnosticsIpc: vi.fn(),
+}));
+
+vi.mock('./discordPresenceIpc', () => ({
+  registerDiscordPresenceIpc: vi.fn(),
+}));
+
+vi.mock('./lastFmIpc', () => ({
+  registerLastFmIpc: vi.fn(),
+}));
+
+vi.mock('../integrations/discord/getDiscordPresenceService', () => ({
+  setDiscordPresenceEnabled: vi.fn(),
+}));
+
+vi.mock('../integrations/lastfm/getLastFmService', () => ({
+  getLastFmService: () => ({
+    disconnect: vi.fn(),
+  }),
 }));
 
 const resetHandlers = (): void => {

@@ -18,23 +18,20 @@ describe('AppTitleBar', () => {
     );
   };
 
-  it('uses a direct import action instead of navigation for the import file button', () => {
+  it('keeps album and import file out of the titlebar quick actions', () => {
     const onRouteChange = vi.fn();
-    const onImportFile = vi.fn();
 
     renderTitleBar({
       activeRouteId: 'songs',
       onRouteChange,
-      onImportFile,
       onOpenAudioSettings: vi.fn(),
       onMinimize: vi.fn(),
       onToggleMaximize: vi.fn(),
       onClose: vi.fn(),
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import File' }));
-
-    expect(onImportFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Albums' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Import File' })).toBeNull();
     expect(onRouteChange).not.toHaveBeenCalled();
   });
 
@@ -44,18 +41,15 @@ describe('AppTitleBar', () => {
     renderTitleBar({
       activeRouteId: 'songs',
       onRouteChange,
-      onImportFile: vi.fn(),
       onOpenAudioSettings: vi.fn(),
       onMinimize: vi.fn(),
       onToggleMaximize: vi.fn(),
       onClose: vi.fn(),
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Albums' }));
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
-    expect(onRouteChange).toHaveBeenNthCalledWith(1, 'albums');
-    expect(onRouteChange).toHaveBeenNthCalledWith(2, 'settings');
+    expect(onRouteChange).toHaveBeenCalledWith('settings');
   });
 
   it('opens the audio drawer from the audio settings button', () => {
@@ -65,7 +59,6 @@ describe('AppTitleBar', () => {
     renderTitleBar({
       activeRouteId: 'songs',
       onRouteChange,
-      onImportFile: vi.fn(),
       onOpenAudioSettings,
       onMinimize: vi.fn(),
       onToggleMaximize: vi.fn(),
@@ -87,7 +80,6 @@ describe('AppTitleBar', () => {
     renderTitleBar({
       activeRouteId: 'songs',
       onRouteChange: vi.fn(),
-      onImportFile: vi.fn(),
       onOpenAudioSettings: vi.fn(),
       onMinimize,
       onToggleMaximize,

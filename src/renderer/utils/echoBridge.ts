@@ -6,8 +6,12 @@ export const getAudioBridge = (): Window['echo']['audio'] | null => getEchoBridg
 
 export const getDiagnosticsBridge = (): Window['echo']['diagnostics'] | null => getEchoBridge()?.diagnostics ?? null;
 
+export const getDiscordPresenceBridge = (): Window['echo']['discordPresence'] | null => getEchoBridge()?.discordPresence ?? null;
+
 export const getEqBridge = (): Window['echo']['eq'] | null => getEchoBridge()?.eq ?? null;
 
 export const getLibraryBridge = (): Window['echo']['library'] | null => getEchoBridge()?.library ?? null;
+
+export const getLastFmBridge = (): Window['echo']['lastfm'] | null => getEchoBridge()?.lastfm ?? null;
 
 export const getPlaybackBridge = (): Window['echo']['playback'] | null => getEchoBridge()?.playback ?? null;

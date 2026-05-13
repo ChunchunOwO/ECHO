@@ -84,6 +84,31 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [queue, state]);
 
   useEffect(() => {
+    const unsubscribe = window.echo?.audio?.onStatus?.((nextAudioStatus) => {
+      refreshRequestRef.current += 1;
+      setAudioStatus(nextAudioStatus);
+      if (nextAudioStatus.currentTrackId) {
+        setQueueCurrentTrackId(nextAudioStatus.currentTrackId);
+      }
+      setPlaybackStatus((current) =>
+        current
+          ? {
+              ...current,
+              state: nextAudioStatus.state,
+              currentTrackId: nextAudioStatus.currentTrackId,
+              filePath: nextAudioStatus.currentFilePath,
+              positionMs: Math.round(nextAudioStatus.positionSeconds * 1000),
+              durationMs: Math.round(nextAudioStatus.durationSeconds * 1000),
+            }
+          : current,
+      );
+      setError(nextAudioStatus.error);
+    });
+
+    return () => unsubscribe?.();
+  }, [setQueueCurrentTrackId]);
+
+  useEffect(() => {
     const handleVisibilityChange = (): void => {
       const nextVisible = document.visibilityState !== 'hidden';
       setIsWindowVisible(nextVisible);
@@ -99,7 +124,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
   useEffect(() => {
     void refreshStatus();
-    // TODO: Replace this polling with playback:onStatus / audio:onStatus IPC push events.
+    // TODO: Keep this as a lower-frequency fallback once all playback status surfaces use push IPC.
     // Position updates must be throttled and must not cause SongsPage or TrackList rerenders.
     const timer = window.setInterval(() => {
       void refreshStatus();
@@ -216,6 +241,14 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     window.dispatchEvent(new Event('app:navigate:queue'));
   }, []);
 
+  const handleOpenNowPlaying = useCallback((): void => {
+    window.dispatchEvent(new Event('app:navigate:now-playing'));
+  }, []);
+
+  const handleOpenLyrics = useCallback((): void => {
+    window.dispatchEvent(new Event('app:navigate:lyrics'));
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.code !== 'Space' || event.repeat) {
@@ -239,13 +272,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [handlePlayPause]);
 
   useEffect(() => {
-    if (state !== 'ended' || !trackId || handledEndedTrackRef.current === trackId) {
+    const endedPlaybackKey = trackId ?? filePath ?? queue.currentQueueId ?? null;
+
+    if (state !== 'ended' || !endedPlaybackKey || handledEndedTrackRef.current === endedPlaybackKey) {
       return;
     }
 
-    handledEndedTrackRef.current = trackId;
+    handledEndedTrackRef.current = endedPlaybackKey;
     void runPlaybackAction(queue.playNext);
-  }, [queue.playNext, runPlaybackAction, state, trackId]);
+  }, [filePath, queue.currentQueueId, queue.playNext, runPlaybackAction, state, trackId]);
 
   useEffect(() => {
     if (state === 'playing') {
@@ -280,7 +315,14 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   return (
     <footer className="player-bar" aria-label="播放控制">
       <div className="player-now">
-        <div className="player-cover" data-empty={!currentTrack?.coverThumb} aria-hidden="true">
+        <button
+          className="player-cover"
+          data-empty={!currentTrack?.coverThumb}
+          type="button"
+          aria-label="Open Now Playing"
+          title="Open Now Playing"
+          onClick={handleOpenNowPlaying}
+        >
           {currentTrack?.coverThumb ? (
             <img alt="" src={currentTrack.coverThumb} />
           ) : (
@@ -290,7 +332,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
             </div>
           )}
           <div className="cover-sheen" />
-        </div>
+        </button>
         <div className="player-track-copy">
           <strong>{title}</strong>
           <span>{artist}</span>
@@ -310,6 +352,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onPrevious={handlePrevious}
           onCycleRepeatMode={handleCycleRepeatMode}
           onOpenQueue={handleOpenQueue}
+          onOpenLyrics={handleOpenLyrics}
           onToggleShuffle={queue.toggleShuffle}
         />
         <PlayerProgress

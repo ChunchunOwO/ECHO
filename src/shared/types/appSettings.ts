@@ -14,5 +14,13 @@ export type AppSettings = {
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;
+  discordRichPresenceEnabled: boolean;
+  lastFmEnabled: boolean;
+  lastFmUsername: string | null;
+  lastFmSessionKey: string | null;
+  lastFmScrobbleEnabled: boolean;
+  lastFmNowPlayingEnabled: boolean;
+  lastFmMinScrobbleSeconds: number;
+  lastFmAuthToken: string | null;
   smtcEnabled: boolean;
 };

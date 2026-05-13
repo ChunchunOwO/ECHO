@@ -170,12 +170,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   }, []);
 
   const toggleShuffle = useCallback((): void => {
-    setIsShuffleEnabled((enabled) => {
-      const next = !enabled;
-      isShuffleEnabledRef.current = next;
-      return next;
-    });
-  }, []);
+    const next = !isShuffleEnabledRef.current;
+    isShuffleEnabledRef.current = next;
+    setIsShuffleEnabled(next);
+    if (next && repeatModeRef.current === 'all') {
+      setRepeatModeInternal('off');
+    }
+  }, [setRepeatModeInternal]);
 
   const currentItem = useMemo(() => findItemByQueueId(items, currentQueueId), [currentQueueId, items]);
   const currentTrack = useMemo(() => {

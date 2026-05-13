@@ -480,6 +480,13 @@ export const SongsPage = (): JSX.Element => {
         </div>
       </div>
 
+      {total === 0 && !isLoading ? (
+        <div className="songs-import-hint">
+          <FolderPlus size={17} aria-hidden="true" />
+          <span>也可以直接把音乐文件或文件夹拖入窗口。支持 MP3, FLAC, WAV, ALAC, AAC, OPUS, OGG, APE, WV, DSF, DFF, CUE 等格式，更多格式会自动识别。</span>
+        </div>
+      ) : null}
+
       <TrackList
         tracks={tracks}
         currentTrackId={currentTrackId}

@@ -8,7 +8,7 @@ import { defaultCoverSvg } from '../library/workers/TsCoverExtractor';
 const cacheControlHeader = 'public, max-age=31536000, immutable';
 
 const isCoverVariant = (value: string): value is CoverVariant =>
-  value === 'thumb' || value === 'album' || value === 'large';
+  value === 'thumb' || value === 'album' || value === 'large' || value === 'original';
 
 const contentTypeForPath = (filePath: string, fallback: string | null): string => {
   switch (extname(filePath).toLocaleLowerCase()) {
@@ -63,7 +63,7 @@ export const registerCoverProtocolHandler = (): void => {
       const asset = getLibraryService().resolveCoverAsset(coverId, variant);
 
       if (!asset || !existsSync(asset.filePath)) {
-        return variant === 'large' ? missingCoverResponse() : defaultSvgResponse();
+        return variant === 'large' || variant === 'original' ? missingCoverResponse() : defaultSvgResponse();
       }
 
       return new Response(readFileSync(asset.filePath), {

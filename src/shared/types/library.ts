@@ -17,6 +17,13 @@ export type LibraryCacheClearResult = LibraryCleanupResult & {
   freedCoverCacheBytes: number;
 };
 
+export type ImportPathClassification = {
+  folders: string[];
+  audioFiles: string[];
+  unsupportedFiles: string[];
+  missingPaths: string[];
+};
+
 export type LibraryDiagnostics = {
   foldersCount: number;
   tracksCount: number;

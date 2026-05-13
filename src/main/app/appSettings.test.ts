@@ -55,6 +55,47 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ artistWallAlbumArtwork: true }).artistWallAlbumArtwork).toBe(true);
   });
 
+  it('keeps Discord Rich Presence disabled by default', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).discordRichPresenceEnabled).toBe(false);
+    expect(normalizeSettings({ discordRichPresenceEnabled: true }).discordRichPresenceEnabled).toBe(true);
+    expect(normalizeSettings({ discordRichPresenceEnabled: 'yes' as never }).discordRichPresenceEnabled).toBe(false);
+  });
+
+  it('normalizes Last.fm settings with privacy-friendly defaults', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({})).toMatchObject({
+      lastFmEnabled: false,
+      lastFmUsername: null,
+      lastFmSessionKey: null,
+      lastFmScrobbleEnabled: true,
+      lastFmNowPlayingEnabled: true,
+      lastFmMinScrobbleSeconds: 30,
+      lastFmAuthToken: null,
+    });
+    expect(
+      normalizeSettings({
+        lastFmEnabled: true,
+        lastFmUsername: ' alice ',
+        lastFmSessionKey: ' session ',
+        lastFmScrobbleEnabled: false,
+        lastFmNowPlayingEnabled: false,
+        lastFmMinScrobbleSeconds: 999,
+        lastFmAuthToken: ' token ',
+      }),
+    ).toMatchObject({
+      lastFmEnabled: true,
+      lastFmUsername: 'alice',
+      lastFmSessionKey: 'session',
+      lastFmScrobbleEnabled: false,
+      lastFmNowPlayingEnabled: false,
+      lastFmMinScrobbleSeconds: 240,
+      lastFmAuthToken: 'token',
+    });
+  });
+
   it('normalizes scan performance mode', async () => {
     const { normalizeSettings } = await import('./appSettings');
 

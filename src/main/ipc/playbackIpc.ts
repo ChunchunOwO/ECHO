@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron';
+import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioOutputMode, AudioOutputSettings, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { PlaybackProbeHint, PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
@@ -183,7 +184,7 @@ export const registerPlaybackIpc = (): void => {
       filters: [
         {
           name: 'Audio files',
-          extensions: ['flac', 'mp3', 'wav', 'm4a', 'ogg'],
+          extensions: SUPPORTED_AUDIO_DIALOG_EXTENSIONS,
         },
       ],
     });

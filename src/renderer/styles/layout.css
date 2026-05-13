@@ -4,7 +4,14 @@
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  background: var(--color-bg);
+  background:
+    linear-gradient(180deg, #fafafa 0%, var(--color-bg) 64%),
+    var(--color-bg);
+}
+
+.app-shell--standalone {
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .app-titlebar,
@@ -27,9 +34,9 @@
   padding: 0 12px 0 18px;
   border-width: 0 0 1px;
   border-radius: 0;
-  background: rgba(251, 252, 254, 0.86);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 10px 34px rgba(38, 58, 82, 0.06);
+  background: rgba(250, 250, 251, 0.88);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: none;
   -webkit-app-region: drag;
 }
 
@@ -40,15 +47,20 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 10px 10px 14px;
+  padding: 12px 12px 14px;
   flex-direction: column;
   border-width: 0 1px 0 0;
   border-radius: 0;
-  background: rgba(251, 252, 254, 0.9);
-  backdrop-filter: blur(18px);
+  border-color: rgba(116, 134, 156, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76) 0%, rgba(241, 246, 250, 0.78) 48%, rgba(236, 240, 245, 0.86) 100%),
+    rgba(246, 248, 251, 0.92);
+  backdrop-filter: blur(24px) saturate(1.16);
   overscroll-behavior: contain;
   scrollbar-width: none;
-  box-shadow: 10px 0 34px rgba(40, 60, 82, 0.045);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.82),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
 }
 
 .sidebar::-webkit-scrollbar {
@@ -63,8 +75,141 @@
   padding: 38px 42px 28px;
   border-width: 0;
   border-radius: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(247, 249, 252, 0.92));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(245, 245, 247, 0.96) 46%),
+    var(--color-bg);
   animation: page-enter 180ms ease-out both;
+}
+
+.app-shell--standalone .app-titlebar {
+  grid-column: 1;
+  grid-template-columns: minmax(160px, 1fr) auto;
+}
+
+.app-shell--standalone .app-titlebar-actions {
+  display: none;
+}
+
+.app-shell--lyrics {
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr) var(--player-height);
+  background: #eef2f7;
+}
+
+.app-shell--lyrics .app-titlebar {
+  position: relative;
+  z-index: 5;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell--lyrics .app-titlebar-brand {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-shell--lyrics .app-titlebar-actions {
+  display: inline-flex;
+}
+
+.app-shell--lyrics .titlebar-action {
+  color: rgba(72, 84, 99, 0.82);
+  background: transparent;
+}
+
+.app-shell--lyrics .titlebar-action:hover,
+.app-shell--lyrics .titlebar-action[data-active="true"] {
+  color: #243142;
+  background: rgba(28, 38, 52, 0.06);
+}
+
+.app-shell--lyrics .window-controls {
+  justify-self: end;
+}
+
+.app-shell--lyrics .window-control {
+  color: rgba(72, 84, 99, 0.82);
+  background: transparent;
+}
+
+.app-shell--lyrics .window-control:hover {
+  color: #243142;
+  background: rgba(28, 38, 52, 0.06);
+}
+
+.app-shell--lyrics .page-surface--standalone {
+  grid-row: 1 / 3;
+}
+
+.app-shell--lyrics .player-bar {
+  grid-column: 1;
+}
+
+.app-shell:has(.lyrics-page) {
+  background: #eef2f7;
+}
+
+.app-shell:has(.lyrics-page) .app-titlebar {
+  position: relative;
+  z-index: 5;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell:has(.lyrics-page) .app-titlebar-brand {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-shell:has(.lyrics-page) .app-titlebar-actions {
+  display: inline-flex;
+}
+
+.app-shell:has(.lyrics-page) .titlebar-action {
+  color: rgba(72, 84, 99, 0.82);
+  background: transparent;
+}
+
+.app-shell:has(.lyrics-page) .titlebar-action:hover,
+.app-shell:has(.lyrics-page) .titlebar-action[data-active="true"] {
+  color: #243142;
+  background: rgba(28, 38, 52, 0.06);
+}
+
+.app-shell:has(.lyrics-page) .window-controls {
+  justify-self: end;
+}
+
+.app-shell:has(.lyrics-page) .window-control {
+  color: rgba(72, 84, 99, 0.82);
+  background: transparent;
+}
+
+.app-shell:has(.lyrics-page) .window-control:hover {
+  color: #243142;
+  background: rgba(28, 38, 52, 0.06);
+}
+
+.app-shell:has(.lyrics-page) .page-surface--standalone {
+  grid-row: 1 / 3;
+}
+
+.app-shell:has(.lyrics-page) .player-bar {
+  grid-column: 1;
+}
+
+.page-surface--standalone {
+  grid-column: 1;
+}
+
+.page-surface:has(.album-detail-page),
+.page-surface:has(.artist-detail-page) {
+  padding: 0;
 }
 
 .player-bar {
@@ -73,19 +218,17 @@
   display: grid;
   grid-row: 3;
   grid-column: 1 / 3;
-  grid-template-columns: minmax(360px, 0.95fr) minmax(440px, 1.25fr) minmax(160px, 0.5fr);
+  grid-template-columns: minmax(320px, 0.95fr) minmax(410px, 1.22fr) minmax(150px, 0.45fr);
   align-items: center;
-  gap: 18px;
-  padding: 8px 26px;
+  gap: 16px;
+  padding: 9px 24px;
   border-width: 1px 0 0;
   border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92)),
-    rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(22px);
+  background: rgba(252, 252, 253, 0.94);
+  backdrop-filter: blur(18px) saturate(1.12);
   box-shadow:
-    0 -16px 42px rgba(37, 57, 82, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    0 -8px 24px rgba(0, 0, 0, 0.045),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 @keyframes page-enter {
@@ -125,7 +268,7 @@
   }
 
   .player-bar {
-    grid-template-columns: minmax(280px, 1fr) minmax(260px, 1.12fr);
+    grid-template-columns: minmax(240px, 1fr) minmax(240px, 1.12fr);
   }
 
   .output-status {

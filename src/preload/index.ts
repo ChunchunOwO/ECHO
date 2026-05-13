@@ -21,6 +21,7 @@ const echoApi: EchoApi = {
   library: {
     chooseFolder: () => ipcRenderer.invoke(IpcChannels.LibraryChooseFolder),
     addFolder: (path) => ipcRenderer.invoke(IpcChannels.LibraryAddFolder, path),
+    classifyImportPaths: (paths) => ipcRenderer.invoke(IpcChannels.LibraryClassifyImportPaths, paths),
     getFolders: () => ipcRenderer.invoke(IpcChannels.LibraryGetFolders),
     getFolderOverviews: () => ipcRenderer.invoke(IpcChannels.LibraryGetFolderOverviews),
     getFolderChildren: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetFolderChildren, query),
@@ -104,8 +105,30 @@ const echoApi: EchoApi = {
       return () => ipcRenderer.off(IpcChannels.SmtcCommand, listener);
     },
   },
+  discordPresence: {
+    getStatus: () => ipcRenderer.invoke(IpcChannels.DiscordPresenceGetStatus),
+    setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.DiscordPresenceSetEnabled, enabled),
+  },
+  lastfm: {
+    getStatus: () => ipcRenderer.invoke(IpcChannels.LastFmGetStatus),
+    setEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LastFmSetEnabled, enabled),
+    setNowPlayingEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LastFmSetNowPlayingEnabled, enabled),
+    setScrobbleEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LastFmSetScrobbleEnabled, enabled),
+    createAuthToken: () => ipcRenderer.invoke(IpcChannels.LastFmCreateAuthToken),
+    openAuthUrl: (token) => ipcRenderer.invoke(IpcChannels.LastFmOpenAuthUrl, token),
+    completeAuth: (token) => ipcRenderer.invoke(IpcChannels.LastFmCompleteAuth, token),
+    authenticatePassword: (username, password) => ipcRenderer.invoke(IpcChannels.LastFmAuthenticatePassword, username, password),
+    disconnect: () => ipcRenderer.invoke(IpcChannels.LastFmDisconnect),
+  },
   audio: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.AudioGetStatus),
+    onStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as Awaited<ReturnType<EchoApi['audio']['getStatus']>>);
+      };
+      ipcRenderer.on(IpcChannels.AudioStatus, listener);
+      return () => ipcRenderer.off(IpcChannels.AudioStatus, listener);
+    },
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: (settings) => ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings),
   },

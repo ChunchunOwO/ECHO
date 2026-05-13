@@ -2,11 +2,12 @@ import {
   Captions,
   Cloud,
   Disc3,
+  Download,
   FilePlus2,
   Folder,
   FolderPlus,
-  Headphones,
   Heart,
+  Headphones,
   History,
   Library,
   ListMusic,
@@ -24,11 +25,14 @@ import { PlaylistsPage } from '../pages/PlaylistsPage';
 import { QueuePage } from '../pages/QueuePage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { SongsPage } from '../pages/SongsPage';
+import { LyricsPage } from '../pages/LyricsPage';
 import { EmptyState } from '../components/ui/EmptyState';
 import type { TranslationKey } from '../i18n/locales';
 
 export type AppRouteId =
   | 'songs'
+  | 'downloads'
+  | 'lyrics'
   | 'albums'
   | 'artists'
   | 'folders'
@@ -51,6 +55,7 @@ export type AppRoute = {
   descriptionKey?: TranslationKey;
   icon: LucideIcon;
   placement: 'main' | 'utility';
+  chrome?: 'shell' | 'standalone';
   element: JSX.Element;
 };
 
@@ -80,6 +85,27 @@ export const appRoutes: AppRoute[] = [
     element: <SongsPage />,
   },
   {
+    id: 'downloads',
+    label: 'Downloads',
+    labelKey: 'route.downloads.label',
+    description: 'Download queue placeholder.',
+    descriptionKey: 'route.downloads.description',
+    icon: Download,
+    placement: 'main',
+    element: <PlaceholderPage icon={Download} title="下载" description="下载任务列表会放在这里。" />,
+  },
+  {
+    id: 'lyrics',
+    label: 'Lyrics',
+    labelKey: 'route.lyrics.label',
+    description: 'Lyrics and immersive playback.',
+    descriptionKey: 'route.lyrics.description',
+    icon: Captions,
+    placement: 'main',
+    chrome: 'standalone',
+    element: <LyricsPage />,
+  },
+  {
     id: 'albums',
     label: 'Albums',
     labelKey: 'route.albums.label',
@@ -101,9 +127,9 @@ export const appRoutes: AppRoute[] = [
   },
   {
     id: 'folders',
-    label: '文件夹',
+    label: 'Folders',
     labelKey: 'route.folders.label',
-    description: '本地导入根目录。',
+    description: 'Local import roots.',
     descriptionKey: 'route.folders.description',
     icon: Folder,
     placement: 'main',

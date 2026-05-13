@@ -26,6 +26,14 @@ const settings: AppSettings = {
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
+  discordRichPresenceEnabled: false,
+  lastFmEnabled: false,
+  lastFmUsername: null,
+  lastFmSessionKey: null,
+  lastFmScrobbleEnabled: true,
+  lastFmNowPlayingEnabled: true,
+  lastFmMinScrobbleSeconds: 30,
+  lastFmAuthToken: null,
   smtcEnabled: true,
 };
 

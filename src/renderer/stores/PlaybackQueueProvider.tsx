@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { PropsWithChildren } from 'react';
 import type { AudioPlaybackState } from '../../shared/types/audio';
 import type { LibraryTrack } from '../../shared/types/library';
-import type { PlaybackStatus } from '../../shared/types/playback';
+import type { LocalFileResolveResult, PlaybackStatus } from '../../shared/types/playback';
 
 export type QueueSource =
   | { type: 'songs'; label: string; search?: string; sort?: string; hideDuplicates?: boolean }
   | { type: 'album'; label: string; albumId: string }
   | { type: 'artist'; label: string; artistId?: string }
   | { type: 'folder'; label: string; folderId: string; path: string; recursive: boolean }
+  | { type: 'local-file'; label: string }
   | { type: 'manual'; label: string };
 
 export type QueueItem = {
@@ -53,6 +54,7 @@ type PlaybackQueueContextValue = {
   moveQueueItem: (fromIndex: number, toIndex: number) => void;
   playQueueItem: (queueId: string) => Promise<PlaybackStatus>;
   playTrack: (track: LibraryTrack, options?: PlayTrackOptions) => Promise<PlaybackStatus>;
+  openTemporaryLocalFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
   playPrevious: () => Promise<PlaybackStatus | null>;
   playNext: () => Promise<PlaybackStatus | null>;
   setCurrentTrackId: (trackId: string | null) => void;
@@ -255,12 +257,32 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
 
     try {
-      const result = await library.startPlaybackHistory({
-        trackId: item.track.id,
-        sourceType: item.source.type,
-        sourceLabel: item.source.label,
-        queueId: item.queueId,
-      });
+      const result = await library.startPlaybackHistory(
+        item.track.isTemporary
+          ? {
+              trackId: null,
+              trackPath: item.track.path,
+              title: item.track.title,
+              artist: item.track.artist,
+              album: item.track.album,
+              albumArtist: item.track.albumArtist,
+              coverId: item.track.coverId,
+              durationSeconds: item.track.duration,
+              sourceType: item.source.type,
+              sourceLabel: item.source.label,
+              queueId: item.queueId,
+            }
+          : {
+              trackId: item.track.id,
+              mediaType: item.track.mediaType,
+              sourceId: item.track.sourceId,
+              stableKey: item.track.stableKey,
+              remotePath: item.track.remotePath,
+              sourceType: item.source.type,
+              sourceLabel: item.source.label,
+              queueId: item.queueId,
+            },
+      );
       const nowMs = Date.now();
       playbackHistorySessionRef.current = {
         historyId: result.historyId,
@@ -332,11 +354,28 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
 
     await finishPlaybackHistorySession();
-    const status = await playback.playLocalFile({
-      filePath: track.path,
-      trackId: track.id,
-      probe: createProbeFromTrack(track),
-    });
+    const status =
+      track.mediaType === 'remote' && playback.playMediaItem
+        ? await playback.playMediaItem({
+            item: {
+              mediaType: 'remote',
+              trackId: track.id,
+              sourceId: track.sourceId ?? null,
+              stableKey: track.stableKey ?? null,
+              remotePath: track.remotePath ?? null,
+              title: track.title,
+              artist: track.artist,
+              album: track.album,
+              albumArtist: track.albumArtist,
+              duration: track.duration,
+              coverThumb: track.coverThumb,
+            },
+          })
+        : await playback.playLocalFile({
+            filePath: track.path,
+            trackId: track.id,
+            probe: createProbeFromTrack(track),
+          });
     void startPlaybackHistorySession(item);
     return status;
   }, [finishPlaybackHistorySession, startPlaybackHistorySession]);
@@ -542,6 +581,33 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     [commitPlayedItem, playLocalTrack, setHistory, setItems],
   );
 
+  const openTemporaryLocalFiles = useCallback(
+    async (paths: string[]): Promise<LocalFileResolveResult> => {
+      const playback = window.echo?.playback;
+
+      if (!playback?.resolveLocalAudioFiles) {
+        throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to open local files.');
+      }
+
+      const result = await playback.resolveLocalAudioFiles(paths);
+      if (result.tracks.length === 0) {
+        return result;
+      }
+
+      const source: QueueSource = { type: 'local-file', label: 'Local files' };
+      const nextItems = result.tracks.map((track) => createQueueItem(track, source));
+      const firstItem = nextItems[0];
+      const previousItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
+      const status = await playLocalTrack(firstItem);
+
+      setItems((current) => [...current, ...nextItems]);
+      commitPlayedItem(firstItem, status, { previousItem });
+
+      return result;
+    },
+    [commitPlayedItem, playLocalTrack, setItems],
+  );
+
   const playPrevious = useCallback(async (): Promise<PlaybackStatus | null> => {
     const previousFromHistory = historyRef.current[historyRef.current.length - 1];
 
@@ -710,6 +776,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       moveQueueItem,
       playQueueItem,
       playTrack,
+      openTemporaryLocalFiles,
       playPrevious,
       playNext,
       setCurrentTrackId,
@@ -736,6 +803,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       playPrevious,
       playQueueItem,
       playTrack,
+      openTemporaryLocalFiles,
       playTrackNext,
       removeQueueItem,
       repeatMode,

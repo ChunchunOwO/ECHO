@@ -1,4 +1,6 @@
 import type { AudioOutputSettings, AudioPlaybackState } from './audio';
+import type { LibraryTrack } from './library';
+import type { PlayableTrack } from './remoteSources';
 
 export type PlaybackStatus = {
   state: AudioPlaybackState;
@@ -23,4 +25,22 @@ export type PlaybackStartRequest = {
   startSeconds?: number;
   output?: AudioOutputSettings;
   probe?: PlaybackProbeHint;
+};
+
+export type PlaybackMediaStartRequest = {
+  item: PlayableTrack;
+  startSeconds?: number;
+  output?: AudioOutputSettings;
+};
+
+export type LocalFileOpenRejectionReason = 'missing' | 'not_file' | 'unsupported';
+
+export type LocalFileOpenRejection = {
+  path: string;
+  reason: LocalFileOpenRejectionReason;
+};
+
+export type LocalFileResolveResult = {
+  tracks: LibraryTrack[];
+  rejected: LocalFileOpenRejection[];
 };

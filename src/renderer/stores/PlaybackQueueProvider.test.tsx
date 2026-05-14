@@ -87,6 +87,65 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(startPlaybackHistory).toHaveBeenCalledTimes(2);
   });
 
+  it('opens temporary local files, queues them, and records history from snapshots', async () => {
+    const first = { ...makeTrack(1), id: 'temporary-local:first', isTemporary: true, title: 'Loose File' };
+    const second = { ...makeTrack(2), id: 'temporary-local:second', isTemporary: true };
+    const startPlaybackHistory = vi.fn().mockResolvedValue({ historyId: 'history-temp' });
+    const resolveLocalAudioFiles = vi.fn().mockResolvedValue({ tracks: [first, second], rejected: [] });
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        resolveLocalAudioFiles,
+        playLocalFile,
+      },
+      library: {
+        startPlaybackHistory,
+      },
+    } as unknown as Window['echo'];
+
+    const OpenFilesProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="queue-size">{queue.items.length}</output>
+          <output aria-label="current-title">{queue.currentTrack?.title ?? ''}</output>
+          <button type="button" onClick={() => void queue.openTemporaryLocalFiles(['D:\\Loose\\one.flac', 'D:\\Loose\\two.flac'])}>
+            open
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <OpenFilesProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'open' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-title').textContent).toBe('Loose File'));
+    expect(screen.getByLabelText('queue-size').textContent).toBe('2');
+    expect(resolveLocalAudioFiles).toHaveBeenCalledWith(['D:\\Loose\\one.flac', 'D:\\Loose\\two.flac']);
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ filePath: first.path, trackId: first.id }));
+    expect(startPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: null,
+      trackPath: first.path,
+      title: first.title,
+      sourceType: 'local-file',
+    }));
+  });
+
   it('triggers automatic network MV search when playback starts', async () => {
     const track = makeTrack(1);
     const getSettings = vi.fn().mockResolvedValue({ autoSearch: true });
@@ -138,6 +197,82 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() =>
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'mv:candidatesChanged' })),
     );
+  });
+
+  it('plays remote tracks through media-item IPC and records only stable identity', async () => {
+    const remoteTrack: LibraryTrack = {
+      ...makeTrack(1),
+      id: 'remote:source-1:stable-hash',
+      mediaType: 'remote',
+      path: 'remote://source-1/music/Echo Song.flac',
+      sourceId: 'source-1',
+      provider: 'webdav',
+      remotePath: '/music/Echo Song.flac',
+      stableKey: 'stable-key-1',
+    };
+    const playMediaItem = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: remoteTrack.id,
+      positionMs: 0,
+      durationMs: remoteTrack.duration * 1000,
+      filePath: 'http://127.0.0.1:49152/remote-stream/token',
+    });
+    const startPlaybackHistory = vi.fn().mockResolvedValue({ historyId: 'history-remote' });
+
+    window.echo = {
+      playback: {
+        playMediaItem,
+      },
+      library: {
+        startPlaybackHistory,
+      },
+    } as unknown as Window['echo'];
+
+    const AutoPlayRemote = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(remoteTrack);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutoPlayRemote />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playMediaItem).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
+
+    expect(playMediaItem).toHaveBeenCalledWith({
+      item: expect.objectContaining({
+        mediaType: 'remote',
+        trackId: remoteTrack.id,
+        sourceId: remoteTrack.sourceId,
+        stableKey: remoteTrack.stableKey,
+        remotePath: remoteTrack.remotePath,
+      }),
+    });
+    expect(playMediaItem.mock.calls[0]?.[0].item.streamUrl).toBeUndefined();
+    expect(startPlaybackHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: remoteTrack.id,
+        mediaType: 'remote',
+        sourceId: remoteTrack.sourceId,
+        stableKey: remoteTrack.stableKey,
+        remotePath: remoteTrack.remotePath,
+      }),
+    );
+    expect(startPlaybackHistory.mock.calls[0]?.[0].trackPath).toBeUndefined();
   });
 });
 

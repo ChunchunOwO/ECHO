@@ -107,6 +107,47 @@
             "x64"
           ]
         }
+      ],
+      "fileAssociations": [
+        {
+          "name": "Audio file",
+          "description": "Open local audio files with ECHO Next",
+          "ext": [
+            "mp3",
+            "flac",
+            "wav",
+            "m4a",
+            "aac",
+            "ogg",
+            "opus",
+            "wma",
+            "alac",
+            "aiff",
+            "aif",
+            "ape",
+            "wv",
+            "tta",
+            "tak",
+            "caf",
+            "dsf",
+            "dff",
+            "mka",
+            "mkv",
+            "mp4",
+            "mov",
+            "webm",
+            "mp2",
+            "mp1",
+            "mpc",
+            "ofr",
+            "ofs",
+            "spx",
+            "amr",
+            "ac3",
+            "dts"
+          ],
+          "role": "Viewer"
+        }
       ]
     },
     "nsis": {

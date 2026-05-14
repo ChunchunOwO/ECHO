@@ -63,6 +63,9 @@ export type LyricsSearchCandidate = {
 
 export type LyricsQuery = {
   trackId?: string | null;
+  mediaType?: 'local' | 'remote';
+  sourceId?: string | null;
+  stableKey?: string | null;
   title: string;
   artist: string;
   album?: string | null;

@@ -135,11 +135,14 @@ const lyricsKind = (value: string): TrackLyrics['kind'] => {
 
 const toQuery = (track: LibraryTrack): LyricsQuery => ({
   trackId: track.id,
+  mediaType: track.mediaType ?? 'local',
+  sourceId: track.sourceId ?? null,
+  stableKey: track.stableKey ?? null,
   title: track.title || '',
   artist: track.artist || track.albumArtist || '',
   album: track.album || null,
   durationSeconds: track.duration > 0 ? track.duration : null,
-  filePath: track.path,
+  filePath: track.mediaType === 'remote' ? null : track.path,
 });
 
 const toManualSearchQuery = (track: LibraryTrack, searchText?: string | null): LyricsQuery => {
@@ -160,6 +163,9 @@ const toManualSearchQuery = (track: LibraryTrack, searchText?: string | null): L
 
 const toNetworkQuery = (query: LyricsQuery): LyricsQuery => ({
   trackId: query.trackId,
+  mediaType: query.mediaType,
+  sourceId: query.sourceId,
+  stableKey: query.stableKey,
   title: query.title,
   artist: query.artist,
   album: query.album ?? null,
@@ -168,7 +174,9 @@ const toNetworkQuery = (query: LyricsQuery): LyricsQuery => ({
 });
 
 const cacheKeyFor = (query: LyricsQuery, provider: LyricsSource): string =>
-  [
+  query.mediaType === 'remote' && query.sourceId && query.stableKey
+    ? ['remote', query.sourceId, query.stableKey].join(':')
+    : [
     provider,
     normalizeTextForIdentity(query.title),
     normalizeTextForIdentity(query.artist),
@@ -348,7 +356,7 @@ const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
       lyricsAutoSearch: settings.lyricsAutoSearch !== false,
       lyricsDeepSearchEnabled: settings.lyricsDeepSearchEnabled !== false,
       lyricsAutoAcceptScore: Number.isFinite(settings.lyricsAutoAcceptScore)
-        ? Math.max(0.5, Math.min(0.7, settings.lyricsAutoAcceptScore))
+        ? Math.max(0.3, Math.min(1, settings.lyricsAutoAcceptScore))
         : defaultSettings.lyricsAutoAcceptScore,
       lyricsCoverAutoAcceptScore: Number.isFinite(settings.lyricsCoverAutoAcceptScore)
         ? Math.max(0.5, Math.min(1, Number(settings.lyricsCoverAutoAcceptScore)))

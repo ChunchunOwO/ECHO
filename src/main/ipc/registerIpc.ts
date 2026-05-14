@@ -23,6 +23,7 @@ import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
 import { registerMvIpc } from './mvIpc';
 import { registerPlaybackIpc } from './playbackIpc';
+import { registerRemoteSourcesIpc } from './remoteSourcesIpc';
 
 const fontMimeTypes: Record<string, string> = {
   '.otf': 'font/otf',
@@ -230,6 +231,7 @@ export const registerIpc = (): void => {
   registerLibraryIpc();
   registerLyricsIpc();
   registerMvIpc();
+  registerRemoteSourcesIpc();
   registerPlaybackIpc();
   registerAudioIpc();
 };

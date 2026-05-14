@@ -29,10 +29,17 @@ type MvSettingsDrawerProps = {
 
 const drawerExitAnimationMs = 320;
 const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
+const formatThreshold = (threshold: number | undefined): string => `${Math.round((threshold ?? 0.7) * 100)}%`;
+const thresholdFromPercent = (value: string): number => Math.max(50, Math.min(100, Math.round(Number(value)))) / 100;
 
 const fallbackSettings: MvSettings = {
   autoSearch: true,
   autoPreload: true,
+  autoApplyThreshold: 0.7,
+  immersiveBackground: true,
+  immersiveBackgroundScalePercent: 115,
+  immersiveBackgroundOffsetXPercent: 50,
+  immersiveBackgroundOffsetYPercent: 50,
   restartAudioOnLoad: false,
   enabledProviders: ['bilibili', 'youtube'],
   providerOrder: ['bilibili', 'youtube'],
@@ -173,6 +180,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
   const enabledProviders = new Set(settings.enabledProviders);
   const followMusicProgress = settings.restartAudioOnLoad;
+  const immersiveBackground = settings.immersiveBackground !== false;
 
   const notifyMvChanged = useCallback((trackId: string): void => {
     window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId } }));
@@ -784,6 +792,24 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <em>{settings.autoSearch ? t('mvSettings.status.on') : t('mvSettings.status.off')}</em>
             </span>
           </button>
+          <label className="mv-threshold-control">
+            <span className="mv-threshold-copy">
+              <strong>{t('mvSettings.network.autoApplyThreshold')}</strong>
+              <em>{t('mvSettings.network.autoApplyThresholdDescription', { threshold: formatThreshold(settings.autoApplyThreshold) })}</em>
+            </span>
+            <span className="mv-threshold-slider">
+              <input
+                type="range"
+                min="50"
+                max="100"
+                step="1"
+                value={Math.round((settings.autoApplyThreshold ?? 0.7) * 100)}
+                aria-label={t('mvSettings.network.autoApplyThreshold')}
+                onChange={(event) => void patchSettings({ autoApplyThreshold: thresholdFromPercent(event.currentTarget.value) })}
+              />
+              <strong>{formatThreshold(settings.autoApplyThreshold)}</strong>
+            </span>
+          </label>
           <button type="button" className="mv-source-toggle mv-auto-apply-toggle" aria-pressed={settings.autoPreload} onClick={() => void patchSettings({ autoPreload: !settings.autoPreload })}>
             <span className="mv-switch-track" aria-hidden="true">
               <span />
@@ -802,6 +828,73 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <em>{t('mvSettings.network.restartAudioOnLoadDescription')}</em>
             </span>
           </button>
+          <button type="button" className="mv-source-toggle mv-auto-apply-toggle" aria-pressed={immersiveBackground} onClick={() => void patchSettings({ immersiveBackground: !immersiveBackground })}>
+            <span className="mv-switch-track" aria-hidden="true">
+              <span />
+            </span>
+            <span className="mv-toggle-copy">
+              <strong>{t('mvSettings.immersive.title')}</strong>
+              <em>{t('mvSettings.immersive.description')}</em>
+            </span>
+          </button>
+          {immersiveBackground ? (
+            <div className="mv-immersive-controls">
+              <label className="mv-threshold-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('mvSettings.immersive.zoom')}</strong>
+                  <em>{settings.immersiveBackgroundScalePercent ?? 115}%</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="100"
+                    max="220"
+                    step="1"
+                    value={settings.immersiveBackgroundScalePercent ?? 115}
+                    aria-label={t('mvSettings.immersive.zoom')}
+                    onChange={(event) => void patchSettings({ immersiveBackgroundScalePercent: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{settings.immersiveBackgroundScalePercent ?? 115}%</strong>
+                </span>
+              </label>
+              <label className="mv-threshold-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('mvSettings.immersive.positionX')}</strong>
+                  <em>{t('mvSettings.immersive.dragHint')}</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={settings.immersiveBackgroundOffsetXPercent ?? 50}
+                    aria-label={t('mvSettings.immersive.positionX')}
+                    onChange={(event) => void patchSettings({ immersiveBackgroundOffsetXPercent: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{settings.immersiveBackgroundOffsetXPercent ?? 50}%</strong>
+                </span>
+              </label>
+              <label className="mv-threshold-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('mvSettings.immersive.positionY')}</strong>
+                  <em>{t('mvSettings.immersive.dragHint')}</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={settings.immersiveBackgroundOffsetYPercent ?? 50}
+                    aria-label={t('mvSettings.immersive.positionY')}
+                    onChange={(event) => void patchSettings({ immersiveBackgroundOffsetYPercent: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{settings.immersiveBackgroundOffsetYPercent ?? 50}%</strong>
+                </span>
+              </label>
+            </div>
+          ) : null}
           <div className="mv-source-list" role="list" aria-label={t('mvSettings.aria.networkSources')}>
             {settings.providerOrder.map((provider, index) => (
               <div

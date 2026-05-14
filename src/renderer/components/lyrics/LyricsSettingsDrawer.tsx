@@ -20,7 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { AppSettings } from '../../../shared/types/appSettings';
-import type { LyricsProviderId, LyricsSource } from '../../../shared/types/lyrics';
+import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../../shared/types/lyrics';
 
 type LyricsSettingsDrawerProps = {
   isOpen: boolean;
@@ -43,6 +43,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsEnabled'
   | 'lyricsHeaderHidden'
   | 'lyricsEmptyStateHidden'
+  | 'lyricsPlayerBarDrawerEnabled'
   | 'lyricsRomanizationEnabled'
   | 'lyricsTranslationEnabled'
   | 'lyricsFontSizePx'
@@ -59,7 +60,7 @@ type LyricsDrawerSettings = Pick<
 const fallbackSettings: LyricsDrawerSettings = {
   lyricsNetworkEnabled: true,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.7,
+  lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsPreferredProvider: 'lrclib',
@@ -69,6 +70,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
+  lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
@@ -124,6 +126,31 @@ const dispatchLyricsAction = (action: 'search' | 'rematch', query?: string): voi
   window.dispatchEvent(normalizedQuery ? new CustomEvent(eventName, { detail: { query: normalizedQuery } }) : new Event(eventName));
 };
 
+const formatDuration = (durationSeconds: number | null): string => {
+  if (!durationSeconds) {
+    return '--:--';
+  }
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = Math.round(durationSeconds % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
+const thresholdFromPercent = (value: string): number => Math.max(30, Math.min(100, Math.round(Number(value)))) / 100;
+
+const riskLabel = (risk: LyricsSearchCandidate['risk']): string => {
+  if (risk === 'low') return '精准匹配';
+  if (risk === 'medium') return '可能匹配';
+  return '需要确认';
+};
+
+const sourceFilterKey = (candidate: LyricsSearchCandidate): string => `${candidate.provider}:${candidate.sourceLabel}`;
+
+const dispatchLyricsCandidateApplied = (trackId: string, lyrics: TrackLyrics): void => {
+  window.dispatchEvent(new CustomEvent('lyrics:candidate-applied', { detail: { trackId, lyrics } }));
+};
+
 const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsNetworkEnabled: settings.lyricsNetworkEnabled,
   lyricsAutoSearch: settings.lyricsAutoSearch,
@@ -137,6 +164,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsEnabled: settings.lyricsEnabled,
   lyricsHeaderHidden: settings.lyricsHeaderHidden,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
+  lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
   lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsFontSizePx: settings.lyricsFontSizePx,
@@ -160,6 +188,11 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
+  const [lyricsCandidates, setLyricsCandidates] = useState<LyricsSearchCandidate[]>([]);
+  const [activeLyricsCandidateSource, setActiveLyricsCandidateSource] = useState('all');
+  const [lyricsCandidateStatus, setLyricsCandidateStatus] = useState<string | null>(null);
+  const [isLyricsCandidateLoading, setIsLyricsCandidateLoading] = useState(false);
+  const [applyingLyricsCandidateId, setApplyingLyricsCandidateId] = useState<string | null>(null);
   const saveRequestIdRef = useRef(0);
   const debouncedSaveRequestIdRef = useRef(0);
   const debouncedSaveTimerRef = useRef<number | null>(null);
@@ -186,6 +219,45 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
   const globalSyncOffsetSeconds = useMemo(
     () => (effectiveSettings.lyricsGlobalSyncOffsetMs / 1000).toFixed(2),
     [effectiveSettings.lyricsGlobalSyncOffsetMs],
+  );
+  const lyricsCandidateSourceOptions = useMemo(() => {
+    const order = new Map<LyricsSearchCandidate['provider'], number>([
+      ['local', 0],
+      ['lrclib', 1],
+      ['netease', 2],
+      ['qqmusic', 3],
+      ['musixmatch', 4],
+      ['genius', 5],
+      ['manual', 6],
+    ]);
+    const sourceMap = new Map<string, { key: string; label: string; count: number; order: number }>();
+
+    for (const candidate of lyricsCandidates) {
+      const key = sourceFilterKey(candidate);
+      const existing = sourceMap.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        sourceMap.set(key, {
+          key,
+          label: candidate.sourceLabel,
+          count: 1,
+          order: order.get(candidate.provider) ?? 99,
+        });
+      }
+    }
+
+    return [
+      { key: 'all', label: '全部来源', count: lyricsCandidates.length, order: -1 },
+      ...Array.from(sourceMap.values()).sort((left, right) => left.order - right.order || left.label.localeCompare(right.label)),
+    ];
+  }, [lyricsCandidates]);
+  const visibleLyricsCandidates = useMemo(
+    () =>
+      activeLyricsCandidateSource === 'all'
+        ? lyricsCandidates
+        : lyricsCandidates.filter((candidate) => sourceFilterKey(candidate) === activeLyricsCandidateSource),
+    [activeLyricsCandidateSource, lyricsCandidates],
   );
 
   const loadCurrentLyricsProvider = useCallback(async (): Promise<void> => {
@@ -235,6 +307,17 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
   const refreshDrawerSummary = useCallback(async (): Promise<void> => {
     await Promise.all([loadSettings(), loadCurrentLyricsProvider()]);
   }, [loadCurrentLyricsProvider, loadSettings]);
+
+  const resolveCurrentTrackId = useCallback(async (): Promise<string | null> => {
+    const playback = window.echo?.playback;
+    const audio = window.echo?.audio;
+    const [playbackStatus, audioStatus] = await Promise.all([
+      playback?.getStatus().catch(() => null) ?? Promise.resolve(null),
+      audio?.getStatus().catch(() => null) ?? Promise.resolve(null),
+    ]);
+
+    return playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
+  }, []);
 
   const patchSettings = useCallback(async (patch: Partial<AppSettings>, optimistic = true): Promise<void> => {
     const app = window.echo?.app;
@@ -390,6 +473,125 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
     patchLyricsProviderOrder(nextOrder);
   }, [orderedOnlineProviderIds, patchLyricsProviderOrder]);
 
+  const searchLyricsCandidates = useCallback(
+    async (searchText?: string): Promise<void> => {
+      if (!effectiveSettings.lyricsEnabled) {
+        setLyricsCandidateStatus(null);
+        return;
+      }
+
+      const lyricsApi = window.echo?.lyrics;
+      if (!lyricsApi?.searchCandidates) {
+        setError('Desktop bridge unavailable');
+        return;
+      }
+
+      setIsLyricsCandidateLoading(true);
+      setLyricsCandidateStatus('正在搜索歌词候选...');
+      setLyricsCandidates([]);
+      setActiveLyricsCandidateSource('all');
+
+      try {
+        const currentTrackId = await resolveCurrentTrackId();
+        if (!currentTrackId) {
+          setLyricsCandidateStatus('没有正在播放的歌曲');
+          return;
+        }
+
+        const normalizedSearchText = searchText?.trim();
+        const nextCandidates = normalizedSearchText
+          ? await lyricsApi.searchCandidates(currentTrackId, normalizedSearchText)
+          : await lyricsApi.searchCandidates(currentTrackId);
+
+        setLyricsCandidates(nextCandidates);
+        setActiveLyricsCandidateSource('all');
+        setLyricsCandidateStatus(nextCandidates.length ? null : '未找到歌词候选');
+        setError(null);
+      } catch (candidateError) {
+        setLyricsCandidateStatus('未找到歌词候选');
+        setError(candidateError instanceof Error ? candidateError.message : String(candidateError));
+      } finally {
+        setIsLyricsCandidateLoading(false);
+      }
+    },
+    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+  );
+
+  const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
+    if (!effectiveSettings.lyricsEnabled) {
+      setLyricsCandidateStatus(null);
+      return;
+    }
+
+    const lyricsApi = window.echo?.lyrics;
+    if (!lyricsApi?.searchCandidates) {
+      setError('Desktop bridge unavailable');
+      return;
+    }
+
+    setIsLyricsCandidateLoading(true);
+    setLyricsCandidateStatus('正在重新匹配歌词...');
+    setLyricsCandidates([]);
+    setActiveLyricsCandidateSource('all');
+
+    try {
+      const currentTrackId = await resolveCurrentTrackId();
+      if (!currentTrackId) {
+        setLyricsCandidateStatus('没有正在播放的歌曲');
+        return;
+      }
+
+      await lyricsApi.clearCache?.(currentTrackId);
+      const nextCandidates = await lyricsApi.searchCandidates(currentTrackId);
+      setLyricsCandidates(nextCandidates);
+      setActiveLyricsCandidateSource('all');
+      setLyricsCandidateStatus(nextCandidates.length ? null : '未找到歌词候选');
+      setError(null);
+    } catch (candidateError) {
+      setLyricsCandidateStatus('未找到歌词候选');
+      setError(candidateError instanceof Error ? candidateError.message : String(candidateError));
+    } finally {
+      setIsLyricsCandidateLoading(false);
+    }
+  }, [effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
+
+  const applyLyricsCandidate = useCallback(
+    async (candidateId: string): Promise<void> => {
+      if (!effectiveSettings.lyricsEnabled) {
+        setLyricsCandidateStatus(null);
+        return;
+      }
+
+      const lyricsApi = window.echo?.lyrics;
+      if (!lyricsApi?.applyCandidate) {
+        setError('Desktop bridge unavailable');
+        return;
+      }
+
+      setApplyingLyricsCandidateId(candidateId);
+      try {
+        const currentTrackId = await resolveCurrentTrackId();
+        if (!currentTrackId) {
+          setLyricsCandidateStatus('没有正在播放的歌曲');
+          return;
+        }
+
+        const trackLyrics = await lyricsApi.applyCandidate(currentTrackId, candidateId);
+        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider));
+        setLyricsCandidates([]);
+        setActiveLyricsCandidateSource('all');
+        setLyricsCandidateStatus('已应用歌词');
+        setError(null);
+        dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
+      } catch (applyError) {
+        setError(applyError instanceof Error ? applyError.message : String(applyError));
+      } finally {
+        setApplyingLyricsCandidateId(null);
+      }
+    },
+    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+  );
+
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
@@ -504,6 +706,7 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
             onSubmit={(event) => {
               event.preventDefault();
               dispatchLyricsAction('search', lyricsSearchQuery);
+              void searchLyricsCandidates(lyricsSearchQuery);
             }}
           >
             <Search size={15} />
@@ -515,22 +718,84 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
               <input
                 type="search"
                 value={lyricsSearchQuery}
-                disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                disabled={isBusy || isLyricsCandidateLoading || !effectiveSettings.lyricsEnabled}
                 placeholder="歌名 / 艺术家 / 关键词"
                 aria-label="搜索歌词文本"
                 onChange={(event) => setLyricsSearchQuery(event.currentTarget.value)}
               />
             </div>
-            <button type="submit" disabled={isBusy || !effectiveSettings.lyricsEnabled}>
+            <button type="submit" disabled={isBusy || isLyricsCandidateLoading || !effectiveSettings.lyricsEnabled}>
               Search
             </button>
           </form>
 
+          {(lyricsCandidateStatus || lyricsCandidates.length > 0) ? (
+            <div className="lyrics-drawer-candidates" aria-label="歌词搜索结果">
+              {lyricsCandidateStatus ? <p className="lyrics-match-status">{lyricsCandidateStatus}</p> : null}
+              {lyricsCandidates.length > 0 ? (
+                <>
+                  <div className="lyrics-source-filters" aria-label="歌词来源筛选">
+                    {lyricsCandidateSourceOptions.map((option) => (
+                      <button
+                        type="button"
+                        key={option.key}
+                        data-active={activeLyricsCandidateSource === option.key}
+                        onClick={() => setActiveLyricsCandidateSource(option.key)}
+                      >
+                        {option.label}
+                        <small>{option.count}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="lyrics-candidate-list">
+                    {visibleLyricsCandidates.map((candidate) => (
+                      <button
+                        className="lyrics-candidate"
+                        type="button"
+                        key={candidate.id}
+                        disabled={Boolean(applyingLyricsCandidateId)}
+                        onClick={() => void applyLyricsCandidate(candidate.id)}
+                      >
+                        <span>
+                          <strong>{candidate.title}</strong>
+                          <em>
+                            {candidate.artist}
+                            {candidate.album ? ` / ${candidate.album}` : ''} / {formatDuration(candidate.durationSeconds)}
+                          </em>
+                        </span>
+                        <span className="lyrics-candidate-badges">
+                          <small className={`lyrics-risk-badge lyrics-risk-badge--${candidate.risk ?? 'high'}`}>
+                            {riskLabel(candidate.risk)}
+                          </small>
+                          <small>
+                            {candidate.hasSynced
+                              ? 'Synced'
+                              : candidate.hasPlain
+                                ? 'Plain'
+                                : candidate.instrumental
+                                  ? 'Instrumental'
+                                  : 'Lyrics'}
+                          </small>
+                          <small>{candidate.sourceLabel}</small>
+                          <small>{formatScore(candidate.score)}</small>
+                          {applyingLyricsCandidateId === candidate.id ? <small>应用中</small> : null}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
             className="audio-device-pill"
             type="button"
-            disabled={isBusy || !effectiveSettings.lyricsEnabled}
-            onClick={() => dispatchLyricsAction('rematch')}
+            disabled={isBusy || isLyricsCandidateLoading || !effectiveSettings.lyricsEnabled}
+            onClick={() => {
+              dispatchLyricsAction('rematch');
+              void rematchLyricsCandidates();
+            }}
           >
             <RotateCcw size={15} />
             <span>
@@ -561,6 +826,26 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
           </label>
           <p>关闭后歌词页不会加载、搜索或匹配歌词。</p>
 
+          <label className="mv-threshold-control lyrics-match-threshold-control">
+            <span className="mv-threshold-copy">
+              <strong>歌词匹配度设置</strong>
+              <em>在线结果达到 {thresholdPercent}% 才会自动应用</em>
+            </span>
+            <span className="mv-threshold-slider">
+              <input
+                type="range"
+                min="30"
+                max="100"
+                step="1"
+                value={thresholdPercent}
+                aria-label="歌词匹配度设置"
+                disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                onChange={(event) => void patchSettings({ lyricsAutoAcceptScore: thresholdFromPercent(event.currentTarget.value) })}
+              />
+              <strong>{thresholdPercent}%</strong>
+            </span>
+          </label>
+
           <label className="audio-toggle-row">
             <span>
               <EyeOff size={17} />
@@ -573,6 +858,19 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
               onChange={(event) => void patchSettings({ lyricsHeaderHidden: event.currentTarget.checked })}
             />
           </label>
+          <label className="audio-toggle-row">
+            <span>
+              <EyeOff size={17} />
+              <strong>底栏抽屉</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsPlayerBarDrawerEnabled}
+              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>开启后歌词页会隐藏底部播放栏，鼠标靠近窗口底部时自动拉出，离开后收回。</p>
           <p>隐藏歌词页左上角封面、歌名和艺术家信息；底部播放栏仍会显示当前歌曲。</p>
 
           <label className="audio-toggle-row">
@@ -954,21 +1252,6 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
 
           <label className="lyrics-drawer-range">
             <span>
-              <strong>自动接受阈值</strong>
-              <em>{thresholdPercent}%</em>
-            </span>
-            <input
-              type="range"
-              min={50}
-              max={70}
-              step={1}
-              value={thresholdPercent}
-              onChange={(event) => void patchSettings({ lyricsAutoAcceptScore: Number(event.currentTarget.value) / 100 })}
-            />
-          </label>
-
-          <label className="lyrics-drawer-range">
-            <span>
               <strong>默认歌词偏移</strong>
               <em>{offsetSeconds}s</em>
             </span>
@@ -1002,12 +1285,12 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
             className="audio-device-pill"
             type="button"
             disabled={isBusy}
-            onClick={() => void patchSettings({ lyricsAutoAcceptScore: 0.7, lyricsDefaultOffsetMs: 0, lyricsGlobalSyncOffsetMs: 0 })}
+            onClick={() => void patchSettings({ lyricsAutoAcceptScore: 0.5, lyricsDefaultOffsetMs: 0, lyricsGlobalSyncOffsetMs: 0 })}
           >
             <RotateCcw size={15} />
             <span>
               <strong>恢复歌词默认值</strong>
-              <small>阈值 70% / 偏移 0ms</small>
+              <small>阈值 50% / 偏移 0ms</small>
             </span>
             <em>Reset</em>
           </button>

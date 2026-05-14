@@ -8,6 +8,7 @@ type LyricsLineProps = {
   seekable?: boolean;
   showRomanization?: boolean;
   showTranslation?: boolean;
+  focusDistance?: number;
 };
 
 const getLyricDensity = (
@@ -44,16 +45,22 @@ export const LyricsLine = ({
   seekable = true,
   showRomanization = true,
   showTranslation = true,
+  focusDistance = 4,
 }: LyricsLineProps): JSX.Element => {
   const density = getLyricDensity(line, showRomanization, showTranslation);
+  const visibleSecondaryLines =
+    (showRomanization && line.romanization ? 1 : 0) +
+    (showTranslation && line.translation ? 1 : 0);
 
   return (
     <button
       className="lyrics-line"
       data-active={active}
       data-density={density}
+      data-focus-distance={Math.min(4, Math.max(0, focusDistance))}
       data-past={past}
       data-seekable={seekable}
+      data-secondary-lines={visibleSecondaryLines}
       type="button"
       onClick={() => {
         if (seekable) {

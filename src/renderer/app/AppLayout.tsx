@@ -10,8 +10,10 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
 import type { AppRoute, AppRouteId } from './routes';
 import type { AudioStatus } from '../../shared/types/audio';
+import type { AppSettings } from '../../shared/types/appSettings';
 import { useI18n } from '../i18n/I18nProvider';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
+import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 type AppLayoutProps = {
   routes: AppRoute[];
@@ -19,6 +21,7 @@ type AppLayoutProps = {
 
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const { t } = useI18n();
+  const playbackQueue = usePlaybackQueue();
   const [activeRouteId, setActiveRouteId] = useState<AppRouteId>('songs');
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
   const [diagnosticsNotice, setDiagnosticsNotice] = useState(false);
@@ -26,6 +29,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
+  const [isLyricsPlayerDrawerEnabled, setIsLyricsPlayerDrawerEnabled] = useState(false);
+  const [isLyricsPlayerDrawerOpen, setIsLyricsPlayerDrawerOpen] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previousRouteIdRef = useRef<AppRouteId>('songs');
@@ -36,6 +41,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const pageContent: ReactNode = activeRoute.element;
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
+  const shouldUseLyricsPlayerDrawer = isLyricsRoute && isLyricsPlayerDrawerEnabled;
 
   const navigateRoute = useCallback(
     (routeId: AppRouteId): void => {
@@ -61,7 +67,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   useEffect(() => {
     void window.echo?.diagnostics
-      .getLastCrashSummary()
+      ?.getLastCrashSummary()
       .then((summary) => setDiagnosticsNotice(Boolean(summary)))
       .catch(() => undefined);
   }, []);
@@ -77,6 +83,39 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     return () => window.clearTimeout(timer);
   }, [chromeNotice]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshLyricsPlayerDrawerSetting = (event?: Event): void => {
+      const patch = (event as CustomEvent<Partial<AppSettings>> | undefined)?.detail;
+      if (typeof patch?.lyricsPlayerBarDrawerEnabled === 'boolean') {
+        setIsLyricsPlayerDrawerEnabled(patch.lyricsPlayerBarDrawerEnabled);
+        return;
+      }
+
+      void window.echo?.app
+        ?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            setIsLyricsPlayerDrawerEnabled(settings.lyricsPlayerBarDrawerEnabled === true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setIsLyricsPlayerDrawerEnabled(false);
+          }
+        });
+    };
+
+    refreshLyricsPlayerDrawerSetting();
+    window.addEventListener('settings:changed', refreshLyricsPlayerDrawerSetting);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', refreshLyricsPlayerDrawerSetting);
+    };
+  }, []);
 
   useEffect(() => {
     const handleNavigateImportFolder = (): void => {
@@ -170,7 +209,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   const handleImportFile = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
-    const audio = window.echo?.audio;
 
     if (!playback) {
       fileInputRef.current?.click();
@@ -179,26 +217,43 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
 
     try {
-      const filePath = await playback.openLocalAudioFile();
+      const filePaths = playback.openLocalAudioFiles ? await playback.openLocalAudioFiles() : await playback.openLocalAudioFile().then((path) => (path ? [path] : null));
 
-      if (!filePath) {
+      if (!filePaths?.length) {
         return;
       }
 
-      const audioStatus = await audio?.getStatus().catch(() => null);
-      await playback.playLocalFile({
-        filePath,
-        output: audioStatus
-          ? {
-              outputMode: audioStatus.outputMode,
-              deviceName: audioStatus.outputDeviceName ?? undefined,
-            }
-          : undefined,
-      });
+      const result = await playbackQueue.openTemporaryLocalFiles(filePaths);
+      navigateRoute('queue');
+      if (result.rejected.length > 0) {
+        setChromeNotice(`已打开 ${result.tracks.length} 个文件，忽略 ${result.rejected.length} 个不支持或不可用文件。`);
+      }
     } catch (error) {
       console.error('Failed to open local audio file from app chrome', error);
     }
-  }, [t]);
+  }, [navigateRoute, playbackQueue, t]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.playback?.onLocalAudioFilesOpened?.((paths) => {
+      if (paths.length === 0) {
+        return;
+      }
+
+      void playbackQueue
+        .openTemporaryLocalFiles(paths)
+        .then((result) => {
+          navigateRoute('queue');
+          if (result.rejected.length > 0) {
+            setChromeNotice(`已打开 ${result.tracks.length} 个文件，忽略 ${result.rejected.length} 个不支持或不可用文件。`);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to open local audio files from system', error);
+        });
+    });
+
+    return () => unsubscribe?.();
+  }, [navigateRoute, playbackQueue]);
 
   const handleWindowAction = useCallback(
     async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
@@ -248,7 +303,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   };
 
   return (
-    <div className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''}`}>
+    <div
+      className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''} ${
+        shouldUseLyricsPlayerDrawer ? 'app-shell--lyrics-player-drawer' : ''
+      } ${shouldUseLyricsPlayerDrawer && isLyricsPlayerDrawerOpen ? 'app-shell--lyrics-player-drawer-open' : ''}`}
+    >
       <AppTitleBar
         activeRouteId={activeRouteId}
         isAudioSettingsOpen={isAudioDrawerOpen}
@@ -327,7 +386,24 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
       <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
 
-      {isStandaloneRoute && !isLyricsRoute ? null : <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />}
+      {shouldUseLyricsPlayerDrawer ? (
+        <div
+          className="lyrics-player-drawer-zone"
+          aria-hidden="true"
+          onPointerEnter={() => setIsLyricsPlayerDrawerOpen(true)}
+        />
+      ) : null}
+      {isStandaloneRoute && !isLyricsRoute ? null : shouldUseLyricsPlayerDrawer ? (
+        <div
+          className="lyrics-player-drawer-host"
+          onPointerEnter={() => setIsLyricsPlayerDrawerOpen(true)}
+          onPointerLeave={() => setIsLyricsPlayerDrawerOpen(false)}
+        >
+          <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
+        </div>
+      ) : (
+        <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
+      )}
     </div>
   );
 };

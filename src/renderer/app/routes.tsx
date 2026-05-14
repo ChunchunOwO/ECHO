@@ -28,6 +28,7 @@ import { SettingsPage } from '../pages/SettingsPage';
 import { SongsPage } from '../pages/SongsPage';
 import { LyricsPage } from '../pages/LyricsPage';
 import { LikedPage } from '../pages/LikedPage';
+import { RemoteSourcesPanel } from '../components/settings/RemoteSourcesPanel';
 import { EmptyState } from '../components/ui/EmptyState';
 import type { TranslationKey } from '../i18n/locales';
 
@@ -145,7 +146,7 @@ export const appRoutes: AppRoute[] = [
     descriptionKey: 'route.remote.description',
     icon: Cloud,
     placement: 'main',
-    element: <PlaceholderPage icon={Cloud} title="Cloud / Remote" description="Remote mounting and sync sources stay here." />,
+    element: <RemoteSourcesPanel />,
   },
   {
     id: 'queue',

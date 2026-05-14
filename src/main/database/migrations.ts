@@ -560,6 +560,206 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 19,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS remote_sources (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'enabled',
+          base_url TEXT,
+          username TEXT,
+          auth_type TEXT NOT NULL DEFAULT 'basic',
+          encrypted_secret TEXT,
+          config_json TEXT NOT NULL DEFAULT '{}',
+          sync_mode TEXT NOT NULL DEFAULT 'index',
+          last_test_at TEXT,
+          last_sync_at TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS remote_tracks (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          remote_path TEXT NOT NULL,
+          remote_url_hash TEXT NOT NULL,
+          stable_key TEXT NOT NULL,
+          title TEXT NOT NULL,
+          artist TEXT NOT NULL,
+          album TEXT NOT NULL,
+          album_artist TEXT NOT NULL,
+          track_no INTEGER,
+          disc_no INTEGER,
+          year INTEGER,
+          genre TEXT,
+          duration REAL,
+          codec TEXT,
+          sample_rate INTEGER,
+          bit_depth INTEGER,
+          bitrate INTEGER,
+          size_bytes INTEGER,
+          modified_at TEXT,
+          etag TEXT,
+          cover_id TEXT,
+          metadata_status TEXT NOT NULL DEFAULT 'pending',
+          lyrics_status TEXT NOT NULL DEFAULT 'pending',
+          mv_status TEXT NOT NULL DEFAULT 'pending',
+          availability TEXT NOT NULL DEFAULT 'unknown',
+          field_sources_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES remote_sources(id) ON DELETE CASCADE,
+          FOREIGN KEY (cover_id) REFERENCES covers(id) ON DELETE SET NULL,
+          UNIQUE(source_id, remote_path),
+          UNIQUE(source_id, stable_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_source ON remote_tracks(source_id);
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_title ON remote_tracks(title);
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_artist ON remote_tracks(artist);
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_album ON remote_tracks(album);
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_stable_key ON remote_tracks(stable_key);
+        CREATE INDEX IF NOT EXISTS idx_remote_tracks_remote_url_hash ON remote_tracks(remote_url_hash);
+      `);
+    },
+  },
+  {
+    id: 20,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS track_videos_remote_ready (
+          id TEXT PRIMARY KEY,
+          track_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          source_id TEXT,
+          title TEXT,
+          artist TEXT,
+          url TEXT,
+          provider_url TEXT,
+          thumbnail_url TEXT,
+          file_path TEXT,
+          mime_type TEXT,
+          duration_seconds REAL,
+          width INTEGER,
+          height INTEGER,
+          selected_quality_id TEXT,
+          quality_label TEXT,
+          fps REAL,
+          raw_provider_json TEXT,
+          score REAL NOT NULL DEFAULT 0,
+          selected INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO track_videos_remote_ready (
+          id, track_id, provider, source_type, source_id, title, artist, url,
+          provider_url, thumbnail_url, file_path, mime_type, duration_seconds,
+          width, height, selected_quality_id, quality_label, fps, raw_provider_json,
+          score, selected, created_at, updated_at
+        )
+        SELECT
+          id, track_id, provider, source_type, source_id, title, artist, url,
+          provider_url, thumbnail_url, file_path, mime_type, duration_seconds,
+          width, height, selected_quality_id, quality_label, fps, raw_provider_json,
+          score, selected, created_at, updated_at
+        FROM track_videos;
+
+        CREATE TABLE IF NOT EXISTS track_video_streams_remote_copy (
+          id TEXT PRIMARY KEY,
+          video_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          variant_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          quality_tier TEXT NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          fps REAL,
+          codec TEXT,
+          container TEXT,
+          mime_type TEXT,
+          protocol TEXT NOT NULL,
+          url TEXT,
+          headers_json TEXT NOT NULL DEFAULT '{}',
+          playable_in_app INTEGER NOT NULL DEFAULT 0,
+          requires_account INTEGER NOT NULL DEFAULT 0,
+          expires_at TEXT,
+          raw_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO track_video_streams_remote_copy (
+          id, video_id, provider, variant_id, label, quality_tier, width, height,
+          fps, codec, container, mime_type, protocol, url, headers_json,
+          playable_in_app, requires_account, expires_at, raw_json, created_at, updated_at
+        )
+        SELECT
+          id, video_id, provider, variant_id, label, quality_tier, width, height,
+          fps, codec, container, mime_type, protocol, url, headers_json,
+          playable_in_app, requires_account, expires_at, raw_json, created_at, updated_at
+        FROM track_video_streams;
+
+        DROP TABLE track_video_streams;
+        DROP TABLE track_videos;
+        ALTER TABLE track_videos_remote_ready RENAME TO track_videos;
+
+        CREATE TABLE track_video_streams (
+          id TEXT PRIMARY KEY,
+          video_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          variant_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          quality_tier TEXT NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          fps REAL,
+          codec TEXT,
+          container TEXT,
+          mime_type TEXT,
+          protocol TEXT NOT NULL,
+          url TEXT,
+          headers_json TEXT NOT NULL DEFAULT '{}',
+          playable_in_app INTEGER NOT NULL DEFAULT 0,
+          requires_account INTEGER NOT NULL DEFAULT 0,
+          expires_at TEXT,
+          raw_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (video_id) REFERENCES track_videos(id) ON DELETE CASCADE,
+          UNIQUE(video_id, variant_id)
+        );
+
+        INSERT OR IGNORE INTO track_video_streams (
+          id, video_id, provider, variant_id, label, quality_tier, width, height,
+          fps, codec, container, mime_type, protocol, url, headers_json,
+          playable_in_app, requires_account, expires_at, raw_json, created_at, updated_at
+        )
+        SELECT
+          id, video_id, provider, variant_id, label, quality_tier, width, height,
+          fps, codec, container, mime_type, protocol, url, headers_json,
+          playable_in_app, requires_account, expires_at, raw_json, created_at, updated_at
+        FROM track_video_streams_remote_copy;
+
+        DROP TABLE track_video_streams_remote_copy;
+
+        CREATE INDEX IF NOT EXISTS idx_track_videos_track_id ON track_videos(track_id);
+        CREATE INDEX IF NOT EXISTS idx_track_videos_track_selected ON track_videos(track_id, selected);
+        CREATE INDEX IF NOT EXISTS idx_track_videos_provider_source ON track_videos(provider, source_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_track_videos_one_selected
+          ON track_videos(track_id)
+          WHERE selected = 1;
+        CREATE INDEX IF NOT EXISTS idx_track_video_streams_video_id ON track_video_streams(video_id);
+        CREATE INDEX IF NOT EXISTS idx_track_video_streams_provider ON track_video_streams(provider, variant_id);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

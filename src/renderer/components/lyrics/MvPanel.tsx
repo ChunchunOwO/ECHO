@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent } from 'react';
 import { Film, Music2 } from 'lucide-react';
 import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
@@ -35,6 +36,11 @@ type ShakaPlayerInstance = {
 const fallbackMvSettings: MvSettings = {
   autoSearch: true,
   autoPreload: true,
+  autoApplyThreshold: 0.7,
+  immersiveBackground: true,
+  immersiveBackgroundScalePercent: 115,
+  immersiveBackgroundOffsetXPercent: 50,
+  immersiveBackgroundOffsetYPercent: 50,
   restartAudioOnLoad: false,
   enabledProviders: ['bilibili', 'youtube'],
   providerOrder: ['bilibili', 'youtube'],
@@ -176,6 +182,13 @@ export const MvPanel = ({
   const lastVideoSyncAtRef = useRef(0);
   const videoSeekingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundDragRef = useRef<{
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const isAudioPlayingRef = useRef(isAudioPlaying);
   const previousAudioPlayingRef = useRef(isAudioPlaying);
   const previousAudioSyncPlayingRef = useRef(isAudioPlaying);
@@ -204,6 +217,9 @@ export const MvPanel = ({
     if (videoRef.current) {
       applyVideoPlaybackRate(videoRef.current);
     }
+    if (backgroundVideoRef.current) {
+      applyVideoPlaybackRate(backgroundVideoRef.current);
+    }
   }, [applyVideoPlaybackRate, audioClock]);
 
   const loadSettings = useCallback(async (): Promise<MvSettings> => {
@@ -221,6 +237,21 @@ export const MvPanel = ({
       return fallbackMvSettings;
     }
   }, []);
+
+  const patchSettings = useCallback(
+    async (patch: Partial<MvSettings>): Promise<void> => {
+      setSettings((current) => ({ ...current, ...patch }));
+      try {
+        if (window.echo?.mv?.setSettings) {
+          setSettings(await window.echo.mv.setSettings(patch));
+          window.dispatchEvent(new CustomEvent('settings:changed', { detail: patch }));
+        }
+      } catch {
+        void loadSettings();
+      }
+    },
+    [loadSettings],
+  );
 
   const resolveNetworkVideo = useCallback(async (video: TrackVideo | null): Promise<TrackVideo | null> => {
     if (!video || video.provider === 'local' || !window.echo?.mv?.resolveStreams) {
@@ -312,6 +343,46 @@ export const MvPanel = ({
   const videoMediaUrl = selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
   const adaptiveStream = isAdaptiveStream(selectedVideo);
+  const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
+  const immersiveBackgroundStyle = useMemo(
+    () =>
+      ({
+        '--mv-immersive-scale': ((settings.immersiveBackgroundScalePercent ?? 115) / 100).toFixed(2),
+        '--mv-immersive-position-x': `${settings.immersiveBackgroundOffsetXPercent ?? 50}%`,
+        '--mv-immersive-position-y': `${settings.immersiveBackgroundOffsetYPercent ?? 50}%`,
+      }) as CSSProperties,
+    [
+      settings.immersiveBackgroundOffsetXPercent,
+      settings.immersiveBackgroundOffsetYPercent,
+      settings.immersiveBackgroundScalePercent,
+    ],
+  );
+
+  const updateImmersiveOffsetFromDrag = useCallback(
+    (event: PointerEvent<HTMLDivElement>, shouldPersist = false): void => {
+      const drag = backgroundDragRef.current;
+      if (!drag) {
+        return;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const nextX = Math.max(0, Math.min(100, Math.round(drag.offsetX + ((event.clientX - drag.startX) / Math.max(1, rect.width)) * 100)));
+      const nextY = Math.max(0, Math.min(100, Math.round(drag.offsetY + ((event.clientY - drag.startY) / Math.max(1, rect.height)) * 100)));
+      setSettings((current) => ({
+        ...current,
+        immersiveBackgroundOffsetXPercent: nextX,
+        immersiveBackgroundOffsetYPercent: nextY,
+      }));
+
+      if (shouldPersist) {
+        void patchSettings({
+          immersiveBackgroundOffsetXPercent: nextX,
+          immersiveBackgroundOffsetYPercent: nextY,
+        });
+      }
+    },
+    [patchSettings],
+  );
 
   useEffect(() => {
     isAudioPlayingRef.current = isAudioPlaying;
@@ -324,8 +395,7 @@ export const MvPanel = ({
     previousAudioClockRef.current = normalizeAudioClock(audioClockRef.current);
   }, [trackId]);
 
-  const syncVideoToAudio = useCallback((options: { force?: boolean; bypassCooldown?: boolean } = {}): boolean => {
-    const video = videoRef.current;
+  const syncVideoElementToAudio = useCallback((video: HTMLVideoElement | null, options: { force?: boolean; bypassCooldown?: boolean; recordCooldown?: boolean } = {}): boolean => {
     const followMusicProgress = settingsRef.current.restartAudioOnLoad;
     if (!followMusicProgress || !video || videoSeekingRef.current) {
       return false;
@@ -345,12 +415,20 @@ export const MvPanel = ({
 
     try {
       video.currentTime = targetTime;
-      lastVideoSyncAtRef.current = now;
+      if (options.recordCooldown !== false) {
+        lastVideoSyncAtRef.current = now;
+      }
       return true;
     } catch {
       return false;
     }
   }, []);
+
+  const syncVideoToAudio = useCallback((options: { force?: boolean; bypassCooldown?: boolean } = {}): boolean => {
+    const foregroundSynced = syncVideoElementToAudio(videoRef.current, options);
+    const backgroundSynced = syncVideoElementToAudio(backgroundVideoRef.current, { ...options, recordCooldown: false });
+    return foregroundSynced || backgroundSynced;
+  }, [syncVideoElementToAudio]);
 
   useEffect(() => {
     const wasAudioPlaying = previousAudioSyncPlayingRef.current;
@@ -376,6 +454,22 @@ export const MvPanel = ({
 
     videoRef.current.pause();
   }, [applyVideoPlaybackRate, isAudioPlaying, showVideo, syncVideoToAudio, videoMediaUrl]);
+
+  useEffect(() => {
+    if (!showImmersiveBackground || !backgroundVideoRef.current) {
+      return;
+    }
+
+    applyVideoPlaybackRate(backgroundVideoRef.current);
+
+    if (isAudioPlaying) {
+      syncVideoToAudio({ force: true, bypassCooldown: true });
+      playVideo(backgroundVideoRef.current);
+      return;
+    }
+
+    backgroundVideoRef.current.pause();
+  }, [applyVideoPlaybackRate, isAudioPlaying, showImmersiveBackground, syncVideoToAudio, videoMediaUrl]);
 
   useEffect(() => {
     const nextClock = normalizeAudioClock(audioClock);
@@ -462,8 +556,100 @@ export const MvPanel = ({
     };
   }, [adaptiveStream, applyVideoPlaybackRate, showVideo, syncVideoToAudio, videoMediaUrl]);
 
+  useEffect(() => {
+    if (!showImmersiveBackground || !adaptiveStream || !videoMediaUrl || !backgroundVideoRef.current) {
+      return undefined;
+    }
+
+    let disposed = false;
+    let player: ShakaPlayerInstance | null = null;
+    const videoElement = backgroundVideoRef.current;
+
+    void import('shaka-player')
+      .then((module) => {
+        const shaka = ((module as { default?: BrowserShaka }).default ?? module) as BrowserShaka;
+        if (disposed || !shaka?.Player) {
+          return;
+        }
+
+        player = new shaka.Player(videoElement);
+        return player.load(videoMediaUrl).then(() => {
+          applyVideoPlaybackRate(videoElement);
+          syncVideoToAudio({ force: true, bypassCooldown: true });
+          if (isAudioPlayingRef.current) {
+            playVideo(videoElement);
+            return undefined;
+          }
+
+          videoElement.pause();
+          return undefined;
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (player) {
+        void player.destroy();
+      }
+    };
+  }, [adaptiveStream, applyVideoPlaybackRate, showImmersiveBackground, syncVideoToAudio, videoMediaUrl]);
+
   return (
-    <section className="lyrics-mv-panel" aria-label="MV">
+    <>
+      {showImmersiveBackground ? (
+        <div
+          className="lyrics-mv-background"
+          aria-hidden="true"
+          style={immersiveBackgroundStyle}
+          onPointerDown={(event) => {
+            if (event.button !== 0) {
+              return;
+            }
+            event.currentTarget.setPointerCapture(event.pointerId);
+            backgroundDragRef.current = {
+              startX: event.clientX,
+              startY: event.clientY,
+              offsetX: settings.immersiveBackgroundOffsetXPercent ?? 50,
+              offsetY: settings.immersiveBackgroundOffsetYPercent ?? 50,
+            };
+            event.currentTarget.dataset.dragging = 'true';
+          }}
+          onPointerMove={(event) => updateImmersiveOffsetFromDrag(event)}
+          onPointerUp={(event) => {
+            updateImmersiveOffsetFromDrag(event, true);
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            event.currentTarget.dataset.dragging = 'false';
+            backgroundDragRef.current = null;
+          }}
+          onPointerCancel={(event) => {
+            event.currentTarget.dataset.dragging = 'false';
+            backgroundDragRef.current = null;
+          }}
+        >
+          <video
+            ref={backgroundVideoRef}
+            className="lyrics-mv-background-video"
+            src={!adaptiveStream ? (videoMediaUrl ?? undefined) : undefined}
+            autoPlay={isAudioPlaying}
+            loop
+            muted
+            onLoadedMetadata={(event) => {
+              applyVideoPlaybackRate(event.currentTarget);
+              syncVideoToAudio({ force: true, bypassCooldown: true });
+              if (isAudioPlayingRef.current) {
+                playVideo(event.currentTarget);
+                return;
+              }
+
+              event.currentTarget.pause();
+            }}
+            playsInline
+          />
+        </div>
+      ) : null}
+
+      <section className="lyrics-mv-panel" aria-label="MV" data-immersive-active={showImmersiveBackground}>
       <div className="lyrics-mv-ambient" style={coverUrl ? { backgroundImage: `url("${coverUrl}")` } : undefined} />
 
       {showVideo ? (
@@ -505,6 +691,7 @@ export const MvPanel = ({
       )}
 
       {error ? <p className="lyrics-mv-error">{error}</p> : null}
-    </section>
+      </section>
+    </>
   );
 };

@@ -2234,6 +2234,53 @@ export class LibraryStore {
     });
   }
 
+  likeRemoteTrack(track: LibraryTrack, timestamp = nowIso()): LibraryPlaylistItem {
+    return this.transaction(() => {
+      const playlist = this.getLikedSongsPlaylist();
+      const existing = this.getLikedMediaItem(playlist.id, 'track', track.id);
+      if (existing) {
+        return existing;
+      }
+
+      const itemId = randomUUID();
+      const nextPosition = Number(
+        this.getRow('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_items WHERE playlist_id = ?', playlist.id)
+          ?.next_position ?? 0,
+      );
+
+      this.run(
+        `INSERT INTO playlist_items (
+          id, playlist_id, media_type, media_id, source_provider, source_item_id,
+          title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+          cover_id, position, added_at, added_from, unavailable
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        itemId,
+        playlist.id,
+        'track',
+        track.id,
+        'remote',
+        track.stableKey ?? track.remotePath ?? track.id,
+        track.title,
+        track.artist,
+        track.album,
+        track.duration,
+        track.coverId,
+        nextPosition,
+        timestamp,
+        'liked',
+        track.unavailable ? 1 : 0,
+      );
+      this.refreshPlaylistItemCount(playlist.id, timestamp);
+
+      const item = this.getPlaylistItemRow(itemId);
+      if (!item) {
+        throw new Error(`Failed to like remote track ${track.id}`);
+      }
+
+      return this.mapPlaylistItem(item);
+    });
+  }
+
   unlikeTrack(trackId: string): void {
     this.unlikeMedia(this.getLikedSongsPlaylist().id, 'track', trackId);
   }
@@ -2545,7 +2592,6 @@ export class LibraryStore {
        FROM playlist_items
        WHERE playlist_id = ?
          AND media_type = ?
-         AND source_provider = 'local'
          AND media_id IN (${placeholders})`,
       playlistId,
       mediaType,
@@ -2573,7 +2619,6 @@ export class LibraryStore {
        WHERE playlist_id = ?
          AND media_type = ?
          AND media_id = ?
-         AND source_provider = 'local'
        ORDER BY position ASC, added_at ASC
        LIMIT 1`,
       playlistId,
@@ -2591,8 +2636,7 @@ export class LibraryStore {
         `DELETE FROM playlist_items
          WHERE playlist_id = ?
            AND media_type = ?
-           AND media_id = ?
-           AND source_provider = 'local'`,
+           AND media_id = ?`,
         playlistId,
         mediaType,
         mediaId,
@@ -2785,9 +2829,10 @@ export class LibraryStore {
     const trackMissing = Number(row.track_missing ?? 1) !== 0;
     const hasTrack = textOrNull(row.track_id) !== null && !trackMissing;
     const hasAlbum = textOrNull(row.album_id) !== null;
+    const isRemoteTrackItem = row.media_type === 'track' && row.source_provider === 'remote';
     const unavailable =
       Number(row.unavailable ?? 0) !== 0 ||
-      (row.media_type === 'track' && (!hasTrack || !textOrNull(row.media_id))) ||
+      (row.media_type === 'track' && !isRemoteTrackItem && (!hasTrack || !textOrNull(row.media_id))) ||
       (row.media_type === 'album' && (!hasAlbum || !textOrNull(row.media_id)));
 
     return {

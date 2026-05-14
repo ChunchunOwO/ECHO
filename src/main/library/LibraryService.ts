@@ -70,6 +70,7 @@ import type { MetadataReader } from './workers/MetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
+import { getRemoteSourceService } from './remote/RemoteSourceService';
 
 type LibraryServiceDependencies = {
   fileScanner?: FileScanner;
@@ -267,7 +268,17 @@ export class LibraryService {
   }
 
   likeTrack(trackId: string): LibraryPlaylistItem {
-    return this.store.likeTrack(trackId);
+    const localTrack = this.store.getTrack(trackId);
+    if (localTrack) {
+      return this.store.likeTrack(trackId);
+    }
+
+    const remoteTrack = getRemoteTrackSafe(trackId);
+    if (!remoteTrack) {
+      throw new Error(`Unknown track ${trackId}`);
+    }
+
+    return this.store.likeRemoteTrack(remoteTrack);
   }
 
   unlikeTrack(trackId: string): void {
@@ -348,7 +359,20 @@ export class LibraryService {
   }
 
   getTrack(trackId: string): LibraryTrack | null {
-    return this.store.getTrack(trackId);
+    const localTrack = this.store.getTrack(trackId);
+    if (localTrack) {
+      return localTrack;
+    }
+
+    try {
+      return getRemoteSourceService().getTrackAsLibraryTrack(trackId);
+    } catch {
+      return null;
+    }
+  }
+
+  getTrackByPath(filePath: string): LibraryTrack | null {
+    return this.store.getTrackByPath(filePath);
   }
 
   async importAudioFile(filePath: string, options: { folderPath?: string } = {}): Promise<LibraryTrack> {
@@ -416,7 +440,48 @@ export class LibraryService {
   }
 
   startPlaybackHistory(request: StartPlaybackHistoryRequest): StartPlaybackHistoryResult {
-    const track = this.store.getTrack(request.trackId);
+    const track = request.trackId ? this.store.getTrack(request.trackId) : null;
+
+    if (!track) {
+      const remoteTrack = request.trackId ? getRemoteTrackSafe(request.trackId) : null;
+      if (!remoteTrack) {
+        if (!request.trackPath || !request.title || !request.artist) {
+          throw new Error(`Unknown track ${request.trackId ?? 'snapshot'}`);
+        }
+
+        const entry = this.store.createPlaybackHistoryEntry({
+          trackId: request.trackId ?? null,
+          trackPath: request.trackPath,
+          title: request.title,
+          artist: request.artist,
+          album: request.album ?? '',
+          albumArtist: request.albumArtist ?? request.artist,
+          coverId: request.coverId ?? null,
+          durationSeconds: request.durationSeconds ?? 0,
+          sourceType: request.sourceType ?? request.mediaType ?? null,
+          sourceLabel: request.sourceLabel,
+          queueId: request.queueId,
+        });
+
+        return { historyId: entry.id };
+      }
+
+      const entry = this.store.createPlaybackHistoryEntry({
+        trackId: remoteTrack.id,
+        trackPath: remoteTrack.path,
+        title: remoteTrack.title,
+        artist: remoteTrack.artist,
+        album: remoteTrack.album,
+        albumArtist: remoteTrack.albumArtist,
+        coverId: remoteTrack.coverId,
+        durationSeconds: remoteTrack.duration,
+        sourceType: request.sourceType ?? 'remote',
+        sourceLabel: request.sourceLabel,
+        queueId: request.queueId,
+      });
+
+      return { historyId: entry.id };
+    }
 
     if (!track) {
       throw new Error(`Unknown track ${request.trackId}`);
@@ -974,6 +1039,14 @@ const getAppSettingsSafe = (): AppSettings => {
     return getAppSettings();
   } catch {
     return { ...defaultSettings };
+  }
+};
+
+const getRemoteTrackSafe = (trackId: string): LibraryTrack | null => {
+  try {
+    return getRemoteSourceService().getTrackAsLibraryTrack(trackId);
+  } catch {
+    return null;
   }
 };
 

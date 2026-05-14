@@ -104,9 +104,10 @@ export const QueuePage = (): JSX.Element => {
   }, [currentIndex, queue.items]);
   const upNextCount = currentIndex >= 0 ? Math.max(0, queue.items.length - currentIndex - 1) : queue.items.length;
   const nowPlaying = queue.currentTrack;
-  const queueTrackIds = useMemo(() => queue.items.map((item) => item.track.id), [queue.items]);
+  const queueTrackIds = useMemo(() => queue.items.filter((item) => !item.track.isTemporary).map((item) => item.track.id), [queue.items]);
   const likedTrackIds = useLikedTrackIds(queueTrackIds);
-  const isNowPlayingLiked = nowPlaying ? likedTrackIds[nowPlaying.id] === true : false;
+  const isNowPlayingTemporary = nowPlaying?.isTemporary === true;
+  const isNowPlayingLiked = nowPlaying && !isNowPlayingTemporary ? likedTrackIds[nowPlaying.id] === true : false;
   const nowPlayingTags = qualityTags(nowPlaying);
   const sourceLabel = queue.currentItem?.source.label ?? t('queue.now.sourceFallback');
   const rowVirtualizer = useVirtualizer({
@@ -138,11 +139,15 @@ export const QueuePage = (): JSX.Element => {
       return;
     }
 
-    void runQueueAction(() => window.echo?.library?.openTrackInFolder(nowPlaying.id));
+    void runQueueAction(() =>
+      nowPlaying.isTemporary
+        ? window.echo?.library?.openPathInFolder?.(nowPlaying.path)
+        : window.echo?.library?.openTrackInFolder(nowPlaying.id),
+    );
   }, [nowPlaying, runQueueAction]);
 
   const handleToggleNowPlayingLiked = useCallback((): void => {
-    if (!nowPlaying) {
+    if (!nowPlaying || nowPlaying.isTemporary) {
       return;
     }
 
@@ -319,7 +324,7 @@ export const QueuePage = (): JSX.Element => {
             aria-label={t('queue.action.like')}
             aria-pressed={isNowPlayingLiked}
             title={t('queue.action.like')}
-            disabled={!nowPlaying}
+            disabled={!nowPlaying || isNowPlayingTemporary}
             onClick={handleToggleNowPlayingLiked}
           >
             <Heart size={17} fill={isNowPlayingLiked ? 'currentColor' : 'none'} />

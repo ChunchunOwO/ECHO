@@ -375,8 +375,7 @@ CREATE TABLE IF NOT EXISTS track_videos (
   score REAL NOT NULL DEFAULT 0,
   selected INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS track_video_streams (
@@ -403,6 +402,61 @@ CREATE TABLE IF NOT EXISTS track_video_streams (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (video_id) REFERENCES track_videos(id) ON DELETE CASCADE,
   UNIQUE(video_id, variant_id)
+);
+
+CREATE TABLE IF NOT EXISTS remote_sources (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'enabled',
+  base_url TEXT,
+  username TEXT,
+  auth_type TEXT NOT NULL DEFAULT 'basic',
+  encrypted_secret TEXT,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  sync_mode TEXT NOT NULL DEFAULT 'index',
+  last_test_at TEXT,
+  last_sync_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS remote_tracks (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  remote_url_hash TEXT NOT NULL,
+  stable_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  artist TEXT NOT NULL,
+  album TEXT NOT NULL,
+  album_artist TEXT NOT NULL,
+  track_no INTEGER,
+  disc_no INTEGER,
+  year INTEGER,
+  genre TEXT,
+  duration REAL,
+  codec TEXT,
+  sample_rate INTEGER,
+  bit_depth INTEGER,
+  bitrate INTEGER,
+  size_bytes INTEGER,
+  modified_at TEXT,
+  etag TEXT,
+  cover_id TEXT,
+  metadata_status TEXT NOT NULL DEFAULT 'pending',
+  lyrics_status TEXT NOT NULL DEFAULT 'pending',
+  mv_status TEXT NOT NULL DEFAULT 'pending',
+  availability TEXT NOT NULL DEFAULT 'unknown',
+  field_sources_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES remote_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (cover_id) REFERENCES covers(id) ON DELETE SET NULL,
+  UNIQUE(source_id, remote_path),
+  UNIQUE(source_id, stable_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
@@ -448,4 +502,10 @@ CREATE INDEX IF NOT EXISTS idx_playlist_items_media ON playlist_items(media_type
 CREATE INDEX IF NOT EXISTS idx_playlist_items_source ON playlist_items(source_provider, source_item_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_media ON playlist_items(playlist_id, media_type, media_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_added ON playlist_items(playlist_id, added_at DESC);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_source ON remote_tracks(source_id);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_title ON remote_tracks(title);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_artist ON remote_tracks(artist);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_album ON remote_tracks(album);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_stable_key ON remote_tracks(stable_key);
+CREATE INDEX IF NOT EXISTS idx_remote_tracks_remote_url_hash ON remote_tracks(remote_url_hash);
 `;

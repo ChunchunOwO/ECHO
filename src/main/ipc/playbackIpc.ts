@@ -2,10 +2,13 @@ import { dialog, ipcMain } from 'electron';
 import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioLatencyProfile, AudioOutputMode, AudioOutputSettings, PlaybackSpeedMode } from '../../shared/types/audio';
-import type { PlaybackProbeHint, PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
+import type { LocalFileResolveResult, PlaybackMediaStartRequest, PlaybackProbeHint, PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
+import type { PlayableTrack } from '../../shared/types/remoteSources';
 import { getAudioSession } from '../audio/AudioSession';
 import { getPlaybackMemoryStore } from '../audio/PlaybackMemoryStore';
 import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
+import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
+import { resolveLocalAudioFiles } from '../app/localFileOpen';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
@@ -149,6 +152,66 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
   };
 };
 
+const normalizeMediaItem = (value: unknown): PlayableTrack => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('media item must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const mediaType = input.mediaType === 'remote' ? 'remote' : 'local';
+  return {
+    mediaType,
+    trackId: requireText(input.trackId, 'trackId'),
+    sourceId: optionalText(input.sourceId) ?? null,
+    stableKey: optionalText(input.stableKey) ?? null,
+    path: optionalText(input.path) ?? null,
+    remotePath: optionalText(input.remotePath) ?? null,
+    title: typeof input.title === 'string' ? input.title : '',
+    artist: typeof input.artist === 'string' ? input.artist : '',
+    album: typeof input.album === 'string' ? input.album : '',
+    albumArtist: typeof input.albumArtist === 'string' ? input.albumArtist : '',
+    duration: typeof input.duration === 'number' && Number.isFinite(input.duration) ? input.duration : null,
+    coverThumb: optionalText(input.coverThumb) ?? null,
+    streamUrl: optionalText(input.streamUrl) ?? null,
+  };
+};
+
+const normalizeMediaPlayRequest = (value: unknown): PlaybackMediaStartRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('playback media request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    item: normalizeMediaItem(input.item),
+    startSeconds: optionalNonNegativeNumber(input.startSeconds),
+    output: normalizeOutputSettings(input.output),
+  };
+};
+
+const normalizePathList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    throw new Error('paths must be an array');
+  }
+
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+};
+
+const showOpenLocalAudioFiles = async (properties: Electron.OpenDialogOptions['properties']): Promise<string[] | null> => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open local audio file',
+    properties,
+    filters: [
+      {
+        name: 'Audio files',
+        extensions: SUPPORTED_AUDIO_DIALOG_EXTENSIONS,
+      },
+    ],
+  });
+
+  return result.canceled ? null : result.filePaths;
+};
+
 const toPlaybackStatus = (): PlaybackStatus => {
   const status = getAudioSession().getStatus();
 
@@ -200,6 +263,46 @@ export const registerPlaybackIpc = (): void => {
     void syncSmtcStatus();
     return toPlaybackStatus();
   });
+  ipcMain.handle(IpcChannels.PlaybackPlayMediaItem, async (_event, rawRequest: unknown): Promise<PlaybackStatus> => {
+    const request = normalizeMediaPlayRequest(rawRequest);
+    const item = request.item;
+    let durationSeconds = item.duration && item.duration > 0 ? item.duration : null;
+    if (item.mediaType === 'remote' && !durationSeconds) {
+      getRemoteSourceService().setPlaybackActive(true);
+      const refreshed = await getRemoteSourceService().refreshTrackMetadata(item.trackId);
+      durationSeconds = refreshed?.duration && refreshed.duration > 0 ? refreshed.duration : null;
+    }
+
+    const filePath =
+      item.mediaType === 'remote'
+        ? (
+            await getRemoteSourceService().createStreamUrl({
+              trackId: item.trackId,
+              sourceId: item.sourceId ?? undefined,
+              remotePath: item.remotePath ?? undefined,
+              stableKey: item.stableKey ?? undefined,
+            })
+          ).url
+        : requireText(item.path, 'path');
+
+    await getAudioSession().playLocalFile({
+      filePath,
+      trackId: item.trackId,
+      startSeconds: request.startSeconds,
+      output: request.output,
+      probe: durationSeconds ? { durationSeconds } : undefined,
+    });
+    savePlaybackMemoryNow();
+    const status = toPlaybackStatus();
+    if (item.mediaType === 'remote' && status.durationMs > 0) {
+      getRemoteSourceService().backfillDuration(item.trackId, status.durationMs / 1000);
+    }
+    if (item.mediaType === 'remote') {
+      getRemoteSourceService().setPlaybackActive(true);
+    }
+    void syncSmtcStatus();
+    return status;
+  });
   ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => {
     await getAudioSession().play();
     savePlaybackMemoryNow();
@@ -214,6 +317,7 @@ export const registerPlaybackIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.PlaybackStop, (): PlaybackStatus => {
     getAudioSession().stop();
+    getRemoteSourceService().setPlaybackActive(false);
     getPlaybackMemoryStore().clear();
     void syncSmtcStatus();
     return toPlaybackStatus();
@@ -225,17 +329,16 @@ export const registerPlaybackIpc = (): void => {
     return toPlaybackStatus();
   });
   ipcMain.handle(IpcChannels.PlaybackOpenLocalAudioFile, async (): Promise<string | null> => {
-    const result = await dialog.showOpenDialog({
-      title: 'Open local audio file',
-      properties: ['openFile'],
-      filters: [
-        {
-          name: 'Audio files',
-          extensions: SUPPORTED_AUDIO_DIALOG_EXTENSIONS,
-        },
-      ],
-    });
+    const filePaths = await showOpenLocalAudioFiles(['openFile']);
 
-    return result.canceled ? null : (result.filePaths[0] ?? null);
+    return filePaths?.[0] ?? null;
+  });
+  ipcMain.handle(IpcChannels.PlaybackOpenLocalAudioFiles, async (): Promise<string[] | null> => {
+    const filePaths = await showOpenLocalAudioFiles(['openFile', 'multiSelections']);
+
+    return filePaths && filePaths.length > 0 ? filePaths : null;
+  });
+  ipcMain.handle(IpcChannels.PlaybackResolveLocalAudioFiles, (_event, paths: unknown): Promise<LocalFileResolveResult> => {
+    return resolveLocalAudioFiles(normalizePathList(paths));
   });
 };

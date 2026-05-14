@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AppSettings } from '../../../shared/types/appSettings';
+import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/lyrics';
 import { LyricsSettingsDrawer } from './LyricsSettingsDrawer';
 
 const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
@@ -17,7 +18,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsProviderOrder: ['local', 'lrclib', 'netease', 'qqmusic'],
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.7,
+  lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
@@ -65,6 +66,44 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  ...overrides,
+});
+
+const makeLyricsCandidate = (overrides: Partial<LyricsSearchCandidate> = {}): LyricsSearchCandidate => ({
+  id: 'candidate-1',
+  provider: 'lrclib',
+  providerLyricsId: 'lyrics-1',
+  title: 'Low Match Song',
+  artist: 'Different Artist',
+  album: 'Different Album',
+  durationSeconds: 212,
+  instrumental: false,
+  hasSynced: true,
+  hasPlain: true,
+  score: 0.12,
+  sourceLabel: 'LRCLIB',
+  risk: 'high',
+  reasons: ['artist_mismatch'],
+  ...overrides,
+});
+
+const makeTrackLyrics = (overrides: Partial<TrackLyrics> = {}): TrackLyrics => ({
+  id: 'lyrics-1',
+  trackId: 'track-1',
+  provider: 'lrclib',
+  providerLyricsId: 'lyrics-1',
+  kind: 'synced',
+  title: 'Low Match Song',
+  artist: 'Different Artist',
+  album: 'Different Album',
+  durationSeconds: 212,
+  lines: [{ timeMs: 0, text: 'line' }],
+  plainText: 'line',
+  syncedText: '[00:00.00]line',
+  offsetMs: 0,
+  score: 0.12,
+  cachedAt: '2026-05-14T00:00:00.000Z',
+  updatedAt: '2026-05-14T00:00:00.000Z',
   ...overrides,
 });
 
@@ -123,6 +162,28 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsEnabledProviders: ['local', 'lrclib', 'qqmusic'] }));
   });
 
+  it('updates the lyrics match threshold from 30 to 100 percent with a 50 percent default', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const slider = (await screen.findByRole('slider', { name: '歌词匹配度设置' })) as HTMLInputElement;
+    expect(slider.min).toBe('30');
+    expect(slider.max).toBe('100');
+    expect(slider.value).toBe('50');
+
+    fireEvent.change(slider, { target: { value: '30' } });
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsAutoAcceptScore: 0.3 }));
+  });
+
   it('previews background tuning immediately but debounces persisted settings writes', async () => {
     const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
     const previewListener = vi.fn();
@@ -141,9 +202,9 @@ describe('LyricsSettingsDrawer', () => {
 
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(4));
     vi.useFakeTimers();
-    const ranges = container.querySelectorAll<HTMLInputElement>('input[type="range"]');
-    const backgroundScaleSlider = ranges[2];
-    const backgroundOpacitySlider = ranges[3];
+    const ranges = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]'));
+    const backgroundScaleSlider = ranges.find((input) => input.closest('label')?.textContent?.includes('背景放大')) as HTMLInputElement;
+    const backgroundOpacitySlider = ranges.find((input) => input.closest('label')?.textContent?.includes('背景透明度')) as HTMLInputElement;
 
     fireEvent.change(backgroundScaleSlider, { target: { value: '120' } });
     fireEvent.change(backgroundOpacitySlider, { target: { value: '40' } });
@@ -205,6 +266,24 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsTranslationEnabled: false }));
   });
 
+  it('lets users enable the lyrics player bar drawer', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsPlayerBarDrawerEnabled: true }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const toggle = (await screen.findByRole('checkbox', { name: /底栏抽屉/ })) as HTMLInputElement;
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
+  });
+
   it('expands secondary lyric font size while romanization or translation is enabled', async () => {
     const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
     window.echo = {
@@ -255,6 +334,41 @@ describe('LyricsSettingsDrawer', () => {
 
     expect(container.querySelector('.audio-engine-meter__badges')).toBeNull();
     expect(container.querySelector('.lyrics-engine-meter')?.textContent).not.toContain('enabled');
+  });
+
+  it('shows low scoring lyric search results in the drawer', async () => {
+    const searchCandidates = vi.fn().mockResolvedValue([
+      makeLyricsCandidate({ id: 'low-candidate', score: 0.12, risk: 'high' }),
+    ]);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        searchCandidates,
+        applyCandidate: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('searchbox', { name: /搜索歌词文本|鎼滅储姝岃瘝鏂囨湰/ }), { target: { value: 'rough query' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(await screen.findByText('Low Match Song')).toBeTruthy();
+    expect(screen.getByText('12%')).toBeTruthy();
+    expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query');
   });
 
   it('dispatches current-track lyric actions from settings', async () => {

@@ -9,8 +9,30 @@ import { disposeSmtcIntegration, initializeSmtcIntegration } from '../integratio
 import { disposeDiscordPresenceIntegration, initializeDiscordPresenceIntegration } from '../integrations/discord/DiscordPresenceStatusSync';
 import { disposeLastFmIntegration, initializeLastFmIntegration } from '../integrations/lastfm/LastFmStatusSync';
 import { savePlaybackMemoryNow } from '../ipc/playbackIpc';
+import { dispatchLocalAudioFilesOpened, parseLocalAudioFileArguments } from './localFileOpen';
 
 export const registerAppLifecycle = (): void => {
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.quit();
+    return;
+  }
+
+  app.on('second-instance', (_event, argv) => {
+    let window = getMainWindow();
+    if (window === null) {
+      window = createMainWindow();
+    }
+
+    if (window.isMinimized()) {
+      window.restore();
+    }
+
+    window.show();
+    window.focus();
+    dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(argv));
+  });
+
   app.whenReady().then(() => {
     getCrashReportService().initialize();
     registerCoverProtocolHandler();
@@ -19,6 +41,7 @@ export const registerAppLifecycle = (): void => {
     void initializeDiscordPresenceIntegration();
     initializeLastFmIntegration();
     createMainWindow();
+    dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(process.argv));
 
     app.on('activate', () => {
       if (getMainWindow() === null) {

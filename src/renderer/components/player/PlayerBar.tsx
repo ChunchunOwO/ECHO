@@ -94,9 +94,10 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const title = currentTrack?.title ?? titleFromPath(filePath);
   const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? 'Local file' : 'Ready');
   const artworkUrl = playerArtworkUrl(currentTrack);
+  const isLibraryCurrentTrack = Boolean(currentTrack && !currentTrack.isTemporary);
 
   const refreshCurrentTrackLiked = useCallback(async (): Promise<void> => {
-    if (!trackId || !window.echo?.library) {
+    if (!trackId || !isLibraryCurrentTrack || !window.echo?.library) {
       setIsCurrentTrackLiked(false);
       return;
     }
@@ -107,7 +108,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     } catch {
       setIsCurrentTrackLiked(false);
     }
-  }, [trackId]);
+  }, [isLibraryCurrentTrack, trackId]);
 
   useEffect(() => {
     queue.syncPlaybackState(state);
@@ -404,7 +405,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, []);
 
   const handleToggleCurrentTrackLiked = useCallback(async (): Promise<void> => {
-    if (!trackId || !window.echo?.library) {
+    if (!trackId || !isLibraryCurrentTrack || !window.echo?.library) {
       return;
     }
 
@@ -419,7 +420,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       setError(likeError instanceof Error ? likeError.message : String(likeError));
       void refreshCurrentTrackLiked();
     }
-  }, [isCurrentTrackLiked, refreshCurrentTrackLiked, trackId]);
+  }, [isCurrentTrackLiked, isLibraryCurrentTrack, refreshCurrentTrackLiked, trackId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -546,7 +547,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onOpenLyrics={handleOpenLyrics}
           onToggleShuffle={queue.toggleShuffle}
           isCurrentTrackLiked={isCurrentTrackLiked}
-          canLikeCurrentTrack={Boolean(trackId)}
+          canLikeCurrentTrack={Boolean(trackId && isLibraryCurrentTrack)}
           onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
         />
         <PlayerProgress

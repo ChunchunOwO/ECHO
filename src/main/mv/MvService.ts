@@ -101,6 +101,12 @@ const fileHashId = (filePath: string): string => `local:${createHash('sha1').upd
 
 const networkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
 export const MV_AUTO_MATCH_THRESHOLD = 0.7;
+const normalizeAutoApplyThreshold = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.max(0.5, Math.min(1, value)) : MV_AUTO_MATCH_THRESHOLD;
+const normalizePercent = (value: unknown, fallback: number, min: number, max: number): number => {
+  const percent = Number(value);
+  return Number.isFinite(percent) ? Math.round(Math.max(min, Math.min(max, percent))) : fallback;
+};
 const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
   '720p': 720,
   '1080p': 1080,
@@ -274,6 +280,26 @@ const normalizeSettingsPatch = (patch: Partial<MvSettings>): Partial<MvSettings>
     normalized.autoPreload = patch.autoPreload;
   }
 
+  if (typeof patch.autoApplyThreshold === 'number' && Number.isFinite(patch.autoApplyThreshold)) {
+    normalized.autoApplyThreshold = normalizeAutoApplyThreshold(patch.autoApplyThreshold);
+  }
+
+  if (typeof patch.immersiveBackground === 'boolean') {
+    normalized.immersiveBackground = patch.immersiveBackground;
+  }
+
+  if (typeof patch.immersiveBackgroundScalePercent === 'number' && Number.isFinite(patch.immersiveBackgroundScalePercent)) {
+    normalized.immersiveBackgroundScalePercent = normalizePercent(patch.immersiveBackgroundScalePercent, 115, 100, 220);
+  }
+
+  if (typeof patch.immersiveBackgroundOffsetXPercent === 'number' && Number.isFinite(patch.immersiveBackgroundOffsetXPercent)) {
+    normalized.immersiveBackgroundOffsetXPercent = normalizePercent(patch.immersiveBackgroundOffsetXPercent, 50, 0, 100);
+  }
+
+  if (typeof patch.immersiveBackgroundOffsetYPercent === 'number' && Number.isFinite(patch.immersiveBackgroundOffsetYPercent)) {
+    normalized.immersiveBackgroundOffsetYPercent = normalizePercent(patch.immersiveBackgroundOffsetYPercent, 50, 0, 100);
+  }
+
   if (typeof patch.restartAudioOnLoad === 'boolean') {
     normalized.restartAudioOnLoad = patch.restartAudioOnLoad;
   }
@@ -286,6 +312,11 @@ const appSettingsToMvSettings = (): MvSettings => {
   return {
     autoSearch: settings.mvAutoSearch,
     autoPreload: settings.mvAutoPreload !== false,
+    autoApplyThreshold: normalizeAutoApplyThreshold(settings.mvAutoApplyThreshold),
+    immersiveBackground: settings.mvImmersiveBackground !== false,
+    immersiveBackgroundScalePercent: normalizePercent(settings.mvImmersiveBackgroundScalePercent, 115, 100, 220),
+    immersiveBackgroundOffsetXPercent: normalizePercent(settings.mvImmersiveBackgroundOffsetXPercent, 50, 0, 100),
+    immersiveBackgroundOffsetYPercent: normalizePercent(settings.mvImmersiveBackgroundOffsetYPercent, 50, 0, 100),
     restartAudioOnLoad: settings.mvRestartAudioOnLoad === true,
     enabledProviders: settings.mvEnabledProviders,
     providerOrder: settings.mvProviderOrder,
@@ -350,6 +381,21 @@ export class MvService {
     if (typeof normalized.autoPreload === 'boolean') {
       appSettingsPatch.mvAutoPreload = normalized.autoPreload;
     }
+    if (typeof normalized.autoApplyThreshold === 'number') {
+      appSettingsPatch.mvAutoApplyThreshold = normalized.autoApplyThreshold;
+    }
+    if (typeof normalized.immersiveBackground === 'boolean') {
+      appSettingsPatch.mvImmersiveBackground = normalized.immersiveBackground;
+    }
+    if (typeof normalized.immersiveBackgroundScalePercent === 'number') {
+      appSettingsPatch.mvImmersiveBackgroundScalePercent = normalized.immersiveBackgroundScalePercent;
+    }
+    if (typeof normalized.immersiveBackgroundOffsetXPercent === 'number') {
+      appSettingsPatch.mvImmersiveBackgroundOffsetXPercent = normalized.immersiveBackgroundOffsetXPercent;
+    }
+    if (typeof normalized.immersiveBackgroundOffsetYPercent === 'number') {
+      appSettingsPatch.mvImmersiveBackgroundOffsetYPercent = normalized.immersiveBackgroundOffsetYPercent;
+    }
     if (typeof normalized.restartAudioOnLoad === 'boolean') {
       appSettingsPatch.mvRestartAudioOnLoad = normalized.restartAudioOnLoad;
     }
@@ -384,6 +430,9 @@ export class MvService {
 
   findLocalMvCandidates(trackId: string): MvMatchCandidate[] {
     const track = this.getExistingTrack(trackId);
+    if (track.mediaType === 'remote') {
+      return [];
+    }
     const candidates = this.localProvider.searchCandidates(track);
 
     return this.database.transaction(() => candidates.map((candidate) => this.upsertLocalCandidate(track, candidate)))();
@@ -418,7 +467,15 @@ export class MvService {
         }
         return (right.viewCount ?? -1) - (left.viewCount ?? -1);
       });
-    const upsertedCandidates = this.database.transaction(() => candidates.map((candidate) => this.upsertNetworkCandidate(track, candidate)))();
+    const normalizedCandidates =
+      track.mediaType === 'remote'
+        ? candidates.map((candidate) => ({
+        ...candidate,
+        filePath: null,
+        reasons: [...(candidate.reasons ?? []), `remote:${track.sourceId ?? 'unknown'}:${track.stableKey ?? track.id}`],
+      }))
+        : candidates;
+    const upsertedCandidates = this.database.transaction(() => normalizedCandidates.map((candidate) => this.upsertNetworkCandidate(track, candidate)))();
     const selectedCandidate = settings.autoSearch ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
 
     if (selectedCandidate) {
@@ -998,7 +1055,7 @@ export class MvService {
     return (
       [...candidates]
         .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider as NetworkMvProviderId))
-        .filter((candidate) => candidate.score >= MV_AUTO_MATCH_THRESHOLD)
+        .filter((candidate) => candidate.score >= normalizeAutoApplyThreshold(settings.autoApplyThreshold))
         .sort((left, right) => {
           const scoreDelta = right.score - left.score;
           if (scoreDelta !== 0) {

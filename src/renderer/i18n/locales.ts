@@ -279,7 +279,15 @@ export type TranslationKey =
   | 'mvSettings.error.noActiveTrackNetworkSearch'
   | 'mvSettings.error.noLocalCandidates'
   | 'mvSettings.error.noNetworkCandidates'
+  | 'mvSettings.immersive.description'
+  | 'mvSettings.immersive.dragHint'
+  | 'mvSettings.immersive.positionX'
+  | 'mvSettings.immersive.positionY'
+  | 'mvSettings.immersive.title'
+  | 'mvSettings.immersive.zoom'
   | 'mvSettings.network.autoApply'
+  | 'mvSettings.network.autoApplyThreshold'
+  | 'mvSettings.network.autoApplyThresholdDescription'
   | 'mvSettings.network.autoPreload'
   | 'mvSettings.network.autoPreloadDescription'
   | 'mvSettings.network.maxQuality'
@@ -906,7 +914,15 @@ const zhCN: TranslationMap = {
   'mvSettings.error.noActiveTrackNetworkSearch': '没有可用于网络 MV 搜索的当前曲库歌曲',
   'mvSettings.error.noLocalCandidates': '没有找到本地 MV 候选',
   'mvSettings.error.noNetworkCandidates': '没有找到网络 MV 候选',
+  'mvSettings.immersive.description': '开启后，歌词页使用当前 MV 作为背景。',
+  'mvSettings.immersive.dragHint': '也可以在歌词页空白处拖动调整。',
+  'mvSettings.immersive.positionX': '横向位置',
+  'mvSettings.immersive.positionY': '纵向位置',
+  'mvSettings.immersive.title': '沉浸式 MV 背景',
+  'mvSettings.immersive.zoom': '背景缩放',
   'mvSettings.network.autoApply': '自动搜索网络MV',
+  'mvSettings.network.autoApplyThreshold': '自动应用匹配度',
+  'mvSettings.network.autoApplyThresholdDescription': '候选达到 {threshold} 以上才会自动应用。',
   'mvSettings.network.autoPreload': '是否预加载MV',
   'mvSettings.network.autoPreloadDescription': '开启后，只要播放歌曲就会尝试提前查找并准备当前歌曲的 MV。',
   'mvSettings.network.maxQuality': '最高画质',
@@ -1450,7 +1466,15 @@ const zhTW: TranslationMap = {
   'mvSettings.error.noActiveTrackNetworkSearch': '沒有可用於網路 MV 搜尋的目前曲庫歌曲',
   'mvSettings.error.noLocalCandidates': '沒有找到本地 MV 候選',
   'mvSettings.error.noNetworkCandidates': '沒有找到網路 MV 候選',
+  'mvSettings.immersive.description': '開啟後，歌詞頁使用目前 MV 作為背景。',
+  'mvSettings.immersive.dragHint': '也可以在歌詞頁空白處拖動調整。',
+  'mvSettings.immersive.positionX': '橫向位置',
+  'mvSettings.immersive.positionY': '縱向位置',
+  'mvSettings.immersive.title': '沉浸式 MV 背景',
+  'mvSettings.immersive.zoom': '背景縮放',
   'mvSettings.network.autoApply': '自動搜尋網路 MV',
+  'mvSettings.network.autoApplyThreshold': '自動套用匹配度',
+  'mvSettings.network.autoApplyThresholdDescription': '候選達到 {threshold} 以上才會自動套用。',
   'mvSettings.network.autoPreload': '是否預載 MV',
   'mvSettings.network.autoPreloadDescription': '開啟後，只要播放歌曲就會嘗試提前查找並準備目前歌曲的 MV。',
   'mvSettings.network.maxQuality': '最高畫質',
@@ -1868,7 +1892,15 @@ const jaJP: TranslationMap = {
   'mvSettings.error.noActiveTrackNetworkSearch': 'ネットワーク MV 検索に使えるライブラリ曲が選択されていません',
   'mvSettings.error.noLocalCandidates': 'ローカル MV 候補が見つかりません',
   'mvSettings.error.noNetworkCandidates': 'ネットワーク MV 候補が見つかりません',
+  'mvSettings.immersive.description': 'オンにすると、歌詞ページで現在の MV を背景として使います。',
+  'mvSettings.immersive.dragHint': '歌詞ページの空き領域をドラッグして調整できます。',
+  'mvSettings.immersive.positionX': '横位置',
+  'mvSettings.immersive.positionY': '縦位置',
+  'mvSettings.immersive.title': '没入型 MV 背景',
+  'mvSettings.immersive.zoom': '背景ズーム',
   'mvSettings.network.autoApply': 'ネットワーク MV を自動検索',
+  'mvSettings.network.autoApplyThreshold': '自動適用の一致度',
+  'mvSettings.network.autoApplyThresholdDescription': '候補が {threshold} 以上の場合だけ自動適用します。',
   'mvSettings.network.autoPreload': 'MV をプリロード',
   'mvSettings.network.autoPreloadDescription': 'オンにすると、曲の再生時に現在の曲の MV を事前に検索して準備します。',
   'mvSettings.network.maxQuality': '最大画質',
@@ -2348,7 +2380,15 @@ const enUS: TranslationMap = {
   'mvSettings.error.noActiveTrackNetworkSearch': 'No active library track for network MV search',
   'mvSettings.error.noLocalCandidates': 'No local MV candidates found',
   'mvSettings.error.noNetworkCandidates': 'No network MV candidates found',
+  'mvSettings.immersive.description': 'Use the current MV as the lyrics page background.',
+  'mvSettings.immersive.dragHint': 'Drag empty space on the lyrics page to fine tune it.',
+  'mvSettings.immersive.positionX': 'Horizontal position',
+  'mvSettings.immersive.positionY': 'Vertical position',
+  'mvSettings.immersive.title': 'Immersive MV background',
+  'mvSettings.immersive.zoom': 'Background zoom',
   'mvSettings.network.autoApply': 'Auto search network MV',
+  'mvSettings.network.autoApplyThreshold': 'Auto-apply match',
+  'mvSettings.network.autoApplyThresholdDescription': 'Only apply candidates at {threshold} or higher.',
   'mvSettings.network.autoPreload': 'Preload MV',
   'mvSettings.network.autoPreloadDescription': 'When enabled, playing a song will look up and prepare its MV ahead of time.',
   'mvSettings.network.maxQuality': 'Max quality',

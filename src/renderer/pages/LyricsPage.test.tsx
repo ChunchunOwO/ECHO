@@ -106,7 +106,7 @@ const makeAppSettings = (
   lyricsProviderOrder: ["local", "lrclib", "netease", "qqmusic"],
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.7,
+  lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,

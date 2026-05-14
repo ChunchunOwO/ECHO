@@ -384,3 +384,5 @@ export const getLastFmBridge = (): Window['echo']['lastfm'] | null => getEchoBri
 export const getMvBridge = (): Window['echo']['mv'] | null => getEchoBridge()?.mv ?? null;
 
 export const getPlaybackBridge = (): Window['echo']['playback'] | null => getEchoBridge()?.playback ?? null;
+
+export const getRemoteSourcesBridge = (): Window['echo']['remoteSources'] | null => getEchoBridge()?.remoteSources ?? null;

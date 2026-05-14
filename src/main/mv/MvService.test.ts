@@ -9,15 +9,33 @@ import type { MvMatchCandidate } from '../../shared/types/mv';
 import { MvService } from './MvService';
 import type { MainMvOnlineProvider, ResolvedMvStreamVariant } from './OnlineMvProviders';
 
-vi.mock('../app/appSettings', () => ({
-  getAppSettings: () => ({
+const appSettingsMock = vi.hoisted(() => {
+  const defaultValue = {
     mvEnabledProviders: ['bilibili', 'youtube'],
     mvProviderOrder: ['bilibili', 'youtube'],
     mvAutoSearch: true,
+    mvAutoPreload: true,
+    mvAutoApplyThreshold: 0.7,
+    mvImmersiveBackground: true,
+    mvImmersiveBackgroundScalePercent: 115,
+    mvImmersiveBackgroundOffsetXPercent: 50,
+    mvImmersiveBackgroundOffsetYPercent: 50,
     mvMaxQuality: '1080p',
     mvAllow60fps: true,
+  };
+
+  return {
+    defaultValue,
+    current: { ...defaultValue },
+  };
+});
+
+vi.mock('../app/appSettings', () => ({
+  getAppSettings: () => appSettingsMock.current,
+  setAppSettings: vi.fn((patch: Partial<typeof appSettingsMock.current>) => {
+    appSettingsMock.current = { ...appSettingsMock.current, ...patch };
+    return appSettingsMock.current;
   }),
-  setAppSettings: vi.fn(),
 }));
 
 const tempRoots: string[] = [];
@@ -109,6 +127,7 @@ const createHarness = (onlineProviders: MainMvOnlineProvider[] = []) => {
 };
 
 afterEach(() => {
+  appSettingsMock.current = { ...appSettingsMock.defaultValue };
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
@@ -225,6 +244,44 @@ describe('MvService', () => {
       provider: 'bilibili',
       score: 0.69,
       selected: false,
+    });
+  });
+
+  it('uses the configured auto-apply threshold for network MV candidates', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1threshold',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1threshold',
+      providerUrl: 'https://www.bilibili.com/video/BV1threshold',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.82,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => []),
+    };
+    const { service, track } = createHarness([provider]);
+
+    service.setSettings({ autoApplyThreshold: 0.85 });
+    await service.searchNetworkCandidates(track.id);
+    expect(service.getSelectedVideo(track.id)).toBeNull();
+
+    service.setSettings({ autoApplyThreshold: 0.8 });
+    await service.searchNetworkCandidates(track.id);
+    expect(service.getSelectedVideo(track.id)).toMatchObject({
+      provider: 'bilibili',
+      score: 0.82,
+      selected: true,
     });
   });
 

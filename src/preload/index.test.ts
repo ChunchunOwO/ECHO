@@ -72,6 +72,33 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
   });
 
+  it('exposes local audio file opening helpers through IPC', async () => {
+    await exposedApi!.playback.openLocalAudioFiles();
+    await exposedApi!.playback.resolveLocalAudioFiles(['D:\\Music\\song.flac']);
+    await exposedApi!.library.openPathInFolder('D:\\Music\\song.flac');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackOpenLocalAudioFiles);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackResolveLocalAudioFiles, ['D:\\Music\\song.flac']);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryOpenPathInFolder, 'D:\\Music\\song.flac');
+  });
+
+  it('subscribes to system local audio file open events and unsubscribes cleanly', () => {
+    const handler = vi.fn();
+    const listener = listeners.get(IpcChannels.PlaybackLocalAudioFilesOpened);
+
+    expect(listener).toBeTruthy();
+    listener?.({}, ['D:\\Music\\queued-before-subscribe.flac']);
+    const unsubscribe = exposedApi!.playback.onLocalAudioFilesOpened(handler);
+    expect(handler).toHaveBeenCalledWith(['D:\\Music\\queued-before-subscribe.flac']);
+
+    listener?.({}, ['D:\\Music\\song.flac', 12, 'D:\\Music\\two.opus']);
+    expect(handler).toHaveBeenCalledWith(['D:\\Music\\song.flac', 'D:\\Music\\two.opus']);
+
+    unsubscribe();
+    listener?.({}, ['D:\\Music\\after-unsubscribe.flac']);
+    expect(handler).not.toHaveBeenCalledWith(['D:\\Music\\after-unsubscribe.flac']);
+  });
+
   it('exposes lyrics wallpaper picker through IPC', async () => {
     await exposedApi!.app.chooseLyricsWallpaper();
 

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -279,9 +280,18 @@ const normalizeStartPlaybackHistoryRequest = (value: unknown): StartPlaybackHist
   }
 
   const input = value as Record<string, unknown>;
+  const trackId = input.trackId === null ? null : requireText(input.trackId, 'trackId');
+  const durationSeconds = typeof input.durationSeconds === 'number' && Number.isFinite(input.durationSeconds) ? Math.max(0, input.durationSeconds) : undefined;
 
   return {
-    trackId: requireText(input.trackId, 'trackId'),
+    trackId,
+    trackPath: typeof input.trackPath === 'string' && input.trackPath.trim() ? input.trackPath : undefined,
+    title: typeof input.title === 'string' ? input.title : undefined,
+    artist: typeof input.artist === 'string' ? input.artist : undefined,
+    album: typeof input.album === 'string' ? input.album : undefined,
+    albumArtist: typeof input.albumArtist === 'string' ? input.albumArtist : undefined,
+    coverId: typeof input.coverId === 'string' || input.coverId === null ? (input.coverId as string | null) : undefined,
+    durationSeconds,
     sourceType: typeof input.sourceType === 'string' && input.sourceType.trim() ? input.sourceType : null,
     sourceLabel: typeof input.sourceLabel === 'string' && input.sourceLabel.trim() ? input.sourceLabel : null,
     queueId: typeof input.queueId === 'string' && input.queueId.trim() ? input.queueId : null,
@@ -659,6 +669,9 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryOpenTrackInFolder, (_event, trackId: unknown): void => {
     shell.showItemInFolder(getExistingTrack(trackId).path);
+  });
+  ipcMain.handle(IpcChannels.LibraryOpenPathInFolder, (_event, filePath: unknown): void => {
+    shell.showItemInFolder(resolve(requireText(filePath, 'filePath')));
   });
   ipcMain.handle(IpcChannels.LibraryOpenTrackWithSystem, async (_event, trackId: unknown): Promise<void> => {
     const result = await shell.openPath(getExistingTrack(trackId).path);

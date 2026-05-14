@@ -255,7 +255,18 @@ export type PlaybackHistoryQuery = {
 };
 
 export type StartPlaybackHistoryRequest = {
-  trackId: string;
+  trackId: string | null;
+  mediaType?: 'local' | 'remote';
+  sourceId?: string | null;
+  stableKey?: string | null;
+  remotePath?: string | null;
+  trackPath?: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  albumArtist?: string;
+  coverId?: string | null;
+  durationSeconds?: number;
   sourceType?: string | null;
   sourceLabel?: string | null;
   queueId?: string | null;
@@ -281,7 +292,13 @@ export type PlaybackHistorySummary = {
 
 export type LibraryTrack = {
   id: string;
+  mediaType?: 'local' | 'remote';
+  isTemporary?: boolean;
   path: string;
+  sourceId?: string | null;
+  provider?: string | null;
+  remotePath?: string | null;
+  stableKey?: string | null;
   title: string;
   artist: string;
   album: string;

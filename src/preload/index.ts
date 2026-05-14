@@ -3,6 +3,28 @@ import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
 import type { SmtcCommand } from '../shared/types/smtc';
 
+const sanitizePathList = (paths: unknown): string[] =>
+  Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string') : [];
+
+const localAudioFileOpenHandlers = new Set<(paths: string[]) => void>();
+const pendingLocalAudioFileOpenEvents: string[][] = [];
+
+ipcRenderer.on(IpcChannels.PlaybackLocalAudioFilesOpened, (_event: Electron.IpcRendererEvent, paths: unknown): void => {
+  const safePaths = sanitizePathList(paths);
+  if (safePaths.length === 0) {
+    return;
+  }
+
+  if (localAudioFileOpenHandlers.size === 0) {
+    pendingLocalAudioFileOpenEvents.push(safePaths);
+    return;
+  }
+
+  for (const handler of localAudioFileOpenHandlers) {
+    handler(safePaths);
+  }
+});
+
 const echoApi: EchoApi = {
   app: {
     getVersion: () => ipcRenderer.invoke(IpcChannels.AppGetVersion),
@@ -86,6 +108,7 @@ const echoApi: EchoApi = {
     startPlaybackHistory: (request) => ipcRenderer.invoke(IpcChannels.LibraryStartPlaybackHistory, request),
     finishPlaybackHistory: (request) => ipcRenderer.invoke(IpcChannels.LibraryFinishPlaybackHistory, request),
     openTrackInFolder: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryOpenTrackInFolder, trackId),
+    openPathInFolder: (path) => ipcRenderer.invoke(IpcChannels.LibraryOpenPathInFolder, path),
     openTrackWithSystem: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryOpenTrackWithSystem, trackId),
     copyTrackPath: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryCopyTrackPath, trackId),
     copyTrackNameArtist: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryCopyTrackNameArtist, trackId),
@@ -111,11 +134,43 @@ const echoApi: EchoApi = {
   playback: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
     playLocalFile: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request),
+    playMediaItem: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request),
     play: () => ipcRenderer.invoke(IpcChannels.PlaybackPlay),
     pause: () => ipcRenderer.invoke(IpcChannels.PlaybackPause),
     stop: () => ipcRenderer.invoke(IpcChannels.PlaybackStop),
     seek: (positionSeconds) => ipcRenderer.invoke(IpcChannels.PlaybackSeek, positionSeconds),
     openLocalAudioFile: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFile),
+    openLocalAudioFiles: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFiles),
+    resolveLocalAudioFiles: (paths) => ipcRenderer.invoke(IpcChannels.PlaybackResolveLocalAudioFiles, paths),
+    onLocalAudioFilesOpened: (handler) => {
+      localAudioFileOpenHandlers.add(handler);
+      for (const paths of pendingLocalAudioFileOpenEvents.splice(0)) {
+        handler(paths);
+      }
+
+      return () => {
+        localAudioFileOpenHandlers.delete(handler);
+      };
+    },
+  },
+  remoteSources: {
+    list: () => ipcRenderer.invoke(IpcChannels.RemoteSourcesList),
+    create: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesCreate, input),
+    update: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesUpdate, input),
+    delete: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesDelete, sourceId),
+    test: (sourceIdOrInput) => ipcRenderer.invoke(IpcChannels.RemoteSourcesTest, sourceIdOrInput),
+    browse: (sourceId, path) => ipcRenderer.invoke(IpcChannels.RemoteSourcesBrowse, sourceId, path),
+    sync: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesSync, sourceId),
+    cancelSync: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesCancelSync, sourceId),
+    getSyncStatus: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetSyncStatus, sourceId),
+    createStreamUrl: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesCreateStreamUrl, input),
+    startBackgroundJobs: (sourceId, kinds) => ipcRenderer.invoke(IpcChannels.RemoteSourcesStartBackgroundJobs, sourceId, kinds),
+    pauseBackgroundJobs: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesPauseBackgroundJobs, sourceId),
+    getJobStatus: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetJobStatus, sourceId),
+    retryFailedJobs: (sourceId, kinds) => ipcRenderer.invoke(IpcChannels.RemoteSourcesRetryFailedJobs, sourceId, kinds),
+    setBackgroundPaused: (paused) => ipcRenderer.invoke(IpcChannels.RemoteSourcesSetBackgroundPaused, paused),
+    getBackgroundGlobalStatus: () => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus),
+    updateRuntimeLimits: (sourceId, limits) => ipcRenderer.invoke(IpcChannels.RemoteSourcesUpdateRuntimeLimits, sourceId, limits),
   },
   lyrics: {
     getForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsGetForTrack, trackId),

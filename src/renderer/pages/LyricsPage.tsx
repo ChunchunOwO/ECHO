@@ -64,7 +64,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.7,
+  lyricsAutoAcceptScore: 0.5,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsSecondaryFontSizePx: 18,
   lyricsCoverOpacityPercent: 100,
@@ -173,7 +173,7 @@ const selectAutoApplyCandidate = (
   }
 
   const threshold = Number.isFinite(settings.lyricsAutoAcceptScore)
-    ? Math.max(0.5, Math.min(1, settings.lyricsAutoAcceptScore))
+    ? Math.max(0.3, Math.min(1, settings.lyricsAutoAcceptScore))
     : fallbackLyricsDisplaySettings.lyricsAutoAcceptScore;
 
   return candidates.find(
@@ -917,14 +917,29 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     const handleRematchRequested = (): void => {
       void handleRematchLyrics();
     };
+    const handleCandidateApplied = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? event.detail as { trackId?: string | null; lyrics?: TrackLyrics | null } : null;
+      if (!detail?.lyrics || !detail.trackId || detail.trackId !== trackId) {
+        return;
+      }
+
+      setLyrics(trackLyricsToState(detail.lyrics));
+      dispatchCurrentLyricsProviderChanged(detail.lyrics);
+      setCandidates([]);
+      setActiveCandidateSource("all");
+      setLyricsStatus(null);
+      setError(null);
+    };
 
     window.addEventListener("lyrics:search-requested", handleSearchRequested);
     window.addEventListener("lyrics:rematch-requested", handleRematchRequested);
+    window.addEventListener("lyrics:candidate-applied", handleCandidateApplied);
     return () => {
       window.removeEventListener("lyrics:search-requested", handleSearchRequested);
       window.removeEventListener("lyrics:rematch-requested", handleRematchRequested);
+      window.removeEventListener("lyrics:candidate-applied", handleCandidateApplied);
     };
-  }, [handleRematchLyrics, handleSearchLyrics]);
+  }, [handleRematchLyrics, handleSearchLyrics, trackId]);
 
   const handleApplyCandidate = useCallback(
     async (candidateId: string): Promise<void> => {

@@ -48,7 +48,7 @@ import type {
   DuplicateTrackMode,
   UpdatePlaylistRequest,
 } from '../shared/types/library';
-import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
+import type { LocalFileResolveResult, PlaybackMediaStartRequest, PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
 import type { LastCrashSummary, RendererErrorPayload } from '../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
 import type {
@@ -63,6 +63,19 @@ import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
 import type { MvMatchCandidate, MvResolvedStreams, MvSettings, TrackVideo } from '../shared/types/mv';
+import type {
+  RemoteDirectoryItem,
+  RemoteBackgroundGlobalStatus,
+  RemoteBackgroundJobKind,
+  RemoteBackgroundJobStatus,
+  RemoteRuntimeLimits,
+  RemoteSource,
+  RemoteSourceInput,
+  RemoteSourceUpdate,
+  RemoteStreamUrlResult,
+  RemoteSyncStatus,
+  TestRemoteSourceResult,
+} from '../shared/types/remoteSources';
 
 export type FontFileAsset = {
   path: string;
@@ -155,6 +168,7 @@ export type EchoApi = {
     startPlaybackHistory: (request: StartPlaybackHistoryRequest) => Promise<StartPlaybackHistoryResult>;
     finishPlaybackHistory: (request: FinishPlaybackHistoryRequest) => Promise<PlaybackHistoryEntry | null>;
     openTrackInFolder: (trackId: string) => Promise<void>;
+    openPathInFolder: (path: string) => Promise<void>;
     openTrackWithSystem: (trackId: string) => Promise<void>;
     copyTrackPath: (trackId: string) => Promise<void>;
     copyTrackNameArtist: (trackId: string) => Promise<void>;
@@ -180,11 +194,34 @@ export type EchoApi = {
   playback: {
     getStatus: () => Promise<PlaybackStatus>;
     playLocalFile: (request: PlaybackStartRequest) => Promise<PlaybackStatus>;
+    playMediaItem: (request: PlaybackMediaStartRequest) => Promise<PlaybackStatus>;
     play: () => Promise<PlaybackStatus>;
     pause: () => Promise<PlaybackStatus>;
     stop: () => Promise<PlaybackStatus>;
     seek: (positionSeconds: number) => Promise<PlaybackStatus>;
     openLocalAudioFile: () => Promise<string | null>;
+    openLocalAudioFiles: () => Promise<string[] | null>;
+    resolveLocalAudioFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
+    onLocalAudioFilesOpened: (handler: (paths: string[]) => void) => () => void;
+  };
+  remoteSources: {
+    list: () => Promise<RemoteSource[]>;
+    create: (input: RemoteSourceInput) => Promise<RemoteSource>;
+    update: (input: RemoteSourceUpdate) => Promise<RemoteSource>;
+    delete: (sourceId: string) => Promise<void>;
+    test: (sourceIdOrInput: string | RemoteSourceInput) => Promise<TestRemoteSourceResult>;
+    browse: (sourceId: string, path?: string | null) => Promise<RemoteDirectoryItem[]>;
+    sync: (sourceId: string) => Promise<RemoteSyncStatus>;
+    cancelSync: (sourceId: string) => Promise<RemoteSyncStatus>;
+    getSyncStatus: (sourceId: string) => Promise<RemoteSyncStatus>;
+    createStreamUrl: (input: { trackId?: string; sourceId?: string; remotePath?: string; stableKey?: string }) => Promise<RemoteStreamUrlResult>;
+    startBackgroundJobs: (sourceId: string, kinds?: RemoteBackgroundJobKind[]) => Promise<RemoteBackgroundJobStatus>;
+    pauseBackgroundJobs: (sourceId: string) => Promise<RemoteBackgroundJobStatus>;
+    getJobStatus: (sourceId: string) => Promise<RemoteBackgroundJobStatus>;
+    retryFailedJobs: (sourceId: string, kinds?: RemoteBackgroundJobKind[]) => Promise<RemoteBackgroundJobStatus>;
+    setBackgroundPaused: (paused: boolean) => Promise<RemoteBackgroundGlobalStatus>;
+    getBackgroundGlobalStatus: () => Promise<RemoteBackgroundGlobalStatus>;
+    updateRuntimeLimits: (sourceId: string, limits: RemoteRuntimeLimits) => Promise<RemoteBackgroundJobStatus>;
   };
   lyrics: {
     getForTrack: (trackId: string) => Promise<TrackLyrics | null>;

@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Music2 } from 'lucide-react';
 import { LyricsLine } from './LyricsLine';
 import type { LyricsState } from './lyricsTypes';
+
+type LyricScrollMode = 'animated' | 'instant' | 'recenter';
 
 type LyricsViewProps = {
   lyrics: LyricsState;
@@ -50,6 +52,40 @@ export const getEstimatedPlainLyricIndex = (
   return Math.max(0, Math.min(lines.length - 1, Math.floor(progress * lines.length)));
 };
 
+const easeInOutCubic = (progress: number): number =>
+  progress < 0.5
+    ? 4 * progress ** 3
+    : 1 - ((-2 * progress + 2) ** 3) / 2;
+
+const getAnimationNow = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
+const requestLyricAnimationFrame = (callback: FrameRequestCallback): number => {
+  if (typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback);
+  }
+
+  return window.setTimeout(() => {
+    callback(getAnimationNow());
+  }, 16);
+};
+
+const cancelLyricAnimationFrame = (frameId: number): void => {
+  if (typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(frameId);
+    return;
+  }
+
+  window.clearTimeout(frameId);
+};
+
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export const LyricsView = ({
   durationMs,
   hideEmptyState = false,
@@ -60,6 +96,9 @@ export const LyricsView = ({
   showTranslation = true,
 }: LyricsViewProps): JSX.Element | null => {
   const scrollRef = useRef<HTMLElement | null>(null);
+  const scrollAnimationFrameRef = useRef<number | null>(null);
+  const activeCenterFrameRef = useRef<number | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
   const isSynced = lyrics.kind === 'synced';
   const isPlain = lyrics.kind === 'plain';
   const activeIndex = useMemo(
@@ -72,7 +111,45 @@ export const LyricsView = ({
     [durationMs, isPlain, isSynced, lyrics.lines, lyrics.offsetMs, positionMs],
   );
 
-  useEffect(() => {
+  const stopScrollAnimation = useCallback((): void => {
+    if (scrollAnimationFrameRef.current !== null) {
+      cancelLyricAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+  }, []);
+
+  const animateScrollTop = useCallback(
+    (scrollContainer: HTMLElement, targetTop: number, durationMs: number): void => {
+      stopScrollAnimation();
+
+      const startTop = scrollContainer.scrollTop;
+      const distance = targetTop - startTop;
+      if (Math.abs(distance) < 1 || durationMs <= 0 || prefersReducedMotion()) {
+        scrollContainer.scrollTop = targetTop;
+        return;
+      }
+
+      const startedAt = getAnimationNow();
+      const tick = (now: number): void => {
+        const elapsed = now - startedAt;
+        const progress = Math.min(1, elapsed / durationMs);
+        scrollContainer.scrollTop = startTop + distance * easeInOutCubic(progress);
+
+        if (progress < 1) {
+          scrollAnimationFrameRef.current = requestLyricAnimationFrame(tick);
+          return;
+        }
+
+        scrollAnimationFrameRef.current = null;
+        scrollContainer.scrollTop = targetTop;
+      };
+
+      scrollAnimationFrameRef.current = requestLyricAnimationFrame(tick);
+    },
+    [stopScrollAnimation],
+  );
+
+  const centerActiveLyric = useCallback((mode: LyricScrollMode = 'animated'): void => {
     if (activeIndex < 0) {
       return;
     }
@@ -87,14 +164,84 @@ export const LyricsView = ({
     const activeRect = activeLine.getBoundingClientRect();
     const activeCenter = activeRect.top - containerRect.top + scrollContainer.scrollTop + activeRect.height / 2;
     const targetCenter = scrollContainer.clientHeight * 0.52;
-    const nextScrollTop = activeCenter - targetCenter;
-    const top = Math.max(0, nextScrollTop);
-    if (typeof scrollContainer.scrollTo === 'function') {
-      scrollContainer.scrollTo({ top, behavior: 'smooth' });
-    } else {
-      scrollContainer.scrollTop = top;
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+    const nextScrollTop = Math.max(0, Math.min(maxScrollTop, activeCenter - targetCenter));
+
+    if (mode === 'instant') {
+      stopScrollAnimation();
+      scrollContainer.scrollTop = nextScrollTop;
+      return;
     }
-  }, [activeIndex]);
+
+    animateScrollTop(scrollContainer, nextScrollTop, mode === 'recenter' ? 260 : 880);
+  }, [activeIndex, animateScrollTop, stopScrollAnimation]);
+
+  useEffect(() => {
+    if (activeCenterFrameRef.current !== null) {
+      cancelLyricAnimationFrame(activeCenterFrameRef.current);
+    }
+
+    activeCenterFrameRef.current = requestLyricAnimationFrame(() => {
+      activeCenterFrameRef.current = null;
+      centerActiveLyric('animated');
+    });
+
+    return () => {
+      if (activeCenterFrameRef.current !== null) {
+        cancelLyricAnimationFrame(activeCenterFrameRef.current);
+        activeCenterFrameRef.current = null;
+      }
+    };
+  }, [centerActiveLyric]);
+
+  useEffect(() => {
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer || activeIndex < 0) {
+      return undefined;
+    }
+
+    const scheduleRecenter = (): void => {
+      if (resizeFrameRef.current !== null) {
+        cancelLyricAnimationFrame(resizeFrameRef.current);
+      }
+
+      resizeFrameRef.current = requestLyricAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        centerActiveLyric('recenter');
+      });
+    };
+
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(scheduleRecenter)
+        : null;
+    observer?.observe(scrollContainer);
+    window.addEventListener('resize', scheduleRecenter);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', scheduleRecenter);
+      if (resizeFrameRef.current !== null) {
+        cancelLyricAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    };
+  }, [activeIndex, centerActiveLyric]);
+
+  useEffect(
+    () => () => {
+      stopScrollAnimation();
+      if (activeCenterFrameRef.current !== null) {
+        cancelLyricAnimationFrame(activeCenterFrameRef.current);
+        activeCenterFrameRef.current = null;
+      }
+      if (resizeFrameRef.current !== null) {
+        cancelLyricAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    },
+    [stopScrollAnimation],
+  );
 
   if (lyrics.lines.length === 0) {
     if (hideEmptyState) {
@@ -115,6 +262,7 @@ export const LyricsView = ({
       {lyrics.lines.map((line, index) => (
         <LyricsLine
           active={index === activeIndex}
+          focusDistance={activeIndex >= 0 ? Math.abs(index - activeIndex) : 4}
           key={`${line.timeMs}-${index}`}
           line={line}
           past={activeIndex >= 0 && index < activeIndex}

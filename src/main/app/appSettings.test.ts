@@ -30,12 +30,13 @@ describe('app settings normalization', () => {
     expect(settings.lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
     expect(settings.lyricsDeepSearchEnabled).toBe(true);
     expect(settings.lyricsAutoSearch).toBe(true);
-    expect(settings.lyricsAutoAcceptScore).toBe(0.7);
+    expect(settings.lyricsAutoAcceptScore).toBe(0.5);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
     expect(settings.lyricsEmptyStateHidden).toBe(true);
+    expect(settings.lyricsPlayerBarDrawerEnabled).toBe(false);
     expect(settings.lyricsRomanizationEnabled).toBe(true);
     expect(settings.lyricsTranslationEnabled).toBe(true);
     expect(settings.lyricsFontSizePx).toBe(36);
@@ -49,6 +50,11 @@ describe('app settings normalization', () => {
     expect(settings.mvEnabledProviders).toEqual(['bilibili', 'youtube']);
     expect(settings.mvProviderOrder).toEqual(['bilibili', 'youtube']);
     expect(settings.mvAutoSearch).toBe(true);
+    expect(settings.mvAutoApplyThreshold).toBe(0.7);
+    expect(settings.mvImmersiveBackground).toBe(true);
+    expect(settings.mvImmersiveBackgroundScalePercent).toBe(115);
+    expect(settings.mvImmersiveBackgroundOffsetXPercent).toBe(50);
+    expect(settings.mvImmersiveBackgroundOffsetYPercent).toBe(50);
     expect(settings.mvMaxQuality).toBe('1080p');
     expect(settings.mvAllow60fps).toBe(true);
   });
@@ -159,6 +165,7 @@ describe('app settings normalization', () => {
         lyricsEnabled: false,
         lyricsHeaderHidden: true,
         lyricsEmptyStateHidden: false,
+        lyricsPlayerBarDrawerEnabled: true,
         lyricsRomanizationEnabled: false,
         lyricsTranslationEnabled: false,
         lyricsFontSizePx: 999,
@@ -180,12 +187,13 @@ describe('app settings normalization', () => {
       lyricsCoverAutoAcceptScore: 1,
       lyricsDeepSearchEnabled: false,
       lyricsAutoSearch: false,
-      lyricsAutoAcceptScore: 0.7,
+      lyricsAutoAcceptScore: 1,
       lyricsDefaultOffsetMs: -10000,
       lyricsGlobalSyncOffsetMs: 1000,
       lyricsEnabled: false,
       lyricsHeaderHidden: true,
       lyricsEmptyStateHidden: false,
+      lyricsPlayerBarDrawerEnabled: true,
       lyricsRomanizationEnabled: false,
       lyricsTranslationEnabled: false,
       lyricsFontSizePx: 56,
@@ -201,6 +209,7 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsFontSizePx: 12,
+        lyricsAutoAcceptScore: 0.1,
         lyricsColor: '#ff3366',
         lyricsBackgroundMode: 'cover',
         lyricsCoverOpacityPercent: 64.4,
@@ -210,6 +219,7 @@ describe('app settings normalization', () => {
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
+      lyricsAutoAcceptScore: 0.3,
       lyricsColor: '#FF3366',
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,
@@ -264,6 +274,11 @@ describe('app settings normalization', () => {
         mvEnabledProviders: ['youtube', 'qqmusic', 'youtube'] as never,
         mvProviderOrder: ['youtube'] as never,
         mvAutoSearch: false,
+        mvAutoApplyThreshold: 0.82,
+        mvImmersiveBackground: false,
+        mvImmersiveBackgroundScalePercent: 180,
+        mvImmersiveBackgroundOffsetXPercent: 18,
+        mvImmersiveBackgroundOffsetYPercent: 76,
         mvMaxQuality: 'max',
         mvAllow60fps: false,
       }),
@@ -271,6 +286,11 @@ describe('app settings normalization', () => {
       mvEnabledProviders: ['youtube'],
       mvProviderOrder: ['youtube', 'bilibili'],
       mvAutoSearch: false,
+      mvAutoApplyThreshold: 0.82,
+      mvImmersiveBackground: false,
+      mvImmersiveBackgroundScalePercent: 180,
+      mvImmersiveBackgroundOffsetXPercent: 18,
+      mvImmersiveBackgroundOffsetYPercent: 76,
       mvMaxQuality: 'max',
       mvAllow60fps: false,
     });
@@ -278,9 +298,18 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         mvMaxQuality: '8k' as never,
+        mvAutoApplyThreshold: 2,
+        mvImmersiveBackgroundScalePercent: 999,
+        mvImmersiveBackgroundOffsetXPercent: -10,
+        mvImmersiveBackgroundOffsetYPercent: 140,
       }),
     ).toMatchObject({
       mvAutoSearch: true,
+      mvAutoApplyThreshold: 1,
+      mvImmersiveBackground: true,
+      mvImmersiveBackgroundScalePercent: 220,
+      mvImmersiveBackgroundOffsetXPercent: 0,
+      mvImmersiveBackgroundOffsetYPercent: 100,
       mvMaxQuality: '1080p',
       mvAllow60fps: true,
     });

@@ -34,4 +34,14 @@ describe('LyricsLine', () => {
 
     expect(screen.queryByText('樱花')).toBeNull();
   });
+
+  it('marks how many secondary lyric rows are visible', () => {
+    const { container, rerender } = render(<LyricsLine active line={line} past={false} onSeek={vi.fn()} />);
+
+    expect(container.querySelector('.lyrics-line')?.getAttribute('data-secondary-lines')).toBe('2');
+
+    rerender(<LyricsLine active line={line} past={false} showTranslation={false} onSeek={vi.fn()} />);
+
+    expect(container.querySelector('.lyrics-line')?.getAttribute('data-secondary-lines')).toBe('1');
+  });
 });

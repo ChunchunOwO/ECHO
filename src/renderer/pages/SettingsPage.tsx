@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Captions,
   Check,
   Download,
   ExternalLink,
@@ -33,6 +34,7 @@ import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnostic
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 import { NetworkMetadataPanel } from '../components/library/NetworkMetadataPanel';
 import { PlaybackStabilityDiagnosticsPanel } from '../components/player/PlaybackStabilityDiagnosticsPanel';
+import { RemoteSourcesPanel } from '../components/settings/RemoteSourcesPanel';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import {
@@ -69,7 +71,7 @@ const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][numb
   mock: 'Mock',
 };
 
-type SettingsNavKey = 'general' | 'playback' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
+type SettingsNavKey = 'general' | 'playback' | 'lyrics' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
 
 type SettingsNavItem = {
   key: SettingsNavKey;
@@ -153,6 +155,7 @@ type SettingRowProps = {
 const settingsNavItems: SettingsNavItem[] = [
   { key: 'general', labelKey: 'settings.nav.general.label', descriptionKey: 'settings.nav.general.description', icon: MessageSquare },
   { key: 'playback', labelKey: 'settings.nav.playback.label', descriptionKey: 'settings.nav.playback.description', icon: Zap },
+  { key: 'lyrics', labelKey: 'route.lyricsSettings.label', descriptionKey: 'route.lyricsSettings.description', icon: Captions },
   { key: 'integrations', labelKey: 'settings.nav.integrations.label', descriptionKey: 'settings.nav.integrations.description', icon: Link2 },
   { key: 'remote', labelKey: 'settings.nav.remote.label', descriptionKey: 'settings.nav.remote.description', icon: Globe2 },
   { key: 'eq', labelKey: 'settings.nav.eq.label', descriptionKey: 'settings.nav.eq.description', icon: SlidersHorizontal },
@@ -1682,6 +1685,16 @@ export const SettingsPage = (): JSX.Element => {
               <PlaybackStabilityDiagnosticsPanel />
             </SettingSection>
 
+            <SettingSection activeKey={activeSection} icon={Captions} id="lyrics" title={t('route.lyricsSettings.label')}>
+              <SettingRow title="底栏抽屉" description="歌词页隐藏底部播放栏，鼠标靠近窗口底部时自动拉出，离开后收回。">
+                <ToggleButton
+                  active={appSettings?.lyricsPlayerBarDrawerEnabled ?? false}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ lyricsPlayerBarDrawerEnabled: !(appSettings?.lyricsPlayerBarDrawerEnabled ?? false) })}
+                />
+              </SettingRow>
+            </SettingSection>
+
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
               <SettingRow title={t('settings.integrations.discord.title')} description={t('settings.integrations.discord.description')}>
                 <div className="settings-chip-row">
@@ -1797,9 +1810,7 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Globe2} id="remote" title={t('settings.nav.remote.label')}>
-              <SettingRow title={t('settings.remote.library.title')} description={t('settings.remote.library.description')}>
-                <StatusText tone="muted">{t('common.disabled')}</StatusText>
-              </SettingRow>
+              <RemoteSourcesPanel />
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title={t('settings.nav.eq.label')}>

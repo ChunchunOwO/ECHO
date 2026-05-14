@@ -179,6 +179,17 @@ describe('MvSettingsDrawer', () => {
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ autoSearch: false }));
   });
 
+  it('updates the automatic MV apply threshold from the drawer', async () => {
+    renderDrawer();
+
+    const slider = await screen.findByRole('slider', { name: /Auto-apply match/ });
+    expect((slider as HTMLInputElement).value).toBe('70');
+
+    fireEvent.change(slider, { target: { value: '82' } });
+
+    await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ autoApplyThreshold: 0.82 }));
+  });
+
   it('toggles MV preload and restart sync from the drawer', async () => {
     renderDrawer();
 
@@ -187,6 +198,18 @@ describe('MvSettingsDrawer', () => {
 
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ autoPreload: false }));
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ restartAudioOnLoad: true }));
+  });
+
+  it('shows immersive MV controls and updates zoom', async () => {
+    renderDrawer();
+
+    expect(await screen.findByRole('button', { name: /Immersive MV background/ })).toBeTruthy();
+    const slider = screen.getByRole('slider', { name: /Background zoom/ });
+    expect((slider as HTMLInputElement).value).toBe('115');
+
+    fireEvent.change(slider, { target: { value: '140' } });
+
+    await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ immersiveBackgroundScalePercent: 140 }));
   });
 
   it('reorders network sources by dragging the priority handle', async () => {

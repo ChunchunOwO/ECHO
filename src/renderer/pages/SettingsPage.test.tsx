@@ -23,6 +23,7 @@ const settings: AppSettings = {
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
+  lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
@@ -149,6 +150,10 @@ vi.mock('../components/library/NetworkMetadataPanel', () => ({
   NetworkMetadataPanel: () => <div />,
 }));
 
+vi.mock('../components/settings/RemoteSourcesPanel', () => ({
+  RemoteSourcesPanel: () => <div />,
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -175,5 +180,22 @@ describe('SettingsPage', () => {
     expect(settingsChanged).toHaveBeenCalledTimes(1);
 
     window.removeEventListener('settings:changed', settingsChanged);
+  });
+
+  it('saves the lyrics player bar drawer setting from Settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue({ ...settings, lyricsPlayerBarDrawerEnabled: true });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('route.lyricsSettings.label')[0]);
+    const row = screen.getByText('底栏抽屉').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
   });
 });

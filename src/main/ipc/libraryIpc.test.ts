@@ -263,6 +263,12 @@ describe('library IPC', () => {
     expect(openPathMock).toHaveBeenCalledWith('D:\\Music');
   });
 
+  it('opens an arbitrary file path in its folder', async () => {
+    await handlers[IpcChannels.LibraryOpenPathInFolder]!(null, 'D:\\Loose\\song.flac');
+
+    expect(showItemInFolderMock).toHaveBeenCalledWith('D:\\Loose\\song.flac');
+  });
+
   it('registers album detail IPC handler', async () => {
     const service = installLibraryService();
     service.getAlbum.mockReturnValue({

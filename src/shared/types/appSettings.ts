@@ -28,6 +28,7 @@ export type AppSettings = {
   lyricsEnabled: boolean;
   lyricsHeaderHidden: boolean;
   lyricsEmptyStateHidden: boolean;
+  lyricsPlayerBarDrawerEnabled?: boolean;
   lyricsRomanizationEnabled: boolean;
   lyricsTranslationEnabled: boolean;
   lyricsFontSizePx: number;
@@ -43,6 +44,11 @@ export type AppSettings = {
   mvProviderOrder: NetworkMvProviderId[];
   mvAutoSearch: boolean;
   mvAutoPreload?: boolean;
+  mvAutoApplyThreshold?: number;
+  mvImmersiveBackground?: boolean;
+  mvImmersiveBackgroundScalePercent?: number;
+  mvImmersiveBackgroundOffsetXPercent?: number;
+  mvImmersiveBackgroundOffsetYPercent?: number;
   mvRestartAudioOnLoad?: boolean;
   mvMaxQuality: MvMaxQuality;
   mvAllow60fps: boolean;

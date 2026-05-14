@@ -30,6 +30,11 @@ export type MvQualityVariant = {
 export type MvSettings = {
   autoSearch: boolean;
   autoPreload: boolean;
+  autoApplyThreshold?: number;
+  immersiveBackground?: boolean;
+  immersiveBackgroundScalePercent?: number;
+  immersiveBackgroundOffsetXPercent?: number;
+  immersiveBackgroundOffsetYPercent?: number;
   restartAudioOnLoad: boolean;
   enabledProviders: NetworkMvProviderId[];
   providerOrder: NetworkMvProviderId[];

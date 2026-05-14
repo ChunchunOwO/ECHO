@@ -55,12 +55,13 @@ export const defaultSettings: AppSettings = {
   lyricsCoverAutoAcceptScore: 0.97,
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
-  lyricsAutoAcceptScore: 0.7,
+  lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
+  lyricsPlayerBarDrawerEnabled: false,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
@@ -76,6 +77,11 @@ export const defaultSettings: AppSettings = {
   mvProviderOrder: ['bilibili', 'youtube'],
   mvAutoSearch: true,
   mvAutoPreload: true,
+  mvAutoApplyThreshold: 0.7,
+  mvImmersiveBackground: true,
+  mvImmersiveBackgroundScalePercent: 115,
+  mvImmersiveBackgroundOffsetXPercent: 50,
+  mvImmersiveBackgroundOffsetYPercent: 50,
   mvRestartAudioOnLoad: false,
   mvMaxQuality: '1080p',
   mvAllow60fps: true,
@@ -249,6 +255,10 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsProviderTimeoutMs = Number(settings.lyricsProviderTimeoutMs);
   const lyricsTotalMatchTimeoutMs = Number(settings.lyricsTotalMatchTimeoutMs);
   const mvProviderOrder = normalizeMvProviderList(settings.mvProviderOrder, defaultSettings.mvProviderOrder);
+  const mvAutoApplyThreshold = Number(settings.mvAutoApplyThreshold);
+  const mvImmersiveBackgroundScalePercent = Number(settings.mvImmersiveBackgroundScalePercent);
+  const mvImmersiveBackgroundOffsetXPercent = Number(settings.mvImmersiveBackgroundOffsetXPercent);
+  const mvImmersiveBackgroundOffsetYPercent = Number(settings.mvImmersiveBackgroundOffsetYPercent);
   const lyricsEnabledProviders = normalizeLyricsProviderList(settings.lyricsEnabledProviders, defaultSettings.lyricsEnabledProviders ?? defaultLyricsProviderOrder);
   const lyricsProviderOrder = normalizeLyricsProviderList(
     settings.lyricsProviderOrder,
@@ -281,7 +291,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsDeepSearchEnabled: settings.lyricsDeepSearchEnabled !== false,
     lyricsAutoSearch: settings.lyricsAutoSearch !== false,
     lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
-      ? clamp(lyricsAutoAcceptScore, 0.5, 0.7)
+      ? clamp(lyricsAutoAcceptScore, 0.3, 1)
       : defaultSettings.lyricsAutoAcceptScore,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
@@ -292,6 +302,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
+    lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
     lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
     lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
     lyricsFontSizePx: Number.isFinite(lyricsFontSizePx)
@@ -322,6 +333,19 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     ],
     mvAutoSearch: settings.mvAutoSearch !== false,
     mvAutoPreload: settings.mvAutoPreload !== false,
+    mvAutoApplyThreshold: Number.isFinite(mvAutoApplyThreshold)
+      ? clamp(mvAutoApplyThreshold, 0.5, 1)
+      : defaultSettings.mvAutoApplyThreshold,
+    mvImmersiveBackground: settings.mvImmersiveBackground !== false,
+    mvImmersiveBackgroundScalePercent: Number.isFinite(mvImmersiveBackgroundScalePercent)
+      ? Math.round(clamp(mvImmersiveBackgroundScalePercent, 100, 220))
+      : defaultSettings.mvImmersiveBackgroundScalePercent,
+    mvImmersiveBackgroundOffsetXPercent: Number.isFinite(mvImmersiveBackgroundOffsetXPercent)
+      ? Math.round(clamp(mvImmersiveBackgroundOffsetXPercent, 0, 100))
+      : defaultSettings.mvImmersiveBackgroundOffsetXPercent,
+    mvImmersiveBackgroundOffsetYPercent: Number.isFinite(mvImmersiveBackgroundOffsetYPercent)
+      ? Math.round(clamp(mvImmersiveBackgroundOffsetYPercent, 0, 100))
+      : defaultSettings.mvImmersiveBackgroundOffsetYPercent,
     mvRestartAudioOnLoad: settings.mvRestartAudioOnLoad === true,
     mvMaxQuality: normalizeMvMaxQuality(settings.mvMaxQuality),
     mvAllow60fps: settings.mvAllow60fps !== false,

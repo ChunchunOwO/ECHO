@@ -51,6 +51,16 @@ describe('TrackList', () => {
     expect(screen.queryByText(/没有可显示的歌曲/)).toBeNull();
   });
 
+  it('reports loaded track ids in the rendered virtual window', async () => {
+    const onVisibleTrackIdsChange = vi.fn();
+    const tracks = Array.from({ length: 5 }, (_, index) => track(index + 1));
+
+    render(<TrackList currentTrackId={null} tracks={tracks} onVisibleTrackIdsChange={onVisibleTrackIdsChange} />);
+
+    await vi.waitFor(() => expect(onVisibleTrackIdsChange).toHaveBeenCalled());
+    expect(onVisibleTrackIdsChange.mock.calls.at(-1)?.[0]).toEqual(tracks.map((item) => item.id));
+  });
+
   it('sizes the virtual spacer from totalCount when only part of the library is loaded', () => {
     const tracks = Array.from({ length: 2 }, (_, index) => track(index + 1));
     const { container } = render(<TrackList currentTrackId={null} tracks={tracks} totalCount={100} loadedCount={2} />);

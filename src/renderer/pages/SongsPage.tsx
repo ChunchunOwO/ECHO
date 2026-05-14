@@ -5,7 +5,7 @@ import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackList } from '../components/library/TrackList';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
-import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
+import { likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const pageSize = 100;
@@ -48,6 +48,8 @@ const writeStoredSort = (sort: LibrarySort): void => {
   void window.echo?.app.setSettings({ songsSort: sort }).catch(() => undefined);
 };
 
+const uniqueIds = (ids: string[]): string[] => Array.from(new Set(ids.filter(Boolean)));
+
 type TrackMenuState = {
   track: LibraryTrack;
   position: { x: number; y: number };
@@ -67,6 +69,9 @@ export const SongsPage = (): JSX.Element => {
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
   const [duplicateHiddenCounts, setDuplicateHiddenCounts] = useState<Record<string, number>>({});
+  const [likedTrackIds, setLikedTrackIds] = useState<Record<string, boolean>>({});
+  const [visibleTrackIds, setVisibleTrackIds] = useState<string[]>([]);
+  const [likedRefreshVersion, setLikedRefreshVersion] = useState(0);
   const [versionMembers, setVersionMembers] = useState<DuplicateTrackMember[]>([]);
   const [versionTrack, setVersionTrack] = useState<LibraryTrack | null>(null);
   const [versionsBusy, setVersionsBusy] = useState(false);
@@ -81,16 +86,39 @@ export const SongsPage = (): JSX.Element => {
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const requestIdRef = useRef(0);
+  const likedRequestIdRef = useRef(0);
+  const duplicateRequestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
+  const likedTrackIdsRef = useRef<Record<string, boolean>>({});
+  const duplicateHiddenCountsRef = useRef<Record<string, number>>({});
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, playTrackNext, items: queueItems, removeQueueItem } = usePlaybackQueue();
-  const trackIds = useMemo(() => tracks.map((track) => track.id), [tracks]);
-  const likedTrackIds = useLikedTrackIds(trackIds);
+  const visibleTrackIdsKey = useMemo(() => visibleTrackIds.join('\0'), [visibleTrackIds]);
   const queueSource = useMemo(
     () => ({ type: 'songs' as const, label: '歌曲列表', search: search || undefined, sort, hideDuplicates }),
     [hideDuplicates, search, sort],
   );
+  const mergeLikedTrackIds = useCallback((patch: Record<string, boolean>): void => {
+    setLikedTrackIds((current) => {
+      const next = { ...current, ...patch };
+      likedTrackIdsRef.current = next;
+      return next;
+    });
+  }, []);
+  const mergeDuplicateHiddenCounts = useCallback((patch: Record<string, number>): void => {
+    setDuplicateHiddenCounts((current) => {
+      const next = { ...current, ...patch };
+      duplicateHiddenCountsRef.current = next;
+      return next;
+    });
+  }, []);
+  const clearListMetadataCache = useCallback((): void => {
+    likedTrackIdsRef.current = {};
+    duplicateHiddenCountsRef.current = {};
+    setLikedTrackIds({});
+    setDuplicateHiddenCounts({});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -161,6 +189,7 @@ export const SongsPage = (): JSX.Element => {
       setStatusMessage(null);
       if (mode === 'replace') {
         setListVersion((current) => current + 1);
+        setVisibleTrackIds([]);
       }
 
       try {
@@ -171,6 +200,7 @@ export const SongsPage = (): JSX.Element => {
           setPage(1);
           setTotal(0);
           setHasMore(false);
+          clearListMetadataCache();
           setError('Desktop bridge unavailable. Open ECHO Next in Electron to read the library.');
           return;
         }
@@ -203,7 +233,7 @@ export const SongsPage = (): JSX.Element => {
         }
       }
     },
-    [hideDuplicates, search, sort],
+    [clearListMetadataCache, hideDuplicates, search, sort],
   );
 
   useEffect(() => {
@@ -241,12 +271,13 @@ export const SongsPage = (): JSX.Element => {
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
+      clearListMetadataCache();
       void loadTracks(1, 'replace');
     };
 
     window.addEventListener('library:changed', handleLibraryChanged);
     return () => window.removeEventListener('library:changed', handleLibraryChanged);
-  }, [loadTracks]);
+  }, [clearListMetadataCache, loadTracks]);
 
   useEffect(() => {
     const handleSettingsChanged = (): void => {
@@ -317,6 +348,8 @@ export const SongsPage = (): JSX.Element => {
       setPage(1);
       setTotal(0);
       setHasMore(false);
+      setVisibleTrackIds([]);
+      clearListMetadataCache();
       window.dispatchEvent(new Event('library:changed'));
       setStatusMessage(`已清空 ${result.removedCount} 首歌曲。`);
     } catch (clearError) {
@@ -349,27 +382,92 @@ export const SongsPage = (): JSX.Element => {
   );
 
   useEffect(() => {
-    const loadDuplicateBadges = async (): Promise<void> => {
-      const library = window.echo?.library;
+    duplicateHiddenCountsRef.current = {};
+    setDuplicateHiddenCounts({});
+  }, [duplicateSummary?.updatedAt]);
 
-      if (!library?.getDuplicateTrackVersions || tracks.length === 0) {
-        setDuplicateHiddenCounts({});
+  useEffect(() => {
+    const loadVisibleDuplicateBadges = async (): Promise<void> => {
+      const library = window.echo?.library;
+      const trackIds = uniqueIds(visibleTrackIds);
+      const missingTrackIds = trackIds.filter((trackId) => duplicateHiddenCountsRef.current[trackId] === undefined);
+
+      if (missingTrackIds.length === 0) {
         return;
       }
 
-      const entries = await Promise.all(
-        tracks.map(async (track) => {
-          const members = await library.getDuplicateTrackVersions(track.id);
-          const hiddenCount = members.filter((member) => member.hidden).length;
-          return [track.id, hiddenCount] as const;
-        }),
-      );
+      if (!library?.getDuplicateHiddenCounts) {
+        mergeDuplicateHiddenCounts(Object.fromEntries(missingTrackIds.map((trackId) => [trackId, 0])));
+        return;
+      }
 
-      setDuplicateHiddenCounts(Object.fromEntries(entries.filter(([, hiddenCount]) => hiddenCount > 0)));
+      const requestId = duplicateRequestIdRef.current + 1;
+      duplicateRequestIdRef.current = requestId;
+
+      try {
+        const result = await library.getDuplicateHiddenCounts(missingTrackIds, 'strict');
+        if (duplicateRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        mergeDuplicateHiddenCounts(
+          Object.fromEntries(missingTrackIds.map((trackId) => [trackId, Math.max(0, Number(result[trackId] ?? 0))])),
+        );
+      } catch {
+        if (duplicateRequestIdRef.current === requestId) {
+          mergeDuplicateHiddenCounts(Object.fromEntries(missingTrackIds.map((trackId) => [trackId, 0])));
+        }
+      }
     };
 
-    void loadDuplicateBadges();
-  }, [tracks]);
+    void loadVisibleDuplicateBadges();
+  }, [mergeDuplicateHiddenCounts, visibleTrackIds, visibleTrackIdsKey]);
+
+  useEffect(() => {
+    const loadVisibleLikedTracks = async (): Promise<void> => {
+      const library = window.echo?.library;
+      const trackIds = uniqueIds(visibleTrackIds);
+      const missingTrackIds = trackIds.filter((trackId) => likedTrackIdsRef.current[trackId] === undefined);
+
+      if (missingTrackIds.length === 0) {
+        return;
+      }
+
+      if (!library?.getLikedTrackIds) {
+        mergeLikedTrackIds(Object.fromEntries(missingTrackIds.map((trackId) => [trackId, false])));
+        return;
+      }
+
+      const requestId = likedRequestIdRef.current + 1;
+      likedRequestIdRef.current = requestId;
+
+      try {
+        const result = await library.getLikedTrackIds(missingTrackIds);
+        if (likedRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        mergeLikedTrackIds(Object.fromEntries(missingTrackIds.map((trackId) => [trackId, result[trackId] === true])));
+      } catch {
+        if (likedRequestIdRef.current === requestId) {
+          mergeLikedTrackIds(Object.fromEntries(missingTrackIds.map((trackId) => [trackId, false])));
+        }
+      }
+    };
+
+    void loadVisibleLikedTracks();
+  }, [likedRefreshVersion, mergeLikedTrackIds, visibleTrackIds, visibleTrackIdsKey]);
+
+  useEffect(() => {
+    const handleLikedTracksChanged = (): void => {
+      likedTrackIdsRef.current = {};
+      setLikedTrackIds({});
+      setLikedRefreshVersion((current) => current + 1);
+    };
+
+    window.addEventListener(likedTracksChangedEvent, handleLikedTracksChanged);
+    return () => window.removeEventListener(likedTracksChangedEvent, handleLikedTracksChanged);
+  }, []);
 
   const handleShowVersions = useCallback(async (track: LibraryTrack): Promise<void> => {
     const library = window.echo?.library;
@@ -405,15 +503,20 @@ export const SongsPage = (): JSX.Element => {
   );
 
   const handleToggleLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    const previousLiked = likedTrackIdsRef.current[track.id] === true;
+    mergeLikedTrackIds({ [track.id]: !previousLiked });
+
     try {
       setError(null);
-      await window.echo?.library?.toggleTrackLiked(track.id);
+      const result = await window.echo?.library?.toggleTrackLiked(track.id);
+      mergeLikedTrackIds({ [track.id]: result?.liked === true });
       window.dispatchEvent(new Event(likedTracksChangedEvent));
       window.dispatchEvent(new Event(likedChangedEvent));
     } catch (likeError) {
+      mergeLikedTrackIds({ [track.id]: previousLiked });
       setError(likeError instanceof Error ? likeError.message : String(likeError));
     }
-  }, []);
+  }, [mergeLikedTrackIds]);
 
   const handleTrackMenuAction = useCallback(
     async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
@@ -677,6 +780,7 @@ export const SongsPage = (): JSX.Element => {
         likedTrackIds={likedTrackIds}
         onToggleLiked={(track) => void handleToggleLiked(track)}
         onOpenTrackMenu={handleOpenTrackMenu}
+        onVisibleTrackIdsChange={setVisibleTrackIds}
         onPlay={handlePlayTrack}
       />
 

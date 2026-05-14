@@ -153,6 +153,7 @@ const installLibraryService = () => {
     getScanStatus: vi.fn(),
     cancelScan: vi.fn(),
     getTracks: vi.fn(),
+    getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
     getArtists: vi.fn(),
@@ -275,7 +276,10 @@ describe('library IPC', () => {
       if (format === 'json') {
         expect(JSON.parse(content)).toMatchObject({
           playlist: { id: 'playlist-1', name: 'Export Mix' },
-          tracks: [{ title: 'Local, Song', path: 'D:\\Music\\song.flac' }],
+          tracks: expect.arrayContaining([
+            expect.objectContaining({ title: 'Local, Song', path: 'D:\\Music\\song.flac' }),
+            expect.objectContaining({ title: 'Stream "Song"', provider: 'netease', sourceItemId: 'song-1' }),
+          ]),
         });
       } else if (format === 'txt') {
         expect(content).toContain('Export Mix');
@@ -310,6 +314,15 @@ describe('library IPC', () => {
 
     expect(service.refreshAlbumGrouping).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ albumCount: 1 });
+  });
+
+  it('returns duplicate hidden counts for normalized track ids', async () => {
+    const service = installLibraryService();
+
+    const result = await handlers[IpcChannels.LibraryGetDuplicateHiddenCounts]!(null, ['track-1', 'track-2'], 'strict');
+
+    expect(service.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1', 'track-2'], 'strict');
+    expect(result).toEqual({ 'track-1': 1, 'track-2': 0 });
   });
 
   it('registers artist detail IPC handlers with normalized queries', async () => {

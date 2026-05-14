@@ -52,7 +52,7 @@ export type AudioOutputSettings = {
   deviceName?: string;
   requestedOutputSampleRate?: number;
   latencyProfile?: AudioLatencyProfile;
-  bufferSizeFrames?: number;
+  bufferSizeFrames?: number | null;
   volume?: number;
   playbackRate?: number;
   playbackSpeedMode?: PlaybackSpeedMode;
@@ -96,6 +96,7 @@ export type AudioStatus = {
   bitPerfectDisabledReason: string | null;
   sharedStabilityTier?: SharedStabilityTier | null;
   nativeDeviceBufferFrames?: number | null;
+  nativeRequestedBufferFrames?: number | null;
   nativeActualBufferFrames?: number | null;
   nativeOutputLatencyMs?: number | null;
   nativePositionStalenessMs?: number | null;
@@ -133,6 +134,7 @@ export type AudioDiagnostics = Pick<
   | 'latencyProfile'
   | 'sharedStabilityTier'
   | 'nativeDeviceBufferFrames'
+  | 'nativeRequestedBufferFrames'
   | 'nativeActualBufferFrames'
   | 'nativeOutputLatencyMs'
   | 'nativePositionStalenessMs'

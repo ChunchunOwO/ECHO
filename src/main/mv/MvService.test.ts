@@ -210,6 +210,97 @@ describe('MvService', () => {
     expect(service.getSelectedVideo(track.id)?.id).toBe(selected?.id);
   });
 
+  it('does not automatically apply external-only network MV candidates', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'youtube:external-only',
+      provider: 'youtube',
+      sourceType: 'search_candidate',
+      title: 'Echo Song Official MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.youtube.com/watch?v=external-only',
+      providerUrl: 'https://www.youtube.com/watch?v=external-only',
+      thumbnailUrl: 'https://i.example/external.jpg',
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.98,
+      playableInApp: false,
+      reasons: ['YouTube Data API'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'youtube',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => []),
+    };
+    const { service, track } = createHarness([provider]);
+
+    await service.searchNetworkCandidates(track.id);
+
+    expect(service.getSelectedVideo(track.id)).toBeNull();
+    expect(service.getVideoCandidates(track.id)[0]).toMatchObject({
+      provider: 'youtube',
+      playableInApp: false,
+      selected: false,
+    });
+  });
+
+  it('prefers an in-app playable candidate over a higher-scoring external candidate when auto applying', async () => {
+    const externalCandidate: MvMatchCandidate = {
+      id: 'youtube:external-high-score',
+      provider: 'youtube',
+      sourceType: 'search_candidate',
+      title: 'Echo Song Official MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.youtube.com/watch?v=external-high-score',
+      providerUrl: 'https://www.youtube.com/watch?v=external-high-score',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.99,
+      playableInApp: false,
+      reasons: ['YouTube Data API'],
+    };
+    const playableCandidate: MvMatchCandidate = {
+      id: 'bilibili:BV1playable',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1playable',
+      providerUrl: 'https://www.bilibili.com/video/BV1playable',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.72,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const bilibiliProvider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [playableCandidate]),
+      resolve: vi.fn(async () => []),
+    };
+    const youtubeProvider: MainMvOnlineProvider = {
+      id: 'youtube',
+      search: vi.fn(async () => [externalCandidate]),
+      resolve: vi.fn(async () => []),
+    };
+    const { service, track } = createHarness([bilibiliProvider, youtubeProvider]);
+
+    await service.searchNetworkCandidates(track.id);
+
+    expect(service.getSelectedVideo(track.id)).toMatchObject({
+      provider: 'bilibili',
+      sourceId: 'BV1playable',
+      selected: true,
+    });
+  });
+
   it('does not automatically apply an MV candidate below 70 percent', async () => {
     const candidate: MvMatchCandidate = {
       id: 'bilibili:BV1low',

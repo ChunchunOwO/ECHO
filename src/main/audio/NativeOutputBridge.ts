@@ -176,6 +176,72 @@ class BridgeWritable extends Writable {
   }
 }
 
+const framedMagic = 'ECNP';
+const framedVersion = 1;
+const frameTypeBeginSession = 1;
+const frameTypePcmF32Le = 2;
+const frameTypeEndSession = 3;
+const frameTypeShutdown = 4;
+
+const createFrameHeader = (type: number, sessionId: number, payloadBytes: number): Buffer => {
+  const header = Buffer.alloc(16);
+  header.write(framedMagic, 0, 'ascii');
+  header.writeUInt8(framedVersion, 4);
+  header.writeUInt8(type, 5);
+  header.writeUInt32LE(sessionId >>> 0, 8);
+  header.writeUInt32LE(Math.max(0, payloadBytes) >>> 0, 12);
+  return header;
+};
+
+const createReuseKey = (options: NativeOutputStartOptions): string =>
+  JSON.stringify({
+    outputMode: options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared',
+    deviceIndex: Number.isInteger(Number(options.deviceIndex)) ? Number(options.deviceIndex) : null,
+    deviceName: options.deviceName ?? null,
+    requestedOutputSampleRate: options.requestedOutputSampleRate,
+    channels: options.channels,
+    asio: options.asio === true,
+    exclusive: options.exclusive === true,
+    bufferSizeFrames: Number.isFinite(Number(options.bufferSizeFrames)) ? Math.round(Number(options.bufferSizeFrames)) : null,
+    latencyProfile: options.latencyProfile ?? null,
+    playbackSpeedMode: options.playbackSpeedMode ?? null,
+  });
+
+class FramedSessionWritable extends Writable {
+  private sessionClosed = false;
+
+  constructor(
+    private readonly owner: NativeOutputBridge,
+    private readonly sessionId: number,
+  ) {
+    super();
+  }
+
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    if (this.sessionClosed) {
+      callback();
+      return;
+    }
+
+    this.owner.writePcmFrame(this.sessionId, chunk, callback);
+  }
+
+  override _final(callback: (error?: Error | null) => void): void {
+    if (this.sessionClosed) {
+      callback();
+      return;
+    }
+
+    this.sessionClosed = true;
+    this.owner.endSession(this.sessionId, callback);
+  }
+
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.sessionClosed = true;
+    callback(error);
+  }
+}
+
 export class NativeOutputBridge extends EventEmitter {
   private readonly spawn: HostSpawner;
   private readonly readyTimeoutMs: number;
@@ -183,6 +249,10 @@ export class NativeOutputBridge extends EventEmitter {
   private hostBinary: string | null;
   private proc: ChildProcessWithoutNullStreams | null = null;
   private bridgeWritable: BridgeWritable | null = null;
+  private sessionWritable: FramedSessionWritable | null = null;
+  private sessionIdCounter = 0;
+  private currentSessionId = 0;
+  private reuseKey: string | null = null;
   private framesConsumed = 0;
   private frameOffset = 0;
   private requestedOutputSampleRate = 44100;
@@ -268,6 +338,9 @@ export class NativeOutputBridge extends EventEmitter {
       this.playbackRate = options.playbackRate ?? 1;
       this.framesConsumed = 0;
       this.frameOffset = 0;
+      this.sessionIdCounter = 0;
+      this.currentSessionId = 0;
+      this.reuseKey = createReuseKey(options);
       this.ready = false;
       this.ended = false;
       this.stopRequested = false;
@@ -400,6 +473,65 @@ export class NativeOutputBridge extends EventEmitter {
     this.ended = false;
   }
 
+  canReuseFor(options: NativeOutputStartOptions): boolean {
+    return this.ready && this.proc !== null && this.reuseKey === createReuseKey(options);
+  }
+
+  beginSession(options: { startSeconds?: number; playbackRate?: number; durationSeconds?: number } = {}): number {
+    if (!this.proc || this.proc.stdin.destroyed || this.proc.stdin.writableEnded || !this.proc.stdin.writable) {
+      throw new Error('native output bridge is not writable');
+    }
+
+    const sessionId = (this.sessionIdCounter + 1) >>> 0;
+    this.sessionIdCounter = sessionId;
+    this.currentSessionId = sessionId;
+    this.sessionWritable?.destroy();
+    this.sessionWritable = null;
+    this.durationSeconds =
+      typeof options.durationSeconds === 'number' && Number.isFinite(options.durationSeconds) && options.durationSeconds > 0
+        ? options.durationSeconds
+        : null;
+    this.resetOutputClock(options.startSeconds ?? 0, options.playbackRate ?? 1);
+    this.telemetry = {
+      positionFrames: 0,
+      bufferedFrames: null,
+      underrunCallbacks: 0,
+      underrunFrames: 0,
+      reportedAtMs: null,
+      nativePositionStalenessMs: null,
+    };
+    this.writeFrame(frameTypeBeginSession, sessionId, Buffer.alloc(0));
+    return sessionId;
+  }
+
+  createSessionWritable(sessionId = this.currentSessionId): Writable {
+    if (!sessionId) {
+      throw new Error('native output bridge session has not begun');
+    }
+
+    const writable = new FramedSessionWritable(this, sessionId);
+    this.sessionWritable = writable;
+    return writable;
+  }
+
+  endSession(sessionId = this.currentSessionId, callback?: (error?: Error | null) => void): void {
+    if (!sessionId || !this.proc || this.proc.stdin.destroyed || this.proc.stdin.writableEnded || !this.proc.stdin.writable) {
+      callback?.();
+      return;
+    }
+
+    this.writeFrame(frameTypeEndSession, sessionId, Buffer.alloc(0), callback);
+  }
+
+  writePcmFrame(sessionId: number, chunk: Buffer, callback: (error?: Error | null) => void): void {
+    if (!chunk.length) {
+      callback();
+      return;
+    }
+
+    this.writeFrame(frameTypePcmF32Le, sessionId, chunk, callback);
+  }
+
   stop(): void {
     this.clearReadyTimer();
     this.stopRequested = true;
@@ -413,7 +545,22 @@ export class NativeOutputBridge extends EventEmitter {
       this.bridgeWritable = null;
     }
 
+    if (this.sessionWritable) {
+      try {
+        this.sessionWritable.destroy();
+      } catch {
+        // Best-effort child cleanup.
+      }
+      this.sessionWritable = null;
+    }
+
     if (this.proc) {
+      try {
+        this.writeFrame(frameTypeShutdown, 0, Buffer.alloc(0));
+      } catch {
+        // Best-effort child cleanup.
+      }
+
       try {
         this.proc.stdin.destroy();
       } catch {
@@ -471,12 +618,12 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     const startupPrebufferMs = Number(options.startupPrebufferMs);
-    if (!options.exclusive && !options.asio && Number.isFinite(startupPrebufferMs) && startupPrebufferMs > 0) {
+    if (Number.isFinite(startupPrebufferMs) && startupPrebufferMs >= 0) {
       args.push('-prebuffer-ms', String(Math.round(startupPrebufferMs)));
     }
 
     const startupPrebufferTimeoutMs = Number(options.startupPrebufferTimeoutMs);
-    if (!options.exclusive && !options.asio && Number.isFinite(startupPrebufferTimeoutMs) && startupPrebufferTimeoutMs > 0) {
+    if (Number.isFinite(startupPrebufferTimeoutMs) && startupPrebufferTimeoutMs >= 0) {
       args.push('-prebuffer-timeout-ms', String(Math.round(startupPrebufferTimeoutMs)));
     }
 
@@ -484,7 +631,35 @@ export class NativeOutputBridge extends EventEmitter {
       args.push('-eq-port', String(this.eqControlPort));
     }
 
+    args.push('-framed-stdin');
+
     return args;
+  }
+
+  private writeFrame(
+    type: number,
+    sessionId: number,
+    payload: Buffer,
+    callback?: (error?: Error | null) => void,
+  ): void {
+    const target = this.proc?.stdin;
+
+    if (!target || target.destroyed || target.writableEnded || !target.writable) {
+      callback?.();
+      return;
+    }
+
+    const frame = payload.length > 0
+      ? Buffer.concat([createFrameHeader(type, sessionId, payload.length), payload])
+      : createFrameHeader(type, sessionId, 0);
+
+    try {
+      target.write(frame, (error: Error | null | undefined) => {
+        callback?.(error ?? null);
+      });
+    } catch (error) {
+      callback?.(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private handleStdoutLine(

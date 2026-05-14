@@ -1811,6 +1811,39 @@ export class LibraryStore {
     return this.createDuplicateTrackService().getDuplicateMembersForTrack(trackId);
   }
 
+  getDuplicateHiddenCounts(trackIds: string[], mode: DuplicateTrackMode = 'strict'): Record<string, number> {
+    const result: Record<string, number> = {};
+    const uniqueIds = Array.from(new Set(trackIds.filter((id) => typeof id === 'string' && id.length > 0)));
+
+    for (const id of uniqueIds) {
+      result[id] = 0;
+    }
+
+    if (uniqueIds.length === 0) {
+      return result;
+    }
+
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = this.allRows(
+      `SELECT duplicate_track_members.track_id, duplicate_track_groups.hidden_count
+       FROM duplicate_track_members
+       INNER JOIN duplicate_track_groups ON duplicate_track_groups.id = duplicate_track_members.group_id
+       WHERE duplicate_track_groups.mode = ?
+         AND duplicate_track_members.track_id IN (${placeholders})`,
+      mode,
+      ...uniqueIds,
+    );
+
+    for (const row of rows) {
+      const trackId = textOrNull(row.track_id);
+      if (trackId && Object.prototype.hasOwnProperty.call(result, trackId)) {
+        result[trackId] = Math.max(result[trackId] ?? 0, Number(row.hidden_count ?? 0));
+      }
+    }
+
+    return result;
+  }
+
   getDuplicateIndexSummary(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
     return this.createDuplicateTrackService().getDuplicateIndexSummary(mode);
   }

@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 
+#define ECHO_AUDIO_HOST_TESTS 1
+#include "../src/main.cpp"
+
 namespace
 {
 constexpr float strictTolerance = 0.0f;
@@ -25,6 +28,11 @@ void require(bool condition, const std::string& message)
 void requireContains(const std::string& text, const std::string& needle, const std::string& message)
 {
     require(text.find(needle) != std::string::npos, message + " missing: " + needle + " in " + text);
+}
+
+void requireVectorEquals(const std::vector<int>& actual, const std::vector<int>& expected, const std::string& message)
+{
+    require(actual == expected, message);
 }
 
 juce::AudioBuffer<float> makeBuffer(int channels, int samples)
@@ -171,6 +179,154 @@ void testCoefficientUpdatesStopInSteadyState()
     require(processor.getCoefficientUpdateCountForTests() == afterTransitionUpdates, "steady changed band must stop recalculating coefficients");
 }
 
+void testHostBufferFallbackAttempts()
+{
+    const auto shared = parseOptions({ "echo-audio-host" });
+    requireVectorEquals(buildBufferSizeAttempts(shared), { 512, 1024, 2048, 4096, 8192 }, "shared buffer fallback chain");
+
+    const auto asio = parseOptions({ "echo-audio-host", "-asio" });
+    requireVectorEquals(buildBufferSizeAttempts(asio), { 512, 1024, 2048, 4096, 8192 }, "ASIO buffer fallback chain");
+
+    const auto balanced = parseOptions({ "echo-audio-host", "-exclusive", "-buffer", "2048" });
+    requireVectorEquals(buildBufferSizeAttempts(balanced), { 2048, 4096, 8192 }, "exclusive requested buffer fallback chain");
+}
+
+void testHostPrebufferDefaultsRemainCompatible()
+{
+    const auto exclusive = parseOptions({ "echo-audio-host", "-exclusive" });
+
+    require(! exclusive.startupPrebufferMsSpecified, "exclusive prebuffer default must be unspecified");
+    require(getStartupPrebufferFrames(exclusive, 48000) == 960, "exclusive default prebuffer must remain compatible");
+    require(getStartupPrebufferTimeoutMs(exclusive) == 300, "default prebuffer timeout must remain compatible");
+}
+
+void testExplicitZeroPrebufferDisablesWait()
+{
+    const auto exclusive = parseOptions({
+        "echo-audio-host",
+        "-exclusive",
+        "-prebuffer-ms",
+        "0",
+        "-prebuffer-timeout-ms",
+        "0",
+    });
+
+    require(exclusive.startupPrebufferMsSpecified, "zero prebuffer must be tracked as explicit");
+    require(exclusive.startupPrebufferTimeoutMsSpecified, "zero prebuffer timeout must be tracked as explicit");
+    require(getStartupPrebufferFrames(exclusive, 48000) == 0, "explicit zero prebuffer must disable startup prebuffer");
+    require(getStartupPrebufferTimeoutMs(exclusive) == 0, "explicit zero prebuffer timeout must be preserved");
+
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 512, 1.0f, eqProcessor, channelBalanceProcessor);
+    require(waitForInitialPcm(source, 512, 0) == 0, "zero prebuffer timeout must not wait for PCM");
+}
+
+std::vector<char> makePcmPayload(const std::vector<float>& samples)
+{
+    std::vector<char> payload(samples.size() * sizeof(float));
+    std::memcpy(payload.data(), samples.data(), payload.size());
+    return payload;
+}
+
+StdinFrameHeader makeFrame(StdinFrameType type, uint32_t sessionId, uint32_t payloadBytes = 0)
+{
+    StdinFrameHeader header;
+    header.type = static_cast<uint8_t>(type);
+    header.sessionId = sessionId;
+    header.payloadBytes = payloadBytes;
+    return header;
+}
+
+void testFramedStdinSessionResetAndLatePcmDrop()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 512, 1.0f, eqProcessor, channelBalanceProcessor);
+    std::atomic<bool> shutdownRequested { false };
+    uint32_t currentSessionId = 0;
+    bool hasSession = false;
+    std::vector<char> pending;
+    const auto payload = makePcmPayload({ 0.1f, 0.2f, 0.3f, 0.4f });
+
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::BeginSession, 1),
+        {});
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::PcmF32Le, 1, static_cast<uint32_t>(payload.size())),
+        payload);
+    require(source.getReadyFrames() == 2, "current session PCM must enter FIFO");
+
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::BeginSession, 2),
+        {});
+    require(source.getReadyFrames() == 0, "begin-session must clear FIFO");
+    require(source.getFramesPlayed() == 0, "begin-session must reset position");
+
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::PcmF32Le, 1, static_cast<uint32_t>(payload.size())),
+        payload);
+    require(source.getReadyFrames() == 0, "late PCM from old session must be ignored");
+
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::EndSession, 2),
+        {});
+    require(source.isDrained(), "end-session must mark empty FIFO drained");
+    require(! shutdownRequested.load(), "end-session must not request host shutdown");
+}
+
+void testFramedStdinShutdown()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 512, 1.0f, eqProcessor, channelBalanceProcessor);
+    std::atomic<bool> shutdownRequested { false };
+    uint32_t currentSessionId = 0;
+    bool hasSession = false;
+    std::vector<char> pending;
+
+    handleFramedStdinPayload(
+        source,
+        2,
+        shutdownRequested,
+        currentSessionId,
+        hasSession,
+        pending,
+        makeFrame(StdinFrameType::Shutdown, 0),
+        {});
+    require(shutdownRequested.load(), "shutdown frame must request host shutdown");
+}
+
 void testProtocolMessages()
 {
     echo::EqProcessor eqProcessor;
@@ -230,6 +386,11 @@ int main()
         { "bypass returns to dry", testBypassReturnsToDry },
         { "rapid changes stay finite", testRapidChangesStayFinite },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
+        { "host buffer fallback attempts", testHostBufferFallbackAttempts },
+        { "host prebuffer defaults remain compatible", testHostPrebufferDefaultsRemainCompatible },
+        { "explicit zero prebuffer disables wait", testExplicitZeroPrebufferDisablesWait },
+        { "framed stdin session reset and late PCM drop", testFramedStdinSessionResetAndLatePcmDrop },
+        { "framed stdin shutdown", testFramedStdinShutdown },
         { "protocol messages", testProtocolMessages },
     };
 

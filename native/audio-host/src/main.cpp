@@ -55,9 +55,27 @@ struct Options
     int fifoCapacityMs = 0;
     int startupPrebufferMs = 0;
     int startupPrebufferTimeoutMs = 0;
+    bool startupPrebufferMsSpecified = false;
+    bool startupPrebufferTimeoutMsSpecified = false;
+    bool framedStdin = false;
     int eqControlPort = 0;
     double volume = 1.0;
     juce::String deviceName;
+};
+
+enum class StdinFrameType : uint8_t
+{
+    BeginSession = 1,
+    PcmF32Le = 2,
+    EndSession = 3,
+    Shutdown = 4,
+};
+
+struct StdinFrameHeader
+{
+    uint8_t type = 0;
+    uint32_t sessionId = 0;
+    uint32_t payloadBytes = 0;
 };
 
 struct DeviceDescriptor
@@ -194,6 +212,10 @@ Options parseOptions(const std::vector<juce::String>& args)
         {
             options.exclusive = true;
         }
+        else if (arg == "-framed-stdin")
+        {
+            options.framedStdin = true;
+        }
         else if (arg == "-sr" && i + 1 < args.size())
         {
             options.sampleRate = std::max(1, parseInt(args[++i], options.sampleRate));
@@ -220,10 +242,12 @@ Options parseOptions(const std::vector<juce::String>& args)
         }
         else if (arg == "-prebuffer-ms" && i + 1 < args.size())
         {
+            options.startupPrebufferMsSpecified = true;
             options.startupPrebufferMs = std::max(0, parseInt(args[++i], options.startupPrebufferMs));
         }
         else if (arg == "-prebuffer-timeout-ms" && i + 1 < args.size())
         {
+            options.startupPrebufferTimeoutMsSpecified = true;
             options.startupPrebufferTimeoutMs = std::max(0, parseInt(args[++i], options.startupPrebufferTimeoutMs));
         }
         else if (arg == "-eq-port" && i + 1 < args.size())
@@ -325,9 +349,6 @@ int getDeviceBufferSize(const Options& options)
     if (options.bufferSize > 0)
         return options.bufferSize;
 
-    if (options.exclusive || options.asio)
-        return 2048;
-
     return 512;
 }
 
@@ -341,13 +362,13 @@ std::vector<int> buildBufferSizeAttempts(const Options& options)
             buffers.push_back(size);
     };
 
-    add(getDeviceBufferSize(options));
+    const int requestedBufferSize = getDeviceBufferSize(options);
+    add(requestedBufferSize);
 
-    if (options.exclusive || options.asio)
+    for (const auto fallbackSize : { 512, 1024, 2048, 4096, 8192 })
     {
-        add(2048);
-        add(4096);
-        add(8192);
+        if (fallbackSize > requestedBufferSize)
+            add(fallbackSize);
     }
 
     return buffers;
@@ -373,6 +394,9 @@ int getFifoCapacityFrames(const Options& options, int sampleRate)
 
 int getStartupPrebufferFrames(const Options& options, int sampleRate)
 {
+    if (options.startupPrebufferMsSpecified)
+        return framesForMilliseconds(sampleRate, options.startupPrebufferMs);
+
     const int requestedFrames = framesForMilliseconds(sampleRate, options.startupPrebufferMs);
 
     if (requestedFrames > 0)
@@ -386,6 +410,9 @@ int getStartupPrebufferFrames(const Options& options, int sampleRate)
 
 int getStartupPrebufferTimeoutMs(const Options& options)
 {
+    if (options.startupPrebufferTimeoutMsSpecified)
+        return options.startupPrebufferTimeoutMs;
+
     if (options.startupPrebufferTimeoutMs > 0)
         return options.startupPrebufferTimeoutMs;
 
@@ -895,34 +922,42 @@ public:
 
         int framesNeeded = info.numSamples;
         int outputOffset = 0;
+        uint64_t framesReadTotal = 0;
 
-        while (framesNeeded > 0)
         {
-            int start1 = 0;
-            int size1 = 0;
-            int start2 = 0;
-            int size2 = 0;
-            fifo.prepareToRead(framesNeeded, start1, size1, start2, size2);
+            std::lock_guard<std::mutex> lock(fifoMutex);
 
-            const int framesRead = size1 + size2;
-            if (framesRead <= 0)
+            while (framesNeeded > 0)
             {
-                if (! inputEnded.load(std::memory_order_acquire))
+                int start1 = 0;
+                int size1 = 0;
+                int start2 = 0;
+                int size2 = 0;
+                fifo.prepareToRead(framesNeeded, start1, size1, start2, size2);
+
+                const int framesRead = size1 + size2;
+                if (framesRead <= 0)
                 {
-                    underrunCallbacks.fetch_add(1, std::memory_order_relaxed);
-                    underrunFrames.fetch_add(static_cast<uint64_t>(framesNeeded), std::memory_order_relaxed);
+                    if (! inputEnded.load(std::memory_order_acquire))
+                    {
+                        underrunCallbacks.fetch_add(1, std::memory_order_relaxed);
+                        underrunFrames.fetch_add(static_cast<uint64_t>(framesNeeded), std::memory_order_relaxed);
+                    }
+                    break;
                 }
-                break;
+
+                copyToOutput(start1, size1, *info.buffer, info.startSample + outputOffset);
+                copyToOutput(start2, size2, *info.buffer, info.startSample + outputOffset + size1);
+                fifo.finishedRead(framesRead);
+
+                framesReadTotal += static_cast<uint64_t>(framesRead);
+                framesNeeded -= framesRead;
+                outputOffset += framesRead;
             }
-
-            copyToOutput(start1, size1, *info.buffer, info.startSample + outputOffset);
-            copyToOutput(start2, size2, *info.buffer, info.startSample + outputOffset + size1);
-            fifo.finishedRead(framesRead);
-
-            framesPlayed.fetch_add(static_cast<uint64_t>(framesRead), std::memory_order_relaxed);
-            framesNeeded -= framesRead;
-            outputOffset += framesRead;
         }
+
+        if (framesReadTotal > 0)
+            framesPlayed.fetch_add(framesReadTotal, std::memory_order_relaxed);
 
         eqProcessor.processBlock(*info.buffer, info.startSample, info.numSamples);
         channelBalanceProcessor.processBlock(*info.buffer, info.startSample, info.numSamples);
@@ -938,22 +973,38 @@ public:
             int size1 = 0;
             int start2 = 0;
             int size2 = 0;
-            fifo.prepareToWrite(frameCount - written, start1, size1, start2, size2);
-
-            const int framesWritable = size1 + size2;
-            if (framesWritable <= 0)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(4));
-                continue;
+                std::lock_guard<std::mutex> lock(fifoMutex);
+                fifo.prepareToWrite(frameCount - written, start1, size1, start2, size2);
+
+                const int framesWritable = size1 + size2;
+                if (framesWritable > 0)
+                {
+                    copyFromInput(samples + written * channels, start1, size1);
+                    copyFromInput(samples + (written + size1) * channels, start2, size2);
+                    fifo.finishedWrite(framesWritable);
+                    written += framesWritable;
+                    continue;
+                }
             }
 
-            copyFromInput(samples + written * channels, start1, size1);
-            copyFromInput(samples + (written + size1) * channels, start2, size2);
-            fifo.finishedWrite(framesWritable);
-            written += framesWritable;
+            std::this_thread::sleep_for(std::chrono::milliseconds(4));
         }
 
         return written == frameCount;
+    }
+
+    void beginSession()
+    {
+        {
+            std::lock_guard<std::mutex> lock(fifoMutex);
+            fifo.reset();
+        }
+
+        framesPlayed.store(0, std::memory_order_relaxed);
+        underrunCallbacks.store(0, std::memory_order_relaxed);
+        underrunFrames.store(0, std::memory_order_relaxed);
+        inputEnded.store(false, std::memory_order_release);
     }
 
     void markInputEnded()
@@ -968,6 +1019,7 @@ public:
 
     bool isDrained() const
     {
+        std::lock_guard<std::mutex> lock(fifoMutex);
         return inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
     }
 
@@ -978,6 +1030,7 @@ public:
 
     int getReadyFrames() const
     {
+        std::lock_guard<std::mutex> lock(fifoMutex);
         return fifo.getNumReady();
     }
 
@@ -1032,6 +1085,7 @@ private:
     std::vector<float> buffer;
     echo::EqProcessor& eqProcessor;
     echo::ChannelBalanceProcessor& channelBalanceProcessor;
+    mutable std::mutex fifoMutex;
     std::atomic<bool> inputEnded { false };
     std::atomic<bool> stopRequested { false };
     std::atomic<uint64_t> framesPlayed { 0 };
@@ -1191,10 +1245,158 @@ void stdinReader(PcmRingAudioSource& source, int channels)
     source.markInputEnded();
 }
 
+uint32_t readLe32(const char* bytes)
+{
+    return static_cast<uint32_t>(static_cast<unsigned char>(bytes[0]))
+        | (static_cast<uint32_t>(static_cast<unsigned char>(bytes[1])) << 8)
+        | (static_cast<uint32_t>(static_cast<unsigned char>(bytes[2])) << 16)
+        | (static_cast<uint32_t>(static_cast<unsigned char>(bytes[3])) << 24);
+}
+
+bool readExact(char* target, size_t bytes)
+{
+    size_t read = 0;
+
+    while (read < bytes && std::cin.good())
+    {
+        std::cin.read(target + static_cast<std::ptrdiff_t>(read), static_cast<std::streamsize>(bytes - read));
+        const auto chunk = static_cast<size_t>(std::cin.gcount());
+
+        if (chunk == 0)
+            return false;
+
+        read += chunk;
+    }
+
+    return read == bytes;
+}
+
+bool readFrameHeader(StdinFrameHeader& header)
+{
+    char bytes[16] {};
+
+    if (! readExact(bytes, sizeof(bytes)))
+        return false;
+
+    if (bytes[0] != 'E' || bytes[1] != 'C' || bytes[2] != 'N' || bytes[3] != 'P')
+        throw std::runtime_error("invalid framed stdin magic");
+
+    if (static_cast<unsigned char>(bytes[4]) != 1)
+        throw std::runtime_error("unsupported framed stdin version");
+
+    header.type = static_cast<uint8_t>(bytes[5]);
+    header.sessionId = readLe32(bytes + 8);
+    header.payloadBytes = readLe32(bytes + 12);
+    return true;
+}
+
+void pushPcmPayload(PcmRingAudioSource& source, int channels, std::vector<char>& pending, const std::vector<char>& payload)
+{
+    const size_t frameBytes = static_cast<size_t>(channels) * sizeof(float);
+    pending.insert(pending.end(), payload.begin(), payload.end());
+
+    const size_t frameCount = pending.size() / frameBytes;
+    if (frameCount == 0)
+        return;
+
+    const size_t sampleCount = frameCount * static_cast<size_t>(channels);
+    std::vector<float> samples(sampleCount);
+    std::memcpy(samples.data(), pending.data(), sampleCount * sizeof(float));
+
+    if (! source.push(samples.data(), static_cast<int>(frameCount)))
+        return;
+
+    pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(sampleCount * sizeof(float)));
+}
+
+void handleFramedStdinPayload(
+    PcmRingAudioSource& source,
+    int channels,
+    std::atomic<bool>& shutdownRequested,
+    uint32_t& currentSessionId,
+    bool& hasSession,
+    std::vector<char>& pendingPcm,
+    const StdinFrameHeader& header,
+    const std::vector<char>& payload)
+{
+    const auto type = static_cast<StdinFrameType>(header.type);
+
+    if (type == StdinFrameType::BeginSession)
+    {
+        currentSessionId = header.sessionId;
+        hasSession = true;
+        pendingPcm.clear();
+        source.beginSession();
+        return;
+    }
+
+    if (type == StdinFrameType::PcmF32Le)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+            pushPcmPayload(source, channels, pendingPcm, payload);
+        return;
+    }
+
+    if (type == StdinFrameType::EndSession)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+        {
+            pendingPcm.clear();
+            source.markInputEnded();
+        }
+        return;
+    }
+
+    if (type == StdinFrameType::Shutdown)
+    {
+        shutdownRequested.store(true, std::memory_order_release);
+        source.markInputEnded();
+        source.requestStop();
+    }
+}
+
+void framedStdinReader(PcmRingAudioSource& source, int channels, std::atomic<bool>& shutdownRequested)
+{
+#if JUCE_WINDOWS
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+
+    uint32_t currentSessionId = 0;
+    bool hasSession = false;
+    std::vector<char> pendingPcm;
+
+    while (std::cin.good() && ! shutdownRequested.load(std::memory_order_acquire))
+    {
+        StdinFrameHeader header;
+        if (! readFrameHeader(header))
+            break;
+
+        std::vector<char> payload(header.payloadBytes);
+        if (header.payloadBytes > 0 && ! readExact(payload.data(), payload.size()))
+            break;
+
+        handleFramedStdinPayload(
+            source,
+            channels,
+            shutdownRequested,
+            currentSessionId,
+            hasSession,
+            pendingPcm,
+            header,
+            payload);
+    }
+
+    shutdownRequested.store(true, std::memory_order_release);
+    source.markInputEnded();
+}
+
 int waitForInitialPcm(PcmRingAudioSource& source, int targetFrames, int timeoutMs)
 {
     if (targetFrames <= 0)
         return 0;
+
+    if (timeoutMs <= 0)
+        return source.getReadyFrames();
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(1, timeoutMs));
 
@@ -1430,7 +1632,13 @@ int runHost(const Options& options)
         ? (openedDescriptor.sharedSampleRate > 0 ? openedDescriptor.sharedSampleRate : actualSampleRate)
         : 0;
 
-    std::thread reader(stdinReader, std::ref(source), options.channels);
+    std::atomic<bool> shutdownRequested { false };
+    std::thread reader;
+
+    if (options.framedStdin)
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+    else
+        reader = std::thread(stdinReader, std::ref(source), options.channels);
 
     writeJsonLine(
         std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
@@ -1455,14 +1663,18 @@ int runHost(const Options& options)
         + jsonEscape(openedDescriptor.typeName) + "\",\"deviceName\":\""
         + jsonEscape(openedDescriptor.name) + "\"}");
 
-    const int prebufferedFrames = waitForInitialPcm(source, startupPrebufferFrames, startupPrebufferTimeoutMs);
-    if (startupPrebufferFrames > 0)
-        logLine("Initial PCM prebuffer before device start: " + std::to_string(prebufferedFrames) + " frames");
+    if (! options.framedStdin)
+    {
+        const int prebufferedFrames = waitForInitialPcm(source, startupPrebufferFrames, startupPrebufferTimeoutMs);
+        if (startupPrebufferFrames > 0)
+            logLine("Initial PCM prebuffer before device start: " + std::to_string(prebufferedFrames) + " frames");
+    }
 
     device->start(&player);
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
+    bool endedReported = false;
 
-    while (! source.isDrained())
+    while (! shutdownRequested.load(std::memory_order_acquire) && (! source.isDrained() || options.framedStdin))
     {
         const auto frames = source.getFramesPlayed();
 
@@ -1475,6 +1687,22 @@ int runHost(const Options& options)
                 + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
                 + "}");
             lastReported = frames;
+        }
+
+        if (options.framedStdin)
+        {
+            if (source.isDrained())
+            {
+                if (! endedReported)
+                {
+                    writeJsonLine("{\"event\":\"ended\"}");
+                    endedReported = true;
+                }
+            }
+            else
+            {
+                endedReported = false;
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
@@ -1499,7 +1727,8 @@ int runHost(const Options& options)
             + " frames=" + std::to_string(source.getUnderrunFrames()));
     }
 
-    writeJsonLine("{\"event\":\"ended\"}");
+    if (! options.framedStdin || ! endedReported)
+        writeJsonLine("{\"event\":\"ended\"}");
 
     device->stop();
     player.setSource(nullptr);
@@ -1510,6 +1739,7 @@ int runHost(const Options& options)
 }
 } // namespace
 
+#ifndef ECHO_AUDIO_HOST_TESTS
 int main(int argc, char* argv[])
 {
     try
@@ -1531,3 +1761,4 @@ int main(int argc, char* argv[])
         return 1;
     }
 }
+#endif

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
 import { MvPanel, type MvAudioClock } from './MvPanel';
 
@@ -666,6 +666,46 @@ describe('MvPanel', () => {
     renderPanel(makeVideo({ playableInApp: false, mediaUrl: null, mimeType: 'video/x-matroska' }));
 
     expect(await screen.findByText('External player required')).toBeTruthy();
+  });
+
+  it('does not surface auto-selected external network candidates in the lyrics MV panel', async () => {
+    const { container } = renderPanel(
+      makeVideo({
+        sourceType: 'search_candidate',
+        provider: 'youtube',
+        playableInApp: false,
+        mediaUrl: null,
+        thumbnailUrl: 'https://i.example/external-thumb.jpg',
+        title: 'External Search Result',
+      }),
+    );
+
+    expect(await screen.findByText('MV unavailable')).toBeTruthy();
+    expect(screen.queryByText('External player required')).toBeNull();
+    expect(screen.queryByText('External Search Result')).toBeNull();
+    expect(container.querySelector('.lyrics-mv-artwork img')?.getAttribute('src')).toBe('echo-cover://thumb/test');
+  });
+
+  it('falls back to the track cover when the selected MV thumbnail fails to load', async () => {
+    const { container } = renderPanel(
+      makeVideo({
+        playableInApp: false,
+        mediaUrl: null,
+        thumbnailUrl: 'https://i.example/broken-mv-thumb.jpg',
+      }),
+    );
+
+    const artwork = await waitFor(() => {
+      const image = container.querySelector('.lyrics-mv-artwork img') as HTMLImageElement | null;
+      expect(image?.getAttribute('src')).toBe('https://i.example/broken-mv-thumb.jpg');
+      return image!;
+    });
+
+    fireEvent.error(artwork);
+
+    await waitFor(() =>
+      expect(container.querySelector('.lyrics-mv-artwork img')?.getAttribute('src')).toBe('echo-cover://thumb/test'),
+    );
   });
 
   it('refreshes when the MV binding changes elsewhere', async () => {

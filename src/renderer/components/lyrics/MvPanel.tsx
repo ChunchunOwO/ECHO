@@ -191,40 +191,65 @@ const playVideo = (video: HTMLVideoElement): void => {
 const streamingTrackKey = (target: { provider: StreamingProviderName; providerTrackId: string }): string =>
   `streaming:${target.provider}:${target.providerTrackId}`;
 
+const uniqueCoverUrls = (...urls: Array<string | null | undefined>): string[] =>
+  Array.from(new Set(urls.map((url) => url?.trim()).filter((url): url is string => Boolean(url))));
+
 const CoverFallback = ({
   artist,
-  coverUrl,
+  coverUrls,
   status,
   title,
 }: {
   artist: string;
-  coverUrl: string | null;
+  coverUrls: string[];
   status: string;
   title: string;
-}): JSX.Element => (
-  <div className="lyrics-mv-card" data-cover={Boolean(coverUrl)}>
-    <div className="lyrics-mv-card-backdrop" aria-hidden="true">
-      {coverUrl ? <img alt="" draggable={false} src={coverUrl} /> : null}
+}): JSX.Element => {
+  const coverKey = coverUrls.join('\n');
+  const [failedCoverUrls, setFailedCoverUrls] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setFailedCoverUrls(new Set());
+  }, [coverKey]);
+
+  const coverUrl = coverUrls.find((url) => !failedCoverUrls.has(url)) ?? null;
+  const handleCoverError = useCallback((): void => {
+    if (!coverUrl) {
+      return;
+    }
+
+    setFailedCoverUrls((current) => {
+      const next = new Set(current);
+      next.add(coverUrl);
+      return next;
+    });
+  }, [coverUrl]);
+
+  return (
+    <div className="lyrics-mv-card" data-cover={Boolean(coverUrl)}>
+      <div className="lyrics-mv-card-backdrop" aria-hidden="true">
+        {coverUrl ? <img alt="" draggable={false} src={coverUrl} onError={handleCoverError} /> : null}
+      </div>
+      <div className="lyrics-mv-artwork">
+        {coverUrl ? (
+          <img alt="" draggable={false} src={coverUrl} onError={handleCoverError} />
+        ) : (
+          <div className="lyrics-mv-placeholder" aria-hidden="true">
+            <Music2 size={46} />
+          </div>
+        )}
+      </div>
+      <div className="lyrics-mv-copy">
+        <span>
+          <Film size={15} />
+          {status}
+        </span>
+        <strong>{title}</strong>
+        <em>{artist}</em>
+      </div>
     </div>
-    <div className="lyrics-mv-artwork">
-      {coverUrl ? (
-        <img alt="" draggable={false} src={coverUrl} />
-      ) : (
-        <div className="lyrics-mv-placeholder" aria-hidden="true">
-          <Music2 size={46} />
-        </div>
-      )}
-    </div>
-    <div className="lyrics-mv-copy">
-      <span>
-        <Film size={15} />
-        {status}
-      </span>
-      <strong>{title}</strong>
-      <em>{artist}</em>
-    </div>
-  </div>
-);
+  );
+};
 
 export const MvPanel = ({
   artist,
@@ -511,6 +536,9 @@ export const MvPanel = ({
   const isMvEnabled = settings.enabled !== false;
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
+  const shouldSurfaceSelectedFallback = Boolean(
+    selectedVideo && (videoError || selectedVideo.playableInApp || selectedVideo.sourceType === 'manual'),
+  );
   const adaptiveStream = isAdaptiveStream(selectedVideo);
   const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
   const immersiveBackgroundStyle = useMemo(
@@ -860,19 +888,21 @@ export const MvPanel = ({
       ) : (
         <CoverFallback
           artist={artist}
-          coverUrl={selectedVideo?.thumbnailUrl ?? coverUrl}
+          coverUrls={uniqueCoverUrls(shouldSurfaceSelectedFallback ? selectedVideo?.thumbnailUrl : null, coverUrl)}
           status={
             isMvEnabled
               ? selectedVideo
-                ? videoError
+                ? videoError && shouldSurfaceSelectedFallback
                   ? 'Playback failed'
-                  : 'External player required'
+                  : shouldSurfaceSelectedFallback
+                    ? 'External player required'
+                    : 'MV unavailable'
                 : isLoading
                   ? 'Loading MV'
                   : 'MV unavailable'
               : 'MV disabled'
           }
-          title={selectedVideo?.title ?? title}
+          title={(shouldSurfaceSelectedFallback ? selectedVideo?.title : null) ?? title}
         />
       )}
 

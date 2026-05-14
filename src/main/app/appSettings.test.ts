@@ -188,6 +188,29 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
   });
 
+  it('migrates remembered audio output to low latency unless Stable was explicit', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: { enabled: true, outputMode: 'asio', latencyProfile: 'balanced' },
+      }).rememberedAudioOutput,
+    ).toMatchObject({
+      enabled: true,
+      outputMode: 'asio',
+      latencyProfile: 'lowLatency',
+    });
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: { enabled: true, outputMode: 'exclusive', latencyProfile: 'stable' },
+      }).rememberedAudioOutput,
+    ).toMatchObject({
+      enabled: true,
+      outputMode: 'exclusive',
+      latencyProfile: 'stable',
+    });
+  });
+
   it('keeps audio analysis disabled by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 

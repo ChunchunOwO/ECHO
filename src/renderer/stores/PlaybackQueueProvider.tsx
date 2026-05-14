@@ -202,6 +202,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const isShuffleEnabledRef = useRef(isShuffleEnabled);
   const playbackHistorySessionRef = useRef<PlaybackHistorySession | null>(null);
   const pausedSessionTimerRef = useRef<number | null>(null);
+  const playRequestTokenRef = useRef(0);
+  const playbackStatusTokensRef = useRef<WeakMap<PlaybackStatus, number>>(new WeakMap());
+  const playbackStatusPreviousItemRef = useRef<WeakMap<PlaybackStatus, QueueItem | null>>(new WeakMap());
 
   const setItems = useCallback((nextItems: QueueItem[] | ((current: QueueItem[]) => QueueItem[])): void => {
     const resolved = typeof nextItems === 'function' ? nextItems(itemsRef.current) : nextItems;
@@ -418,12 +421,18 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const playLocalTrack = useCallback(async (item: QueueItem): Promise<PlaybackStatus> => {
     const playback = window.echo?.playback;
     const track = item.track;
+    const requestToken = playRequestTokenRef.current + 1;
+    playRequestTokenRef.current = requestToken;
 
     if (!playback) {
       throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to play local files.');
     }
 
+    const previousItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
     void finishPlaybackHistorySession();
+    setCurrentQueueId(item.queueId);
+    setCurrentTrackIdInternal(item.track.id);
+    setLastPlayedTrack(item.track);
     const status =
       (track.mediaType === 'remote' || track.mediaType === 'streaming') && playback.playMediaItem
         ? await playback.playMediaItem({
@@ -434,9 +443,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
             trackId: track.id,
             probe: createProbeFromTrack(track),
           });
-    void startPlaybackHistorySession(item);
+    playbackStatusTokensRef.current.set(status, requestToken);
+    playbackStatusPreviousItemRef.current.set(status, previousItem);
+    if (playRequestTokenRef.current === requestToken) {
+      void startPlaybackHistorySession(item);
+    }
     return status;
-  }, [finishPlaybackHistorySession, startPlaybackHistorySession]);
+  }, [finishPlaybackHistorySession, setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack, startPlaybackHistorySession]);
 
   const autoSearchMv = useCallback((trackId: string): void => {
     const mvApi = window.echo?.mv;
@@ -453,9 +466,33 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     })().catch(() => undefined);
   }, []);
 
+  const prepareNextMediaItem = useCallback((item: QueueItem): void => {
+    const playback = window.echo?.playback;
+    if (!playback?.prepareMediaItem) {
+      return;
+    }
+
+    const current = itemsRef.current;
+    const index = current.findIndex((candidate) => candidate.queueId === item.queueId);
+    const next = index >= 0 && index < current.length - 1 ? current[index + 1] : null;
+    if (!next || (next.track.mediaType !== 'remote' && next.track.mediaType !== 'streaming')) {
+      return;
+    }
+
+    void playback.prepareMediaItem({ item: toPlayableTrack(next.track) }).catch(() => undefined);
+  }, []);
+
   const commitPlayedItem = useCallback(
     (item: QueueItem, status: PlaybackStatus, options: { recordHistory?: boolean; previousItem?: QueueItem | null } = {}): void => {
-      const previousItem = options.previousItem ?? findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
+      const requestToken = playbackStatusTokensRef.current.get(status);
+      if (requestToken && requestToken !== playRequestTokenRef.current) {
+        return;
+      }
+
+      const previousItem =
+        options.previousItem ??
+        playbackStatusPreviousItemRef.current.get(status) ??
+        findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
 
       if (options.recordHistory !== false && previousItem && previousItem.queueId !== item.queueId) {
         setHistory((current) => [...current, previousItem]);
@@ -467,8 +504,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       if (item.track.mediaType !== 'streaming') {
         autoSearchMv(item.track.id);
       }
+      prepareNextMediaItem(item);
     },
-    [autoSearchMv, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
+    [autoSearchMv, prepareNextMediaItem, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack],
   );
 
   const replaceQueue = useCallback(

@@ -99,5 +99,9 @@ target_link_libraries(echo-audio-engine-tests
     ${ECHO_JUCE_LIBRARIES}
 )
 
+if(WIN32)
+  target_link_libraries(echo-audio-engine-tests PRIVATE shell32 ole32)
+endif()
+
 enable_testing()
 add_test(NAME echo-audio-engine-tests COMMAND echo-audio-engine-tests)

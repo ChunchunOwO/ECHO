@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizePlaybackFilePath } from './playbackPath';
 
 describe('normalizePlaybackFilePath', () => {
@@ -43,5 +43,102 @@ describe('normalizePlaybackFilePath', () => {
     expect(normalizePlaybackFilePath('https://example.test/song.flac?token=%E7%8E%8B')).toBe(
       'https://example.test/song.flac?token=%E7%8E%8B',
     );
+  });
+});
+
+describe('playback media prepare IPC', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('uses a prepared streaming playback source without resolving again', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const playLocalFile = vi.fn().mockResolvedValue(undefined);
+    const resolvePlayback = vi.fn().mockResolvedValue({
+      url: 'https://stream.example.test/song.flac?token=prepared',
+      sampleRate: 44100,
+      codec: 'flac',
+      bitDepth: 16,
+      bitrate: 900000,
+      requiresProxy: false,
+    });
+
+    vi.doMock('electron', () => ({
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => ({
+          state: 'playing',
+          currentTrackId: 'streaming-track',
+          positionSeconds: 0,
+          durationSeconds: 120,
+          currentFilePath: 'https://stream.example.test/song.flac?token=prepared',
+        }),
+        on: vi.fn(),
+        restorePlaybackMemory: vi.fn(),
+        playLocalFile,
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: vi.fn(() => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive: vi.fn(),
+        refreshTrackMetadata: vi.fn(),
+        createStreamUrl: vi.fn(),
+        backfillDuration: vi.fn(),
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback,
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    const request = {
+      item: {
+        mediaType: 'streaming',
+        trackId: 'streaming-track',
+        provider: 'mock',
+        providerTrackId: 'provider-track',
+        stableKey: 'mock:provider-track',
+        title: 'Prepared',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 120,
+      },
+    };
+
+    await handlers.get(IpcChannels.PlaybackPrepareMediaItem)?.({}, request);
+    await handlers.get(IpcChannels.PlaybackPlayMediaItem)?.({}, request);
+
+    expect(resolvePlayback).toHaveBeenCalledTimes(1);
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'https://stream.example.test/song.flac?token=prepared',
+      trackId: 'streaming-track',
+      probe: expect.objectContaining({
+        durationSeconds: 120,
+        fileSampleRate: 44100,
+        channels: 2,
+      }),
+    }));
   });
 });

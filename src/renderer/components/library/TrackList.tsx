@@ -18,14 +18,16 @@ type TrackListProps = {
   likedTrackIds?: Record<string, boolean>;
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
+  onVisibleTrackIdsChange?: (trackIds: string[]) => void;
 };
 
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, totalCount, loadedCount = tracks.length, isLoadingMore = false, onEndReached, onPlay, onAddToQueue, duplicateHiddenCounts = {}, onShowVersions, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, totalCount, loadedCount = tracks.length, isLoadingMore = false, onEndReached, onPlay, onAddToQueue, duplicateHiddenCounts = {}, onShowVersions, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu, onVisibleTrackIdsChange }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
+  const visibleTrackIdsKeyRef = useRef('');
   const virtualCount = Math.max(totalCount ?? tracks.length, tracks.length);
   const loadedBoundary = Math.min(loadedCount, tracks.length);
   const rowVirtualizer = useVirtualizer({
@@ -69,6 +71,24 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
   useEffect(() => {
     requestLoadMore(lastVirtualIndex);
   }, [lastVirtualIndex, requestLoadMore]);
+
+  useEffect(() => {
+    if (!onVisibleTrackIdsChange) {
+      return;
+    }
+
+    const visibleTrackIds = renderedVirtualItems
+      .map((virtualRow) => tracks[virtualRow.index]?.id)
+      .filter((trackId): trackId is string => Boolean(trackId));
+    const visibleTrackIdsKey = visibleTrackIds.join('\0');
+
+    if (visibleTrackIdsKeyRef.current === visibleTrackIdsKey) {
+      return;
+    }
+
+    visibleTrackIdsKeyRef.current = visibleTrackIdsKey;
+    onVisibleTrackIdsChange(visibleTrackIds);
+  }, [onVisibleTrackIdsChange, renderedVirtualItems, tracks]);
 
   const handleScroll = (): void => {
     const scrollElement = scrollParentRef.current;

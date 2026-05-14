@@ -743,6 +743,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetDuplicateTrackVersions, (_event, trackId: unknown) =>
     getLibraryService().getDuplicateTrackVersions(requireText(trackId, 'trackId')),
   );
+  ipcMain.handle(IpcChannels.LibraryGetDuplicateHiddenCounts, (_event, trackIds: unknown, mode: unknown) =>
+    getLibraryService().getDuplicateHiddenCounts(normalizeTrackIds(trackIds), normalizeDuplicateMode(mode)),
+  );
   ipcMain.handle(IpcChannels.LibraryGetDuplicateIndexSummary, (_event, mode: unknown) =>
     getLibraryService().getDuplicateIndexSummary(normalizeDuplicateMode(mode)),
   );

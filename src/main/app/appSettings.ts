@@ -254,14 +254,20 @@ const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput =
   const latencyProfile = input.latencyProfile === 'stable' ? input.latencyProfile : 'lowLatency';
   const deviceIndex = Number(input.deviceIndex);
   const deviceName = normalizeOptionalText(input.deviceName) ?? undefined;
-
-  return {
+  const bufferSizeFrames = Number(input.bufferSizeFrames);
+  const normalized: RememberedAudioOutput = {
     enabled: input.enabled === true,
     outputMode,
     latencyProfile,
     deviceIndex: Number.isInteger(deviceIndex) ? deviceIndex : undefined,
     deviceName,
   };
+
+  if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
+    normalized.bufferSizeFrames = Math.round(bufferSizeFrames);
+  }
+
+  return normalized;
 };
 
 const normalizeHiddenAudioDeviceKeys = (value: unknown): string[] => {

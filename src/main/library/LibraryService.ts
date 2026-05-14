@@ -181,6 +181,10 @@ export class LibraryService {
     return this.store.getDuplicateTrackVersions(trackId);
   }
 
+  getDuplicateHiddenCounts(trackIds: string[], mode: DuplicateTrackMode = 'strict'): Record<string, number> {
+    return this.store.getDuplicateHiddenCounts(trackIds, mode);
+  }
+
   getDuplicateIndexSummary(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
     return this.store.getDuplicateIndexSummary(mode);
   }

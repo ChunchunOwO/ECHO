@@ -14,6 +14,7 @@ vi.mock('../components/library/TrackList', () => ({
     onEndReached,
     onPlay,
     onShowVersions,
+    onVisibleTrackIdsChange,
     totalCount,
   }: {
     tracks: LibraryTrack[];
@@ -25,9 +26,19 @@ vi.mock('../components/library/TrackList', () => ({
     onEndReached?: () => void;
     onPlay?: (track: LibraryTrack) => void;
     onShowVersions?: (track: LibraryTrack) => void;
+    onVisibleTrackIdsChange?: (trackIds: string[]) => void;
     totalCount?: number;
   }) => (
-    <div data-testid="track-list" data-total-count={totalCount ?? tracks.length} data-loaded-count={loadedCount ?? tracks.length} data-loading-more={String(isLoadingMore)}>
+    <div
+      data-testid="track-list"
+      data-total-count={totalCount ?? tracks.length}
+      data-loaded-count={loadedCount ?? tracks.length}
+      data-loading-more={String(isLoadingMore)}
+      data-visible-ids={tracks.slice(0, 2).map((track) => track.id).join(',')}
+    >
+      <button type="button" onClick={() => onVisibleTrackIdsChange?.(tracks.slice(0, 2).map((track) => track.id))}>
+        mock-visible
+      </button>
       <span data-testid="current-track-id">{currentTrackId ?? 'none'}</span>
       <button type="button" disabled={!canLoadMore} onClick={onEndReached}>
         mock-load-more
@@ -135,6 +146,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       }),
       getDuplicateTrackVersions: vi.fn().mockResolvedValue([]),
+      getDuplicateHiddenCounts: vi.fn().mockResolvedValue({}),
       getDuplicateIndexSummary: vi.fn().mockResolvedValue({
         mode: 'strict',
         totalTracksScanned: tracks.length,
@@ -143,6 +155,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
         hiddenTracks: 0,
         updatedAt: '',
       }),
+      getLikedTrackIds: vi.fn().mockResolvedValue({}),
       pruneMissingTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: 0 }),
       clearTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: tracks.length }),
     },
@@ -291,6 +304,18 @@ describe('SongsPage', () => {
     expect(screen.getByTestId('track-list').getAttribute('data-loaded-count')).toBe('100');
   });
 
+  it('loads duplicate badges only for visible song rows', async () => {
+    const tracks = Array.from({ length: 5 }, (_, index) => makeTrack({ id: `track-${index + 1}`, title: `Song ${index + 1}` }));
+    installEcho(tracks);
+
+    await renderSongsPage();
+    await screen.findByText('Song 1');
+    fireEvent.click(screen.getByRole('button', { name: 'mock-visible' }));
+
+    await waitFor(() => expect(window.echo.library.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1', 'track-2'], 'strict'));
+    expect(window.echo.library.getDuplicateTrackVersions).not.toHaveBeenCalled();
+  });
+
   it('keeps TrackList totalCount stable when appending the second song page', async () => {
     const firstPageTracks = Array.from({ length: 100 }, (_, index) => makeTrack({ id: `track-${index + 1}`, title: `Song ${index + 1}` }));
     const secondPageTracks = Array.from({ length: 100 }, (_, index) => makeTrack({ id: `track-${index + 101}`, title: `Song ${index + 101}` }));
@@ -307,18 +332,22 @@ describe('SongsPage', () => {
     await waitFor(() => expect(screen.getByTestId('track-list').getAttribute('data-loaded-count')).toBe('200'));
     expect(screen.getByTestId('track-list').getAttribute('data-total-count')).toBe('10000');
     expect(window.echo.library.getTracks).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+    expect(window.echo.library.getDuplicateTrackVersions).not.toHaveBeenCalled();
   });
 
   it('closes the duplicate version panel when clicking the overlay outside the panel', async () => {
     const track = makeTrack();
     const hiddenTrack = makeTrack({ id: 'track-2', path: 'D:\\Music\\Song Copy.flac' });
     installEcho([track]);
+    vi.mocked(window.echo.library.getDuplicateHiddenCounts).mockResolvedValue({ [track.id]: 1 });
     vi.mocked(window.echo.library.getDuplicateTrackVersions).mockResolvedValue([
       { groupId: 'group-1', track, qualityScore: 100, rank: 1, hidden: false, reasons: [] },
       { groupId: 'group-1', track: hiddenTrack, qualityScore: 80, rank: 2, hidden: true, reasons: [] },
     ]);
 
     await renderSongsPage();
+    await screen.findByText('Song One');
+    fireEvent.click(screen.getByRole('button', { name: 'mock-visible' }));
 
     fireEvent.click(await screen.findByRole('button', { name: /版本/ }));
     const dialog = await screen.findByRole('dialog', { name: '重复歌曲版本' });

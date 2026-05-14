@@ -55,7 +55,7 @@ const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>;
   127: { tier: '4320p', label: '8K' },
 };
 
-const bilibiliDashFnval = '4048';
+const bilibiliDirectFnval = '0';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -397,7 +397,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       playUrl.searchParams.set('bvid', bvid);
       playUrl.searchParams.set('cid', String(cid));
       playUrl.searchParams.set('qn', String(qn));
-      playUrl.searchParams.set('fnval', bilibiliDashFnval);
+      playUrl.searchParams.set('fnval', bilibiliDirectFnval);
       playUrl.searchParams.set('fnver', '0');
       playUrl.searchParams.set('fourk', '1');
 
@@ -406,12 +406,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
         const playData = isRecord(playPayload) ? playPayload.data : null;
         const actualQn = number(isRecord(playData) ? playData.quality : null) ?? qn;
         const actualQuality = bilibiliQualityMap[actualQn] ?? quality;
-        const dash = isRecord(playData) && isRecord(playData.dash) ? playData.dash : null;
-        const dashStreams = asArray(dash?.video)
-          .filter(isRecord)
-          .filter((stream) => (number(stream.id) ?? actualQn) === actualQn);
         const durl = asArray(isRecord(playData) ? playData.durl : null).find(isRecord);
-        const streamCandidates = dashStreams.length > 0 ? dashStreams : durl ? [durl] : [];
+        const streamCandidates = durl ? [durl] : [];
 
         for (const stream of streamCandidates) {
           const streamQn = number(stream.id) ?? actualQn;
@@ -448,7 +444,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
             },
             rawProviderJson: {
               provider: this.id,
-              resolver: 'bilibili-dash-v2',
+              resolver: 'bilibili-direct-durl-v1',
               requestedQn: qn,
               qn: streamQn,
               cid,

@@ -70,9 +70,17 @@ type AudioDrawerCopy = {
 const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
 const drawerExitAnimationMs = 320;
 const latencyProfileOptions: Array<{ id: AudioLatencyProfile; label: string; detail: string }> = [
-  { id: 'lowLatency', label: 'Low latency', detail: '1024 frames' },
+  { id: 'lowLatency', label: 'Low latency', detail: '512 frames / adaptive' },
   { id: 'balanced', label: 'Balanced', detail: '2048 frames' },
   { id: 'stable', label: 'Stable', detail: '8192 frames' },
+];
+const asioBufferOptions: Array<{ value: number | null; label: string; detail: string }> = [
+  { value: null, label: 'Auto', detail: 'Profile default' },
+  { value: 64, label: '64', detail: 'Ultra low' },
+  { value: 128, label: '128', detail: 'Low' },
+  { value: 256, label: '256', detail: 'Safer' },
+  { value: 512, label: '512', detail: 'Default' },
+  { value: 1024, label: '1024', detail: 'Stable' },
 ];
 
 const getDeviceStorageKey = (device: AudioDeviceInfo): string => `${device.outputMode}:${device.id || device.index}:${device.name}`;
@@ -265,14 +273,19 @@ const getSharedStabilityText = (status: AudioStatus | null, unknownValue: string
 
 const getNativeLatencyText = (status: AudioStatus | null, unknownValue: string): string => {
   const profile = status?.latencyProfile ?? 'lowLatency';
+  const requested = status?.nativeRequestedBufferFrames ?? status?.nativeDeviceBufferFrames ?? null;
+  const opened = status?.nativeActualBufferFrames ?? null;
   const latency = status?.nativeOutputLatencyMs !== null && status?.nativeOutputLatencyMs !== undefined
     ? `${status.nativeOutputLatencyMs} ms`
     : unknownValue;
   const stale = status?.nativePositionStalenessMs !== null && status?.nativePositionStalenessMs !== undefined
     ? `stale ${status.nativePositionStalenessMs} ms`
     : `stale ${unknownValue}`;
+  const bufferText = requested || opened
+    ? `req ${requested ?? unknownValue} / open ${opened ?? unknownValue}`
+    : `buffer ${unknownValue}`;
 
-  return `${profile} / ${latency} / ${stale}`;
+  return `${profile} / ${bufferText} / ${latency} / ${stale}`;
 };
 
 const deviceMatchesStatus = (device: AudioDeviceInfo, status: AudioStatus | null, mode: AudioOutputMode): boolean => {
@@ -364,6 +377,7 @@ const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
     ['sampleRateMismatch', diagnostics.sampleRateMismatch],
     ['sharedStabilityTier', diagnostics.sharedStabilityTier],
     ['nativeDeviceBufferFrames', diagnostics.nativeDeviceBufferFrames],
+    ['nativeRequestedBufferFrames', diagnostics.nativeRequestedBufferFrames],
     ['nativeActualBufferFrames', diagnostics.nativeActualBufferFrames],
     ['nativeOutputLatencyMs', diagnostics.nativeOutputLatencyMs],
     ['nativePositionStalenessMs', diagnostics.nativePositionStalenessMs],
@@ -523,6 +537,10 @@ export const AudioSettingsDrawer = ({
     };
   }, [copy, currentOutputName, effectiveSharedSampleRate, outputMode, status]);
   const currentLatencyProfile = status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'lowLatency';
+  const currentAsioBufferFrames =
+    status?.outputMode === 'asio'
+      ? status.nativeRequestedBufferFrames ?? null
+      : readRememberedAudioOutput().bufferSizeFrames ?? null;
 
   const refresh = useCallback(async (): Promise<void> => {
     const audio = window.echo?.audio;
@@ -621,12 +639,16 @@ export const AudioSettingsDrawer = ({
     (settings: AudioOutputSettings, enabled = rememberOutput): void => {
       const remembered = readRememberedAudioOutput();
       const isDeviceSelection = settings.outputMode !== undefined;
+      const hasBufferSize = Object.prototype.hasOwnProperty.call(settings, 'bufferSizeFrames');
       writeRememberedAudioOutput({
         enabled,
         outputMode: settings.outputMode ?? remembered.outputMode ?? status?.outputMode ?? outputMode ?? 'shared',
         latencyProfile: settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'lowLatency',
         deviceIndex: isDeviceSelection ? settings.deviceIndex : remembered.deviceIndex,
         deviceName: isDeviceSelection ? settings.deviceName : remembered.deviceName,
+        bufferSizeFrames: hasBufferSize
+          ? settings.bufferSizeFrames ?? undefined
+          : remembered.bufferSizeFrames,
       });
     },
     [outputMode, rememberOutput, status?.latencyProfile, status?.outputMode],
@@ -660,7 +682,11 @@ export const AudioSettingsDrawer = ({
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
-    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'lowLatency');
+    const remembered = readRememberedAudioOutput();
+    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? remembered.latencyProfile ?? 'lowLatency');
+    if (mode === 'asio' && remembered.bufferSizeFrames) {
+      settings.bufferSizeFrames = remembered.bufferSizeFrames;
+    }
     setOutputMode(mode);
     void applyOutput(settings);
   };
@@ -678,6 +704,7 @@ export const AudioSettingsDrawer = ({
         outputMode: status?.outputMode ?? outputMode,
         latencyProfile: status?.latencyProfile ?? 'lowLatency',
         deviceName: status?.outputDeviceName ?? undefined,
+        bufferSizeFrames: status?.outputMode === 'asio' ? status.nativeRequestedBufferFrames ?? undefined : undefined,
       });
   };
 
@@ -940,6 +967,42 @@ export const AudioSettingsDrawer = ({
               </button>
             ))}
           </div>
+
+          {outputMode === 'asio' ? (
+            <>
+              <div className="audio-drawer-section-title audio-drawer-section-title--compact">
+                <Zap size={17} />
+                <h3>ASIO buffer</h3>
+              </div>
+              <div className="audio-drawer-mini-grid" aria-label="ASIO buffer">
+                {asioBufferOptions.map((option) => {
+                  const isActive = option.value === null
+                    ? currentAsioBufferFrames === null
+                    : currentAsioBufferFrames === option.value;
+
+                  return (
+                    <button
+                      className={`audio-device-pill ${isActive ? 'active' : ''}`}
+                      type="button"
+                      key={option.label}
+                      disabled={isBusy}
+                      onClick={() => void applyOutput({ bufferSizeFrames: option.value })}
+                    >
+                      <Zap size={15} />
+                      <span>
+                        <strong>{option.label}</strong>
+                        <small>{option.detail}</small>
+                      </span>
+                      <em>{isActive ? 'On' : 'Set'}</em>
+                    </button>
+                  );
+                })}
+              </div>
+              <p>
+                Requested {status?.nativeRequestedBufferFrames ?? 'Auto'} frames / opened {status?.nativeActualBufferFrames ?? 'n/a'} frames / {status?.nativeOutputLatencyMs ?? 'n/a'} ms
+              </p>
+            </>
+          ) : null}
 
           <label className="audio-toggle-row">
             <span>

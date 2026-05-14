@@ -1168,7 +1168,12 @@ export class MvService {
 
     return !variants.some((variant) => {
       const raw = parseJson(variant.raw_json);
-      return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).resolver === 'bilibili-dash-v2');
+      return Boolean(
+        raw &&
+          typeof raw === 'object' &&
+          !Array.isArray(raw) &&
+          (raw as Record<string, unknown>).resolver === 'bilibili-direct-durl-v1',
+      );
     });
   }
 
@@ -1189,6 +1194,7 @@ export class MvService {
     return (
       [...candidates]
         .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider as NetworkMvProviderId))
+        .filter((candidate) => candidate.playableInApp)
         .filter((candidate) => candidate.score >= normalizeAutoApplyThreshold(settings.autoApplyThreshold))
         .sort((left, right) => {
           const scoreDelta = right.score - left.score;
@@ -1199,11 +1205,6 @@ export class MvService {
           const viewDelta = (right.viewCount ?? -1) - (left.viewCount ?? -1);
           if (viewDelta !== 0) {
             return viewDelta;
-          }
-
-          const playableDelta = Number(right.playableInApp) - Number(left.playableInApp);
-          if (playableDelta !== 0) {
-            return playableDelta;
           }
 
           return providerRank(left.provider) - providerRank(right.provider);

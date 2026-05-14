@@ -24,6 +24,7 @@ export type RememberedAudioOutput = {
   latencyProfile?: AudioLatencyProfile;
   deviceIndex?: number;
   deviceName?: string;
+  bufferSizeFrames?: number;
 };
 
 export type AppSettings = {

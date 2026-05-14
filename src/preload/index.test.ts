@@ -136,10 +136,12 @@ describe('preload SMTC API', () => {
   it('exposes duplicate track APIs through IPC', async () => {
     await exposedApi!.library.refreshDuplicateTracks('strict');
     await exposedApi!.library.getDuplicateTrackVersions('track-1');
+    await exposedApi!.library.getDuplicateHiddenCounts(['track-1'], 'strict');
     await exposedApi!.library.getDuplicateIndexSummary('strict');
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryRefreshDuplicateTracks, 'strict');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateTrackVersions, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateHiddenCounts, ['track-1'], 'strict');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateIndexSummary, 'strict');
   });
 

@@ -15,14 +15,20 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
     const parsed = JSON.parse(raw) as Partial<RememberedAudioOutput>;
     const outputMode = parsed.outputMode === 'exclusive' || parsed.outputMode === 'asio' ? parsed.outputMode : 'shared';
     const latencyProfile = parsed.latencyProfile === 'stable' ? parsed.latencyProfile : 'lowLatency';
-
-    return {
+    const bufferSizeFrames = Number(parsed.bufferSizeFrames);
+    const remembered: RememberedAudioOutput = {
       enabled: parsed.enabled === true,
       outputMode,
       latencyProfile,
       deviceIndex: Number.isInteger(Number(parsed.deviceIndex)) ? Number(parsed.deviceIndex) : undefined,
       deviceName: typeof parsed.deviceName === 'string' && parsed.deviceName.trim() ? parsed.deviceName : undefined,
     };
+
+    if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
+      remembered.bufferSizeFrames = Math.round(bufferSizeFrames);
+    }
+
+    return remembered;
   } catch {
     return { enabled: false, outputMode: 'shared', latencyProfile: 'lowLatency' };
   }

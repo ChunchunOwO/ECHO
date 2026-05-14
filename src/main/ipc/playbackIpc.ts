@@ -17,6 +17,15 @@ const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
 const streamingProviders = new Set<StreamingProviderName>(streamingProviderNames);
+const preparedMediaTtlMs = 2 * 60 * 1000;
+
+type PreparedMediaItem = {
+  filePath: string;
+  probe?: PlaybackProbeHint;
+  durationSeconds: number | null;
+};
+
+const preparedMediaCache = new Map<string, { expiresAt: number; prepared: PreparedMediaItem }>();
 
 const requireText = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -71,9 +80,9 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings | undefine
     output.latencyProfile = input.latencyProfile as AudioLatencyProfile;
   }
 
-  const bufferSizeFrames = optionalPositiveNumber(input.bufferSizeFrames);
-  if (bufferSizeFrames) {
-    output.bufferSizeFrames = Math.round(bufferSizeFrames);
+  if (Object.prototype.hasOwnProperty.call(input, 'bufferSizeFrames')) {
+    const bufferSizeFrames = optionalPositiveNumber(input.bufferSizeFrames);
+    output.bufferSizeFrames = bufferSizeFrames ? Math.round(bufferSizeFrames) : null;
   }
 
   if (typeof input.volume === 'number' && Number.isFinite(input.volume)) {
@@ -110,6 +119,31 @@ const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
 const isLikelyExpiredUrlError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   return /403|404|expired|forbidden|unauthorized|invalid data|server returned|http error/iu.test(message);
+};
+
+const createPreparedMediaKey = (request: PlaybackMediaStartRequest): string => {
+  const item = request.item;
+  if (item.mediaType === 'remote') {
+    return JSON.stringify({
+      mediaType: item.mediaType,
+      trackId: item.trackId,
+      sourceId: item.sourceId,
+      stableKey: item.stableKey,
+      remotePath: item.remotePath,
+    });
+  }
+
+  if (item.mediaType === 'streaming') {
+    return JSON.stringify({
+      mediaType: item.mediaType,
+      provider: item.provider,
+      providerTrackId: item.providerTrackId,
+      quality: item.quality,
+      stableKey: item.stableKey,
+    });
+  }
+
+  return JSON.stringify({ mediaType: item.mediaType, trackId: item.trackId, path: item.path });
 };
 
 const normalizeProbeHint = (value: unknown): PlaybackProbeHint | undefined => {
@@ -234,6 +268,87 @@ const normalizeMediaPlayRequest = (value: unknown): PlaybackMediaStartRequest =>
   };
 };
 
+const resolveMediaItemForPlayback = async (
+  request: PlaybackMediaStartRequest,
+  options: { forceRefresh?: boolean } = {},
+): Promise<PreparedMediaItem> => {
+  const key = createPreparedMediaKey(request);
+  const cached = preparedMediaCache.get(key);
+  const now = Date.now();
+  if (!options.forceRefresh && cached && cached.expiresAt > now) {
+    preparedMediaCache.delete(key);
+    return cached.prepared;
+  }
+
+  if (cached && cached.expiresAt <= now) {
+    preparedMediaCache.delete(key);
+  }
+
+  const item = request.item;
+  let durationSeconds = item.duration && item.duration > 0 ? item.duration : null;
+  if (item.mediaType === 'remote' && !durationSeconds) {
+    getRemoteSourceService().setPlaybackActive(true);
+    const refreshed = await getRemoteSourceService().refreshTrackMetadata(item.trackId);
+    durationSeconds = refreshed?.duration && refreshed.duration > 0 ? refreshed.duration : null;
+  }
+
+  let filePath: string;
+  let probe: PlaybackProbeHint | undefined = durationSeconds ? { durationSeconds } : undefined;
+
+  if (item.mediaType === 'remote') {
+    filePath = (
+      await getRemoteSourceService().createStreamUrl({
+        trackId: item.trackId,
+        sourceId: item.sourceId ?? undefined,
+        remotePath: item.remotePath ?? undefined,
+        stableKey: item.stableKey ?? undefined,
+      })
+    ).url;
+  } else if (item.mediaType === 'streaming') {
+    const playbackRequest = {
+      provider: item.provider,
+      providerTrackId: item.providerTrackId,
+      quality: item.quality,
+    };
+
+    if (options.forceRefresh) {
+      getStreamingService().invalidatePlayback(playbackRequest);
+    }
+
+    const source = await getStreamingService().resolvePlayback(playbackRequest);
+
+    if (source.requiresProxy) {
+      throw new Error('This streaming source requires the streaming proxy adapter, which is not enabled yet.');
+    }
+
+    filePath = source.url;
+    probe =
+      durationSeconds || isHttpUrl(source.url)
+        ? {
+            durationSeconds: durationSeconds ?? undefined,
+            fileSampleRate: source.sampleRate,
+            channels: 2,
+            codec: source.codec,
+            bitDepth: source.bitDepth,
+            bitrate: source.bitrate,
+          }
+        : undefined;
+  } else {
+    filePath = item.path;
+  }
+
+  return { filePath, probe, durationSeconds };
+};
+
+const prepareMediaItem = async (request: PlaybackMediaStartRequest): Promise<void> => {
+  const key = createPreparedMediaKey(request);
+  const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
+  preparedMediaCache.set(key, {
+    prepared,
+    expiresAt: Date.now() + preparedMediaTtlMs,
+  });
+};
+
 const normalizePathList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     throw new Error('paths must be an array');
@@ -310,93 +425,39 @@ export const registerPlaybackIpc = (): void => {
     void syncSmtcStatus();
     return toPlaybackStatus();
   });
+  ipcMain.handle(IpcChannels.PlaybackPrepareMediaItem, async (_event, rawRequest: unknown): Promise<void> => {
+    try {
+      await prepareMediaItem(normalizeMediaPlayRequest(rawRequest));
+    } catch (error) {
+      console.warn(`[playback] prepareMediaItem failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
   ipcMain.handle(IpcChannels.PlaybackPlayMediaItem, async (_event, rawRequest: unknown): Promise<PlaybackStatus> => {
     const request = normalizeMediaPlayRequest(rawRequest);
     const item = request.item;
-    let durationSeconds = item.duration && item.duration > 0 ? item.duration : null;
-    if (item.mediaType === 'remote' && !durationSeconds) {
-      getRemoteSourceService().setPlaybackActive(true);
-      const refreshed = await getRemoteSourceService().refreshTrackMetadata(item.trackId);
-      durationSeconds = refreshed?.duration && refreshed.duration > 0 ? refreshed.duration : null;
-    }
-
-    let filePath: string;
-    let probe: PlaybackProbeHint | undefined = durationSeconds ? { durationSeconds } : undefined;
-
-    if (item.mediaType === 'remote') {
-      filePath = (
-        await getRemoteSourceService().createStreamUrl({
-          trackId: item.trackId,
-          sourceId: item.sourceId ?? undefined,
-          remotePath: item.remotePath ?? undefined,
-          stableKey: item.stableKey ?? undefined,
-        })
-      ).url;
-    } else if (item.mediaType === 'streaming') {
-      const playbackRequest = {
-        provider: item.provider,
-        providerTrackId: item.providerTrackId,
-        quality: item.quality,
-      };
-
-      const source = await getStreamingService().resolvePlayback(playbackRequest);
-
-      if (source.requiresProxy) {
-        throw new Error('This streaming source requires the streaming proxy adapter, which is not enabled yet.');
-      }
-
-      filePath = source.url;
-      probe =
-        durationSeconds || isHttpUrl(source.url)
-          ? {
-              durationSeconds: durationSeconds ?? undefined,
-              fileSampleRate: source.sampleRate,
-              channels: 2,
-              codec: source.codec,
-              bitDepth: source.bitDepth,
-              bitrate: source.bitrate,
-            }
-          : undefined;
-    } else {
-      filePath = item.path;
-    }
+    let prepared = await resolveMediaItemForPlayback(request);
 
     try {
       await getAudioSession().playLocalFile({
-        filePath,
+        filePath: prepared.filePath,
         trackId: item.trackId,
         startSeconds: request.startSeconds,
         output: request.output,
-        probe,
+        probe: prepared.probe,
       });
     } catch (error) {
-      if (item.mediaType !== 'streaming' || !isLikelyExpiredUrlError(error)) {
+      if ((item.mediaType !== 'streaming' && item.mediaType !== 'remote') || !isLikelyExpiredUrlError(error)) {
         throw error;
       }
 
-      const playbackRequest = {
-        provider: item.provider,
-        providerTrackId: item.providerTrackId,
-        quality: item.quality,
-      };
-      getStreamingService().invalidatePlayback(playbackRequest);
-      const refreshedSource = await getStreamingService().resolvePlayback(playbackRequest);
+      preparedMediaCache.delete(createPreparedMediaKey(request));
+      prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
       await getAudioSession().playLocalFile({
-        filePath: refreshedSource.url,
+        filePath: prepared.filePath,
         trackId: item.trackId,
         startSeconds: request.startSeconds,
         output: request.output,
-        probe:
-          durationSeconds || isHttpUrl(refreshedSource.url)
-            ? {
-                durationSeconds: durationSeconds ?? undefined,
-                fileSampleRate: refreshedSource.sampleRate,
-                channels: 2,
-                codec: refreshedSource.codec,
-                bitDepth: refreshedSource.bitDepth,
-                bitrate: refreshedSource.bitrate,
-              }
-            : undefined,
+        probe: prepared.probe,
       });
     }
     savePlaybackMemoryNow();

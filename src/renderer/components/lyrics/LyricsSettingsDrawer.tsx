@@ -1306,12 +1306,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <TimerReset size={17} />
-            <h3>匹配与时间轴</h3>
+            <h3>匹配与延迟</h3>
           </div>
 
           <label className="lyrics-drawer-range">
             <span>
-              <strong>默认歌词偏移</strong>
+              <strong>新歌词默认延迟</strong>
               <em>{offsetSeconds}s</em>
             </span>
             <input
@@ -1326,7 +1326,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
           <label className="lyrics-drawer-range">
             <span>
-              <strong>Global sync offset</strong>
+              <strong>全局延迟</strong>
               <em>{globalSyncOffsetSeconds}s</em>
             </span>
             <input
@@ -1338,12 +1338,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsGlobalSyncOffsetMs: Number(event.currentTarget.value) })}
             />
           </label>
-          <p>Positive values make every lyric line appear earlier without changing saved lyric files.</p>
+          <p>全局延迟会影响所有歌曲；本歌曲延迟请在歌词页校准条里调整，会跟随当前歌曲单独记忆。</p>
 
           <label className="audio-toggle-row">
             <span>
               <TimerReset size={17} />
-              <strong>显示歌词校准条</strong>
+              <strong>显示本歌曲延迟校准</strong>
             </span>
             <input
               type="checkbox"
@@ -1362,7 +1362,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <RotateCcw size={15} />
             <span>
               <strong>恢复歌词默认值</strong>
-              <small>阈值 50% / 偏移 0ms</small>
+              <small>匹配阈值 50% / 延迟 0ms</small>
             </span>
             <em>Reset</em>
           </button>

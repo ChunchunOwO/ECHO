@@ -380,14 +380,16 @@ export const MvPanel = ({
     }
   }, []);
 
-  const loadSelected = useCallback(async (): Promise<void> => {
+  const loadSelected = useCallback(async (options: { preserveCurrent?: boolean } = {}): Promise<void> => {
     if (streamingTarget) {
       return;
     }
 
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
-    setSelectedVideo(null);
+    if (!options.preserveCurrent) {
+      setSelectedVideo(null);
+    }
     setIsLoading(Boolean(trackId && window.echo?.mv));
     setError(null);
     setVideoError(false);
@@ -527,7 +529,7 @@ export const MvPanel = ({
     const handleMvChanged = (event: Event): void => {
       const detail = (event as CustomEvent<{ trackId?: string | null }>).detail;
       if (!detail?.trackId || detail.trackId === trackId) {
-        void loadSelected();
+        void loadSelected({ preserveCurrent: true });
       }
     };
 
@@ -693,6 +695,7 @@ export const MvPanel = ({
     const offsetSteps = [-500, -100, 100, 500];
     return (
       <section className="mv-offset-controls" aria-label="MV sync">
+        <span className="mv-offset-label">本歌曲 MV 延迟</span>
         <span className="mv-offset-value">{formatOffset(selectedMvOffsetMs)}</span>
         <div className="mv-offset-buttons">
           {offsetSteps.map((step) => {
@@ -721,6 +724,7 @@ export const MvPanel = ({
             <span>0ms</span>
           </button>
         </div>
+        <p>只保存到当前这首歌的 MV；换歌后不会影响其他歌曲。</p>
       </section>
     );
   }, [handleMvOffsetChange, isMvOffsetSaving, selectedMvOffsetMs, selectedVideo, settings.restartAudioOnLoad, showVideo, trackId]);

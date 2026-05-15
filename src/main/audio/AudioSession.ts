@@ -35,7 +35,7 @@ type OutputBridgeLike = {
   writable: Writable | null;
   start: (options: NativeOutputStartOptions) => Promise<NativeBridgeReadyResult>;
   stop: () => void;
-  stopGracefully?: (reason?: string, timeoutMs?: number) => Promise<void>;
+  stopGracefully?: (reason?: string, timeoutMs?: number, waitForExit?: boolean) => Promise<void>;
   canReuseFor?: (options: NativeOutputStartOptions) => boolean;
   beginSession?: (options?: { startSeconds?: number; playbackRate?: number; durationSeconds?: number }) => number;
   createSessionWritable?: (sessionId?: number) => Writable;
@@ -2364,11 +2364,8 @@ export class AudioSession extends EventEmitter {
     try {
       if (bridge.stopGracefully) {
         const timeoutMs = this.getGracefulStopTimeoutMs(reason);
-        if (timeoutMs === undefined) {
-          await bridge.stopGracefully(reason);
-        } else {
-          await bridge.stopGracefully(reason, timeoutMs);
-        }
+        const waitForExit = this.getGracefulStopWaitForExit(reason);
+        await this.stopBridgeWithOptions(bridge, reason, timeoutMs, waitForExit);
       } else {
         bridge.stop();
       }
@@ -2387,11 +2384,8 @@ export class AudioSession extends EventEmitter {
     try {
       if (bridge.stopGracefully) {
         const timeoutMs = this.getGracefulStopTimeoutMs(reason);
-        if (timeoutMs === undefined) {
-          await bridge.stopGracefully(reason);
-        } else {
-          await bridge.stopGracefully(reason, timeoutMs);
-        }
+        const waitForExit = this.getGracefulStopWaitForExit(reason);
+        await this.stopBridgeWithOptions(bridge, reason, timeoutMs, waitForExit);
       } else {
         bridge.stop();
       }
@@ -2420,6 +2414,38 @@ export class AudioSession extends EventEmitter {
     }
 
     return outputMode === 'asio' ? asioReplaceOutputGracefulStopTimeoutMs : undefined;
+  }
+
+  private getGracefulStopWaitForExit(reason: string): boolean {
+    if (reason !== 'replace-output') {
+      return false;
+    }
+
+    return this.currentBridgeOutputMode === 'asio' && normalizeOutputMode(this.currentOutputSettings?.outputMode) === 'asio';
+  }
+
+  private async stopBridgeWithOptions(
+    bridge: OutputBridgeLike,
+    reason: string,
+    timeoutMs: number | undefined,
+    waitForExit: boolean,
+  ): Promise<void> {
+    if (!bridge.stopGracefully) {
+      bridge.stop();
+      return;
+    }
+
+    if (timeoutMs === undefined && !waitForExit) {
+      await bridge.stopGracefully(reason);
+      return;
+    }
+
+    if (!waitForExit) {
+      await bridge.stopGracefully(reason, timeoutMs);
+      return;
+    }
+
+    await bridge.stopGracefully(reason, timeoutMs, waitForExit);
   }
 
   private handleError(error: Error): void {

@@ -233,6 +233,7 @@ type PendingGracefulStop = {
   resolve: () => void;
   proc: ChildProcessWithoutNullStreams;
   timeout: NodeJS.Timeout | null;
+  waitForExit: boolean;
 };
 
 const normalizePositiveInteger = (value: unknown): number | null => {
@@ -677,7 +678,7 @@ export class NativeOutputBridge extends EventEmitter {
     this.cleanupBridgeReferences();
   }
 
-  stopGracefully(reason = 'stop', timeoutMs?: number): Promise<void> {
+  stopGracefully(reason = 'stop', timeoutMs?: number, waitForExit = false): Promise<void> {
     if (this.pendingGracefulStop) {
       return this.pendingGracefulStop.promise;
     }
@@ -725,6 +726,7 @@ export class NativeOutputBridge extends EventEmitter {
       resolve: resolveStop,
       proc,
       timeout: null,
+      waitForExit,
     };
     this.pendingGracefulStop = pendingGracefulStop;
 
@@ -864,6 +866,9 @@ export class NativeOutputBridge extends EventEmitter {
       if (this.pendingGracefulStop && (!sourceProc || this.pendingGracefulStop.proc === sourceProc)) {
         this.shutdownAckReceived = true;
         this.logger('[NativeOutputBridge] shutdown-ack received');
+        if (this.pendingGracefulStop.waitForExit) {
+          return;
+        }
         this.resolvePendingGracefulStop();
       }
       return;

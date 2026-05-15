@@ -63,6 +63,11 @@ uint32_t asio_build_buffer_candidates_for_tests(
 
 const char* asio_error_name_for_tests(long error);
 
+uint32_t asio_build_sample_rate_pivot_candidates_for_tests(
+    double requestedSampleRate,
+    uint32_t* outCandidates,
+    uint32_t maxCandidates);
+
 void asio_write_sample_for_tests(
     void* buffer,
     long sampleType,

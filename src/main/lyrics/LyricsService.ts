@@ -584,6 +584,40 @@ export class LyricsService {
     return this.writeLyricsCache(query, await this.fillLyricsRomanization(lyrics));
   }
 
+  async markTrackInstrumental(trackId: string): Promise<TrackLyrics> {
+    const track = this.library.getTrack(trackId);
+    if (!track) {
+      throw new Error(`Unknown track ${trackId}`);
+    }
+
+    const query = toQuery(track);
+    const timestamp = nowIso();
+    const lyrics: TrackLyrics = {
+      id: randomUUID(),
+      trackId,
+      provider: 'manual',
+      providerLyricsId: `instrumental:${trackId}`,
+      kind: 'instrumental',
+      title: query.title,
+      artist: query.artist,
+      album: query.album ?? null,
+      durationSeconds: query.durationSeconds ?? null,
+      lines: [],
+      plainText: null,
+      syncedText: null,
+      offsetMs: 0,
+      score: 1,
+      cachedAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    const cached = this.writeLyricsCache(query, lyrics);
+    this.database
+      .prepare('UPDATE lyrics_candidates SET status = ?, updated_at = ? WHERE track_id = ?')
+      .run('rejected', timestamp, trackId);
+    return cached;
+  }
+
   async rejectLyricsCandidate(candidateId: string): Promise<void> {
     this.database
       .prepare('UPDATE lyrics_candidates SET status = ?, updated_at = ? WHERE id = ?')

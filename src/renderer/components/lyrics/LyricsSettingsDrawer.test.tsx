@@ -389,6 +389,7 @@ describe('LyricsSettingsDrawer', () => {
         getForTrack: vi.fn().mockResolvedValue(null),
         searchCandidates: vi.fn().mockResolvedValue([]),
         applyCandidate: vi.fn(),
+        markInstrumental: vi.fn(),
         rejectCandidate: vi.fn(),
         setOffset: vi.fn(),
         clearCache: vi.fn(),
@@ -399,7 +400,7 @@ describe('LyricsSettingsDrawer', () => {
 
     render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    const toggle = await screen.findByLabelText(/显示歌词校准条/);
+    const toggle = await screen.findByLabelText(/显示本歌曲延迟校准|显示歌词校准条/);
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsOffsetControlsEnabled: true }));
@@ -484,6 +485,7 @@ describe('LyricsSettingsDrawer', () => {
         getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
         searchCandidates,
         applyCandidate: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        markInstrumental: vi.fn(),
         clearCache: vi.fn(),
       },
     } as unknown as Window['echo'];

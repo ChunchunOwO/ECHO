@@ -648,7 +648,7 @@ describe("LyricsPage", () => {
     );
   });
 
-  it("keeps lyrics sync on the per-track lyric offset instead of the global setting", async () => {
+  it("applies global lyrics sync offset without changing lyric files", async () => {
     const track = makeTrack();
     mockEcho(track, 9.2, { lyricsGlobalSyncOffsetMs: 1000 });
     const { container, unmount } = render(
@@ -662,7 +662,7 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(
         container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
-      ).toContain("First line"),
+      ).toContain("Second line"),
     );
 
     unmount();
@@ -678,11 +678,11 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(
         secondRender.container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
-      ).toContain("Second line"),
+      ).toContain("First line"),
     );
   });
 
-  it("keeps MV progress following on raw audio time when a global lyrics offset exists", async () => {
+  it("keeps MV progress following on raw audio time when global lyrics offset shifts lyrics", async () => {
     vi.spyOn(performance, "now").mockReturnValue(0);
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     const track = makeTrack();
@@ -699,7 +699,7 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(
         container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
-      ).toContain("First line"),
+      ).toContain("Second line"),
     );
 
     const video = await waitFor(() => {
@@ -889,6 +889,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -918,6 +919,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -947,6 +949,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -976,6 +979,41 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("marks the current track as instrumental and stops showing match candidates", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([makeLyricsCandidate({ id: "candidate-1" })]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          kind: "instrumental",
+          lines: [],
+          plainText: null,
+          syncedText: null,
+        }),
+      ),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "标记为纯音乐" }));
+
+    await waitFor(() => expect(window.echo.lyrics.markInstrumental).toHaveBeenCalledWith("track-1"));
+    expect(await screen.findByText("纯音乐，请欣赏")).toBeTruthy();
+    expect(container.querySelector(".lyrics-candidate-list")).toBeNull();
+  });
+
   it("auto-applies a high scoring candidate when the initial lyrics lookup misses", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -991,6 +1029,7 @@ describe("LyricsPage", () => {
           plainText: "Auto applied line",
         }),
       ),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1020,6 +1059,7 @@ describe("LyricsPage", () => {
         makeLyricsCandidate({ id: "candidate-medium", score: 0.97, risk: "medium" }),
       ]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1061,6 +1101,7 @@ describe("LyricsPage", () => {
           plainText: "Rematched applied line",
         }),
       ),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn().mockResolvedValue(undefined),
@@ -1145,6 +1186,7 @@ describe("LyricsPage", () => {
         }),
         searchCandidates: vi.fn().mockResolvedValue([]),
         applyCandidate: vi.fn(),
+        markInstrumental: vi.fn(),
         rejectCandidate: vi.fn(),
         setOffset: vi.fn(),
         clearCache: vi.fn(),
@@ -1201,6 +1243,7 @@ describe("LyricsPage", () => {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1238,6 +1281,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1289,6 +1333,7 @@ describe("LyricsPage", () => {
         }),
       ]),
       applyCandidate: vi.fn().mockResolvedValue(qqLyrics),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1336,6 +1381,7 @@ describe("LyricsPage", () => {
       getForTrack,
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1473,6 +1519,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1579,6 +1626,7 @@ describe("LyricsPage", () => {
       ),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),
       clearCache: vi.fn(),
@@ -1611,6 +1659,7 @@ describe("LyricsPage", () => {
       getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics({ lines: [{ timeMs: 0, text: "Current lyrics" }] })),
       searchCandidates: vi.fn().mockResolvedValue([]),
       applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
       applyCustomLrc: vi.fn().mockResolvedValue(customLyrics),
       rejectCandidate: vi.fn(),
       setOffset: vi.fn(),

@@ -576,7 +576,7 @@ export class MvService {
       }))
         : candidates;
     const upsertedCandidates = this.database.transaction(() => normalizedCandidates.map((candidate) => this.upsertNetworkCandidate(track, candidate)))();
-    const selectedCandidate = settings.autoSearch ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
+    const selectedCandidate = settings.autoSearch && !this.getSelectedVideo(trackId) ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
 
     if (selectedCandidate) {
       this.selectVideo(trackId, selectedCandidate.id);
@@ -624,7 +624,7 @@ export class MvService {
         reasons: [...(candidate.reasons ?? []), `snapshot:${track.mediaType ?? 'streaming'}:${track.id}`],
       }));
     const upsertedCandidates = this.database.transaction(() => candidates.map((candidate) => this.upsertNetworkCandidate(track, candidate)))();
-    const selectedCandidate = settings.autoSearch ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
+    const selectedCandidate = settings.autoSearch && !this.getSelectedVideo(track.id) ? this.chooseAutoCandidate(upsertedCandidates, settings) : null;
 
     if (selectedCandidate) {
       this.selectVideo(track.id, selectedCandidate.id);

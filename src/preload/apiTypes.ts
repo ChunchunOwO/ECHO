@@ -280,6 +280,7 @@ export type EchoApi = {
     searchCandidates: (trackId: string, searchText?: string) => Promise<LyricsSearchCandidate[]>;
     applyCandidate: (trackId: string, candidateId: string) => Promise<TrackLyrics>;
     applyCustomLrc?: (trackId: string, lrcText: string, fileName?: string) => Promise<TrackLyrics>;
+    markInstrumental: (trackId: string) => Promise<TrackLyrics>;
     rejectCandidate: (candidateId: string) => Promise<void>;
     setOffset: (trackId: string, offsetMs: number) => Promise<TrackLyrics | null>;
     clearCache: (trackId: string) => Promise<void>;

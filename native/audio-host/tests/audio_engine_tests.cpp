@@ -435,6 +435,17 @@ std::vector<uint32_t> buildAsioCandidates(long minSize, long maxSize, long prefe
     return values;
 }
 
+std::vector<uint32_t> buildAsioRatePivots(double requested)
+{
+    std::vector<uint32_t> values(8, 0);
+    const auto count = asio_build_sample_rate_pivot_candidates_for_tests(
+        requested,
+        values.data(),
+        static_cast<uint32_t>(values.size()));
+    values.resize(count);
+    return values;
+}
+
 void testAsioBufferCandidateGeneration()
 {
     auto explicitValid = buildAsioCandidates(128, 4096, 512, 128, 1024);
@@ -453,6 +464,20 @@ void testAsioBufferCandidateGeneration()
     auto stepped = buildAsioCandidates(128, 4096, 512, 128, 1000);
     require(std::find(stepped.begin(), stepped.end(), 896) != stepped.end(), "ASIO stepped lower aligned candidate");
     require(std::find(stepped.begin(), stepped.end(), 1024) != stepped.end(), "ASIO stepped upper aligned candidate");
+}
+
+void testAsioSampleRatePivotCandidateGeneration()
+{
+    const auto downTo48 = buildAsioRatePivots(48000.0);
+    require(! downTo48.empty(), "ASIO 48k pivot candidates");
+    require(downTo48[0] == 44100, "ASIO 48k recovery must pivot away from 48k first");
+    require(std::find(downTo48.begin(), downTo48.end(), 48000u) == downTo48.end(), "ASIO 48k pivot must not include requested rate");
+    require(std::find(downTo48.begin(), downTo48.end(), 96000u) != downTo48.end(), "ASIO 48k pivot includes high-rate recovery");
+
+    const auto upTo192 = buildAsioRatePivots(192000.0);
+    require(! upTo192.empty(), "ASIO 192k pivot candidates");
+    require(upTo192[0] == 48000, "ASIO non-48k recovery should try stable 48k first");
+    require(std::find(upTo192.begin(), upTo192.end(), 192000u) == upTo192.end(), "ASIO 192k pivot must not include requested rate");
 }
 
 void testAsioSampleConversion()
@@ -601,6 +626,7 @@ int main()
         { "native render adapter", testNativeRenderAdapter },
 #if JUCE_WINDOWS
         { "ASIO buffer candidate generation", testAsioBufferCandidateGeneration },
+        { "ASIO sample-rate pivot candidate generation", testAsioSampleRatePivotCandidateGeneration },
         { "ASIO sample conversion", testAsioSampleConversion },
 #endif
         { "framed stdin shutdown", testFramedStdinShutdown },

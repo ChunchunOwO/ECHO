@@ -228,6 +228,50 @@ describe('MvService', () => {
     expect(service.getSelectedVideo(track.id)?.id).toBe(selected?.id);
   });
 
+  it('keeps a manually selected search candidate when auto search runs again', async () => {
+    const highScoreCandidate: MvMatchCandidate = {
+      id: 'bilibili:BV1auto',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song Official MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1auto',
+      providerUrl: 'https://www.bilibili.com/video/BV1auto',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.92,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const manualCandidate: MvMatchCandidate = {
+      ...highScoreCandidate,
+      id: 'bilibili:BV1manual',
+      title: 'Echo Song Live MV',
+      url: 'https://www.bilibili.com/video/BV1manual',
+      providerUrl: 'https://www.bilibili.com/video/BV1manual',
+      score: 0.74,
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [highScoreCandidate, manualCandidate]),
+      resolve: vi.fn(async () => []),
+    };
+    const { service, track } = createHarness([provider]);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
+
+    const candidates = await service.searchNetworkCandidates(track.id);
+    const selectedManually = service.selectVideo(track.id, candidates.find((candidate) => candidate.title === 'Echo Song Live MV')!.id);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: true };
+
+    await service.searchNetworkCandidates(track.id);
+
+    expect(service.getSelectedVideo(track.id)?.id).toBe(selectedManually.id);
+    expect(service.getSelectedVideo(track.id)?.title).toBe('Echo Song Live MV');
+  });
+
   it('does not automatically apply external-only network MV candidates', async () => {
     const candidate: MvMatchCandidate = {
       id: 'youtube:external-only',

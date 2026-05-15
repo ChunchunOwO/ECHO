@@ -904,21 +904,19 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
         const result = await library.getTracks({
           page: 1,
-          pageSize: 50,
+          pageSize: 500,
           search: source.search,
           sort: 'random',
           hideDuplicates: source.hideDuplicates,
           duplicateMode: 'strict',
         });
         const freshTrack = pickRandom(result.items.filter((track) => !excludedTrackIds.has(track.id))) ?? null;
-        const fallbackTrack = result.items.find((track) => activeItem?.track.id !== track.id) ?? result.items[0] ?? null;
-        const targetTrack = freshTrack ?? fallbackTrack;
 
-        if (!targetTrack) {
+        if (!freshTrack) {
           return null;
         }
 
-        return itemsRef.current.find((item) => item.track.id === targetTrack.id) ?? createQueueItem(targetTrack, source);
+        return itemsRef.current.find((item) => item.track.id === freshTrack.id) ?? createQueueItem(freshTrack, source);
       } catch {
         return null;
       }
@@ -1046,18 +1044,18 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
     if (isShuffleEnabledRef.current) {
       const source = activeItem?.source ?? null;
+      let candidates = getShuffleCandidates(current, activeItem ?? null, historyRef.current);
 
-      if (isLibraryRandomSource(source)) {
+      target = pickRandom(candidates);
+
+      if (!target && isLibraryRandomSource(source)) {
         target = await fetchLibraryShuffleTarget(source, activeItem ?? null);
       }
 
-      let candidates = target ? [] : getShuffleCandidates(current, activeItem ?? null, historyRef.current);
-
-      if (candidates.length === 0 && activeRepeatMode === 'all') {
+      if (!target && activeRepeatMode === 'all') {
         candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
+        target = pickRandom(candidates);
       }
-
-      target = target ?? pickRandom(candidates);
 
       if (!target && activeRepeatMode === 'all') {
         target = activeItem ?? current[0] ?? null;

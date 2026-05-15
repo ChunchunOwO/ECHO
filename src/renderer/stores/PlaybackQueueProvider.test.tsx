@@ -719,12 +719,151 @@ describe('PlaybackQueueProvider playback modes', () => {
     await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-2'));
     expect(getTracks).toHaveBeenCalledWith({
       page: 1,
-      pageSize: 50,
+      pageSize: 500,
       search: undefined,
       sort: 'random',
       hideDuplicates: undefined,
       duplicateMode: 'strict',
     });
+  });
+
+  it('uses queued songs before asking the library for more shuffle candidates', async () => {
+    const tracks = [makeTrack(1), makeTrack(2), makeTrack(3)];
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const getTracks = vi.fn().mockResolvedValue({
+      items: [tracks[2]],
+      page: 1,
+      pageSize: 500,
+      total: 3,
+      hasMore: false,
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile: vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+          Promise.resolve({
+            state: 'playing',
+            currentTrackId: request.trackId,
+            positionMs: 0,
+            durationMs: 120000,
+            filePath: request.filePath,
+          }),
+        ),
+      },
+      library: {
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const QueuedSongsShuffleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.toggleShuffle();
+        void queue.playTrack(tracks[0], {
+          replaceQueueWith: tracks,
+          source: { type: 'songs', label: 'Songs', sort: 'random' },
+        });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <button type="button" onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueuedSongsShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-2'));
+    expect(getTracks).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to a recently played song when library shuffle returns no fresh candidates', async () => {
+    const first = makeTrack(1);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+    const getTracks = vi.fn().mockResolvedValue({
+      items: [first],
+      page: 1,
+      pageSize: 500,
+      total: 1,
+      hasMore: false,
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      library: {
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const ExhaustedLibraryShuffleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.toggleShuffle();
+        void queue.playTrack(first, {
+          replaceQueueWith: [first],
+          source: { type: 'songs', label: 'Songs', sort: 'default' },
+        });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <button type="button" disabled={!queue.canGoNext} onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <ExhaustedLibraryShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(first.id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(getTracks).toHaveBeenCalledTimes(1));
+    expect(playLocalFile).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('current-track').textContent).toBe(first.id);
   });
 
   it('turns off repeat-all when shuffle is enabled', async () => {

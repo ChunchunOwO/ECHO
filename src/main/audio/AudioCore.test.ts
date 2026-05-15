@@ -2901,6 +2901,24 @@ describe('NativeOutputBridge graceful shutdown', () => {
     expect(child.kill).not.toHaveBeenCalled();
   });
 
+  it('stopGracefully can wait for process exit after shutdown-ack', async () => {
+    const { bridge, child, stdoutRef } = await createStartedBridge();
+    let resolved = false;
+    const stopped = bridge.stopGracefully('test', 100, true).then(() => {
+      resolved = true;
+    });
+    stdoutRef.write('{"event":"shutdown-ack"}\n');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    child.emit('exit', 0, null);
+    await stopped;
+    expect(resolved).toBe(true);
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it('stopGracefully resolves when the child process exits without ack', async () => {
     const { bridge, child } = await createStartedBridge();
     const stopped = bridge.stopGracefully('test', 100);
@@ -3071,7 +3089,7 @@ describe('AudioSession graceful output cleanup', () => {
     await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'asio', requestedOutputSampleRate: 96000 } });
     await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'asio', requestedOutputSampleRate: 192000 } });
 
-    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output');
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', undefined, true);
   });
 
   it('disposeGracefully clears watchdog and stops bridge', async () => {

@@ -442,6 +442,22 @@ describe('LyricsService', () => {
     await expect(service.setLyricsOffset('missing', 750)).resolves.toBeNull();
   });
 
+  it('marks a track as instrumental and returns the cached state without auto matching later', async () => {
+    const onlineProvider = {
+      getLyrics: vi.fn(async () => trackLyrics()),
+      searchCandidates: vi.fn(async () => []),
+    };
+    const { service } = createHarness({ onlineProvider });
+
+    const marked = await service.markTrackInstrumental('track-1');
+    const cached = await service.getLyricsForTrack('track-1');
+
+    expect(marked.kind).toBe('instrumental');
+    expect(marked.provider).toBe('manual');
+    expect(cached?.kind).toBe('instrumental');
+    expect(onlineProvider.getLyrics).not.toHaveBeenCalled();
+  });
+
   it('does not throw when network provider fails', async () => {
     const { service } = createHarness({
       onlineProvider: { getLyrics: vi.fn(async () => { throw new Error('offline'); }), searchCandidates: vi.fn(async () => []) },

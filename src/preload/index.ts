@@ -212,6 +212,7 @@ const echoApi: EchoApi = {
     searchCandidates: (trackId, searchText) => ipcRenderer.invoke(IpcChannels.LyricsSearchCandidates, trackId, searchText),
     applyCandidate: (trackId, candidateId) => ipcRenderer.invoke(IpcChannels.LyricsApplyCandidate, trackId, candidateId),
     applyCustomLrc: (trackId, lrcText, fileName) => ipcRenderer.invoke(IpcChannels.LyricsApplyCustomLrc, trackId, lrcText, fileName),
+    markInstrumental: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsMarkInstrumental, trackId),
     rejectCandidate: (candidateId) => ipcRenderer.invoke(IpcChannels.LyricsRejectCandidate, candidateId),
     setOffset: (trackId, offsetMs) => ipcRenderer.invoke(IpcChannels.LyricsSetOffset, trackId, offsetMs),
     clearCache: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsClearCache, trackId),

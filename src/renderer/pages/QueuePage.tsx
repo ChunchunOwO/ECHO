@@ -203,7 +203,7 @@ export const QueuePage = (): JSX.Element => {
         source: { type: 'manual', label: t('queue.randomSource') },
       });
       queue.setRepeatMode('off');
-      if (!queue.isShuffleEnabled) {
+      if (queue.isShuffleEnabled) {
         queue.toggleShuffle();
       }
     } catch (error) {

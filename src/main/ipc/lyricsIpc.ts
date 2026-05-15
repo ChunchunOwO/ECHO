@@ -39,6 +39,9 @@ export const registerLyricsIpc = (): void => {
       typeof fileName === 'string' ? fileName : null,
     ),
   );
+  ipcMain.handle(IpcChannels.LyricsMarkInstrumental, (_event, trackId: unknown) =>
+    getLyricsService().markTrackInstrumental(requireText(trackId, 'trackId')),
+  );
   ipcMain.handle(IpcChannels.LyricsRejectCandidate, (_event, candidateId: unknown) =>
     getLyricsService().rejectLyricsCandidate(requireText(candidateId, 'candidateId')),
   );

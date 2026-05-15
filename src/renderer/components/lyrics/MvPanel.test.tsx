@@ -812,6 +812,67 @@ describe('MvPanel', () => {
     await waitFor(() => expect(window.echo.mv.getSelected).toHaveBeenCalledTimes(initialCallCount + 1));
   });
 
+  it('keeps the current MV visible while a manual MV switch is loading', async () => {
+    const initialVideo = makeVideo({ id: 'video-1', mediaUrl: 'echo-video://mv/video-1' });
+    const nextVideo = makeVideo({ id: 'video-2', mediaUrl: 'echo-video://mv/video-2', title: 'Next MV' });
+    let resolveNextSelected: (value: TrackVideo | null) => void = () => undefined;
+    const getSelected = vi
+      .fn()
+      .mockResolvedValueOnce(initialVideo)
+      .mockReturnValueOnce(new Promise<TrackVideo | null>((resolve) => {
+        resolveNextSelected = resolve;
+      }));
+
+    window.echo = {
+      mv: {
+        getSelected,
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn(async (videoId: string) => ({
+          video: videoId === nextVideo.id ? nextVideo : initialVideo,
+          variants: [],
+        })),
+        setQuality: vi.fn(),
+        setOffset: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn(),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1'));
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId: 'track-1' } }));
+    });
+
+    await waitFor(() => expect(getSelected).toHaveBeenCalledTimes(2));
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1');
+    expect(screen.queryByText('Loading MV')).toBeNull();
+
+    await act(async () => {
+      resolveNextSelected(nextVideo);
+    });
+
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-2'));
+  });
+
   it('does not reload the selected MV for lyrics display setting changes', async () => {
     const { container } = renderPanel(makeVideo());
 

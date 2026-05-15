@@ -618,6 +618,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     null,
   );
   const [isLyricsOffsetSaving, setIsLyricsOffsetSaving] = useState(false);
+  const [isMarkingInstrumental, setIsMarkingInstrumental] = useState(false);
   const [isCustomLyricsApplying, setIsCustomLyricsApplying] = useState(false);
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
@@ -1435,6 +1436,30 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     [lyrics.offsetMs, trackId],
   );
 
+  const handleMarkInstrumental = useCallback(async (): Promise<void> => {
+    const lyricsApi = window.echo?.lyrics;
+    if (!lyricsApi?.markInstrumental || !trackId) {
+      setError("Desktop bridge unavailable");
+      return;
+    }
+
+    try {
+      setIsMarkingInstrumental(true);
+      const trackLyrics = await lyricsApi.markInstrumental(trackId);
+      lyricsRequestRef.current += 1;
+      setLyrics(trackLyricsToState(trackLyrics));
+      dispatchCurrentLyricsProviderChanged(trackLyrics);
+      setCandidates([]);
+      setActiveCandidateSource("all");
+      setLyricsStatus(null);
+      setError(null);
+    } catch (markError) {
+      setError(markError instanceof Error ? markError.message : String(markError));
+    } finally {
+      setIsMarkingInstrumental(false);
+    }
+  }, [trackId]);
+
   const lyricsOffsetControls = useMemo(() => {
     if (!trackId || lyrics.kind !== "synced" || !lyricsDisplaySettings.lyricsOffsetControlsEnabled) {
       return null;
@@ -1447,6 +1472,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
     return (
       <section className="lyrics-offset-controls" aria-label="Lyrics sync">
+        <span className="lyrics-offset-label">本歌曲延迟</span>
         <span className="lyrics-offset-value">{formatOffset(currentOffsetMs)}</span>
         <div className="lyrics-offset-buttons">
           {offsetSteps.map((step) => {
@@ -1475,6 +1501,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
             <span>0ms</span>
           </button>
         </div>
+        <p>只保存到当前这首歌；下次播放同一首歌会继续使用这个延迟。</p>
       </section>
     );
   }, [
@@ -1485,6 +1512,32 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     lyricsDisplaySettings.lyricsOffsetControlsEnabled,
     trackId,
   ]);
+
+  const lyricsMemoryControls = useMemo(() => {
+    if (!trackId || !lyricsDisplaySettings.lyricsEnabled) {
+      return null;
+    }
+
+    const isInstrumental = lyrics.kind === "instrumental";
+    return (
+      <section className="lyrics-memory-panel" aria-label="歌词记忆">
+        <div className="lyrics-match-actions">
+          <button
+            type="button"
+            disabled={isMarkingInstrumental || isInstrumental}
+            onClick={() => void handleMarkInstrumental()}
+          >
+            <Music2 size={14} />
+            <span>{isInstrumental ? "已标记为纯音乐" : "标记为纯音乐"}</span>
+          </button>
+        </div>
+        <p className="lyrics-match-status">
+          标记后会跟随这首歌记忆，并取消这首歌的自动歌词匹配；需要恢复时使用重新匹配歌词。
+          全局延迟影响所有歌曲，本歌曲延迟只保存当前歌曲。
+        </p>
+      </section>
+    );
+  }, [handleMarkInstrumental, isMarkingInstrumental, lyrics.kind, lyricsDisplaySettings.lyricsEnabled, trackId]);
 
   const lyricsControls = useMemo(() => {
     if (!trackId) {
@@ -1671,13 +1724,14 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         )}
 
         {lyricsControls}
+        {lyricsMemoryControls}
         {lyricsOffsetControls}
         {lyricsDisplaySettings.lyricsEnabled ? (
           <LyricsView
             durationMs={(audioStatus?.durationSeconds ?? currentTrack?.duration ?? 0) * 1000}
             hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden}
             lyrics={lyrics}
-            positionMs={lyricsPositionSeconds * 1000}
+            positionMs={lyricsPositionSeconds * 1000 + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs}
             showRomanization={lyricsDisplaySettings.lyricsRomanizationEnabled}
             showTranslation={lyricsDisplaySettings.lyricsTranslationEnabled}
             onSeek={(timeMs) => void handleLyricSeek(timeMs)}

@@ -166,6 +166,7 @@ export const IpcChannels = {
   LyricsSearchCandidates: 'lyrics:search-candidates',
   LyricsApplyCandidate: 'lyrics:apply-candidate',
   LyricsApplyCustomLrc: 'lyrics:apply-custom-lrc',
+  LyricsMarkInstrumental: 'lyrics:mark-instrumental',
   LyricsRejectCandidate: 'lyrics:reject-candidate',
   LyricsSetOffset: 'lyrics:set-offset',
   LyricsClearCache: 'lyrics:clear-cache',

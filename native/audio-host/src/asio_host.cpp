@@ -382,6 +382,148 @@ uint32_t asio_sample_rate_to_uint32(ASIOSampleRate sampleRate)
     return static_cast<uint32_t>(sampleRate + 0.5);
 }
 
+bool asio_sample_rate_matches(ASIOSampleRate left, ASIOSampleRate right)
+{
+    return fabs(left - right) < 0.5;
+}
+
+ASIOSampleRate read_asio_sample_rate_or(ASIOSampleRate fallback)
+{
+    ASIOSampleRate actualRate = fallback;
+    if (ASIOGetSampleRate(&actualRate) != ASE_OK || actualRate <= 0.0)
+        return fallback;
+
+    return actualRate;
+}
+
+ASIOSampleRate wait_for_asio_sample_rate(ASIOSampleRate requestedRate, ASIOSampleRate fallback, int attempts, int sleepMs)
+{
+    ASIOSampleRate observedRate = read_asio_sample_rate_or(fallback);
+    for (int attempt = 0; attempt < attempts && ! asio_sample_rate_matches(observedRate, requestedRate); ++attempt)
+    {
+        Sleep(static_cast<DWORD>(std::max(1, sleepMs)));
+        observedRate = read_asio_sample_rate_or(observedRate);
+    }
+
+    return observedRate;
+}
+
+bool try_asio_sample_rate_pivot(ASIOSampleRate pivotRate, ASIOSampleRate requestedRate, ASIOSampleRate* actualRate)
+{
+    if (asio_sample_rate_matches(pivotRate, requestedRate) || ASIOCanSampleRate(pivotRate) != ASE_OK)
+        return false;
+
+    fprintf(stderr,
+        "[echo-audio-host] ASIO sample-rate pivot attempt: pivot=%u requested=%u\n",
+        asio_sample_rate_to_uint32(pivotRate),
+        asio_sample_rate_to_uint32(requestedRate));
+
+    ASIOError result = ASIOSetSampleRate(pivotRate);
+    if (result != ASE_OK)
+    {
+        fprintf(stderr,
+            "[echo-audio-host] ASIO sample-rate pivot failed: pivot=%u result=%s(%ld)\n",
+            asio_sample_rate_to_uint32(pivotRate),
+            asio_error_name(result),
+            static_cast<long>(result));
+        return false;
+    }
+
+    const ASIOSampleRate pivotObservedRate = wait_for_asio_sample_rate(pivotRate, pivotRate, 20, 20);
+    fprintf(stderr,
+        "[echo-audio-host] ASIO sample-rate pivot observed: pivot=%u actual=%u\n",
+        asio_sample_rate_to_uint32(pivotRate),
+        asio_sample_rate_to_uint32(pivotObservedRate));
+
+    Sleep(50);
+    result = ASIOSetSampleRate(requestedRate);
+    if (result != ASE_OK)
+    {
+        if (actualRate != nullptr)
+            *actualRate = read_asio_sample_rate_or(pivotObservedRate);
+        fprintf(stderr,
+            "[echo-audio-host] ASIO sample-rate pivot restore failed: requested=%u result=%s(%ld)\n",
+            asio_sample_rate_to_uint32(requestedRate),
+            asio_error_name(result),
+            static_cast<long>(result));
+        return false;
+    }
+
+    const ASIOSampleRate requestedObservedRate = wait_for_asio_sample_rate(requestedRate, pivotObservedRate, 35, 20);
+    if (actualRate != nullptr)
+        *actualRate = requestedObservedRate;
+
+    fprintf(stderr,
+        "[echo-audio-host] ASIO sample-rate pivot completed: requested=%u actual=%u\n",
+        asio_sample_rate_to_uint32(requestedRate),
+        asio_sample_rate_to_uint32(requestedObservedRate));
+
+    return asio_sample_rate_matches(requestedObservedRate, requestedRate);
+}
+
+std::vector<ASIOSampleRate> build_asio_sample_rate_pivot_candidates(ASIOSampleRate requestedRate)
+{
+    const ASIOSampleRate knownRates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 };
+    std::vector<ASIOSampleRate> candidates;
+
+    const auto addCandidate = [&] (ASIOSampleRate rate)
+    {
+        if (asio_sample_rate_matches(rate, requestedRate))
+            return;
+
+        const auto duplicate = std::find_if(candidates.begin(), candidates.end(), [&] (ASIOSampleRate candidate)
+        {
+            return asio_sample_rate_matches(candidate, rate);
+        });
+
+        if (duplicate == candidates.end())
+            candidates.push_back(rate);
+    };
+
+    if (! asio_sample_rate_matches(requestedRate, 48000.0))
+        addCandidate(48000.0);
+
+    for (ASIOSampleRate rate : knownRates)
+        addCandidate(rate);
+
+    return candidates;
+}
+
+ASIOError set_asio_sample_rate_and_wait(ASIOSampleRate requestedRate, ASIOSampleRate* actualRate)
+{
+    ASIOError result = ASIOCanSampleRate(requestedRate);
+    if (result != ASE_OK)
+    {
+        if (actualRate != nullptr)
+            *actualRate = read_asio_sample_rate_or(requestedRate);
+        return result;
+    }
+
+    result = ASIOSetSampleRate(requestedRate);
+    if (result != ASE_OK)
+    {
+        if (actualRate != nullptr)
+            *actualRate = read_asio_sample_rate_or(requestedRate);
+        return result;
+    }
+
+    ASIOSampleRate observedRate = wait_for_asio_sample_rate(requestedRate, requestedRate, 25, 20);
+
+    if (! asio_sample_rate_matches(observedRate, requestedRate))
+    {
+        for (ASIOSampleRate pivotRate : build_asio_sample_rate_pivot_candidates(requestedRate))
+        {
+            if (try_asio_sample_rate_pivot(pivotRate, requestedRate, &observedRate))
+                break;
+        }
+    }
+
+    if (actualRate != nullptr)
+        *actualRate = observedRate;
+
+    return ASE_OK;
+}
+
 LRESULT CALLBACK asio_host_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -836,6 +978,104 @@ bool create_buffers_with_candidates(
     return false;
 }
 
+bool refresh_asio_buffer_size(asio_runtime* runtime, const char* label, char* error, size_t errorLen)
+{
+    long minBufferSize = 0;
+    long maxBufferSize = 0;
+    long preferredBufferSize = 0;
+    long granularity = 0;
+    const ASIOError result = ASIOGetBufferSize(
+        &minBufferSize,
+        &maxBufferSize,
+        &preferredBufferSize,
+        &granularity);
+
+    if (result != ASE_OK || preferredBufferSize <= 0)
+    {
+        char message[256] {};
+        snprintf(
+            message,
+            sizeof(message),
+            "ASIOGetBufferSize failed %s error=%s(%ld)",
+            label != nullptr ? label : "",
+            asio_error_name(result),
+            static_cast<long>(result));
+        set_error(error, errorLen, message);
+        return false;
+    }
+
+    runtime->minBufferSize = minBufferSize;
+    runtime->maxBufferSize = maxBufferSize;
+    runtime->preferredBufferSize = preferredBufferSize;
+    runtime->granularity = granularity;
+
+    fprintf(stderr,
+        "[echo-audio-host] ASIOGetBufferSize %s: min=%ld max=%ld preferred=%ld granularity=%ld actual=%u\n",
+        label != nullptr ? label : "refreshed",
+        runtime->minBufferSize,
+        runtime->maxBufferSize,
+        runtime->preferredBufferSize,
+        runtime->granularity,
+        asio_sample_rate_to_uint32(runtime->sampleRate));
+
+    return true;
+}
+
+bool retry_create_buffers_after_sample_rate_recovery(
+    asio_runtime* runtime,
+    ASIOSampleRate requestedRate,
+    uint32_t requestedBufferFrames,
+    char* error,
+    size_t errorLen)
+{
+    if (refresh_asio_buffer_size(runtime, "after-create-failure", error, errorLen))
+    {
+        const auto refreshedCandidates = build_buffer_candidates(
+            runtime->minBufferSize,
+            runtime->maxBufferSize,
+            runtime->preferredBufferSize,
+            runtime->granularity,
+            requestedBufferFrames);
+        if (create_buffers_with_candidates(runtime, refreshedCandidates, error, errorLen))
+            return true;
+
+        fprintf(stderr,
+            "[echo-audio-host] ASIOCreateBuffers retry after buffer refresh failed: %s\n",
+            error != nullptr ? error : "");
+    }
+
+    for (ASIOSampleRate pivotRate : build_asio_sample_rate_pivot_candidates(requestedRate))
+    {
+        ASIOSampleRate recoveredRate = runtime->sampleRate;
+        if (! try_asio_sample_rate_pivot(pivotRate, requestedRate, &recoveredRate))
+        {
+            runtime->sampleRate = recoveredRate;
+            continue;
+        }
+
+        runtime->sampleRate = recoveredRate;
+        if (! refresh_asio_buffer_size(runtime, "after-rate-pivot", error, errorLen))
+            continue;
+
+        const auto retryCandidates = build_buffer_candidates(
+            runtime->minBufferSize,
+            runtime->maxBufferSize,
+            runtime->preferredBufferSize,
+            runtime->granularity,
+            requestedBufferFrames);
+        if (create_buffers_with_candidates(runtime, retryCandidates, error, errorLen))
+            return true;
+
+        fprintf(stderr,
+            "[echo-audio-host] ASIOCreateBuffers retry after pivot failed: pivot=%u requested=%u error=%s\n",
+            asio_sample_rate_to_uint32(pivotRate),
+            asio_sample_rate_to_uint32(requestedRate),
+            error != nullptr ? error : "");
+    }
+
+    return false;
+}
+
 std::string output_format_summary(const asio_runtime* runtime)
 {
     if (runtime == nullptr || runtime->outputChannelCount <= 0)
@@ -989,34 +1229,28 @@ int asio_start(
     fprintf(stderr, "[echo-audio-host] ASIOGetChannels completed: inputs=%ld outputs=%ld\n", availableInputChannels, availableOutputChannels);
 
     fprintf(stderr, "[echo-audio-host] ASIOGetBufferSize starting: %s\n", selectedUtf8);
-    result = ASIOGetBufferSize(
-        &runtime->minBufferSize,
-        &runtime->maxBufferSize,
-        &runtime->preferredBufferSize,
-        &runtime->granularity);
-    if (result != ASE_OK || runtime->preferredBufferSize <= 0)
+    if (! refresh_asio_buffer_size(runtime, "initial", error, errorLen))
     {
-        set_error(error, errorLen, "ASIOGetBufferSize failed");
         asio_stop(runtime);
         return -1;
     }
-    fprintf(stderr,
-        "[echo-audio-host] ASIOGetBufferSize completed: min=%ld max=%ld preferred=%ld granularity=%ld\n",
-        runtime->minBufferSize,
-        runtime->maxBufferSize,
-        runtime->preferredBufferSize,
-        runtime->granularity);
 
     ASIOSampleRate requestedRate = asio_sample_rate_from_uint32(requestedSampleRate);
     ASIOSampleRate actualRate = requestedRate;
     fprintf(stderr, "[echo-audio-host] ASIO sample-rate negotiation starting: requested=%u\n", requestedSampleRate);
-    if (ASIOCanSampleRate(requestedRate) == ASE_OK)
-        ASIOSetSampleRate(requestedRate);
-
-    if (ASIOGetSampleRate(&actualRate) != ASE_OK || actualRate <= 0.0)
-        actualRate = requestedRate;
+    const ASIOError sampleRateResult = set_asio_sample_rate_and_wait(requestedRate, &actualRate);
     runtime->sampleRate = actualRate;
-    fprintf(stderr, "[echo-audio-host] ASIO sample-rate negotiation completed: actual=%u\n", asio_sample_rate_to_uint32(actualRate));
+    fprintf(stderr,
+        "[echo-audio-host] ASIO sample-rate negotiation completed: requested=%u actual=%u result=%s(%ld)\n",
+        requestedSampleRate,
+        asio_sample_rate_to_uint32(actualRate),
+        asio_error_name(sampleRateResult),
+        static_cast<long>(sampleRateResult));
+    if (! refresh_asio_buffer_size(runtime, "after-rate-negotiation", error, errorLen))
+    {
+        asio_stop(runtime);
+        return -1;
+    }
 
     runtime->inputChannelCount = std::min<long>(std::max<long>(0, availableInputChannels), maxAsioInputChannels);
     runtime->outputChannelCount = std::min<long>(
@@ -1047,58 +1281,7 @@ int asio_start(
             "[echo-audio-host] ASIOCreateBuffers initial attempt failed: %s\n",
             firstCreateBuffersError.c_str());
 
-        bool recoveredAfterRateReset = false;
-        constexpr ASIOSampleRate stableResetRate = 48000.0;
-        if (requestedRate != stableResetRate && ASIOCanSampleRate(stableResetRate) == ASE_OK)
-        {
-            fprintf(stderr,
-                "[echo-audio-host] ASIOCreateBuffers retry: resetting sample rate via 48000 before requested=%u\n",
-                requestedSampleRate);
-            ASIOSetSampleRate(stableResetRate);
-            Sleep(100);
-            ASIOSetSampleRate(requestedRate);
-            Sleep(100);
-
-            ASIOSampleRate retryActualRate = requestedRate;
-            if (ASIOGetSampleRate(&retryActualRate) == ASE_OK && retryActualRate > 0.0)
-                runtime->sampleRate = retryActualRate;
-
-            long retryMinBufferSize = 0;
-            long retryMaxBufferSize = 0;
-            long retryPreferredBufferSize = 0;
-            long retryGranularity = 0;
-            if (
-                ASIOGetBufferSize(
-                    &retryMinBufferSize,
-                    &retryMaxBufferSize,
-                    &retryPreferredBufferSize,
-                    &retryGranularity) == ASE_OK &&
-                retryPreferredBufferSize > 0)
-            {
-                runtime->minBufferSize = retryMinBufferSize;
-                runtime->maxBufferSize = retryMaxBufferSize;
-                runtime->preferredBufferSize = retryPreferredBufferSize;
-                runtime->granularity = retryGranularity;
-                fprintf(stderr,
-                    "[echo-audio-host] ASIOCreateBuffers retry buffer size: min=%ld max=%ld preferred=%ld granularity=%ld actual=%u\n",
-                    runtime->minBufferSize,
-                    runtime->maxBufferSize,
-                    runtime->preferredBufferSize,
-                    runtime->granularity,
-                    asio_sample_rate_to_uint32(runtime->sampleRate));
-
-                const auto retryCandidates = build_buffer_candidates(
-                    runtime->minBufferSize,
-                    runtime->maxBufferSize,
-                    runtime->preferredBufferSize,
-                    runtime->granularity,
-                    requestedBufferFrames);
-                if (create_buffers_with_candidates(runtime, retryCandidates, error, errorLen))
-                    recoveredAfterRateReset = true;
-            }
-        }
-
-        if (! recoveredAfterRateReset)
+        if (! retry_create_buffers_after_sample_rate_recovery(runtime, requestedRate, requestedBufferFrames, error, errorLen))
         {
             activeRuntime = nullptr;
             asio_stop(runtime);
@@ -1213,6 +1396,23 @@ uint32_t asio_build_buffer_candidates_for_tests(
 const char* asio_error_name_for_tests(long error)
 {
     return asio_error_name(static_cast<ASIOError>(error));
+}
+
+uint32_t asio_build_sample_rate_pivot_candidates_for_tests(
+    double requestedSampleRate,
+    uint32_t* outCandidates,
+    uint32_t maxCandidates)
+{
+    const auto candidates = build_asio_sample_rate_pivot_candidates(requestedSampleRate);
+    const auto count = static_cast<uint32_t>(std::min<size_t>(candidates.size(), maxCandidates));
+
+    if (outCandidates != nullptr)
+    {
+        for (uint32_t i = 0; i < count; ++i)
+            outCandidates[i] = asio_sample_rate_to_uint32(candidates[i]);
+    }
+
+    return count;
 }
 
 void asio_write_sample_for_tests(void* buffer, long sampleType, long frameIndex, float sample)

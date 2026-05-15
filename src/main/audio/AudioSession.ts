@@ -105,6 +105,7 @@ const nativeUnderrunCallbackThreshold = 3;
 const nativeUnderrunFramesThresholdMs = 100;
 const nativeTelemetryStatusIntervalMs = 1000;
 const levelMeterStatusIntervalMs = 1000;
+const asioReplaceOutputGracefulStopTimeoutMs = 1_000;
 
 const sharedStabilityProfiles: Record<
   SharedStabilityTier,
@@ -535,6 +536,7 @@ export class AudioSession extends EventEmitter {
   private currentOutputDeviceType: string | null = null;
   private currentOutputDeviceName: string | null = null;
   private currentReadyResult: NativeBridgeReadyResult | null = null;
+  private currentBridgeOutputMode: AudioOutputMode | null = null;
   private currentResidentOutputSampleRate: number | null = null;
   private bridge: OutputBridgeLike | null = null;
   private decoderRun: DecoderRun | null = null;
@@ -1553,15 +1555,14 @@ export class AudioSession extends EventEmitter {
     }
 
     this.currentReadyResult = ready;
-    if (this.currentOutputSettings.outputMode === 'asio' && !normalizePositiveInteger(this.currentOutputSettings.requestedOutputSampleRate)) {
-      this.currentResidentOutputSampleRate = getReadyOutputSampleRate(ready);
-    } else if (!isResidentOutputMode(this.currentOutputSettings.outputMode)) {
+    if (!isResidentOutputMode(this.currentOutputSettings.outputMode)) {
       this.currentResidentOutputSampleRate = null;
     }
     const readyDevice = ready.device;
     this.currentOutputBackend = typeof readyDevice.backend === 'string' ? readyDevice.backend : null;
     this.currentOutputDeviceType = typeof readyDevice.deviceType === 'string' ? readyDevice.deviceType : null;
     this.currentOutputDeviceName = typeof readyDevice.deviceName === 'string' ? readyDevice.deviceName : null;
+    this.currentBridgeOutputMode = normalizeOutputMode(this.currentOutputSettings.outputMode);
     const readySharedRate =
       normalizePositiveInteger(readyDevice.sharedDeviceSampleRate) ??
       normalizePositiveInteger(readyDevice.sharedSampleRate);
@@ -1793,12 +1794,7 @@ export class AudioSession extends EventEmitter {
         outputMode === 'shared' && candidate === null && hasExplicitDeviceSelection(this.currentOutputSettings);
       const planDevice = outputMode === 'shared' && candidate === null ? this.resolveDefaultSharedDevice() : candidate;
       this.currentDevice = planDevice;
-      const residentOutputSampleRate =
-        outputMode === 'asio' && !normalizePositiveInteger(this.currentOutputSettings.requestedOutputSampleRate)
-          ? this.currentReadyResult
-            ? getReadyOutputSampleRate(this.currentReadyResult)
-            : null
-          : null;
+      const residentOutputSampleRate = null;
       this.currentResidentOutputSampleRate = residentOutputSampleRate;
       this.currentPlan = this.createSampleRatePlan(
         probe,
@@ -2350,6 +2346,7 @@ export class AudioSession extends EventEmitter {
       }
       this.bridge = null;
       this.currentReadyResult = null;
+      this.currentBridgeOutputMode = null;
       this.currentResidentOutputSampleRate = null;
     }
   }
@@ -2366,7 +2363,12 @@ export class AudioSession extends EventEmitter {
 
     try {
       if (bridge.stopGracefully) {
-        await bridge.stopGracefully(reason);
+        const timeoutMs = this.getGracefulStopTimeoutMs(reason);
+        if (timeoutMs === undefined) {
+          await bridge.stopGracefully(reason);
+        } else {
+          await bridge.stopGracefully(reason, timeoutMs);
+        }
       } else {
         bridge.stop();
       }
@@ -2384,7 +2386,12 @@ export class AudioSession extends EventEmitter {
   private async stopBridgeGracefully(bridge: OutputBridgeLike, reason: string): Promise<void> {
     try {
       if (bridge.stopGracefully) {
-        await bridge.stopGracefully(reason);
+        const timeoutMs = this.getGracefulStopTimeoutMs(reason);
+        if (timeoutMs === undefined) {
+          await bridge.stopGracefully(reason);
+        } else {
+          await bridge.stopGracefully(reason, timeoutMs);
+        }
       } else {
         bridge.stop();
       }
@@ -2394,9 +2401,25 @@ export class AudioSession extends EventEmitter {
       if (this.bridge === bridge) {
         this.bridge = null;
         this.currentReadyResult = null;
+        this.currentBridgeOutputMode = null;
         this.currentResidentOutputSampleRate = null;
       }
     }
+  }
+
+  private getGracefulStopTimeoutMs(reason: string): number | undefined {
+    const outputMode =
+      reason === 'replace-output'
+        ? this.currentBridgeOutputMode
+        : reason === 'output-start-failed'
+          ? this.currentPlan?.outputMode ?? normalizeOutputMode(this.currentOutputSettings?.outputMode)
+          : null;
+    const nextOutputMode = normalizeOutputMode(this.currentOutputSettings?.outputMode);
+    if (reason === 'replace-output' && outputMode === 'asio' && nextOutputMode === 'asio') {
+      return undefined;
+    }
+
+    return outputMode === 'asio' ? asioReplaceOutputGracefulStopTimeoutMs : undefined;
   }
 
   private handleError(error: Error): void {

@@ -19,6 +19,7 @@ import type {
 } from './audioTypes';
 
 const noopLogger = (): void => undefined;
+const asioMatrixSampleRates = [44100, 48000, 88200, 96000, 176400, 192000] as const;
 
 const probe = (filePath: string, fileSampleRate: number): AudioProbeResult => ({
   filePath,
@@ -562,6 +563,79 @@ describe('Audio Core sample-rate regression guard', () => {
     });
   });
 
+  it('keeps WASAPI exclusive playback stable across the full sample-rate switch matrix', async () => {
+    for (const fromRate of asioMatrixSampleRates) {
+      for (const toRate of asioMatrixSampleRates) {
+        if (fromRate === toRate) {
+          continue;
+        }
+
+        const fromPath = `exclusive-${fromRate}-from.flac`;
+        const toPath = `exclusive-${fromRate}-to-${toRate}.flac`;
+        const { bridges, decoder, session } = createLongRunningSessionHarness([
+          probe(fromPath, fromRate),
+          probe(toPath, toRate),
+        ]);
+
+        await session.playLocalFile({ filePath: fromPath, output: { outputMode: 'exclusive' } });
+        const status = await session.playLocalFile({ filePath: toPath, output: { outputMode: 'exclusive' } });
+
+        expect(status.state, `exclusive ${fromRate}->${toRate} state`).toBe('playing');
+        expect(status.outputMode, `exclusive ${fromRate}->${toRate} mode`).toBe('exclusive');
+        expect(status.requestedOutputSampleRate, `exclusive ${fromRate}->${toRate} requested`).toBe(toRate);
+        expect(status.actualDeviceSampleRate, `exclusive ${fromRate}->${toRate} actual`).toBe(toRate);
+        expect(status.decoderOutputSampleRate, `exclusive ${fromRate}->${toRate} decoder`).toBe(toRate);
+        expect(status.resampling, `exclusive ${fromRate}->${toRate} resampling`).toBe(false);
+        expect(status.sampleRateMismatch, `exclusive ${fromRate}->${toRate} mismatch`).toBe(false);
+        expect(bridges, `exclusive ${fromRate}->${toRate} bridges`).toHaveLength(2);
+        expect(bridges[0].stop, `exclusive ${fromRate}->${toRate} old bridge stopped`).toHaveBeenCalledTimes(1);
+        expect(bridges[1].startOptions, `exclusive ${fromRate}->${toRate} start options`).toMatchObject({
+          exclusive: true,
+          requestedOutputSampleRate: toRate,
+        });
+        expect(decoder.decodeRequests.at(-1), `exclusive ${fromRate}->${toRate} decode request`).toMatchObject({
+          filePath: toPath,
+          decoderOutputSampleRate: toRate,
+        });
+      }
+    }
+  });
+
+  it('falls back to stable shared playback when WASAPI exclusive refuses lower-rate switches after 192 kHz', async () => {
+    for (const targetRate of asioMatrixSampleRates.filter((rate) => rate !== 192000)) {
+      const firstPath = `exclusive-192000-to-${targetRate}-first.flac`;
+      const targetPath = `exclusive-192000-to-${targetRate}-target.flac`;
+      const { bridges, decoder, session } = createLongRunningSessionHarness(
+        [probe(firstPath, 192000), probe(targetPath, targetRate)],
+        [192000, 192000, 48000],
+      );
+
+      await session.playLocalFile({ filePath: firstPath, output: { outputMode: 'exclusive' } });
+      const status = await session.playLocalFile({ filePath: targetPath, output: { outputMode: 'exclusive' } });
+
+      expect(status.state, `exclusive refused 192000->${targetRate} state`).toBe('playing');
+      expect(status.outputMode, `exclusive refused 192000->${targetRate} mode`).toBe('shared');
+      expect(status.requestedOutputSampleRate, `exclusive refused 192000->${targetRate} requested`).toBe(48000);
+      expect(status.actualDeviceSampleRate, `exclusive refused 192000->${targetRate} actual`).toBe(48000);
+      expect(status.decoderOutputSampleRate, `exclusive refused 192000->${targetRate} decoder`).toBe(48000);
+      expect(status.sampleRateMismatch, `exclusive refused 192000->${targetRate} mismatch`).toBe(false);
+      expect(status.warnings, `exclusive refused 192000->${targetRate} warnings`).toContain('exclusive_output_fell_back_to_shared');
+      expect(bridges, `exclusive refused 192000->${targetRate} bridges`).toHaveLength(3);
+      expect(bridges[1].startOptions, `exclusive refused 192000->${targetRate} exclusive start`).toMatchObject({
+        exclusive: true,
+        requestedOutputSampleRate: targetRate,
+      });
+      expect(bridges[2].startOptions, `exclusive refused 192000->${targetRate} shared fallback start`).toMatchObject({
+        exclusive: false,
+        requestedOutputSampleRate: 48000,
+      });
+      expect(decoder.decodeRequests.at(-1), `exclusive refused 192000->${targetRate} decode request`).toMatchObject({
+        filePath: targetPath,
+        decoderOutputSampleRate: 48000,
+      });
+    }
+  });
+
   it('reuses the native bridge for consecutive tracks with the same output plan', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('first.flac', 44100), probe('second.flac', 44100)]);
 
@@ -591,6 +665,51 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.requestedOutputSampleRate).toBe(48000);
     expect(status.decoderOutputSampleRate).toBe(48000);
     expect(decoder.decodeRequests.map((request) => request.decoderOutputSampleRate)).toEqual([48000, 48000, 48000]);
+  });
+
+  it('keeps WASAPI shared playback stable across the full sample-rate switch matrix', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+
+    for (const fromRate of asioMatrixSampleRates) {
+      for (const toRate of asioMatrixSampleRates) {
+        if (fromRate === toRate) {
+          continue;
+        }
+
+        const fromPath = `shared-${fromRate}-from.flac`;
+        const toPath = `shared-${fromRate}-to-${toRate}.flac`;
+        const { bridges, decoder, session } = createLongRunningSessionHarness(
+          [probe(fromPath, fromRate), probe(toPath, toRate)],
+          [48000],
+          [sharedDevice],
+        );
+
+        await session.playLocalFile({ filePath: fromPath, output: { outputMode: 'shared' } });
+        const status = await session.playLocalFile({ filePath: toPath, output: { outputMode: 'shared' } });
+
+        expect(status.state, `shared ${fromRate}->${toRate} state`).toBe('playing');
+        expect(status.outputMode, `shared ${fromRate}->${toRate} mode`).toBe('shared');
+        expect(status.requestedOutputSampleRate, `shared ${fromRate}->${toRate} requested`).toBe(48000);
+        expect(status.actualDeviceSampleRate, `shared ${fromRate}->${toRate} actual`).toBe(48000);
+        expect(status.decoderOutputSampleRate, `shared ${fromRate}->${toRate} decoder`).toBe(48000);
+        expect(status.sampleRateMismatch, `shared ${fromRate}->${toRate} mismatch`).toBe(false);
+        expect(status.resampling, `shared ${fromRate}->${toRate} resampling`).toBe(toRate !== 48000);
+        expect(bridges, `shared ${fromRate}->${toRate} bridges`).toHaveLength(1);
+        expect(bridges[0].stop, `shared ${fromRate}->${toRate} bridge stop`).not.toHaveBeenCalled();
+        expect(decoder.decodeRequests.at(-1), `shared ${fromRate}->${toRate} decode request`).toMatchObject({
+          filePath: toPath,
+          decoderOutputSampleRate: 48000,
+        });
+      }
+    }
   });
 
   it('logs shared transition diagnostics with host reuse state', async () => {
@@ -1231,7 +1350,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].sessionBegins).toBe(2);
   });
 
-  it('reuses ASIO output across sample-rate changes and decodes to the resident device rate', async () => {
+  it('reopens ASIO output across sample-rate changes instead of resampling to the resident rate', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('first-asio.flac', 48000), probe('second-asio.flac', 44100)]);
 
     await session.playLocalFile({
@@ -1243,17 +1362,123 @@ describe('Audio Core sample-rate regression guard', () => {
       output: { outputMode: 'asio', bufferSizeFrames: 128 },
     });
 
-    expect(bridges).toHaveLength(1);
-    expect(bridges[0].stop).not.toHaveBeenCalled();
-    expect(bridges[0].sessionBegins).toBe(2);
-    expect(status.requestedOutputSampleRate).toBe(48000);
-    expect(status.decoderOutputSampleRate).toBe(48000);
-    expect(status.resampling).toBe(true);
-    expect(status.warnings).toContain('resident_output_resampling_to_device_rate');
+    expect(bridges).toHaveLength(2);
+    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+    expect(bridges[1].startOptions).toMatchObject({
+      asio: true,
+      requestedOutputSampleRate: 44100,
+    });
+    expect(status.requestedOutputSampleRate).toBe(44100);
+    expect(status.decoderOutputSampleRate).toBe(44100);
+    expect(status.resampling).toBe(false);
+    expect(status.warnings).not.toContain('resident_output_resampling_to_device_rate');
     expect(decoder.decodeRequests.at(-1)).toMatchObject({
       filePath: 'second-asio.flac',
-      decoderOutputSampleRate: 48000,
+      decoderOutputSampleRate: 44100,
     });
+  });
+
+  it('plays every ASIO sample-rate switch without inheriting the previous rate', async () => {
+    for (const fromRate of asioMatrixSampleRates) {
+      for (const toRate of asioMatrixSampleRates) {
+        if (fromRate === toRate) {
+          continue;
+        }
+
+        const fromPath = `asio-${fromRate}-from.flac`;
+        const toPath = `asio-${fromRate}-to-${toRate}.flac`;
+        const { bridges, decoder, session } = createLongRunningSessionHarness([
+          probe(fromPath, fromRate),
+          probe(toPath, toRate),
+        ]);
+
+        await session.playLocalFile({
+          filePath: fromPath,
+          output: { outputMode: 'asio' },
+        });
+        const status = await session.playLocalFile({
+          filePath: toPath,
+          output: { outputMode: 'asio' },
+        });
+
+        expect(status.state, `${fromRate}->${toRate} state`).toBe('playing');
+        expect(status.requestedOutputSampleRate, `${fromRate}->${toRate} requested`).toBe(toRate);
+        expect(status.actualDeviceSampleRate, `${fromRate}->${toRate} actual`).toBe(toRate);
+        expect(status.decoderOutputSampleRate, `${fromRate}->${toRate} decoder`).toBe(toRate);
+        expect(status.resampling, `${fromRate}->${toRate} resampling`).toBe(false);
+        expect(status.sampleRateMismatch, `${fromRate}->${toRate} mismatch`).toBe(false);
+        expect(status.warnings, `${fromRate}->${toRate} warnings`).not.toContain('resident_output_resampling_to_device_rate');
+        expect(bridges, `${fromRate}->${toRate} bridges`).toHaveLength(2);
+        expect(bridges[0].stop, `${fromRate}->${toRate} old bridge stopped`).toHaveBeenCalledTimes(1);
+        expect(bridges[1].startOptions, `${fromRate}->${toRate} start options`).toMatchObject({
+          asio: true,
+          requestedOutputSampleRate: toRate,
+        });
+        expect(decoder.decodeRequests.at(-1), `${fromRate}->${toRate} decode request`).toMatchObject({
+          filePath: toPath,
+          decoderOutputSampleRate: toRate,
+        });
+      }
+    }
+  });
+
+  it('keeps ASIO playback alive when the driver refuses lower-rate switches after 192 kHz', async () => {
+    for (const targetRate of asioMatrixSampleRates.filter((rate) => rate !== 192000)) {
+      const firstPath = `asio-192000-to-${targetRate}-first.flac`;
+      const targetPath = `asio-192000-to-${targetRate}-target.flac`;
+      const { bridges, decoder, session } = createLongRunningSessionHarness(
+        [probe(firstPath, 192000), probe(targetPath, targetRate)],
+        [192000, 192000],
+      );
+
+      await session.playLocalFile({
+        filePath: firstPath,
+        output: { outputMode: 'asio' },
+      });
+      const status = await session.playLocalFile({
+        filePath: targetPath,
+        output: { outputMode: 'asio' },
+      });
+
+      expect(status.state, `192000 refused -> ${targetRate} state`).toBe('playing');
+      expect(status.requestedOutputSampleRate, `192000 refused -> ${targetRate} requested`).toBe(targetRate);
+      expect(status.actualDeviceSampleRate, `192000 refused -> ${targetRate} actual`).toBe(192000);
+      expect(status.decoderOutputSampleRate, `192000 refused -> ${targetRate} decoder`).toBe(192000);
+      expect(status.sampleRateMismatch, `192000 refused -> ${targetRate} mismatch`).toBe(true);
+      expect(bridges, `192000 refused -> ${targetRate} bridges`).toHaveLength(2);
+      expect(bridges[1].startOptions, `192000 refused -> ${targetRate} start options`).toMatchObject({
+        asio: true,
+        requestedOutputSampleRate: targetRate,
+      });
+      expect(decoder.decodeRequests.at(-1), `192000 refused -> ${targetRate} decode request`).toMatchObject({
+        filePath: targetPath,
+        decoderOutputSampleRate: 192000,
+      });
+    }
+  });
+
+  it('does not inherit shared output sample rate when switching into ASIO', async () => {
+    const { bridges, session } = createLongRunningSessionHarness(
+      [probe('shared.flac', 48000), probe('asio.flac', 44100)],
+      [48000, 44100],
+    );
+
+    await session.playLocalFile({
+      filePath: 'shared.flac',
+      output: { outputMode: 'shared' },
+    });
+    const status = await session.playLocalFile({
+      filePath: 'asio.flac',
+      output: { outputMode: 'asio' },
+    });
+
+    expect(bridges).toHaveLength(2);
+    expect(bridges[1].startOptions).toMatchObject({
+      asio: true,
+      requestedOutputSampleRate: 44100,
+    });
+    expect(status.decoderOutputSampleRate).toBe(44100);
+    expect(status.resampling).toBe(false);
   });
 
   it('reopens ASIO output when an explicit requested sample rate changes', async () => {
@@ -1271,6 +1496,34 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges).toHaveLength(2);
     expect(bridges[0].stop).toHaveBeenCalledTimes(1);
     expect(status.requestedOutputSampleRate).toBe(44100);
+    expect(status.decoderOutputSampleRate).toBe(44100);
+  });
+
+  it('keeps ASIO playable at the actual driver rate when a requested rate change is refused', async () => {
+    const { bridges, session } = createLongRunningSessionHarness(
+      [probe('first-asio.flac', 96000), probe('second-asio.flac', 96000)],
+      [96000, 96000],
+    );
+
+    await session.playLocalFile({
+      filePath: 'first-asio.flac',
+      output: { outputMode: 'asio', requestedOutputSampleRate: 96000 },
+    });
+    const status = await session.playLocalFile({
+      filePath: 'second-asio.flac',
+      output: { outputMode: 'asio', requestedOutputSampleRate: 192000 },
+    });
+
+    expect(bridges).toHaveLength(2);
+    expect(bridges[1].startOptions).toMatchObject({
+      asio: true,
+      requestedOutputSampleRate: 192000,
+    });
+    expect(status.requestedOutputSampleRate).toBe(192000);
+    expect(status.actualDeviceSampleRate).toBe(96000);
+    expect(status.decoderOutputSampleRate).toBe(96000);
+    expect(status.resampling).toBe(false);
+    expect(status.sampleRateMismatch).toBe(true);
   });
 
   it('uses balanced native buffering for WASAPI exclusive by default', async () => {
@@ -1349,7 +1602,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.nativeOutputLatencyMs).toBe(93);
   });
 
-  it('keeps ASIO playback alive when the driver opens at its hardware sample rate', async () => {
+  it('reports ASIO sample-rate mismatch when the driver opens at a different hardware sample rate', async () => {
     const decoder = new FakeDecoder(new Map([['asio.flac', probe('asio.flac', 44100)]]));
     const bridge = new FakeBridge(48000);
     const session = new AudioSession({
@@ -1365,12 +1618,13 @@ describe('Audio Core sample-rate regression guard', () => {
     });
 
     expect(status.outputMode).toBe('asio');
-    expect(status.requestedOutputSampleRate).toBe(48000);
+    expect(status.requestedOutputSampleRate).toBe(44100);
     expect(status.actualDeviceSampleRate).toBe(48000);
     expect(status.decoderOutputSampleRate).toBe(48000);
     expect(status.resampling).toBe(true);
     expect(status.bitPerfectCandidate).toBe(false);
-    expect(status.warnings).toContain('resident_output_resampling_to_device_rate');
+    expect(status.sampleRateMismatch).toBe(true);
+    expect(status.warnings).toContain('actual_device_sample_rate_mismatch:44100->48000');
     expect(decoder.decodeRequests[0]).toMatchObject({
       filePath: 'asio.flac',
       decoderOutputSampleRate: 48000,
@@ -2772,6 +3026,52 @@ describe('AudioSession graceful output cleanup', () => {
 
     expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output');
     expect(order).toEqual(['create:0', 'stop:0', 'create:1']);
+  });
+
+  it('uses a short graceful timeout when replacing a live ASIO output', async () => {
+    const bridges: GracefulFakeBridge[] = [];
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([
+        ['first.flac', probe('first.flac', 48000)],
+        ['second.flac', probe('second.flac', 48000)],
+      ])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new GracefulFakeBridge();
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'asio' } });
+    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'shared' } });
+
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', 1000);
+  });
+
+  it('does not shorten graceful stop when changing rate on the same ASIO output', async () => {
+    const bridges: GracefulFakeBridge[] = [];
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([
+        ['first.flac', probe('first.flac', 96000)],
+        ['second.flac', probe('second.flac', 192000)],
+      ])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new GracefulFakeBridge();
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'asio', requestedOutputSampleRate: 96000 } });
+    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'asio', requestedOutputSampleRate: 192000 } });
+
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output');
   });
 
   it('disposeGracefully clears watchdog and stops bridge', async () => {

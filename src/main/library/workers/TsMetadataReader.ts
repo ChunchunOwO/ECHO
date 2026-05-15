@@ -336,11 +336,85 @@ const firstText = (value: unknown): string | null => {
 };
 
 const firstNumber = (value: unknown): number | null => {
+  const parseOne = (item: unknown): number | null => {
+    const parsed = numberOrNull(item);
+    if (parsed !== null) {
+      return parsed;
+    }
+
+    if (typeof item === 'string') {
+      const match = item.match(/^\s*(\d+)/u);
+      return match ? numberOrNull(match[1]) : null;
+    }
+
+    return null;
+  };
+
   if (Array.isArray(value)) {
-    return numberOrNull(value.find((item) => numberOrNull(item) !== null));
+    return parseOne(value.find((item) => parseOne(item) !== null));
   }
 
-  return numberOrNull(value);
+  return parseOne(value);
+};
+
+const tagValue = (tags: Record<string, unknown>, keys: string[]): unknown => {
+  const normalizedEntries = Object.entries(tags).map(([key, value]) => [key.toLowerCase().replace(/[^a-z0-9]/g, ''), value] as const);
+
+  for (const key of keys) {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const directValue = tags[key];
+    if (directValue !== undefined) {
+      return directValue;
+    }
+
+    const match = normalizedEntries.find(([entryKey]) => entryKey === normalizedKey);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+};
+
+const nativeValues = (metadata: IAudioMetadata, keys: string[]): unknown[] => {
+  const normalizedKeys = new Set(keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const values: unknown[] = [];
+
+  for (const entries of Object.values(metadata.native ?? {})) {
+    for (const entry of entries) {
+      const id = typeof entry.id === 'string' ? entry.id.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+      if (normalizedKeys.has(id)) {
+        values.push(entry.value);
+      }
+    }
+  }
+
+  return values;
+};
+
+const firstNativeText = (metadata: IAudioMetadata, keys: string[]): string | null =>
+  firstText(nativeValues(metadata, keys));
+
+const firstNativeNumber = (metadata: IAudioMetadata, keys: string[]): number | null => {
+  for (const value of nativeValues(metadata, keys)) {
+    const parsed = firstNumber(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const firstNativeYear = (metadata: IAudioMetadata, keys: string[]): number | null => {
+  for (const value of nativeValues(metadata, keys)) {
+    const parsed = yearFromMetadata(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
 };
 
 const warningMessage = (prefix: string, error: unknown): string =>
@@ -395,20 +469,20 @@ export const readTagLibFallbackMetadata = async (filePath: string): Promise<TagL
 
     return {
       fields: {
-        title: firstText(tags.title),
-        artist: firstText(tags.artist),
-        album: firstText(tags.album),
-        albumArtist: firstText(tags.albumArtist),
-        trackNo: firstNumber(tags.track),
-        discNo: firstNumber(tags.discNumber),
-        year: yearFromMetadata(tags.year ?? tags.originalDate),
-        genre: firstText(tags.genre),
+        title: firstText(tagValue(tags, ['title'])),
+        artist: firstText(tagValue(tags, ['artist', 'artists'])),
+        album: firstText(tagValue(tags, ['album'])),
+        albumArtist: firstText(tagValue(tags, ['albumArtist', 'albumartist', 'album_artist'])),
+        trackNo: firstNumber(tagValue(tags, ['track', 'trackNumber', 'tracknumber'])),
+        discNo: firstNumber(tagValue(tags, ['discNumber', 'discnumber', 'disc', 'disk'])),
+        year: yearFromMetadata(tagValue(tags, ['year', 'date', 'originalDate', 'originaldate'])),
+        genre: firstText(tagValue(tags, ['genre'])),
         duration: positiveFloatOrNull(properties?.duration),
         codec: normalizeTagLibCodec(properties),
         sampleRate: numberOrNull(properties?.sampleRate),
         bitDepth: numberOrNull(properties?.bitsPerSample),
         bitrate: normalizeTagLibBitrate(properties?.bitrate),
-        bpm: positiveFloatOrNull(tags.bpm),
+        bpm: positiveFloatOrNull(tagValue(tags, ['bpm'])),
       },
       embeddedCover,
       warnings,
@@ -692,12 +766,13 @@ export class TsMetadataReader implements MetadataReader {
       return value;
     };
 
-    const embeddedTitle = cleanText(waveInfoTags.INAM) ?? cleanText(common.title);
-    const embeddedArtist = cleanText(waveInfoTags.IART) ?? cleanTextList(common.artist ?? common.artists?.[0]);
-    const embeddedAlbum = cleanText(waveInfoTags.IPRD) ?? cleanText(common.album);
-    const embeddedAlbumArtist = cleanTextList(common.albumartist);
-    const embeddedGenre = cleanText(waveInfoTags.IGNR) ?? cleanTextList(common.genre);
-    const embeddedTrackNo = numberOrNull(waveInfoTags.ITRK) ?? numberOrNull(common.track?.no);
+    const embeddedTitle = cleanText(waveInfoTags.INAM) ?? cleanText(common.title) ?? firstNativeText(metadata, ['TITLE', 'TIT2', 'INAM']);
+    const embeddedArtist =
+      cleanText(waveInfoTags.IART) ?? cleanText(common.artist) ?? cleanTextList(common.artists) ?? firstNativeText(metadata, ['ARTIST', 'TPE1', 'IART']);
+    const embeddedAlbum = cleanText(waveInfoTags.IPRD) ?? cleanText(common.album) ?? firstNativeText(metadata, ['ALBUM', 'TALB', 'IPRD']);
+    const embeddedAlbumArtist = cleanTextList(common.albumartist) ?? firstNativeText(metadata, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST', 'TPE2']);
+    const embeddedGenre = cleanText(waveInfoTags.IGNR) ?? cleanTextList(common.genre) ?? firstNativeText(metadata, ['GENRE', 'TCON', 'IGNR']);
+    const embeddedTrackNo = numberOrNull(waveInfoTags.ITRK) ?? numberOrNull(common.track?.no) ?? firstNativeNumber(metadata, ['TRACKNUMBER', 'TRACK', 'TRCK', 'ITRK']);
     const embeddedYear = yearFromMetadata(waveInfoTags.ICRD) ?? yearFromMetadata(common.year ?? common.date);
     const folderAlbum = folderAlbumFallback(filePath);
 
@@ -706,8 +781,8 @@ export class TsMetadataReader implements MetadataReader {
     const album = pickText('album', embeddedAlbum, folderAlbum ?? unknownAlbum, folderAlbum ? 'folder_structure' : 'unknown');
     const albumArtist = pickText('albumArtist', embeddedAlbumArtist, artist, 'artist_fallback');
     const trackNo = pickNumber('trackNo', embeddedTrackNo);
-    const discNo = pickNumber('discNo', numberOrNull(common.disk?.no));
-    const year = pickNumber('year', embeddedYear);
+    const discNo = pickNumber('discNo', numberOrNull(common.disk?.no) ?? firstNativeNumber(metadata, ['DISCNUMBER', 'DISKNUMBER', 'DISC', 'DISK', 'TPOS']));
+    const year = pickNumber('year', embeddedYear ?? firstNativeYear(metadata, ['DATE', 'YEAR', 'ORIGINALDATE', 'ORIGINALYEAR', 'ICRD', 'TDRC']));
     const genre = embeddedGenre;
     fieldSources.genre = genre ? 'embedded' : 'unknown';
     const duration = Math.max(0, Number(format.duration ?? 0));
@@ -720,7 +795,7 @@ export class TsMetadataReader implements MetadataReader {
     fieldSources.bitDepth = bitDepth ? 'technical' : 'unknown';
     const bitrate = typeof format.bitrate === 'number' ? Math.round(format.bitrate) : null;
     fieldSources.bitrate = bitrate ? 'technical' : 'unknown';
-    const bpm = positiveFloatOrNull(common.bpm);
+    const bpm = positiveFloatOrNull(common.bpm) ?? firstNativeNumber(metadata, ['BPM', 'TBPM']);
     fieldSources.bpm = bpm ? 'embedded' : 'unknown';
     const picture = common.picture?.[0];
     const hasEmbeddedMetadata = [

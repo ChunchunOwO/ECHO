@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS tracks (
   analysis_version INTEGER NOT NULL DEFAULT 0,
   analysis_error TEXT,
   analysis_updated_at TEXT,
+  search_terms TEXT NOT NULL DEFAULT '',
   cover_id TEXT,
   metadata_status TEXT NOT NULL DEFAULT 'ok',
   embedded_metadata_status TEXT NOT NULL DEFAULT 'pending',
@@ -84,14 +85,15 @@ CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
   album_artist,
   genre,
   path,
+  search_terms,
   tokenize = 'unicode61'
 );
 
 CREATE TRIGGER IF NOT EXISTS tracks_fts_after_insert
 AFTER INSERT ON tracks
 BEGIN
-  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
-  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path, new.search_terms);
 END;
 
 CREATE TRIGGER IF NOT EXISTS tracks_fts_after_delete
@@ -101,11 +103,11 @@ BEGIN
 END;
 
 CREATE TRIGGER IF NOT EXISTS tracks_fts_after_update
-AFTER UPDATE OF title, artist, album, album_artist, genre, path ON tracks
+AFTER UPDATE OF title, artist, album, album_artist, genre, path, search_terms ON tracks
 BEGIN
   DELETE FROM tracks_fts WHERE rowid = old.rowid;
-  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path)
-  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path);
+  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path, new.search_terms);
 END;
 
 CREATE TABLE IF NOT EXISTS albums (
@@ -509,6 +511,7 @@ CREATE TABLE IF NOT EXISTS remote_tracks (
   mv_status TEXT NOT NULL DEFAULT 'pending',
   availability TEXT NOT NULL DEFAULT 'unknown',
   field_sources_json TEXT NOT NULL DEFAULT '{}',
+  search_terms TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (source_id) REFERENCES remote_sources(id) ON DELETE CASCADE,
@@ -516,6 +519,38 @@ CREATE TABLE IF NOT EXISTS remote_tracks (
   UNIQUE(source_id, remote_path),
   UNIQUE(source_id, stable_key)
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS remote_tracks_fts USING fts5(
+  title,
+  artist,
+  album,
+  album_artist,
+  genre,
+  remote_path,
+  search_terms,
+  tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_insert
+AFTER INSERT ON remote_tracks
+BEGIN
+  INSERT INTO remote_tracks_fts(rowid, title, artist, album, album_artist, genre, remote_path, search_terms)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.remote_path, new.search_terms);
+END;
+
+CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_delete
+AFTER DELETE ON remote_tracks
+BEGIN
+  DELETE FROM remote_tracks_fts WHERE rowid = old.rowid;
+END;
+
+CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_update
+AFTER UPDATE OF title, artist, album, album_artist, genre, remote_path, search_terms ON remote_tracks
+BEGIN
+  DELETE FROM remote_tracks_fts WHERE rowid = old.rowid;
+  INSERT INTO remote_tracks_fts(rowid, title, artist, album, album_artist, genre, remote_path, search_terms)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.remote_path, new.search_terms);
+END;
 
 CREATE TABLE IF NOT EXISTS streaming_tracks (
   id TEXT PRIMARY KEY,

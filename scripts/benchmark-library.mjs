@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
+import { pinyin } from 'pinyin-pro';
 
 const schemaSql = `
 CREATE TABLE folders (
@@ -54,6 +55,7 @@ CREATE TABLE tracks (
   sample_rate INTEGER,
   bit_depth INTEGER,
   bitrate INTEGER,
+  search_terms TEXT NOT NULL DEFAULT '',
   cover_id TEXT,
   metadata_status TEXT NOT NULL DEFAULT 'ok',
   field_sources_json TEXT NOT NULL,
@@ -93,29 +95,115 @@ CREATE INDEX idx_album_tracks_album_id ON album_tracks(album_id);
 CREATE INDEX idx_album_tracks_track_id ON album_tracks(track_id);
 CREATE INDEX idx_covers_id ON covers(id);
 CREATE INDEX idx_covers_source_hash ON covers(source_hash);
+
+CREATE VIRTUAL TABLE tracks_fts USING fts5(
+  title,
+  artist,
+  album,
+  album_artist,
+  genre,
+  path,
+  search_terms,
+  tokenize = 'unicode61'
+);
+
+CREATE TRIGGER tracks_fts_after_insert
+AFTER INSERT ON tracks
+BEGIN
+  INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+  VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path, new.search_terms);
+END;
 `;
 
 const nowIso = () => new Date().toISOString();
+const searchSeparatorPattern = /[\s!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~_-]+/u;
+const cjkRunPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+const hanRunPattern = /\p{Script=Han}+/gu;
+
+const addSearchText = (terms, value) => {
+  const normalized = String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase();
+  if (!normalized) {
+    return;
+  }
+
+  terms.add(normalized);
+  const parts = normalized.split(searchSeparatorPattern).filter(Boolean);
+  for (const part of parts) {
+    terms.add(part);
+  }
+  if (parts.length > 1) {
+    terms.add(parts.join(''));
+  }
+
+  for (const match of normalized.matchAll(cjkRunPattern)) {
+    const chars = Array.from(match[0]);
+    for (let start = 0; start < chars.length; start += 1) {
+      for (let length = 1; length <= 3 && start + length <= chars.length; length += 1) {
+        terms.add(chars.slice(start, start + length).join(''));
+      }
+    }
+  }
+
+  for (const match of normalized.matchAll(hanRunPattern)) {
+    const syllables = pinyin(match[0], { toneType: 'none', type: 'array' }).map((item) => String(item).toLocaleLowerCase());
+    const initials = syllables.map((syllable) => syllable[0] ?? '').join('');
+    terms.add(syllables.join(''));
+    terms.add(initials);
+    for (let start = 0; start < syllables.length; start += 1) {
+      for (let length = 1; length <= 6 && start + length <= syllables.length; length += 1) {
+        terms.add(syllables.slice(start, start + length).join(''));
+      }
+      for (let length = 1; length <= 12 && start + length <= initials.length; length += 1) {
+        terms.add(initials.slice(start, start + length));
+      }
+    }
+  }
+};
+
+const buildBenchmarkSearchTerms = (track) => {
+  const terms = new Set();
+  addSearchText(terms, track.title);
+  addSearchText(terms, track.artist);
+  addSearchText(terms, track.album);
+  addSearchText(terms, track.albumArtist);
+  addSearchText(terms, track.genre);
+  addSearchText(terms, track.path);
+  return Array.from(terms).join(' ');
+};
 
 export const createFakeTrack = (index, folderId = 'folder-1', options = {}) => {
   const tracksPerAlbum = options.tracksPerAlbum ?? 10;
   const albumIndex = Math.floor((index - 1) / tracksPerAlbum) + 1;
   const artistIndex = albumIndex % 250;
+  const path = resolve(`D:/FakeLibrary/Album ${albumIndex}/Track ${index}.flac`);
+  const title = index === 1 ? '会魔法的老人' : `Track ${index}`;
+  const artist = `Artist ${artistIndex}`;
+  const album = `Album ${albumIndex}`;
+  const albumArtist = `Album Artist ${artistIndex}`;
+  const genre = 'Benchmark';
+  const track = {
+    title,
+    artist,
+    album,
+    albumArtist,
+    genre,
+    path,
+  };
 
   return {
     id: `track-${index}`,
-    path: resolve(`D:/FakeLibrary/Album ${albumIndex}/Track ${index}.flac`),
+    path,
     folderId,
     sizeBytes: 4_000_000 + index,
     mtimeMs: 1_700_000_000_000 + index,
-    title: `Track ${index}`,
-    artist: `Artist ${artistIndex}`,
-    album: `Album ${albumIndex}`,
-    albumArtist: `Album Artist ${artistIndex}`,
+    title,
+    artist,
+    album,
+    albumArtist,
     trackNo: (index % 10) + 1,
     discNo: 1,
     year: 2020 + (albumIndex % 7),
-    genre: 'Benchmark',
+    genre,
     duration: 180 + (index % 90),
     codec: index % 3 === 0 ? 'FLAC' : 'MP3',
     sampleRate: index % 4 === 0 ? 96000 : 44100,
@@ -124,6 +212,7 @@ export const createFakeTrack = (index, folderId = 'folder-1', options = {}) => {
     coverId: options.withCoverCache === false ? null : `cover-${albumIndex}`,
     metadataStatus: 'ok',
     fieldSources: JSON.stringify({ title: 'embedded', artist: 'embedded', album: 'embedded' }),
+    searchTerms: buildBenchmarkSearchTerms(track),
   };
 };
 
@@ -147,11 +236,11 @@ const insertTracks = (database, tracks, options = {}) => {
     `INSERT INTO tracks (
       id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
       track_no, disc_no, year, genre, duration, codec, sample_rate, bit_depth, bitrate,
-      cover_id, metadata_status, field_sources_json, missing, created_at, updated_at
+      search_terms, cover_id, metadata_status, field_sources_json, missing, created_at, updated_at
     ) VALUES (
       @id, @path, @folderId, @sizeBytes, @mtimeMs, @title, @artist, @album, @albumArtist,
       @trackNo, @discNo, @year, @genre, @duration, @codec, @sampleRate, @bitDepth, @bitrate,
-      @coverId, @metadataStatus, @fieldSources, 0, @createdAt, @updatedAt
+      @searchTerms, @coverId, @metadataStatus, @fieldSources, 0, @createdAt, @updatedAt
     )`,
   );
   const timestamp = nowIso();
@@ -305,6 +394,28 @@ export const runBenchmark = (trackCount, options = {}) => {
         )
         .all(),
     );
+    const searchChinese = measure(() =>
+      database
+        .prepare(
+          `SELECT tracks.id
+           FROM tracks
+           INNER JOIN tracks_fts ON tracks_fts.rowid = tracks.rowid
+           WHERE tracks.missing = 0 AND tracks_fts MATCH ?
+           LIMIT 100`,
+        )
+        .all('魔法*'),
+    );
+    const searchPinyin = measure(() =>
+      database
+        .prepare(
+          `SELECT tracks.id
+           FROM tracks
+           INNER JOIN tracks_fts ON tracks_fts.rowid = tracks.rowid
+           WHERE tracks.missing = 0 AND tracks_fts MATCH ?
+           LIMIT 100`,
+        )
+        .all('mofa*'),
+    );
     const getAlbumsPage10 = measure(() =>
       database
         .prepare(
@@ -410,6 +521,10 @@ export const runBenchmark = (trackCount, options = {}) => {
       getTracksPage1DurationMs: getTracksPage1.durationMs,
       getAlbumsPage1DurationMs: getAlbumsPage1.durationMs,
       getAlbumsPage10DurationMs: getAlbumsPage10.durationMs,
+      searchChineseDurationMs: searchChinese.durationMs,
+      searchChineseItemCount: searchChinese.result.length,
+      searchPinyinDurationMs: searchPinyin.durationMs,
+      searchPinyinItemCount: searchPinyin.result.length,
       albumsTotalDurationMs: albumsTotal.durationMs,
       albumsTotalCount: Number(albumsTotal.result ?? 0),
       getAlbumsPage1ItemCount: getAlbumsPage1.result.length,
@@ -456,6 +571,8 @@ const printResult = (result) => {
   console.log(`getTracks first page duration: ${result.getTracksPage1DurationMs.toFixed(2)} ms`);
   console.log(`getAlbums first page duration: ${result.getAlbumsPage1DurationMs.toFixed(2)} ms`);
   console.log(`getAlbums page10 duration: ${result.getAlbumsPage10DurationMs.toFixed(2)} ms`);
+  console.log(`search 魔法 duration: ${result.searchChineseDurationMs.toFixed(2)} ms (${result.searchChineseItemCount} hits)`);
+  console.log(`search mofa duration: ${result.searchPinyinDurationMs.toFixed(2)} ms (${result.searchPinyinItemCount} hits)`);
   console.log(`albums total count: ${result.albumsTotalCount} in ${result.albumsTotalDurationMs.toFixed(2)} ms`);
   console.log(`payload item count page1 / page10: ${result.getAlbumsPage1ItemCount} / ${result.getAlbumsPage10ItemCount}`);
   console.log(`average coverThumb string length: ${result.averageCoverThumbLength.toFixed(2)}`);
@@ -470,7 +587,7 @@ const printResult = (result) => {
 };
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  for (const count of [3000, 10000]) {
+  for (const count of [3000, 10000, 50000]) {
     printResult(runBenchmark(count));
   }
 

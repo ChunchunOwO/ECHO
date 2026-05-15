@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
+import { app, clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { isScannableAudioExtension } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
@@ -770,6 +770,7 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryClassifyImportPaths, (_event, paths: unknown) =>
     classifyImportPaths(normalizePathList(paths)),
   );
+  ipcMain.handle(IpcChannels.LibraryGetDefaultImportDirectory, () => app.getPath('downloads'));
   ipcMain.handle(IpcChannels.LibraryGetFolders, () => getLibraryService().getFolders());
   ipcMain.handle(IpcChannels.LibraryGetFolderOverviews, () => getLibraryService().getFolderOverviews());
   ipcMain.handle(IpcChannels.LibraryGetFolderChildren, (_event, query: unknown) =>

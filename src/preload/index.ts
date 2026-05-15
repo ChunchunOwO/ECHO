@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
 import type { SmtcCommand } from '../shared/types/smtc';
@@ -57,6 +57,24 @@ const echoApi: EchoApi = {
     chooseFolder: () => ipcRenderer.invoke(IpcChannels.LibraryChooseFolder),
     addFolder: (path) => ipcRenderer.invoke(IpcChannels.LibraryAddFolder, path),
     classifyImportPaths: (paths) => ipcRenderer.invoke(IpcChannels.LibraryClassifyImportPaths, paths),
+    getDroppedFilePaths: (files) =>
+      Promise.resolve(
+        Array.from(files ?? [])
+          .map((file) => {
+            const legacyPath = (file as unknown as { path?: string }).path;
+            if (typeof legacyPath === 'string' && legacyPath.trim()) {
+              return legacyPath;
+            }
+
+            try {
+              return webUtils.getPathForFile(file);
+            } catch {
+              return '';
+            }
+          })
+          .filter((path): path is string => typeof path === 'string' && path.trim().length > 0),
+      ),
+    getDefaultImportDirectory: () => ipcRenderer.invoke(IpcChannels.LibraryGetDefaultImportDirectory),
     getFolders: () => ipcRenderer.invoke(IpcChannels.LibraryGetFolders),
     getFolderOverviews: () => ipcRenderer.invoke(IpcChannels.LibraryGetFolderOverviews),
     getFolderChildren: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetFolderChildren, query),

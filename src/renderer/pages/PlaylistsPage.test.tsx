@@ -6,19 +6,50 @@ import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { PlaylistsPage } from './PlaylistsPage';
 
 vi.mock('../components/library/TrackList', () => ({
-  TrackList: ({ tracks, onPlay }: { tracks: LibraryTrack[]; onPlay?: (track: LibraryTrack) => void }) => (
+  TrackList: ({
+    tracks,
+    onOpenTrackMenu,
+    onPlay,
+  }: {
+    tracks: LibraryTrack[];
+    onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
+    onPlay?: (track: LibraryTrack) => void;
+  }) => (
     <div data-testid="playlist-track-list">
       {tracks.map((track) => (
-        <button key={track.playlistItemId ?? track.id} type="button" onClick={() => onPlay?.(track)}>
-          {track.title}
-        </button>
+        <div key={track.playlistItemId ?? track.id}>
+          <button type="button" onClick={() => onPlay?.(track)}>
+            {track.title}
+          </button>
+          <button type="button" onClick={() => onOpenTrackMenu?.(track, { x: 12, y: 34 })}>
+            Open menu for {track.title}
+          </button>
+        </div>
       ))}
     </div>
   ),
 }));
 
 vi.mock('../components/library/TrackContextMenu', () => ({
-  TrackContextMenu: () => null,
+  TrackContextMenu: ({
+    onAction,
+    track,
+  }: {
+    onAction: (action: 'show-in-folder' | 'copy-path' | 'open-system', track: LibraryTrack) => void;
+    track: LibraryTrack;
+  }) => (
+    <div role="menu">
+      <button type="button" onClick={() => onAction('show-in-folder', track)}>
+        Show in folder
+      </button>
+      <button type="button" onClick={() => onAction('copy-path', track)}>
+        Copy path
+      </button>
+      <button type="button" onClick={() => onAction('open-system', track)}>
+        Open with system
+      </button>
+    </div>
+  ),
 }));
 
 const playlist = (overrides: Partial<LibraryPlaylist> = {}): LibraryPlaylist => ({
@@ -233,6 +264,39 @@ describe('PlaylistsPage actions menu', () => {
 
     await screen.findByRole('button', { name: 'Song One' });
     expect(screen.queryByLabelText('流媒体音质')).toBeNull();
+  });
+
+  it('runs local file actions from the track context menu', async () => {
+    const openTrackInFolder = vi.fn().mockResolvedValue(undefined);
+    const copyTrackPath = vi.fn().mockResolvedValue(undefined);
+    const openTrackWithSystem = vi.fn().mockResolvedValue(undefined);
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist()]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([item()])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        openTrackInFolder,
+        copyTrackPath,
+        openTrackWithSystem,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open menu for Song One' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show in folder' }));
+    await waitFor(() => expect(openTrackInFolder).toHaveBeenCalledWith('track-1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu for Song One' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+    await waitFor(() => expect(copyTrackPath).toHaveBeenCalledWith('track-1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu for Song One' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open with system' }));
+    await waitFor(() => expect(openTrackWithSystem).toHaveBeenCalledWith('track-1'));
   });
 
   it('refreshes a remote playlist by re-importing its source playlist', async () => {

@@ -897,6 +897,97 @@ export const migrations: Migration[] = [
       addColumnIfMissing(database, 'track_videos', 'offset_ms', 'offset_ms INTEGER NOT NULL DEFAULT 0');
     },
   },
+  {
+    id: 27,
+    apply: (database) => {
+      addColumnIfMissing(database, 'tracks', 'search_terms', "search_terms TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(database, 'remote_tracks', 'search_terms', "search_terms TEXT NOT NULL DEFAULT ''");
+
+      database.exec(`
+        DROP TRIGGER IF EXISTS tracks_fts_after_insert;
+        DROP TRIGGER IF EXISTS tracks_fts_after_delete;
+        DROP TRIGGER IF EXISTS tracks_fts_after_update;
+        DROP TABLE IF EXISTS tracks_fts;
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+          title,
+          artist,
+          album,
+          album_artist,
+          genre,
+          path,
+          search_terms,
+          tokenize = 'unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_insert
+        AFTER INSERT ON tracks
+        BEGIN
+          INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path, new.search_terms);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_delete
+        AFTER DELETE ON tracks
+        BEGIN
+          DELETE FROM tracks_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS tracks_fts_after_update
+        AFTER UPDATE OF title, artist, album, album_artist, genre, path, search_terms ON tracks
+        BEGIN
+          DELETE FROM tracks_fts WHERE rowid = old.rowid;
+          INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.path, new.search_terms);
+        END;
+
+        INSERT INTO tracks_fts(rowid, title, artist, album, album_artist, genre, path, search_terms)
+        SELECT rowid, title, artist, album, album_artist, COALESCE(genre, ''), path, search_terms
+        FROM tracks;
+
+        DROP TRIGGER IF EXISTS remote_tracks_fts_after_insert;
+        DROP TRIGGER IF EXISTS remote_tracks_fts_after_delete;
+        DROP TRIGGER IF EXISTS remote_tracks_fts_after_update;
+        DROP TABLE IF EXISTS remote_tracks_fts;
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS remote_tracks_fts USING fts5(
+          title,
+          artist,
+          album,
+          album_artist,
+          genre,
+          remote_path,
+          search_terms,
+          tokenize = 'unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_insert
+        AFTER INSERT ON remote_tracks
+        BEGIN
+          INSERT INTO remote_tracks_fts(rowid, title, artist, album, album_artist, genre, remote_path, search_terms)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.remote_path, new.search_terms);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_delete
+        AFTER DELETE ON remote_tracks
+        BEGIN
+          DELETE FROM remote_tracks_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS remote_tracks_fts_after_update
+        AFTER UPDATE OF title, artist, album, album_artist, genre, remote_path, search_terms ON remote_tracks
+        BEGIN
+          DELETE FROM remote_tracks_fts WHERE rowid = old.rowid;
+          INSERT INTO remote_tracks_fts(rowid, title, artist, album, album_artist, genre, remote_path, search_terms)
+          VALUES (new.rowid, new.title, new.artist, new.album, new.album_artist, COALESCE(new.genre, ''), new.remote_path, new.search_terms);
+        END;
+
+        INSERT INTO remote_tracks_fts(rowid, title, artist, album, album_artist, genre, remote_path, search_terms)
+        SELECT rowid, title, artist, album, album_artist, COALESCE(genre, ''), remote_path, search_terms
+        FROM remote_tracks;
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

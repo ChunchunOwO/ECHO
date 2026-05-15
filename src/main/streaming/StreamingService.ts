@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import electron from 'electron';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
+import { getAppSettings } from '../app/appSettings';
 import type { BpmAnalysisResult } from '../../shared/types/library';
 import type {
   StreamingLyricsResult,
@@ -16,6 +17,7 @@ import type {
 } from '../../shared/types/streaming';
 import { streamingStableKey } from '../../shared/types/streaming';
 import { BpmAnalyzer } from '../library/audioAnalysis/BpmAnalyzer';
+import { backupPlaylistIfEnabled } from '../library/PlaylistBackup';
 import { StreamingCacheStore } from './StreamingCacheStore';
 import { StreamingMemoryCache } from './StreamingMemoryCache';
 import { StreamingPlaybackResolver } from './StreamingPlaybackResolver';
@@ -537,7 +539,10 @@ export const createStreamingService = (database: EchoDatabase): StreamingService
   registry.register(new MockStreamingProvider());
   registry.register(new NeteaseStreamingProvider());
   registry.register(new QQMusicStreamingProvider());
-  return new StreamingService(registry, new StreamingCacheStore(database));
+  return new StreamingService(
+    registry,
+    new StreamingCacheStore(database, (playlistId) => backupPlaylistIfEnabled(database, playlistId, 'streaming-refresh', getAppSettings)),
+  );
 };
 
 let defaultStreamingService: StreamingService | null = null;

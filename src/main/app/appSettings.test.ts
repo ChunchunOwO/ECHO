@@ -24,6 +24,7 @@ describe('app settings normalization', () => {
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
+    expect(settings.playlistBackupsEnabled).toBe(true);
     expect(settings.appCustomWallpaperPath).toBeNull();
     expect(settings.appWallpaperScalePercent).toBe(100);
     expect(settings.appWallpaperBlurPx).toBe(0);
@@ -124,6 +125,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).artistWallAlbumArtwork).toBe(false);
     expect(normalizeSettings({ artistWallAlbumArtwork: 'yes' as never }).artistWallAlbumArtwork).toBe(false);
     expect(normalizeSettings({ artistWallAlbumArtwork: true }).artistWallAlbumArtwork).toBe(true);
+  });
+
+  it('keeps playlist backups enabled unless explicitly disabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).playlistBackupsEnabled).toBe(true);
+    expect(normalizeSettings({ playlistBackupsEnabled: true }).playlistBackupsEnabled).toBe(true);
+    expect(normalizeSettings({ playlistBackupsEnabled: false }).playlistBackupsEnabled).toBe(false);
+    expect(normalizeSettings({ playlistBackupsEnabled: 'no' as never }).playlistBackupsEnabled).toBe(true);
   });
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {

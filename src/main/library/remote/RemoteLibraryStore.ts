@@ -14,6 +14,7 @@ import type {
 } from '../../../shared/types/remoteSources';
 import type { RemoteSourceSecret, RemoteTrackWrite } from './remoteTypes';
 import { RemoteSourceSecretStore } from './RemoteSourceSecretStore';
+import { buildTrackSearchTerms } from '../SearchIndexTokens';
 
 type DbRow = Record<string, unknown>;
 
@@ -267,8 +268,8 @@ export class RemoteLibraryStore {
         id, source_id, provider, remote_path, remote_url_hash, stable_key,
         title, artist, album, album_artist, track_no, disc_no, year, genre, duration,
         codec, sample_rate, bit_depth, bitrate, size_bytes, modified_at, etag, cover_id,
-        metadata_status, lyrics_status, mv_status, availability, field_sources_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        metadata_status, lyrics_status, mv_status, availability, field_sources_json, search_terms, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(source_id, remote_path) DO UPDATE SET
         remote_url_hash = excluded.remote_url_hash,
         stable_key = excluded.stable_key,
@@ -292,12 +293,22 @@ export class RemoteLibraryStore {
         metadata_status = excluded.metadata_status,
         availability = excluded.availability,
         field_sources_json = excluded.field_sources_json,
+        search_terms = excluded.search_terms,
         updated_at = excluded.updated_at`,
     );
     const timestamp = nowIso();
 
     this.database.transaction(() => {
       for (const track of tracks) {
+        const searchTerms = buildTrackSearchTerms({
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumArtist: track.albumArtist,
+          genre: track.genre,
+          remotePath: track.remotePath,
+        });
+
         statement.run(
           track.id,
           track.sourceId,
@@ -327,6 +338,7 @@ export class RemoteLibraryStore {
           track.mvStatus,
           track.availability,
           JSON.stringify(track.fieldSources),
+          searchTerms,
           track.createdAt ?? timestamp,
           track.updatedAt ?? timestamp,
         );
@@ -369,6 +381,7 @@ export class RemoteLibraryStore {
           bitrate = ?,
           metadata_status = ?,
           field_sources_json = ?,
+          search_terms = ?,
           updated_at = ?
          WHERE id = ?`,
       )
@@ -388,6 +401,14 @@ export class RemoteLibraryStore {
         update.bitrate,
         update.metadataStatus,
         JSON.stringify(update.fieldSources),
+        buildTrackSearchTerms({
+          title: update.title,
+          artist: update.artist,
+          album: update.album,
+          albumArtist: update.albumArtist,
+          genre: update.genre,
+          remotePath: this.getTrack(trackId)?.remotePath,
+        }),
         nowIso(),
         trackId,
       );

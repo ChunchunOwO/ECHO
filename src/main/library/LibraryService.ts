@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import electron from 'electron';
 import { applyCoverArt, applyTags } from 'taglib-wasm';
 import { defaultSettings, getAppSettings } from '../app/appSettings';
-import { createDatabase } from '../database/createDatabase';
+import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -77,6 +77,7 @@ import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
 import { getRemoteSourceService } from './remote/RemoteSourceService';
+import { backupPlaylistIfEnabled, type PlaylistBackupReason } from './PlaylistBackup';
 
 type LibraryServiceDependencies = {
   fileScanner?: FileScanner;
@@ -94,6 +95,7 @@ export class LibraryService {
     private readonly store: LibraryStore,
     private readonly scanJobQueue: ScanJobQueue,
     private readonly albumService: AlbumService,
+    private readonly database: EchoDatabase,
     private readonly closeDatabase: () => void,
     private readonly databasePath: string,
     private coverCacheDir: string,
@@ -224,6 +226,7 @@ export class LibraryService {
   }
 
   deletePlaylist(playlistId: string): void {
+    this.backupPlaylist(playlistId, 'delete');
     this.store.deletePlaylist(playlistId);
   }
 
@@ -251,6 +254,10 @@ export class LibraryService {
   }
 
   removePlaylistItem(itemId: string): void {
+    const item = this.store.getPlaylistItem(itemId);
+    if (item) {
+      this.backupPlaylist(item.playlistId, 'remove-item');
+    }
     this.store.removePlaylistItem(itemId);
   }
 
@@ -259,6 +266,7 @@ export class LibraryService {
   }
 
   clearPlaylist(playlistId: string): void {
+    this.backupPlaylist(playlistId, 'clear');
     this.store.clearPlaylist(playlistId);
   }
 
@@ -1101,6 +1109,10 @@ export class LibraryService {
   private albumRefreshOptions(): { albumMergeStrategy: AlbumMergeStrategy } {
     return { albumMergeStrategy: this.readAppSettings().albumMergeStrategy };
   }
+
+  private backupPlaylist(playlistId: string, reason: PlaylistBackupReason): void {
+    backupPlaylistIfEnabled(this.database, playlistId, reason, this.readAppSettings);
+  }
 }
 
 export const createLibraryService = (
@@ -1156,6 +1168,7 @@ export const createLibraryService = (
     store,
     scanJobQueue,
     albumService,
+    database,
     () => database.close(),
     databasePath,
     coverCacheDir,

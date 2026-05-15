@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { LibraryStore } from '../library/LibraryStore';
 import { StreamingCacheStore } from './StreamingCacheStore';
@@ -103,5 +103,25 @@ describe('StreamingCacheStore', () => {
       itemCount: 1,
     });
     expect(() => library.deletePlaylist(imported.playlist.id)).toThrow(/cannot be deleted/i);
+  });
+
+  it('backs up existing imported playlist items before a reset import clears them', () => {
+    database = createDatabase(':memory:');
+    const backup = vi.fn((playlistId: string) => {
+      const library = new LibraryStore(database!);
+      expect(library.getPlaylistItems(playlistId, { pageSize: 10 }).total).toBe(1);
+    });
+    const cache = new StreamingCacheStore(database, backup);
+
+    const firstImport = cache.importStreamingPlaylistPage(playlist([track()]), {
+      reset: true,
+      startPosition: 0,
+    });
+    cache.importStreamingPlaylistPage(playlist([track({ id: 'streaming:netease:track-2', providerTrackId: 'track-2', stableKey: 'streaming:netease:track-2' })]), {
+      reset: true,
+      startPosition: 0,
+    });
+
+    expect(backup).toHaveBeenCalledWith(firstImport.playlist.id);
   });
 });

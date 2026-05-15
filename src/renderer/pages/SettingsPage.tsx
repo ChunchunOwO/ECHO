@@ -2423,6 +2423,19 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow
+                title="歌单自动备份"
+                description="开启后，刷新、清空或删除歌单前会先在系统下载文件夹保存一份 JSON 备份。"
+              >
+                <div className="settings-inline-toggle">
+                  <span>{appSettings?.playlistBackupsEnabled === false ? '已关闭' : '已开启'}</span>
+                  <ToggleButton
+                    active={appSettings?.playlistBackupsEnabled ?? true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ playlistBackupsEnabled: !(appSettings?.playlistBackupsEnabled ?? true) })}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="重复歌曲"
                 description="在歌曲列表中隐藏低音质重复版本，不会删除文件。"

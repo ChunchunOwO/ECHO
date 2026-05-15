@@ -5,6 +5,7 @@ import type { StreamingPlaylistDetail, StreamingProviderName, StreamingTrack } f
 import { streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
 
 type DbRow = Record<string, unknown>;
+type PlaylistBackupCallback = (playlistId: string) => void;
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -95,7 +96,10 @@ const sanitizeForCache = (value: unknown, depth = 0): unknown => {
 };
 
 export class StreamingCacheStore {
-  constructor(private readonly database: EchoDatabase) {}
+  constructor(
+    private readonly database: EchoDatabase,
+    private readonly backupPlaylistBeforeReset?: PlaylistBackupCallback,
+  ) {}
 
   getTrack(provider: StreamingProviderName, providerTrackId: string): StreamingTrack | null {
     const row =
@@ -349,6 +353,12 @@ export class StreamingCacheStore {
     return this.database.transaction(() => {
       const savedPlaylist = this.upsertImportedPlaylist(playlist, options);
       if (options.reset) {
+        const currentItemCount = Number(
+          this.database.prepare<[string], DbRow>('SELECT COUNT(*) AS total FROM playlist_items WHERE playlist_id = ?').get(savedPlaylist.id)?.total ?? 0,
+        );
+        if (currentItemCount > 0) {
+          this.backupPlaylistBeforeReset?.(savedPlaylist.id);
+        }
         this.replacePlaylistItems(savedPlaylist.id);
       }
 

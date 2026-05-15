@@ -40,6 +40,7 @@ export type AppSettings = {
   chineseCrossScriptSearchEnabled?: boolean;
   artistWallAlbumArtwork: boolean;
   autoUpdateEnabled?: boolean;
+  playlistBackupsEnabled?: boolean;
   coverCacheDir: string | null;
   hideToTrayOnClose: boolean;
   appCustomWallpaperPath: string | null;

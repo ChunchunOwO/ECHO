@@ -18,6 +18,9 @@ const trashItemMock = vi.fn();
 const getLibraryServiceMock = vi.fn();
 
 vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((name: string) => (name === 'downloads' ? 'D:\\Downloads' : 'D:\\UserData')),
+  },
   ipcMain: {
     handle: handleMock,
   },
@@ -205,6 +208,12 @@ describe('library IPC', () => {
     const result = await handlers[IpcChannels.LibraryChooseFolder]!();
 
     expect(result).toBe('D:\\Music');
+  });
+
+  it('returns the downloads folder as the default import directory', async () => {
+    const result = await handlers[IpcChannels.LibraryGetDefaultImportDirectory]!();
+
+    expect(result).toBe('D:\\Downloads');
   });
 
   it('classifies dropped import paths as folders, audio files, unsupported files, or missing paths', async () => {

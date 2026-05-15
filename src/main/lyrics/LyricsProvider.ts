@@ -94,37 +94,51 @@ const findSyncedSecondaryText = (
   return null;
 };
 
-const findSequentialSecondaryText = (
+const assignLooseSecondaryByNearestLine = (
+  lines: LyricLine[],
   syncedLines: LyricLine[],
-  line: LyricLine,
-  usedIndexes: Set<number>,
-  searchStartIndex: number,
-): string | null => {
-  if (line.timeMs < 0) {
-    return null;
-  }
-
-  for (let index = Math.max(0, searchStartIndex); index < syncedLines.length; index += 1) {
-    if (usedIndexes.has(index)) {
+  usedSecondaryIndexes: Set<number>,
+): Map<number, string> => {
+  const pairs: Array<{ lineIndex: number; secondaryIndex: number; delta: number }> = [];
+  for (let secondaryIndex = 0; secondaryIndex < syncedLines.length; secondaryIndex += 1) {
+    if (usedSecondaryIndexes.has(secondaryIndex)) {
       continue;
     }
 
-    const secondaryLine = syncedLines[index];
-    if (secondaryLine.timeMs + looseSecondaryTimestampToleranceMs < line.timeMs) {
-      continue;
+    const secondaryLine = syncedLines[secondaryIndex];
+    let closestLineIndex = -1;
+    let closestDelta = Number.POSITIVE_INFINITY;
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
+      if (line.timeMs < 0) {
+        continue;
+      }
+
+      const delta = Math.abs(secondaryLine.timeMs - line.timeMs);
+      if (delta < closestDelta) {
+        closestDelta = delta;
+        closestLineIndex = lineIndex;
+      }
     }
 
-    if (Math.abs(secondaryLine.timeMs - line.timeMs) <= looseSecondaryTimestampToleranceMs) {
-      usedIndexes.add(index);
-      return secondaryLine.text;
-    }
-
-    if (secondaryLine.timeMs > line.timeMs + looseSecondaryTimestampToleranceMs) {
-      break;
+    if (closestLineIndex >= 0 && closestDelta <= looseSecondaryTimestampToleranceMs) {
+      pairs.push({ lineIndex: closestLineIndex, secondaryIndex, delta: closestDelta });
     }
   }
 
-  return null;
+  const assignedLines = new Set<number>();
+  const assignments = new Map<number, string>();
+  for (const pair of pairs.sort((left, right) => left.delta - right.delta)) {
+    if (assignedLines.has(pair.lineIndex) || usedSecondaryIndexes.has(pair.secondaryIndex)) {
+      continue;
+    }
+
+    assignedLines.add(pair.lineIndex);
+    usedSecondaryIndexes.add(pair.secondaryIndex);
+    assignments.set(pair.lineIndex, syncedLines[pair.secondaryIndex].text);
+  }
+
+  return assignments;
 };
 
 const mergeSecondaryLines = (
@@ -143,13 +157,13 @@ const mergeSecondaryLines = (
     const usedIndexes = new Set<number>();
     let changed = false;
     const canFallbackByIndex = syncedSecondary.length === lines.length;
-    let fallbackSearchIndex = 0;
+    const looseAssignments = assignLooseSecondaryByNearestLine(lines, syncedSecondary, usedIndexes);
 
     const nextLines = lines.map((line, index) => {
       const syncedText = findSyncedSecondaryText(syncedSecondary, line, usedIndexes);
       const secondaryText = syncedText ?? (
         canFallbackByIndex && !usedIndexes.has(index) ? syncedSecondary[index]?.text : null
-      ) ?? findSequentialSecondaryText(syncedSecondary, line, usedIndexes, fallbackSearchIndex);
+      ) ?? looseAssignments.get(index) ?? null;
       if (!secondaryText || line[field] === secondaryText) {
         return line;
       }
@@ -157,7 +171,6 @@ const mergeSecondaryLines = (
       if (canFallbackByIndex && syncedText === null) {
         usedIndexes.add(index);
       }
-      fallbackSearchIndex = Math.max(fallbackSearchIndex, index + 1);
 
       changed = true;
       return { ...line, [field]: secondaryText };

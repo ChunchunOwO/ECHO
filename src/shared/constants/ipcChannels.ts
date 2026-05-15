@@ -44,6 +44,7 @@ export const IpcChannels = {
   AccountSetYouTubeBrowser: 'account:set-youtube-browser',
   LibraryAddFolder: 'library:add-folder',
   LibraryClassifyImportPaths: 'library:classify-import-paths',
+  LibraryGetDefaultImportDirectory: 'library:get-default-import-directory',
   LibraryChooseFolder: 'library:choose-folder',
   LibraryGetFolders: 'library:get-folders',
   LibraryGetFolderOverviews: 'library:get-folder-overviews',

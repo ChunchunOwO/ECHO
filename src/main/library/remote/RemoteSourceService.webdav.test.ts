@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
 
 const audioBytes = Buffer.from('0123456789abcdef');
 const rootPath = '/音乐 Space/';
-const trackPath = `${rootPath}Echo Song.mp3`;
+const trackPath = `${rootPath}会魔法的老人.mp3`;
 const username = 'echo-user';
 const password = 'echo-secret';
 const authHeader = `Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`;
@@ -174,20 +174,21 @@ describe('RemoteSourceService WebDAV integration', () => {
 
     await expect(service.testSource(source.id)).resolves.toMatchObject({ ok: true, status: 'enabled' });
     await expect(service.browse(source.id)).resolves.toEqual([
-      expect.objectContaining({ path: trackPath, kind: 'file', audio: true, name: 'Echo Song.mp3' }),
+      expect.objectContaining({ path: trackPath, kind: 'file', audio: true, name: '会魔法的老人.mp3' }),
     ]);
 
     service.syncSource(source.id);
     await waitForSync(service, source.id);
 
-    const tracks = libraryStore.getTracks({ search: 'Echo Song' });
+    const tracks = libraryStore.getTracks({ search: 'mofa' });
     expect(tracks.total).toBe(1);
+    expect(libraryStore.getTracks({ search: '魔法' }).total).toBe(1);
     expect(tracks.items[0]).toEqual(expect.objectContaining({
       mediaType: 'remote',
       provider: 'webdav',
       sourceId: source.id,
       remotePath: trackPath,
-      title: 'Echo Song',
+      title: '会魔法的老人',
     }));
 
     const stream = await service.createStreamUrl({ trackId: tracks.items[0].id });
@@ -207,10 +208,10 @@ describe('RemoteSourceService WebDAV integration', () => {
     state.includeTrack = false;
     service.syncSource(source.id);
     await waitForSync(service, source.id);
-    expect(libraryStore.getTracks({ search: 'Echo Song' }).total).toBe(0);
+    expect(libraryStore.getTracks({ search: 'mofa' }).total).toBe(0);
 
     service.deleteSource(source.id);
-    expect(libraryStore.getTracks({ search: 'Echo Song' }).total).toBe(0);
+    expect(libraryStore.getTracks({ search: 'mofa' }).total).toBe(0);
     expect(await fetch(stream.url)).toMatchObject({ status: 401 });
   });
 });

@@ -244,12 +244,14 @@ const createHarness = (
   const databasePath = join(root, 'library.sqlite');
   const coverCacheDir = join(root, 'cover-cache');
   let albumMergeStrategy: AlbumMergeStrategy = 'standard';
+  let chineseCrossScriptSearchEnabled = true;
   const service = createLibraryService(databasePath, {
     metadataService,
     coverCacheDir,
     appSettings: () => ({
       appearanceTheme: 'light',
       albumMergeStrategy,
+      chineseCrossScriptSearchEnabled,
       artistWallAlbumArtwork: false,
       coverCacheDir,
       hideToTrayOnClose: false,
@@ -358,6 +360,9 @@ const createHarness = (
     setAlbumMergeStrategy(strategy: AlbumMergeStrategy) {
       albumMergeStrategy = strategy;
     },
+    setChineseCrossScriptSearchEnabled(enabled: boolean) {
+      chineseCrossScriptSearchEnabled = enabled;
+    },
     cleanup() {
       cleanup();
     },
@@ -391,6 +396,7 @@ describe('Library Core', () => {
         'folders',
         'tracks',
         'tracks_fts',
+        'remote_tracks_fts',
         'albums',
         'album_tracks',
         'artists',
@@ -1612,6 +1618,39 @@ describe('Library Core', () => {
 
     expect(tracks.total).toBe(1);
     expect(tracks.items[0].path).toBe(filePath);
+    harness.cleanup();
+  });
+
+  it('getTracks search matches Chinese substrings and pinyin aliases from the search index', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'magic-old-man.flac');
+    harness.metadataService.overrides.set(filePath, baseMetadata({ title: '会魔法的老人', artist: '周杰伦', album: '魔法电台' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+
+    for (const search of ['魔法', 'mofa', 'mo fa', 'hmf', 'laoren']) {
+      const tracks = harness.service.getTracks({ search, pageSize: 10 });
+      expect(tracks.items.map((track) => track.title)).toContain('会魔法的老人');
+    }
+
+    expect(harness.service.getTracks({ search: 'unrelated', pageSize: 10 }).total).toBe(0);
+    harness.cleanup();
+  });
+
+  it('getTracks search honors the simplified/traditional search switch', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'traditional.flac');
+    harness.metadataService.overrides.set(filePath, baseMetadata({ title: '愛與夢', artist: 'Echo Artist', album: 'Echo Album' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+
+    expect(harness.service.getTracks({ search: '爱与梦', pageSize: 10 }).total).toBe(1);
+
+    harness.setChineseCrossScriptSearchEnabled(false);
+    expect(harness.service.getTracks({ search: '爱与梦', pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getTracks({ search: '愛與夢', pageSize: 10 }).total).toBe(1);
     harness.cleanup();
   });
 

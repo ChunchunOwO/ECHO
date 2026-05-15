@@ -16,6 +16,8 @@ describe('benchmark-library', () => {
     expect(result.tracks).toBe(25);
     expect(result.albumsCount).toBeGreaterThan(0);
     expect(result.getAlbumsPage1ItemCount).toBeGreaterThan(0);
+    expect(result.searchChineseItemCount).toBe(1);
+    expect(result.searchPinyinItemCount).toBe(1);
     expect(result.averageCoverThumbLength).toBeGreaterThan(0);
     expect(result.getAlbumsReturnsForbiddenCoverPayload).toBe(false);
     expect(result.unchangedScanSkipped).toBe(25);

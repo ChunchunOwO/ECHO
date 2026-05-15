@@ -758,6 +758,15 @@ export const PlaylistsPage = (): JSX.Element => {
               }
             }
             return;
+          case 'show-in-folder':
+            await library?.openTrackInFolder(track.id);
+            return;
+          case 'copy-path':
+            await library?.copyTrackPath(track.id);
+            return;
+          case 'open-system':
+            await library?.openTrackWithSystem(track.id);
+            return;
           case 'add-to-playlist':
             {
               if (!library) {

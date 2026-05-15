@@ -223,6 +223,39 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fields.album).toBe('\u6b63\u5e38\u4e2d\u6587\u4e13\u8f91');
   });
 
+  it('uses native container tags when common metadata mapping is sparse', async () => {
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      native: {
+        vorbis: [
+          { id: 'TITLE', value: '\u5982\u679c\u6709\u4e00\u5929\u6211\u53d8\u5f97\u5f88\u6709\u94b1' },
+          { id: 'ARTIST', value: '\u6bdb\u4e0d\u6613' },
+          { id: 'ALBUM', value: '\u5e73\u51e1\u7684\u4e00\u5929' },
+          { id: 'DATE', value: '2018' },
+          { id: 'TRACKNUMBER', value: '6/10' },
+          { id: 'DISCNUMBER', value: '2' },
+        ],
+      },
+      format: {
+        duration: 170.88,
+        codec: 'FLAC',
+      },
+    }));
+
+    const result = await new TsMetadataReader().read('D:\\Music\\Sparse Common.flac');
+
+    expect(result.fields).toMatchObject({
+      title: '\u5982\u679c\u6709\u4e00\u5929\u6211\u53d8\u5f97\u5f88\u6709\u94b1',
+      artist: '\u6bdb\u4e0d\u6613',
+      album: '\u5e73\u51e1\u7684\u4e00\u5929',
+      trackNo: 6,
+      discNo: 2,
+      year: 2018,
+    });
+    expect(result.fieldSources.title).toBe('embedded');
+    expect(result.fieldSources.artist).toBe('embedded');
+    expect(result.embeddedMetadataStatus).toBe('present');
+  });
+
   it('keeps fallback metadata when TagLib cannot read a preferred odd format', async () => {
     readTagLibMetadataMock.mockRejectedValue(new Error('taglib boom'));
 

@@ -7,13 +7,15 @@ type DragDropImportOverlayProps = {
   onNotice: (message: string) => void;
 };
 
-const getEventPaths = (event: DragEvent): string[] => {
+const getLegacyEventPaths = (event: DragEvent): string[] => {
   const files = Array.from(event.dataTransfer?.files ?? []);
 
   return files
     .map((file) => (file as unknown as { path?: string }).path)
     .filter((path): path is string => typeof path === 'string' && path.trim().length > 0);
 };
+
+const getEventFiles = (event: DragEvent): File[] => Array.from(event.dataTransfer?.files ?? []);
 
 const hasFileDrag = (event: DragEvent): boolean => Array.from(event.dataTransfer?.types ?? []).includes('Files');
 
@@ -66,21 +68,27 @@ export const DragDropImportOverlay = ({ onNotice }: DragDropImportOverlayProps):
       }
 
       event.preventDefault();
-      const paths = getEventPaths(event);
+      const legacyPaths = getLegacyEventPaths(event);
+      const files = getEventFiles(event);
       resetDragState();
-
-      if (paths.length === 0) {
-        onNotice('当前环境未提供拖拽文件路径，无法直接导入。');
-        return;
-      }
 
       const library = window.echo?.library;
       if (!library) {
-        onNotice('Desktop bridge unavailable. Open ECHO Next in Electron to import dropped files.');
+        onNotice('桌面桥接不可用。请在 ECHO Next 桌面端导入拖拽文件。');
         return;
       }
 
-      void handleDroppedImportPaths(paths, library, { onScanStatus: rememberLibraryScanStatus })
+      void Promise.resolve(legacyPaths.length > 0 ? legacyPaths : library.getDroppedFilePaths(files))
+        .then(async (resolvedPaths) => {
+          if (resolvedPaths.length > 0) {
+            return resolvedPaths;
+          }
+
+          const defaultImportDirectory = await library.getDefaultImportDirectory();
+          onNotice(`未读取到拖拽文件路径，改为导入下载文件夹：${defaultImportDirectory}`);
+          return [defaultImportDirectory];
+        })
+        .then((paths) => handleDroppedImportPaths(paths, library, { onScanStatus: rememberLibraryScanStatus }))
         .then((result) => {
           onNotice(summarizeDroppedImport(result));
         })

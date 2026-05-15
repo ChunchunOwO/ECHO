@@ -469,6 +469,59 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('falls back to playable QQ Music quality when lossless returns no URL', async () => {
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              mid: 'song-mid',
+              name: 'Fallback Song',
+              file: { media_mid: 'media-mid' },
+              singer: [{ name: 'Fallback Artist' }],
+              album: { name: 'Fallback Album', mid: 'album-mid' },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_0: {
+            data: {
+              sip: ['https://isure.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: '' }],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_0: {
+            data: {
+              sip: ['https://isure.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: 'M800media-mid.mp3?vkey=temporary' }],
+            },
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const source = await new QQMusicStreamingProvider().resolvePlayback({ provider: 'qqmusic', providerTrackId: 'song-mid', quality: 'lossless' });
+
+    const losslessBody = JSON.parse(String(fetchRunner.mock.calls[1][1]?.body));
+    const highBody = JSON.parse(String(fetchRunner.mock.calls[2][1]?.body));
+
+    expect(losslessBody.req_0.param.filename).toEqual(['F000media-mid.flac']);
+    expect(highBody.req_0.param.filename).toEqual(['M800media-mid.mp3']);
+    expect(source).toMatchObject({
+      url: 'https://isure.stream.qqmusic.qq.com/M800media-mid.mp3?vkey=temporary',
+      codec: 'mp3',
+      bitrate: 320000,
+      bitDepth: null,
+    });
+  });
+
   it('exposes account status through provider descriptors', () => {
     accountStatus.connected = false;
     const descriptor = new QQMusicStreamingProvider().descriptor;

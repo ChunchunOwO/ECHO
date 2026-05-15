@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
 import { chineseSearchVariants } from './ChineseSearchVariants';
+import { buildTrackSearchTerms } from './SearchIndexTokens';
 import type { AlbumKeyInput, AlbumMergeStrategy, AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
@@ -189,7 +190,7 @@ const ftsTerm = (term: string): string => {
 const searchTermVariants = (term: string, options?: LibraryStoreSearchOptions): string[] =>
   options?.chineseCrossScriptSearchEnabled === false ? [term] : chineseSearchVariants(term);
 
-const buildFtsSearchQuery = (search: string, options?: LibraryStoreSearchOptions): string =>
+export const buildFtsSearchQuery = (search: string, options?: LibraryStoreSearchOptions): string =>
   ftsSearchTerms(search)
     .map((term) => {
       const variants = searchTermVariants(term, options).map(ftsTerm);
@@ -426,7 +427,63 @@ export class LibraryStore {
   constructor(
     private readonly database: EchoDatabase,
     private readonly readSearchOptions: () => LibraryStoreSearchOptions = () => ({ chineseCrossScriptSearchEnabled: true }),
-  ) {}
+  ) {
+    this.backfillSearchTerms();
+  }
+
+  private backfillSearchTerms(): void {
+    const localRows = this.database
+      .prepare<[], DbRow>(
+        `SELECT id, path, title, artist, album, album_artist, genre
+         FROM tracks
+         WHERE search_terms = '' OR search_terms IS NULL`,
+      )
+      .all();
+    const remoteRows = this.database
+      .prepare<[], DbRow>(
+        `SELECT id, remote_path, title, artist, album, album_artist, genre
+         FROM remote_tracks
+         WHERE search_terms = '' OR search_terms IS NULL`,
+      )
+      .all();
+
+    if (localRows.length === 0 && remoteRows.length === 0) {
+      return;
+    }
+
+    const updateLocal = this.database.prepare<[string, string]>('UPDATE tracks SET search_terms = ? WHERE id = ?');
+    const updateRemote = this.database.prepare<[string, string]>('UPDATE remote_tracks SET search_terms = ? WHERE id = ?');
+
+    this.database.transaction(() => {
+      for (const row of localRows) {
+        updateLocal.run(
+          buildTrackSearchTerms({
+            title: String(row.title ?? ''),
+            artist: String(row.artist ?? ''),
+            album: String(row.album ?? ''),
+            albumArtist: String(row.album_artist ?? ''),
+            genre: textOrNull(row.genre),
+            path: textOrNull(row.path),
+          }),
+          String(row.id),
+        );
+      }
+
+      for (const row of remoteRows) {
+        updateRemote.run(
+          buildTrackSearchTerms({
+            title: String(row.title ?? ''),
+            artist: String(row.artist ?? ''),
+            album: String(row.album ?? ''),
+            albumArtist: String(row.album_artist ?? ''),
+            genre: textOrNull(row.genre),
+            remotePath: textOrNull(row.remote_path),
+          }),
+          String(row.id),
+        );
+      }
+    })();
+  }
 
   transaction<T>(work: () => T): T {
     if (this.database.inTransaction) {
@@ -989,15 +1046,23 @@ export class LibraryStore {
     const existing = this.getRow('SELECT id, created_at FROM tracks WHERE path = ?', resolve(track.path));
     const createdAt = textOrNull(existing?.created_at) ?? track.createdAt ?? track.updatedAt;
     const id = textOrNull(existing?.id) ?? track.id;
+    const searchTerms = buildTrackSearchTerms({
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist,
+      genre: track.genre,
+      path: resolve(track.path),
+    });
 
     this.run(
       `INSERT INTO tracks (
         id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
         track_no, disc_no, year, genre, duration, codec, sample_rate, bit_depth, bitrate,
         bpm, bpm_confidence, beat_offset_ms, analysis_status, analysis_version, analysis_error, analysis_updated_at,
-        cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
+        search_terms, cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
         field_sources_json, missing, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         folder_id = excluded.folder_id,
         size_bytes = excluded.size_bytes,
@@ -1022,6 +1087,7 @@ export class LibraryStore {
         analysis_version = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_version ELSE tracks.analysis_version END,
         analysis_error = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_error ELSE tracks.analysis_error END,
         analysis_updated_at = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_updated_at ELSE tracks.analysis_updated_at END,
+        search_terms = excluded.search_terms,
         cover_id = excluded.cover_id,
         metadata_status = excluded.metadata_status,
         embedded_metadata_status = excluded.embedded_metadata_status,
@@ -1055,6 +1121,7 @@ export class LibraryStore {
       track.bpm ? 1 : 0,
       null,
       track.bpm ? track.updatedAt : null,
+      searchTerms,
       track.coverId,
       track.metadataStatus ?? 'ok',
       track.embeddedMetadataStatus ?? 'pending',
@@ -1571,6 +1638,16 @@ export class LibraryStore {
     },
     timestamp = nowIso(),
   ): LibraryTrack {
+    const current = this.getTrack(trackId);
+    const searchTerms = buildTrackSearchTerms({
+      title: update.title,
+      artist: update.artist,
+      album: update.album,
+      albumArtist: update.albumArtist,
+      genre: update.genre,
+      path: current?.path,
+    });
+
     this.run(
       `UPDATE tracks SET
         size_bytes = ?,
@@ -1583,6 +1660,7 @@ export class LibraryStore {
         disc_no = ?,
         year = ?,
         genre = ?,
+        search_terms = ?,
         metadata_status = ?,
         field_sources_json = ?,
         updated_at = ?
@@ -1597,6 +1675,7 @@ export class LibraryStore {
       update.discNo,
       update.year,
       update.genre,
+      searchTerms,
       'ok',
       JSON.stringify(update.fieldSources),
       timestamp,
@@ -2018,6 +2097,9 @@ export class LibraryStore {
     const duplicateMode = query?.duplicateMode === 'strict' ? query.duplicateMode : 'strict';
     const searchQuery = buildFtsSearchQuery(search, searchOptions);
     const searchJoinSql = searchQuery ? 'INNER JOIN tracks_fts ON tracks_fts.rowid = tracks.rowid' : '';
+    const remoteSearchJoinSql = searchQuery ? 'INNER JOIN remote_tracks_fts ON remote_tracks_fts.rowid = remote_tracks.rowid' : '';
+    const localSearchRankSql = searchQuery ? 'bm25(tracks_fts)' : '0';
+    const remoteSearchRankSql = searchQuery ? 'bm25(remote_tracks_fts)' : '0';
     const duplicateJoinSql = hideDuplicates
       ? `LEFT JOIN duplicate_track_members AS duplicate_members
           ON duplicate_members.track_id = tracks.id
@@ -2033,18 +2115,10 @@ export class LibraryStore {
       ...(hideDuplicates ? [duplicateMode] : []),
       ...(searchQuery ? [searchQuery] : []),
     ];
-    const remoteSearchFilter = buildSearchFilter(search, [
-      likePredicate('remote_tracks.title'),
-      likePredicate('remote_tracks.artist'),
-      likePredicate('remote_tracks.album'),
-      likePredicate('remote_tracks.album_artist'),
-      likePredicate('COALESCE(remote_tracks.genre, \'\')'),
-      likePredicate('remote_tracks.remote_path'),
-    ], searchOptions);
-    const remoteWhereSql = remoteSearchFilter.sql
-      ? `WHERE remote_tracks.availability != 'missing' AND remote_sources.status = 'enabled' AND ${remoteSearchFilter.sql}`
+    const remoteWhereSql = searchQuery
+      ? "WHERE remote_tracks.availability != 'missing' AND remote_sources.status = 'enabled' AND remote_tracks_fts MATCH ?"
       : "WHERE remote_tracks.availability != 'missing' AND remote_sources.status = 'enabled'";
-    const allParams = [...baseParams, ...remoteSearchFilter.params];
+    const allParams = [...baseParams, ...(searchQuery ? [searchQuery] : [])];
     const unifiedTracksSql = `WITH library_tracks AS (
       SELECT
         tracks.id,
@@ -2084,7 +2158,8 @@ export class LibraryStore {
         tracks.mtime_ms,
         tracks.size_bytes,
         tracks.play_count,
-        tracks.last_played_at
+        tracks.last_played_at,
+        ${localSearchRankSql} AS search_rank
       FROM tracks
       ${searchJoinSql}
       ${duplicateJoinSql}
@@ -2128,12 +2203,14 @@ export class LibraryStore {
         COALESCE(CAST(strftime('%s', remote_tracks.modified_at) AS INTEGER) * 1000, 0) AS mtime_ms,
         remote_tracks.size_bytes,
         0 AS play_count,
-        NULL AS last_played_at
+        NULL AS last_played_at,
+        ${remoteSearchRankSql} AS search_rank
       FROM remote_tracks
       INNER JOIN remote_sources ON remote_sources.id = remote_tracks.source_id
+      ${remoteSearchJoinSql}
       ${remoteWhereSql}
     )`;
-    const orderSql = this.unifiedTrackOrderSql(sort);
+    const orderSql = this.unifiedTrackOrderSql(sort, Boolean(searchQuery));
     const totalRow = this.getRow(`${unifiedTracksSql} SELECT COUNT(*) AS total FROM library_tracks`, ...allParams);
     const rows = isNaturalTitleSort(sort)
       ? applyNaturalTitleSortPage(
@@ -2709,6 +2786,11 @@ export class LibraryStore {
       total,
       hasMore: offset + rows.length < total,
     };
+  }
+
+  getPlaylistItem(itemId: string): LibraryPlaylistItem | null {
+    const row = this.getPlaylistItemRow(itemId);
+    return row ? this.mapPlaylistItem(row) : null;
   }
 
   addTrackToPlaylist(playlistId: string, trackId: string, timestamp = nowIso()): LibraryPlaylistItem {
@@ -3721,7 +3803,11 @@ export class LibraryStore {
     }
   }
 
-  private unifiedTrackOrderSql(sort: string): string {
+  private unifiedTrackOrderSql(sort: string, searchActive = false): string {
+    if (searchActive && (sort === 'default' || !sort)) {
+      return 'ORDER BY search_rank ASC, title COLLATE NOCASE, artist COLLATE NOCASE';
+    }
+
     return this.trackOrderSql(sort).replace(/\btracks\./g, '');
   }
 

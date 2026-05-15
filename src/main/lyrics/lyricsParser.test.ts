@@ -164,4 +164,39 @@ describe('lyricsParser', () => {
       { timeMs: 14000, text: '夜を越えて', romanization: 'yoru o koete' },
     ]);
   });
+
+  it('does not attach provider translation or romanization to leading credit lines', () => {
+    const lyrics = providerResultToTrackLyrics(
+      { title: 'Lemon', artist: 'Yonezu Kenshi' },
+      {
+        provider: 'netease',
+        providerLyricsId: 'netease:536622304',
+        title: 'Lemon',
+        artist: 'Yonezu Kenshi',
+        album: null,
+        durationSeconds: 256,
+        instrumental: false,
+        plainLyrics: null,
+        syncedLyrics: [
+          '[00:00.000]Lyrics by Kenshi Yonezu',
+          '[00:00.212]Composed by Kenshi Yonezu',
+          '[00:00.851]yume naraba dorehodo yokatta deshou',
+        ].join('\n'),
+        translationLyrics: '[00:00.851]How good it would have been if this were all a dream',
+        romanizationLyrics: '[00:00.851]yu me na ra ba do re ho do yo ka tta de syo u',
+      },
+      1,
+    );
+
+    expect(lyrics?.lines).toEqual([
+      { timeMs: 0, text: 'Lyrics by Kenshi Yonezu' },
+      { timeMs: 212, text: 'Composed by Kenshi Yonezu' },
+      {
+        timeMs: 851,
+        text: 'yume naraba dorehodo yokatta deshou',
+        romanization: 'yu me na ra ba do re ho do yo ka tta de syo u',
+        translation: 'How good it would have been if this were all a dream',
+      },
+    ]);
+  });
 });

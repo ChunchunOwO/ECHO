@@ -107,6 +107,16 @@ const qualityPrefix = (quality: StreamingPlaybackRequest['quality']): { prefix: 
   return { prefix: 'M800', extension: 'mp3', codec: 'mp3', mimeType: 'audio/mpeg', bitrate: 320000 };
 };
 
+type QqPlaybackQuality = NonNullable<StreamingPlaybackRequest['quality']>;
+
+const qqPlaybackQualityFallbacks: Record<QqPlaybackQuality | 'fallback', QqPlaybackQuality[]> = {
+  hires: ['lossless', 'high', 'standard'],
+  lossless: ['lossless', 'high', 'standard'],
+  high: ['high', 'standard'],
+  standard: ['standard'],
+  fallback: ['high', 'standard'],
+};
+
 export class QQMusicStreamingProvider implements StreamingProvider {
   readonly name = provider;
 
@@ -302,63 +312,72 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     const song = asRecord(await this.fetchSong(request.providerTrackId));
     const file = asRecord(song.file);
     const mediaMid = text(file.media_mid) ?? text(file.strMediaMid) ?? request.providerTrackId;
-    const selectedQuality = qualityPrefix(request.quality);
-    const filename = `${selectedQuality.prefix}${mediaMid}.${selectedQuality.extension}`;
     const cookie = accountCookie();
     const uin = uinFromCookie(cookie);
-    const body = {
-      req_0: {
-        module: 'vkey.GetVkeyServer',
-        method: 'CgiGetVkey',
-        param: {
-          guid: '10000',
-          songmid: [request.providerTrackId],
-          filename: [filename],
-          songtype: [0],
-          uin,
-          loginflag: 1,
-          platform: '20',
-        },
-      },
-      comm: {
-        uin,
-        format: 'json',
-        ct: 24,
-        cv: 0,
-      },
-    };
-    const data = asRecord(
-      await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-        method: 'POST',
-        headers: qqHeaders(cookie),
-        body,
-      }),
-    );
-    const payload = asRecord(asRecord(data.req_0).data);
-    const item = asRecord((Array.isArray(payload.midurlinfo) ? payload.midurlinfo : [])[0]);
-    const purl = text(item.purl);
+    const qualities = qqPlaybackQualityFallbacks[request.quality ?? 'fallback'] ?? qqPlaybackQualityFallbacks.fallback;
+    let lastItem: Record<string, unknown> = {};
 
-    if (!purl) {
-      throw new Error(request.quality === 'lossless' || request.quality === 'hires' ? '当前平台暂不支持该音质' : '这首歌暂时不可播放，可能需要会员或版权不可用');
+    for (const quality of qualities) {
+      const selectedQuality = qualityPrefix(quality);
+      const filename = `${selectedQuality.prefix}${mediaMid}.${selectedQuality.extension}`;
+      const body = {
+        req_0: {
+          module: 'vkey.GetVkeyServer',
+          method: 'CgiGetVkey',
+          param: {
+            guid: '10000',
+            songmid: [request.providerTrackId],
+            filename: [filename],
+            songtype: [0],
+            uin,
+            loginflag: 1,
+            platform: '20',
+          },
+        },
+        comm: {
+          uin,
+          format: 'json',
+          ct: 24,
+          cv: 0,
+        },
+      };
+      const data = asRecord(
+        await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+          method: 'POST',
+          headers: qqHeaders(cookie),
+          body,
+        }),
+      );
+      const payload = asRecord(asRecord(data.req_0).data);
+      const item = asRecord((Array.isArray(payload.midurlinfo) ? payload.midurlinfo : [])[0]);
+      lastItem = item;
+      const purl = text(item.purl);
+
+      if (!purl) {
+        continue;
+      }
+
+      const sip = Array.isArray(payload.sip) ? payload.sip.map(text).find(Boolean) : null;
+      const url = purl.startsWith('http') ? purl : `${sip ?? 'https://isure.stream.qqmusic.qq.com/'}${purl}`;
+
+      return {
+        provider,
+        providerTrackId: request.providerTrackId,
+        url,
+        expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
+        mimeType: selectedQuality.mimeType,
+        bitrate: selectedQuality.bitrate,
+        sampleRate: null,
+        bitDepth: selectedQuality.codec === 'flac' ? 16 : null,
+        codec: selectedQuality.codec,
+        headers: {},
+        requiresProxy: false,
+        supportsRange: true,
+      };
     }
 
-    const sip = Array.isArray(payload.sip) ? payload.sip.map(text).find(Boolean) : null;
-    const url = purl.startsWith('http') ? purl : `${sip ?? 'https://isure.stream.qqmusic.qq.com/'}${purl}`;
-
-    return {
-      provider,
-      providerTrackId: request.providerTrackId,
-      url,
-      expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
-      mimeType: selectedQuality.mimeType,
-      bitrate: selectedQuality.bitrate,
-      sampleRate: null,
-      bitDepth: selectedQuality.codec === 'flac' ? 16 : null,
-      codec: selectedQuality.codec,
-      headers: {},
-      requiresProxy: false,
-      supportsRange: true,
-    };
+    const message = text(lastItem.msg) ?? text(lastItem.message);
+    throw new Error(message ?? '这首歌暂时不可播放，可能需要会员或版权不可用');
   }
 
   private async fetchSong(providerTrackId: string): Promise<unknown> {

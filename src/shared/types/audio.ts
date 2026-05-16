@@ -118,6 +118,11 @@ export type AudioStatus = {
   error: string | null;
 };
 
+export type AudioSessionResetEvent = {
+  reason: string;
+  status: AudioStatus;
+};
+
 export type AudioDiagnostics = Pick<
   AudioStatus,
   | 'state'

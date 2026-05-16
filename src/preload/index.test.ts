@@ -72,6 +72,28 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioResetEngine);
   });
 
+  it('exposes audio force restart and Windows audio service restart through IPC', async () => {
+    await exposedApi!.audio.forceRestart('settings');
+    await exposedApi!.audio.restartWindowsAudioService();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioForceRestart, 'settings');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioRestartWindowsAudioService);
+  });
+
+  it('subscribes to audio session reset events and unsubscribes cleanly', () => {
+    const handler = vi.fn();
+    const unsubscribe = exposedApi!.audio.onSessionReset(handler);
+    const listener = listeners.get(IpcChannels.AudioSessionReset);
+    const event = { reason: 'force-restart', status: { state: 'stopped' } };
+
+    expect(listener).toBeTruthy();
+    listener?.({}, event);
+    expect(handler).toHaveBeenCalledWith(event);
+
+    unsubscribe();
+    expect(listeners.has(IpcChannels.AudioSessionReset)).toBe(false);
+  });
+
   it('exposes crash report file opening through IPC', async () => {
     await exposedApi!.diagnostics.openCrashReport();
 

@@ -55,6 +55,7 @@ export class DeviceService {
   private readonly asioCache = new Map<string, { at: number; devices: AudioDeviceInfo[] }>();
   private readonly sharedPending = new Map<string, Promise<AudioDeviceInfo[]>>();
   private readonly asioPending = new Map<string, Promise<AudioDeviceInfo[]>>();
+  private cacheGeneration = 0;
 
   constructor(dependencies: DeviceServiceDependencies = {}) {
     this.exec = dependencies.execFileSync ?? execFileSync;
@@ -74,6 +75,16 @@ export class DeviceService {
       this.listAsioDevicesAsync(options),
     ]);
     return [...sharedDevices, ...asioDevices];
+  }
+
+  async refresh(options: DeviceListOptions = {}): Promise<AudioDeviceInfo[]> {
+    this.cacheGeneration += 1;
+    this.sharedCache.clear();
+    this.asioCache.clear();
+    this.sharedPending.clear();
+    this.asioPending.clear();
+
+    return this.listDevicesAsync(options);
   }
 
   listSharedDevices(options: DeviceListOptions = {}): AudioDeviceInfo[] {
@@ -136,6 +147,7 @@ export class DeviceService {
     const pendingMap = outputMode === 'asio' ? this.asioPending : this.sharedPending;
     const cache = cacheMap.get(cacheKey) ?? null;
     const cacheTtlMs = outputMode === 'asio' ? this.asioCacheTtlMs : this.sharedCacheTtlMs;
+    const generation = this.cacheGeneration;
 
     if (cache && now - cache.at < cacheTtlMs) {
       return [...cache.devices];
@@ -151,11 +163,15 @@ export class DeviceService {
     const pending = this.runDeviceListAsync(args, outputMode)
       .then((devices) => {
         const nextCache = { at: Date.now(), devices };
-        cacheMap.set(cacheKey, nextCache);
+        if (generation === this.cacheGeneration) {
+          cacheMap.set(cacheKey, nextCache);
+        }
         return devices;
       })
       .finally(() => {
-        pendingMap.delete(cacheKey);
+        if (generation === this.cacheGeneration) {
+          pendingMap.delete(cacheKey);
+        }
       });
 
     pendingMap.set(cacheKey, pending);

@@ -16,6 +16,7 @@ import {
   RotateCw,
   Search,
   Save,
+  ShieldAlert,
   SlidersHorizontal,
   Trash2,
   X,
@@ -682,6 +683,7 @@ export const SettingsPage = (): JSX.Element => {
   const [bpmAnalysisBusy, setBpmAnalysisBusy] = useState(false);
   const [bpmAnalysisMessage, setBpmAnalysisMessage] = useState<string | null>(null);
   const [audioResetBusy, setAudioResetBusy] = useState(false);
+  const [windowsAudioRestartBusy, setWindowsAudioRestartBusy] = useState(false);
   const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
@@ -1082,15 +1084,41 @@ export const SettingsPage = (): JSX.Element => {
     setAudioResetBusy(true);
     setAudioResetMessage(null);
     try {
-      const nextStatus = await audio.resetEngine();
+      const nextStatus = await audio.forceRestart('settings-audio-force-restart');
       setStatus(nextStatus);
       setError(null);
-      setAudioResetMessage(t('settings.playback.resetEngine.done'));
+      setAudioResetMessage(t('settings.playback.troubleshooting.softDone'));
       void refreshDevices();
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : String(resetError));
     } finally {
       setAudioResetBusy(false);
+    }
+  };
+
+  const handleWindowsAudioServiceRestart = async (): Promise<void> => {
+    if (!window.confirm(t('settings.playback.troubleshooting.hardConfirm'))) {
+      return;
+    }
+
+    const audio = getAudioBridge();
+    if (!audio) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to restart Windows audio service.');
+      return;
+    }
+
+    setWindowsAudioRestartBusy(true);
+    setAudioResetMessage(null);
+    try {
+      const nextStatus = await audio.restartWindowsAudioService();
+      setStatus(nextStatus);
+      setError(null);
+      setAudioResetMessage(t('settings.playback.troubleshooting.hardDone'));
+      void refreshDevices();
+    } catch (restartError) {
+      setError(restartError instanceof Error ? restartError.message : String(restartError));
+    } finally {
+      setWindowsAudioRestartBusy(false);
     }
   };
 
@@ -2247,11 +2275,25 @@ export const SettingsPage = (): JSX.Element => {
                   </select>
                 </label>
               </SettingRow>
-              <SettingRow title={t('settings.playback.resetEngine.title')} description={t('settings.playback.resetEngine.description')}>
+              <SettingRow title={t('settings.playback.troubleshooting.title')} description={t('settings.playback.troubleshooting.description')}>
                 <div className="settings-chip-row">
-                  <button className="settings-action-button" type="button" disabled={audioResetBusy} onClick={() => void handleAudioEngineReset()}>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={audioResetBusy || windowsAudioRestartBusy}
+                    onClick={() => void handleAudioEngineReset()}
+                  >
                     <RotateCw size={15} />
-                    {audioResetBusy ? t('settings.playback.resetEngine.busy') : t('settings.playback.resetEngine.action')}
+                    {audioResetBusy ? t('settings.playback.troubleshooting.softBusy') : t('settings.playback.troubleshooting.softAction')}
+                  </button>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={audioResetBusy || windowsAudioRestartBusy}
+                    onClick={() => void handleWindowsAudioServiceRestart()}
+                  >
+                    <ShieldAlert size={15} />
+                    {windowsAudioRestartBusy ? t('settings.playback.troubleshooting.hardBusy') : t('settings.playback.troubleshooting.hardAction')}
                   </button>
                   {audioResetMessage ? <StatusText tone="good">{audioResetMessage}</StatusText> : null}
                 </div>

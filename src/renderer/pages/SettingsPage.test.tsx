@@ -95,6 +95,8 @@ const audioGetStatusMock = vi.fn();
 const audioListDevicesMock = vi.fn();
 const audioSetOutputMock = vi.fn();
 const audioResetEngineMock = vi.fn();
+const audioForceRestartMock = vi.fn();
+const audioRestartWindowsAudioServiceMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -128,6 +130,8 @@ vi.mock('../utils/echoBridge', () => ({
     listDevices: audioListDevicesMock,
     setOutput: audioSetOutputMock,
     resetEngine: audioResetEngineMock,
+    forceRestart: audioForceRestartMock,
+    restartWindowsAudioService: audioRestartWindowsAudioServiceMock,
   }),
   getAccountsBridge: () => ({
     getStatuses: vi.fn().mockResolvedValue([]),
@@ -200,6 +204,8 @@ beforeEach(() => {
   audioListDevicesMock.mockResolvedValue([]);
   audioSetOutputMock.mockResolvedValue(null);
   audioResetEngineMock.mockResolvedValue({ state: 'stopped', warnings: [] });
+  audioForceRestartMock.mockResolvedValue({ state: 'stopped', warnings: [] });
+  audioRestartWindowsAudioServiceMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   window.echo = {
     app: {
       getSettings: getSettingsMock,
@@ -383,11 +389,30 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
-    const resetButton = await screen.findByRole('button', { name: 'settings.playback.resetEngine.action' });
+    const resetButton = await screen.findByRole('button', { name: 'settings.playback.troubleshooting.softAction' });
     fireEvent.click(resetButton);
 
-    await waitFor(() => expect(audioResetEngineMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('settings.playback.resetEngine.done')).toBeTruthy();
+    await waitFor(() => expect(audioForceRestartMock).toHaveBeenCalledWith('settings-audio-force-restart'));
+    expect(await screen.findByText('settings.playback.troubleshooting.softDone')).toBeTruthy();
+  });
+
+  it('confirms before restarting the Windows audio service from playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    const restartButton = await screen.findByRole('button', { name: 'settings.playback.troubleshooting.hardAction' });
+    fireEvent.click(restartButton);
+
+    expect(confirmSpy).toHaveBeenCalledWith('settings.playback.troubleshooting.hardConfirm');
+    await waitFor(() => expect(audioRestartWindowsAudioServiceMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('settings.playback.troubleshooting.hardDone')).toBeTruthy();
   });
 
   it('saves the startup account check setting from Settings', async () => {

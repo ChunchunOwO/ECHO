@@ -156,4 +156,5 @@ export type AudioCoreEventMap = {
   status: [AudioStatus];
   ended: [AudioStatus];
   error: [Error, AudioStatus];
+  'session-reset': [{ reason: string; status: AudioStatus }];
 };

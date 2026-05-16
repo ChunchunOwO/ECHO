@@ -16,6 +16,7 @@ import type {
 import type { EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
+import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
@@ -151,6 +152,11 @@ export const registerAudioIpc = (): void => {
       window.webContents.send(IpcChannels.AudioStatus, status);
     }
   });
+  getAudioSession().on('session-reset', (event: unknown) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(IpcChannels.AudioSessionReset, event);
+    }
+  });
 
   ipcMain.handle(IpcChannels.AudioGetStatus, (): AudioStatus => getAudioSession().getStatus());
   ipcMain.handle(IpcChannels.AudioGetDiagnostics, (): AudioDiagnostics => getAudioSession().getDiagnostics());
@@ -166,9 +172,29 @@ export const registerAudioIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => {
     try {
-      return await getAudioSession().resetEngine();
+      return await getAudioSession().forceRestart('reset-audio-engine');
     } catch (error) {
       reportAudioIpcError(error, 'reset-engine-ipc');
+      throw error;
+    }
+  });
+  ipcMain.handle(IpcChannels.AudioForceRestart, async (_event, reason: unknown): Promise<AudioStatus> => {
+    try {
+      const resetReason = typeof reason === 'string' && reason.trim() ? reason : 'force-restart';
+      return await getAudioSession().forceRestart(resetReason);
+    } catch (error) {
+      reportAudioIpcError(error, 'force-restart-ipc', { reason });
+      throw error;
+    }
+  });
+  ipcMain.handle(IpcChannels.AudioRestartWindowsAudioService, async (): Promise<AudioStatus> => {
+    try {
+      const session = getAudioSession();
+      await session.stopForWindowsAudioServiceRestart();
+      await restartWindowsAudioService();
+      return await session.forceRestart('windows-audio-service-restart');
+    } catch (error) {
+      reportAudioIpcError(error, 'restart-windows-audio-service-ipc');
       throw error;
     }
   });

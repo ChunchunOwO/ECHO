@@ -283,9 +283,18 @@ const echoApi: EchoApi = {
       ipcRenderer.on(IpcChannels.AudioStatus, listener);
       return () => ipcRenderer.off(IpcChannels.AudioStatus, listener);
     },
+    onSessionReset: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: unknown): void => {
+        handler(event as Parameters<Parameters<EchoApi['audio']['onSessionReset']>[0]>[0]);
+      };
+      ipcRenderer.on(IpcChannels.AudioSessionReset, listener);
+      return () => ipcRenderer.off(IpcChannels.AudioSessionReset, listener);
+    },
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: (settings) => ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings),
     resetEngine: () => ipcRenderer.invoke(IpcChannels.AudioResetEngine),
+    forceRestart: (reason) => ipcRenderer.invoke(IpcChannels.AudioForceRestart, reason),
+    restartWindowsAudioService: () => ipcRenderer.invoke(IpcChannels.AudioRestartWindowsAudioService),
   },
   diagnostics: {
     getLastCrashSummary: () => ipcRenderer.invoke(IpcChannels.DiagnosticsGetLastCrashSummary),

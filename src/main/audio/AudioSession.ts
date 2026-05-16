@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { Transform } from 'node:stream';
 import { performance } from 'node:perf_hooks';
 import type { Writable } from 'node:stream';
-import { DeviceService } from './DeviceService';
+import { DeviceService, type DeviceListOptions } from './DeviceService';
 import { DecoderPipeline } from './DecoderPipeline';
 import { getEqBridge } from './EqBridge';
 import { PcmLevelMeterTransform, createAudioLevelTelemetry, type PcmLevelSnapshot } from './AudioLevelMeter';
@@ -33,7 +33,7 @@ import type { PlaybackMemory } from './PlaybackMemoryStore';
 import type { AudioCrashReportPayload } from '../diagnostics/CrashReportService';
 
 type DecoderPipelineLike = Pick<DecoderPipeline, 'probeLocalFile' | 'decodeLocalFile'>;
-type DeviceServiceLike = Pick<DeviceService, 'listDevices'> & Partial<Pick<DeviceService, 'listDevicesAsync'>>;
+type DeviceServiceLike = Pick<DeviceService, 'listDevices'> & Partial<Pick<DeviceService, 'listDevicesAsync' | 'refresh'>>;
 type OutputBridgeLike = {
   writable: Writable | null;
   start: (options: NativeOutputStartOptions) => Promise<NativeBridgeReadyResult>;
@@ -220,6 +220,12 @@ const defaultAudioErrorReporter = (payload: AudioCrashReportPayload): void => {
 const normalizePositiveInteger = (value: unknown): number | null => {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) && numberValue > 0 ? Math.round(numberValue) : null;
+};
+
+const normalizeResetReason = (reason: string): string => {
+  const normalized = reason.trim().replace(/[\r\n]+/gu, ' ').slice(0, 96);
+
+  return normalized || 'force-restart';
 };
 
 const isHttpPlaybackUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
@@ -778,6 +784,15 @@ export class AudioSession extends EventEmitter {
     return this.deviceService.listDevicesAsync?.() ?? this.deviceService.listDevices();
   }
 
+  private async refreshDeviceService(options: DeviceListOptions = {}): Promise<void> {
+    if (this.deviceService.refresh) {
+      await this.deviceService.refresh(options);
+      return;
+    }
+
+    await (this.deviceService.listDevicesAsync?.() ?? Promise.resolve(this.deviceService.listDevices()));
+  }
+
   async prepareLocalFile(request: AudioSessionPrepareLocalFileRequest): Promise<void> {
     const startedAt = performance.now();
     const context = this.createLocalPrepareContext(request.filePath, request.trackId, request.probe);
@@ -1281,8 +1296,37 @@ export class AudioSession extends EventEmitter {
   }
 
   async resetEngine(): Promise<AudioStatus> {
+    return this.forceRestart('reset-audio-engine');
+  }
+
+  async forceRestart(reason: string): Promise<AudioStatus> {
+    const resetReason = normalizeResetReason(reason);
     this.runToken += 1;
-    await this.stopResourcesGracefully('reset-audio-engine');
+    await this.stopResourcesGracefully(resetReason, true);
+    await this.refreshDeviceService({ useJuceOutput: this.outputSettings.useJuceOutput === true });
+    this.unavailableAsioDevices.clear();
+    this.watchdogRecoveries.clear();
+    this.watchdogLastRecoveryAt = null;
+    this.watchdogPendingWarning = null;
+    this.sharedStabilityTier = 'standard';
+    this.sharedStabilityRecovering = false;
+    this.watchdogRecovering = false;
+    this.lastSharedStabilityRecoveryAt = null;
+    this.resetSessionAfterForcedStop();
+    const status = this.getStatus();
+    this.emit('session-reset', { reason: resetReason, status });
+    return status;
+  }
+
+  async stopForWindowsAudioServiceRestart(reason = 'windows-audio-service-preflight'): Promise<AudioStatus> {
+    const resetReason = normalizeResetReason(reason);
+    this.runToken += 1;
+    await this.stopResourcesGracefully(resetReason, true);
+    this.resetSessionAfterForcedStop();
+    return this.getStatus();
+  }
+
+  private resetSessionAfterForcedStop(): void {
     this.resetLevelMeter();
     this.resetNativeTelemetry();
     this.state = 'stopped';
@@ -1309,7 +1353,6 @@ export class AudioSession extends EventEmitter {
     this.resetWatchdogProgress();
     this.clock.reset(0, null);
     this.emitStatus();
-    return this.getStatus();
   }
 
   async seek(positionSeconds: number): Promise<AudioStatus> {
@@ -3092,7 +3135,7 @@ export class AudioSession extends EventEmitter {
     }
   }
 
-  private async stopResourcesGracefully(reason: string): Promise<void> {
+  private async stopResourcesGracefully(reason: string, waitForExitOverride?: boolean): Promise<void> {
     this.stopDecoderRun();
 
     const bridge = this.bridge;
@@ -3106,7 +3149,7 @@ export class AudioSession extends EventEmitter {
     try {
       if (bridge.stopGracefully) {
         const timeoutMs = this.getGracefulStopTimeoutMs(reason);
-        const waitForExit = this.getGracefulStopWaitForExit(reason);
+        const waitForExit = waitForExitOverride ?? this.getGracefulStopWaitForExit(reason);
         await this.stopBridgeWithOptions(bridge, reason, timeoutMs, waitForExit);
       } else {
         bridge.stop();
@@ -3196,7 +3239,12 @@ export class AudioSession extends EventEmitter {
   }
 
   private getGracefulStopWaitForExit(reason: string): boolean {
-    return reason === 'replace-output';
+    return (
+      reason === 'replace-output' ||
+      reason === 'reset-audio-engine' ||
+      reason === 'force-restart' ||
+      reason.startsWith('windows-audio-service')
+    );
   }
 
   private async stopBridgeWithOptions(

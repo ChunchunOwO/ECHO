@@ -4066,11 +4066,49 @@ describe('AudioSession graceful output cleanup', () => {
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     const status = await session.resetEngine();
 
-    expect(bridge.stopGracefully).toHaveBeenCalledWith('reset-audio-engine');
+    expect(bridge.stopGracefully).toHaveBeenCalledWith('reset-audio-engine', undefined, true);
     expect(status.state).toBe('stopped');
     expect(status.host).toBe('not-initialized');
     expect(status.currentFilePath).toBeNull();
     expect(status.error).toBeNull();
+  });
+
+  it('forceRestart waits for host exit, refreshes devices, clears recovery caches, and emits session-reset', async () => {
+    const bridge = new GracefulFakeBridge();
+    const refresh = vi.fn(async () => []);
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [], refresh },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    const sessionReset = vi.fn();
+    session.on('session-reset', sessionReset);
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    const internals = session as unknown as {
+      sharedStabilityTier: 'standard' | 'recovery' | 'emergency';
+      watchdogRecoveries: Map<string, { count: number; windowStartedAt: number }>;
+      unavailableAsioDevices: Map<string, { expiresAt: number; message: string }>;
+    };
+    internals.sharedStabilityTier = 'emergency';
+    internals.watchdogRecoveries.set('track', { count: 2, windowStartedAt: Date.now() });
+    internals.unavailableAsioDevices.set('asio:0', { expiresAt: Date.now() + 1000, message: 'No device' });
+
+    const status = await session.forceRestart('settings-audio-force-restart');
+
+    expect(bridge.stopGracefully).toHaveBeenCalledWith('settings-audio-force-restart', undefined, true);
+    expect(refresh).toHaveBeenCalledWith({ useJuceOutput: false });
+    expect(internals.sharedStabilityTier).toBe('standard');
+    expect(internals.watchdogRecoveries.size).toBe(0);
+    expect(internals.unavailableAsioDevices.size).toBe(0);
+    expect(status.state).toBe('stopped');
+    expect(status.currentFilePath).toBeNull();
+    expect(sessionReset).toHaveBeenCalledWith({
+      reason: 'settings-audio-force-restart',
+      status,
+    });
   });
 
   it('stops the old bridge gracefully before creating replacement output', async () => {

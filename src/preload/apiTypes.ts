@@ -1,4 +1,11 @@
-import type { AudioDeviceInfo, AudioDiagnostics, AudioOutputSettings, AudioStatus, ChannelBalanceState } from '../shared/types/audio';
+import type {
+  AudioDeviceInfo,
+  AudioDiagnostics,
+  AudioOutputSettings,
+  AudioSessionResetEvent,
+  AudioStatus,
+  ChannelBalanceState,
+} from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
@@ -341,9 +348,12 @@ export type EchoApi = {
     getStatus: () => Promise<AudioStatus>;
     getDiagnostics: () => Promise<AudioDiagnostics>;
     onStatus: (handler: (status: AudioStatus) => void) => () => void;
+    onSessionReset: (handler: (event: AudioSessionResetEvent) => void) => () => void;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
     resetEngine: () => Promise<AudioStatus>;
+    forceRestart: (reason?: string) => Promise<AudioStatus>;
+    restartWindowsAudioService: () => Promise<AudioStatus>;
   };
   diagnostics: {
     getLastCrashSummary: () => Promise<LastCrashSummary | null>;

@@ -53,6 +53,21 @@ const findPlaylistRecords = (value: unknown, depth = 0): Record<string, unknown>
   return [...current, ...Object.values(record).flatMap((item) => findPlaylistRecords(item, depth + 1))];
 };
 
+const assertQqWriteSuccess = (value: unknown, fallback: string): void => {
+  const body = asRecord(value);
+  const rawCode = body.code ?? body.retcode ?? body.result;
+  const code = rawCode === undefined || rawCode === null || rawCode === '' ? null : Number(rawCode);
+  if (code !== null && Number.isFinite(code) && code !== 0) {
+    throw new Error(text(body.message) ?? text(body.msg) ?? `${fallback} (${code})`);
+  }
+};
+
+const songIdFromSong = (songValue: unknown): string | null => {
+  const song = asRecord(songValue);
+  const id = song.id ?? song.songid ?? song.songId;
+  return id === undefined || id === null ? null : String(id).trim() || null;
+};
+
 const albumCoverUrl = (albumMid: string | null, size = 300): string | null =>
   albumMid
     ? streamingImageProxyUrl(`https://y.gtimg.cn/music/photo_new/T002R${size}x${size}M000${albumMid}.jpg`, qqReferer)
@@ -488,6 +503,32 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     };
   }
 
+  async setTrackLiked(input: { providerTrackId: string; liked: boolean }): Promise<void> {
+    const cookie = accountCookie();
+    if (!cookie) {
+      throw new Error('Please connect a QQ Music account before liking tracks.');
+    }
+
+    const uin = uinFromCookie(cookie);
+    if (uin === '0') {
+      throw new Error('Unable to read QQ Music account UIN. Please reconnect and try again.');
+    }
+
+    const playlistId = await this.findLikedPlaylistId(cookie);
+    if (input.liked) {
+      await this.addTrackToLikedPlaylist(cookie, uin, playlistId, input.providerTrackId);
+      return;
+    }
+
+    const song = await this.fetchSong(input.providerTrackId);
+    const songId = songIdFromSong(song);
+    if (!songId) {
+      throw new Error('Unable to read QQ Music song id for unlike.');
+    }
+
+    await this.removeTrackFromLikedPlaylist(cookie, uin, playlistId, songId);
+  }
+
   private async fetchSong(providerTrackId: string): Promise<unknown> {
     const params = new URLSearchParams({
       songmid: providerTrackId,
@@ -502,6 +543,54 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     }
 
     return song;
+  }
+
+  private async addTrackToLikedPlaylist(cookie: string, uin: string, playlistId: string, providerTrackId: string): Promise<void> {
+    const params = new URLSearchParams({
+      loginUin: uin,
+      hostUin: '0',
+      format: 'json',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+      notice: '0',
+      platform: 'yqq',
+      needNewCode: '0',
+      uin,
+      dirid: playlistId,
+      midlist: providerTrackId,
+      typelist: '13',
+      addtype: '',
+      formsender: '4',
+      source: '153',
+      type: '3',
+      utf8: '1',
+    });
+    const data = await jsonFetch(`https://c.y.qq.com/splcloud/fcgi-bin/fcg_music_add2songdir.fcg?${params.toString()}`, {
+      headers: qqHeaders(cookie),
+      timeoutMs: 12_000,
+    });
+    assertQqWriteSuccess(data, 'QQ Music like failed');
+  }
+
+  private async removeTrackFromLikedPlaylist(cookie: string, uin: string, playlistId: string, songId: string): Promise<void> {
+    const params = new URLSearchParams({
+      loginUin: uin,
+      hostUin: '0',
+      format: 'json',
+      inCharset: 'utf8',
+      outCharset: 'utf-8',
+      notice: '0',
+      platform: 'yqq',
+      needNewCode: '0',
+      uin,
+      dirid: playlistId,
+      songids: songId,
+    });
+    const data = await jsonFetch(`https://c.y.qq.com/splcloud/fcgi-bin/fcg_music_delbatchsong.fcg?${params.toString()}`, {
+      headers: qqHeaders(cookie),
+      timeoutMs: 12_000,
+    });
+    assertQqWriteSuccess(data, 'QQ Music unlike failed');
   }
 
   private async fetchLikedSongsPage(cookie: string, begin: number, pageSize: number): Promise<{ total: number; songs: unknown[] }> {

@@ -152,7 +152,30 @@ describe('LikedPage', () => {
     await waitFor(() => expect(getLikedAlbums).toHaveBeenCalledTimes(1));
 
     const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const sentinel = container.querySelector('.infinite-scroll-sentinel') as HTMLElement;
     setScrollablePageSurface(pageSurface);
+    pageSurface.getBoundingClientRect = vi.fn(() => ({
+      bottom: 900,
+      height: 900,
+      left: 0,
+      right: 1000,
+      top: 0,
+      width: 1000,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+    sentinel.getBoundingClientRect = vi.fn(() => ({
+      bottom: 1510,
+      height: 10,
+      left: 0,
+      right: 1000,
+      top: 1500,
+      width: 1000,
+      x: 0,
+      y: 1500,
+      toJSON: () => ({}),
+    }));
     pageSurface.scrollTop = 760;
     fireEvent.scroll(pageSurface);
 

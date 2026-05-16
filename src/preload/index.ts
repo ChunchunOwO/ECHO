@@ -231,7 +231,8 @@ const echoApi: EchoApi = {
     getMv: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetMv, request),
     getProviders: () => ipcRenderer.invoke(IpcChannels.StreamingGetProviders),
     importPlaylistFromUrl: (url) => ipcRenderer.invoke(IpcChannels.StreamingImportPlaylistFromUrl, url),
-    syncLikedSongs: () => ipcRenderer.invoke(IpcChannels.StreamingSyncLikedSongs),
+    syncLikedSongs: (provider) => ipcRenderer.invoke(IpcChannels.StreamingSyncLikedSongs, provider),
+    setTrackLiked: (request) => ipcRenderer.invoke(IpcChannels.StreamingSetTrackLiked, request),
     refreshNeteaseDailyRecommend: () => ipcRenderer.invoke(IpcChannels.StreamingRefreshNeteaseDailyRecommend),
   },
   lyrics: {

@@ -38,6 +38,7 @@ type NeteaseApi = {
   login_status?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   playlist_track_all?: (request: Record<string, unknown>) => Promise<{ body?: { songs?: unknown[] } }>;
   recommend_songs?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  song_like?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   song_url_v1?: (request: Record<string, unknown>) => Promise<{ body?: { data?: unknown[] } }>;
   user_account?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
 };
@@ -314,6 +315,15 @@ const neteaseUserIdFromBody = (value: unknown): string | null => {
   return text(profile.userId) ?? text(account.id) ?? text(account.userId);
 };
 
+const assertNeteaseWriteSuccess = (value: unknown): void => {
+  const body = asRecord(value);
+  const rawCode = body.code;
+  const code = rawCode === undefined || rawCode === null || rawCode === '' ? null : Number(rawCode);
+  if (code !== null && Number.isFinite(code) && code !== 200) {
+    throw new Error(text(body.message) ?? text(body.msg) ?? `NetEase returned ${code}.`);
+  }
+};
+
 export class NeteaseStreamingProvider implements StreamingProvider {
   readonly name = provider;
 
@@ -459,6 +469,32 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       total: songIds.length,
       hasMore: offset + pageSongIds.length < songIds.length,
     };
+  }
+
+  async setTrackLiked(input: { providerTrackId: string; liked: boolean }): Promise<void> {
+    const cookie = accountCookie();
+    if (!cookie) {
+      throw new Error('Please connect a NetEase Cloud Music account before liking tracks.');
+    }
+
+    const id = Number(input.providerTrackId);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('NetEase track id is invalid.');
+    }
+
+    const userId = await this.resolveUserId(cookie);
+    const ncm = getNcmApi();
+    if (!ncm?.song_like) {
+      throw new Error('NetEase like API is unavailable.');
+    }
+
+    const response = await ncm.song_like({
+      id,
+      uid: userId,
+      like: input.liked,
+      cookie,
+    });
+    assertNeteaseWriteSuccess(response.body);
   }
 
   async getDailyRecommendPlaylist(): Promise<StreamingPlaylistDetail> {

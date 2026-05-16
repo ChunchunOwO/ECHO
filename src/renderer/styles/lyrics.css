@@ -391,6 +391,11 @@ html[data-theme="dark"] .lyrics-custom-lrc-drop {
   accent-color: #8fcfbd;
 }
 
+.lyrics-drawer-range[hidden],
+.lyrics-color-panel[hidden] {
+  display: none;
+}
+
 .lyrics-color-panel {
   display: grid;
   gap: 12px;

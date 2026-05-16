@@ -29,6 +29,8 @@ export interface StreamingProvider {
 
   getLikedSongsPlaylist?(input: { page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail>;
 
+  setTrackLiked?(input: { providerTrackId: string; liked: boolean }): Promise<void>;
+
   getDailyRecommendPlaylist?(): Promise<StreamingPlaylistDetail>;
 
   getLyrics?(input: { providerTrackId: string }): Promise<StreamingLyricsResult>;

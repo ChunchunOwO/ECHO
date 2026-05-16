@@ -1100,8 +1100,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </>
           ) : null}
 
-          {showFullControls && isLyricsStyleControlsOpen && isSecondaryLyricsSizeOpen ? (
-            <label className="lyrics-drawer-range lyrics-secondary-size-range">
+          {showFullControls && isSecondaryLyricsSizeOpen ? (
+            <label className="lyrics-drawer-range lyrics-secondary-size-range" hidden={!isLyricsStyleControlsOpen}>
               <span>
                 <strong>
                   <Type size={15} />
@@ -1120,8 +1120,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
           ) : null}
 
-          {showFullControls && isLyricsStyleControlsOpen ? (
-          <label className="lyrics-drawer-range">
+          {showFullControls ? (
+          <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
                 <Type size={15} />
@@ -1140,8 +1140,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls && isLyricsStyleControlsOpen ? (
-          <label className="lyrics-drawer-range">
+          {showFullControls ? (
+          <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
                 <SlidersHorizontal size={15} />
@@ -1160,8 +1160,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls && isLyricsStyleControlsOpen ? (
-          <label className="lyrics-drawer-range">
+          {showFullControls ? (
+          <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
                 <EyeOff size={15} />
@@ -1180,8 +1180,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls && isLyricsStyleControlsOpen ? (
-          <div className="lyrics-color-panel">
+          {showFullControls ? (
+          <div className="lyrics-color-panel" hidden={!isLyricsStyleControlsOpen}>
             <div className="lyrics-color-panel__header">
               <span>
                 <Palette size={15} />

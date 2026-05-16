@@ -465,9 +465,11 @@ const refreshNeteaseDailyRecommendFromDevApi = async (): Promise<StreamingPlayli
   return payload as StreamingPlaylistImportResult;
 };
 
-const syncLikedSongsFromDevApi = async (): Promise<StreamingLikedSongsSyncResult> => {
+const syncLikedSongsFromDevApi = async (provider?: 'netease' | 'qqmusic'): Promise<StreamingLikedSongsSyncResult> => {
   const response = await fetch(`${devApiBaseUrl}/streaming/sync-liked-songs`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider }),
   }).catch(() => {
     throw new Error('本地开发接口未启动，请重启 npm run dev 后再同步喜欢歌单。');
   });
@@ -478,6 +480,27 @@ const syncLikedSongsFromDevApi = async (): Promise<StreamingLikedSongsSyncResult
   }
 
   return payload as StreamingLikedSongsSyncResult;
+};
+
+const setStreamingTrackLikedFromDevApi = async (request: {
+  provider: 'netease' | 'qqmusic';
+  providerTrackId: string;
+  liked: boolean;
+}): Promise<{ liked: boolean }> => {
+  const response = await fetch(`${devApiBaseUrl}/streaming/set-track-liked`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  }).catch(() => {
+    throw new Error('Local development API is unavailable. Restart npm run dev before syncing liked tracks.');
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? 'Failed to sync liked track.');
+  }
+
+  return payload as { liked: boolean };
 };
 
 const browserStreamingBridge: StreamingBridgeApi = {
@@ -502,6 +525,7 @@ const browserStreamingBridge: StreamingBridgeApi = {
   getProviders: async () => [],
   importPlaylistFromUrl: importPlaylistFromDevApi,
   syncLikedSongs: syncLikedSongsFromDevApi,
+  setTrackLiked: setStreamingTrackLikedFromDevApi,
   refreshNeteaseDailyRecommend: refreshNeteaseDailyRecommendFromDevApi,
 };
 

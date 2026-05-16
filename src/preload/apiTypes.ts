@@ -113,6 +113,7 @@ import type {
   StreamingSearchRequest,
   StreamingSearchResult,
   StreamingTrack,
+  StreamingTrackLikedResult,
 } from '../shared/types/streaming';
 
 export type FontFileAsset = {
@@ -307,7 +308,8 @@ export type EchoApi = {
     getMv: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingMvResult>;
     getProviders: () => Promise<StreamingProviderDescriptor[]>;
     importPlaylistFromUrl: (url: string) => Promise<StreamingPlaylistImportResult>;
-    syncLikedSongs: () => Promise<StreamingLikedSongsSyncResult>;
+    syncLikedSongs: (provider?: Extract<StreamingProviderName, 'netease' | 'qqmusic'>) => Promise<StreamingLikedSongsSyncResult>;
+    setTrackLiked: (request: { provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>; providerTrackId: string; liked: boolean }) => Promise<StreamingTrackLikedResult>;
     refreshNeteaseDailyRecommend: () => Promise<StreamingPlaylistImportResult>;
   };
   lyrics: {

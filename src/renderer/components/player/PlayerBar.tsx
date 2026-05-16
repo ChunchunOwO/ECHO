@@ -97,6 +97,9 @@ const isAudioStatusForPlayback = (audioStatus: AudioStatus, playbackStatus: Play
 const isSpotifyPlaybackStatus = (status: PlaybackStatus | null | undefined): boolean =>
   typeof status?.filePath === 'string' && status.filePath.startsWith('streaming:spotify:');
 
+const isProviderLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
+  provider === 'netease' || provider === 'qqmusic';
+
 const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
 };
@@ -278,6 +281,10 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const streamingTrackMediaType = currentTrack?.mediaType ?? null;
   const streamingTrackProvider = currentTrack?.provider ?? null;
   const streamingTrackProviderTrackId = currentTrack?.providerTrackId ?? null;
+  const isProviderLikedStreamingTrack =
+    streamingTrackMediaType === 'streaming' &&
+    isProviderLikedStreamingProvider(streamingTrackProvider) &&
+    Boolean(streamingTrackProviderTrackId);
   const streamingTrackQuality = currentTrack?.streamingQuality;
   const streamingTrackBpm = currentTrack?.bpm ?? null;
   const streamingTrackAnalysisStatus = currentTrack?.analysisStatus ?? null;
@@ -328,7 +335,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [currentTrack?.id, trackId]);
 
   const refreshCurrentTrackLiked = useCallback(async (): Promise<void> => {
-    if (!trackId || !isLibraryCurrentTrack || !window.echo?.library) {
+    if (!trackId || (!isLibraryCurrentTrack && !isProviderLikedStreamingTrack) || !window.echo?.library) {
       setIsCurrentTrackLiked(false);
       return;
     }
@@ -339,7 +346,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     } catch {
       setIsCurrentTrackLiked(false);
     }
-  }, [isLibraryCurrentTrack, trackId]);
+  }, [isLibraryCurrentTrack, isProviderLikedStreamingTrack, trackId]);
 
   useEffect(() => {
     queue.syncPlaybackState(state);
@@ -846,14 +853,21 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, []);
 
   const handleToggleCurrentTrackLiked = useCallback(async (): Promise<void> => {
-    if (!trackId || !isLibraryCurrentTrack || !window.echo?.library) {
+    if (!trackId || (!isLibraryCurrentTrack && !isProviderLikedStreamingTrack) || !window.echo?.library) {
       return;
     }
 
     try {
       const previous = isCurrentTrackLiked;
       setIsCurrentTrackLiked(!previous);
-      const result = await window.echo.library.toggleTrackLiked(trackId);
+      const result =
+        isProviderLikedStreamingTrack && streamingTrackProviderTrackId && isProviderLikedStreamingProvider(streamingTrackProvider)
+          ? await window.echo.streaming.setTrackLiked({
+              provider: streamingTrackProvider,
+              providerTrackId: streamingTrackProviderTrackId,
+              liked: !previous,
+            })
+          : await window.echo.library.toggleTrackLiked(trackId);
       setIsCurrentTrackLiked(result.liked);
       window.dispatchEvent(new Event(likedTracksChangedEvent));
       window.dispatchEvent(new Event(likedChangedEvent));
@@ -861,7 +875,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       setError(likeError instanceof Error ? likeError.message : String(likeError));
       void refreshCurrentTrackLiked();
     }
-  }, [isCurrentTrackLiked, isLibraryCurrentTrack, refreshCurrentTrackLiked, trackId]);
+  }, [
+    isCurrentTrackLiked,
+    isLibraryCurrentTrack,
+    isProviderLikedStreamingTrack,
+    refreshCurrentTrackLiked,
+    streamingTrackProvider,
+    streamingTrackProviderTrackId,
+    trackId,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -1039,7 +1061,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onOpenLyrics={handleOpenLyrics}
           onToggleShuffle={queue.toggleShuffle}
           isCurrentTrackLiked={isCurrentTrackLiked}
-          canLikeCurrentTrack={Boolean(trackId && isLibraryCurrentTrack)}
+          canLikeCurrentTrack={Boolean(trackId && (isLibraryCurrentTrack || isProviderLikedStreamingTrack))}
           onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
         />
         <PlayerProgress

@@ -225,3 +225,7 @@ export type StreamingLikedSongsSyncResult = {
   providers: StreamingLikedSongsSyncProviderResult[];
   syncedAt: string;
 };
+
+export type StreamingTrackLikedResult = {
+  liked: boolean;
+};

@@ -220,7 +220,7 @@ describe('PlayerBar', () => {
       </PlaybackQueueProvider>,
     );
 
-    expect(await screen.findByText('音频引擎启动超时，已尝试默认输出')).toBeTruthy();
+    expect(await screen.findByText('音频输出启动超时，可能是驱动初始化太慢、设备被占用，或采样率/缓冲设置被拒绝。')).toBeTruthy();
     expect(screen.queryByText(/timeout_waiting_for_ready/)).toBeNull();
   });
 

@@ -456,6 +456,58 @@ describe('LyricsSettingsDrawer', () => {
     expect(setSettings).toHaveBeenCalledWith({ lyricsSecondaryFontSizePx: 24 });
   });
 
+  it('keeps lyrics style controls collapsed by default', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
+    expect((container.querySelector('.lyrics-style-toggle input') as HTMLInputElement).checked).toBe(false);
+    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeTruthy();
+    expect(container.textContent).toContain('包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
+
+    fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
+
+    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeNull();
+  });
+
+  it('toggles lyrics readability enhancement from the lyrics background section', async () => {
+    const setMvSettings = vi.fn(async (patch: Partial<MvSettings>) => makeMvSettings(patch));
+    const settingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      mv: {
+        getSettings: vi.fn().mockResolvedValue(makeMvSettings()),
+        setSettings: setMvSettings,
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-readability-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-readability-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setMvSettings).toHaveBeenCalledWith({ lyricsReadabilityEnhanced: true }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsReadabilityEnhanced: true } }));
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+  });
+
   it('shows the current track lyrics provider instead of enabled sources', async () => {
     window.echo = {
       app: {

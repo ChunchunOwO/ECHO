@@ -87,7 +87,26 @@ export const startDevApiServer = (): void => {
       }
 
       if (request.method === 'POST' && url.pathname === '/streaming/sync-liked-songs') {
-        sendJson(response, 200, await getStreamingService().syncLikedSongs());
+        const body = await readJsonBody(request);
+        const provider = body.provider === 'netease' || body.provider === 'qqmusic' ? body.provider : undefined;
+        sendJson(response, 200, await getStreamingService().syncLikedSongs(provider));
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/streaming/set-track-liked') {
+        const body = await readJsonBody(request);
+        if (body.provider !== 'netease' && body.provider !== 'qqmusic') {
+          sendJson(response, 400, { error: 'Streaming provider is required.' });
+          return;
+        }
+
+        const providerTrackId = typeof body.providerTrackId === 'string' ? body.providerTrackId.trim() : '';
+        if (!providerTrackId) {
+          sendJson(response, 400, { error: 'providerTrackId is required.' });
+          return;
+        }
+
+        sendJson(response, 200, await getStreamingService().setTrackLiked(body.provider, providerTrackId, body.liked === true));
         return;
       }
 

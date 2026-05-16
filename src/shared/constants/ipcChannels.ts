@@ -183,6 +183,7 @@ export const IpcChannels = {
   StreamingGetProviders: 'streaming:getProviders',
   StreamingImportPlaylistFromUrl: 'streaming:importPlaylistFromUrl',
   StreamingSyncLikedSongs: 'streaming:syncLikedSongs',
+  StreamingSetTrackLiked: 'streaming:setTrackLiked',
   StreamingRefreshNeteaseDailyRecommend: 'streaming:refreshNeteaseDailyRecommend',
   LyricsGetForTrack: 'lyrics:get-for-track',
   LyricsSearchCandidates: 'lyrics:search-candidates',

@@ -451,6 +451,20 @@ export class StreamingCacheStore {
     })();
   }
 
+  unlikeLikedStreamingTrack(provider: StreamingProviderName, providerTrackId: string): void {
+    const playlist = this.getOrCreateLikedSongsPlaylist();
+    this.database
+      .prepare(
+        `DELETE FROM playlist_items
+         WHERE playlist_id = ?
+           AND media_type = 'stream_track'
+           AND source_provider = ?
+           AND source_item_id = ?`,
+      )
+      .run(playlist.id, provider, providerTrackId);
+    this.refreshPlaylistItemCount(playlist.id);
+  }
+
   private mapPlaylist(row: DbRow): LibraryPlaylist {
     return {
       id: String(row.id),

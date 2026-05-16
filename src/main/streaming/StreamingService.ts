@@ -47,6 +47,8 @@ const likedSongsSyncProviders = ['netease', 'qqmusic'] as const;
 const qqShareLinkUserAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36';
 
+type LikedSongsSyncProviderName = (typeof likedSongsSyncProviders)[number];
+
 type StreamingTrackRequest = {
   provider: StreamingProviderName;
   providerTrackId: string;
@@ -511,8 +513,9 @@ export class StreamingService {
     };
   }
 
-  async syncLikedSongs(): Promise<StreamingLikedSongsSyncResult> {
-    const providers = await Promise.all(likedSongsSyncProviders.map((providerName) => this.syncProviderLikedSongs(providerName)));
+  async syncLikedSongs(providerName?: LikedSongsSyncProviderName): Promise<StreamingLikedSongsSyncResult> {
+    const targetProviders = providerName ? [providerName] : likedSongsSyncProviders;
+    const providers = await Promise.all(targetProviders.map((targetProvider) => this.syncProviderLikedSongs(targetProvider)));
     const firstPlaylistId =
       this.cacheStore.importLikedStreamingTracks([], { addedFrom: 'streaming-liked-sync' }).playlist.id;
 
@@ -523,6 +526,50 @@ export class StreamingService {
       providers,
       syncedAt: new Date().toISOString(),
     };
+  }
+
+  async setTrackLiked(
+    providerName: LikedSongsSyncProviderName,
+    providerTrackId: string,
+    liked: boolean,
+  ): Promise<{ liked: boolean }> {
+    const provider = this.registry.get(providerName);
+    if (!provider.setTrackLiked) {
+      throw new Error('This streaming provider does not support liking tracks.');
+    }
+
+    if (!liked) {
+      await this.callProviderWithTimeout(
+        provider,
+        () => provider.setTrackLiked!({ providerTrackId, liked }),
+        `${providerName} unlike track`,
+        likedSongsSyncTimeoutMs,
+      );
+      this.cacheStore.unlikeLikedStreamingTrack(providerName, providerTrackId);
+      return { liked: false };
+    }
+
+    const cachedTrack = this.cacheStore.getTrack(providerName, providerTrackId);
+    const track =
+      cachedTrack ??
+      this.normalizeTrack(
+        providerName,
+        await this.callProviderWithTimeout(
+          provider,
+          () => provider.getTrack({ providerTrackId }),
+          `${providerName} liked track lookup`,
+          providerTimeoutMs,
+        ),
+      );
+
+    await this.callProviderWithTimeout(
+      provider,
+      () => provider.setTrackLiked!({ providerTrackId, liked }),
+      `${providerName} like track`,
+      likedSongsSyncTimeoutMs,
+    );
+    this.cacheStore.importLikedStreamingTracks([track], { addedFrom: `${providerName}-liked-button` });
+    return { liked: true };
   }
 
   normalizeTrack(provider: StreamingProviderName, raw: StreamingTrack): StreamingTrack {
@@ -570,7 +617,7 @@ export class StreamingService {
   }
 
   private async syncProviderLikedSongs(
-    providerName: (typeof likedSongsSyncProviders)[number],
+    providerName: LikedSongsSyncProviderName,
   ): Promise<StreamingLikedSongsSyncProviderResult> {
     try {
       const provider = this.registry.get(providerName);

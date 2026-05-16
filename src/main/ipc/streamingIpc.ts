@@ -12,6 +12,7 @@ import { streamingProviderNames } from '../../shared/types/streaming';
 import { getStreamingService } from '../streaming/StreamingService';
 
 const providerNames = new Set<StreamingProviderName>(streamingProviderNames);
+const likedProviderNames = new Set<Extract<StreamingProviderName, 'netease' | 'qqmusic'>>(['netease', 'qqmusic']);
 const mediaTypes = new Set<StreamingMediaType>(['track', 'album', 'artist', 'playlist', 'mv']);
 const sensitiveHeaderPattern = /^(authorization|cookie|x-api-key|x-auth-token|set-cookie)$/iu;
 
@@ -37,6 +38,27 @@ const requireProvider = (value: unknown): StreamingProviderName => {
   }
 
   return value as StreamingProviderName;
+};
+
+const optionalLikedProvider = (value: unknown): Extract<StreamingProviderName, 'netease' | 'qqmusic'> | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string' || !likedProviderNames.has(value as Extract<StreamingProviderName, 'netease' | 'qqmusic'>)) {
+    throw new Error('Liked songs sync provider is not supported.');
+  }
+
+  return value as Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
+};
+
+const requireLikedProvider = (value: unknown): Extract<StreamingProviderName, 'netease' | 'qqmusic'> => {
+  const provider = optionalLikedProvider(value);
+  if (!provider) {
+    throw new Error('Streaming provider is required.');
+  }
+
+  return provider;
 };
 
 const requireText = (value: unknown, name: string): string => {
@@ -80,6 +102,18 @@ const normalizeTrackRequest = (value: unknown): { provider: StreamingProviderNam
   };
 };
 
+const normalizeLikedTrackRequest = (
+  value: unknown,
+): { provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>; providerTrackId: string; liked: boolean } => {
+  const input = requireObject(value, 'streaming liked track request');
+
+  return {
+    provider: requireLikedProvider(input.provider),
+    providerTrackId: requireText(input.providerTrackId, 'providerTrackId'),
+    liked: input.liked === true,
+  };
+};
+
 const normalizePlaybackRequest = (value: unknown): StreamingPlaybackRequest => {
   const input = requireObject(value, 'streaming playback request');
   const quality = input.quality;
@@ -113,11 +147,19 @@ export const registerStreamingIpc = (): void => {
       throw friendlyError(error, 'NetEase daily recommendations refresh failed.');
     }
   });
-  ipcMain.handle(IpcChannels.StreamingSyncLikedSongs, async () => {
+  ipcMain.handle(IpcChannels.StreamingSyncLikedSongs, async (_event, provider: unknown) => {
     try {
-      return await getStreamingService().syncLikedSongs();
+      return await getStreamingService().syncLikedSongs(optionalLikedProvider(provider));
     } catch (error) {
       throw friendlyError(error, 'Streaming liked songs sync failed.');
+    }
+  });
+  ipcMain.handle(IpcChannels.StreamingSetTrackLiked, async (_event, request: unknown) => {
+    try {
+      const input = normalizeLikedTrackRequest(request);
+      return await getStreamingService().setTrackLiked(input.provider, input.providerTrackId, input.liked);
+    } catch (error) {
+      throw friendlyError(error, 'Streaming track like failed.');
     }
   });
   ipcMain.handle(IpcChannels.StreamingSearch, async (_event, request: unknown) => {

@@ -149,6 +149,81 @@ describe('LyricsView', () => {
     expect(container.querySelector('.lyrics-line[data-active="true"]')).toBe(activeLine);
   });
 
+  it('centers immediately when seeking backward to an earlier lyric line', async () => {
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frameId += 1;
+      frames.set(frameId, callback);
+      return frameId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      frames.delete(id);
+    });
+
+    const longLyrics: LyricsState = {
+      ...lyrics,
+      lines: [
+        { timeMs: 0, text: 'First line' },
+        { timeMs: 1000, text: 'Second line' },
+        { timeMs: 2000, text: 'Third line' },
+        { timeMs: 3000, text: 'Fourth line' },
+        { timeMs: 4000, text: 'Fifth line' },
+      ],
+    };
+    const { container, rerender } = render(
+      <LyricsView
+        durationMs={5000}
+        hideEmptyState={false}
+        lyrics={longLyrics}
+        playbackState="paused"
+        positionMs={4000}
+        onSeek={vi.fn()}
+      />,
+    );
+    const scrollContainer = container.querySelector('.lyrics-scroll') as HTMLElement;
+
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1200 });
+    scrollContainer.getBoundingClientRect = vi.fn(() => makeRect(0, 400));
+
+    act(() => {
+      for (const [id, callback] of Array.from(frames.entries())) {
+        frames.delete(id);
+        callback(16);
+      }
+    });
+    frames.clear();
+    scrollContainer.scrollTop = 200;
+
+    rerender(
+      <LyricsView
+        durationMs={5000}
+        hideEmptyState={false}
+        lyrics={longLyrics}
+        playbackState="paused"
+        positionMs={2000}
+        onSeek={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.lyrics-line[data-active="true"]')?.textContent).toContain('Third line');
+    });
+    const activeLine = container.querySelector('.lyrics-line[data-active="true"]') as HTMLButtonElement;
+    activeLine.getBoundingClientRect = vi.fn(() => makeRect(80, 42));
+
+    act(() => {
+      for (const [id, callback] of Array.from(frames.entries())) {
+        frames.delete(id);
+        callback(32);
+      }
+    });
+
+    expect(scrollContainer.scrollTop).toBe(93);
+    expect(frames.size).toBe(0);
+  });
+
   it('preserves the active lyric screen position when display settings change', () => {
     let frameId = 0;
     const frames = new Map<number, FrameRequestCallback>();

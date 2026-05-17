@@ -193,6 +193,15 @@ export const decodeWaveInfoText = (rawValue: Buffer): string | null => {
     return null;
   }
 
+  try {
+    const utf8Text = new TextDecoder('utf-8', { fatal: true }).decode(data).trim();
+    if (utf8Text && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\uFFFD]/u.test(utf8Text)) {
+      return utf8Text;
+    }
+  } catch {
+    // Legacy WAV INFO chunks often omit an encoding marker; fall through to heuristic decoding.
+  }
+
   const candidates = ['utf-8', 'gbk', 'shift_jis', 'big5', 'windows-1252'].flatMap((encoding) => {
     try {
       const text = new TextDecoder(encoding).decode(data).trim();
@@ -780,14 +789,14 @@ export class TsMetadataReader implements MetadataReader {
       return value;
     };
 
-    const embeddedTitle = cleanText(waveInfoTags.INAM) ?? cleanText(common.title) ?? firstNativeText(metadata, ['TITLE', 'TIT2', 'INAM']);
+    const embeddedTitle = cleanText(common.title) ?? cleanText(waveInfoTags.INAM) ?? firstNativeText(metadata, ['TITLE', 'TIT2']);
     const embeddedArtist =
-      cleanText(waveInfoTags.IART) ?? cleanText(common.artist) ?? cleanTextList(common.artists) ?? firstNativeText(metadata, ['ARTIST', 'TPE1', 'IART']);
-    const embeddedAlbum = cleanText(waveInfoTags.IPRD) ?? cleanText(common.album) ?? firstNativeText(metadata, ['ALBUM', 'TALB', 'IPRD']);
+      cleanText(common.artist) ?? cleanTextList(common.artists) ?? cleanText(waveInfoTags.IART) ?? firstNativeText(metadata, ['ARTIST', 'TPE1']);
+    const embeddedAlbum = cleanText(common.album) ?? cleanText(waveInfoTags.IPRD) ?? firstNativeText(metadata, ['ALBUM', 'TALB']);
     const embeddedAlbumArtist = cleanTextList(common.albumartist) ?? firstNativeText(metadata, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST', 'TPE2']);
-    const embeddedGenre = cleanText(waveInfoTags.IGNR) ?? cleanTextList(common.genre) ?? firstNativeText(metadata, ['GENRE', 'TCON', 'IGNR']);
-    const embeddedTrackNo = numberOrNull(waveInfoTags.ITRK) ?? numberOrNull(common.track?.no) ?? firstNativeNumber(metadata, ['TRACKNUMBER', 'TRACK', 'TRCK', 'ITRK']);
-    const embeddedYear = yearFromMetadata(waveInfoTags.ICRD) ?? yearFromMetadata(common.year ?? common.date);
+    const embeddedGenre = cleanTextList(common.genre) ?? cleanText(waveInfoTags.IGNR) ?? firstNativeText(metadata, ['GENRE', 'TCON']);
+    const embeddedTrackNo = numberOrNull(common.track?.no) ?? numberOrNull(waveInfoTags.ITRK) ?? firstNativeNumber(metadata, ['TRACKNUMBER', 'TRACK', 'TRCK']);
+    const embeddedYear = yearFromMetadata(common.year ?? common.date) ?? yearFromMetadata(waveInfoTags.ICRD);
     const folderAlbum = folderAlbumFallback(filePath);
 
     const title = pickText('title', embeddedTitle, filenameGuess.title, 'filename_fallback');
@@ -796,7 +805,7 @@ export class TsMetadataReader implements MetadataReader {
     const albumArtist = pickText('albumArtist', embeddedAlbumArtist, artist, 'artist_fallback');
     const trackNo = pickNumber('trackNo', embeddedTrackNo);
     const discNo = pickNumber('discNo', numberOrNull(common.disk?.no) ?? firstNativeNumber(metadata, ['DISCNUMBER', 'DISKNUMBER', 'DISC', 'DISK', 'TPOS']));
-    const year = pickNumber('year', embeddedYear ?? firstNativeYear(metadata, ['DATE', 'YEAR', 'ORIGINALDATE', 'ORIGINALYEAR', 'ICRD', 'TDRC']));
+    const year = pickNumber('year', embeddedYear ?? firstNativeYear(metadata, ['DATE', 'YEAR', 'ORIGINALDATE', 'ORIGINALYEAR', 'TDRC']));
     const genre = embeddedGenre;
     fieldSources.genre = genre ? 'embedded' : 'unknown';
     const duration = Math.max(0, Number(format.duration ?? 0));

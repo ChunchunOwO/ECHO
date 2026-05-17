@@ -73,6 +73,7 @@ export type DecoderRun = {
   stream: Readable;
   stop: () => void;
   done: Promise<void>;
+  waitForExitOnStop?: boolean;
   ready?: Promise<void>;
   decoderBackendImpl?: string;
   resamplerEngine?: AudioResamplerEngine;
@@ -171,6 +172,16 @@ export type AudioSessionPlayRequest = LocalAudioSource & {
   startSeconds?: number;
   output?: AudioOutputSettings;
   probe?: PlaybackProbeHint;
+};
+
+export type AudioSessionPlayPcmStreamRequest = {
+  stream: Readable;
+  sourceId: string;
+  trackId?: string | null;
+  sampleRate: number;
+  channels: number;
+  durationSeconds?: number;
+  output?: AudioOutputSettings;
 };
 
 export type AudioSessionPrepareLocalFileRequest = LocalAudioSource & {

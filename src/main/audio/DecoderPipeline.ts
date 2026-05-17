@@ -455,6 +455,7 @@ export class DecoderPipeline {
     return {
       stream: proc.stdout,
       done,
+      waitForExitOnStop: true,
       resamplerEngine,
       resamplerFallbackActive,
       stop: () => {
@@ -614,6 +615,7 @@ export class DecoderPipeline {
     return {
       stream: output,
       done,
+      waitForExitOnStop: true,
       get resamplerEngine() {
         return fallbackActive ? 'default' : 'soxr';
       },

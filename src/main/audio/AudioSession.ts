@@ -23,6 +23,7 @@ import type {
   AudioProbeResult,
   AudioResamplerEngine,
   AudioSharedBackend,
+  AudioSessionPlayPcmStreamRequest,
   AudioSessionPrepareLocalFileRequest,
   AudioSessionPlayRequest,
   AudioStatus,
@@ -43,7 +44,8 @@ type DecoderPipelineLike = Pick<DecoderPipeline, 'probeLocalFile' | 'decodeLocal
   getToolchainInfo?: () => FfmpegToolchainDiagnostics;
 };
 type JuceDecodePipelineLike = Pick<JuceDecodePipeline, 'decodeLocalFile'>;
-type DeviceServiceLike = Pick<DeviceService, 'listDevices'> & Partial<Pick<DeviceService, 'listDevicesAsync' | 'refresh' | 'openAsioControlPanel'>>;
+type DeviceServiceLike = Pick<DeviceService, 'listDevices'> &
+  Partial<Pick<DeviceService, 'listDevicesAsync' | 'refresh' | 'invalidateCache' | 'openAsioControlPanel'>>;
 type OutputBridgeLike = {
   writable: Writable | null;
   start: (options: NativeOutputStartOptions) => Promise<NativeBridgeReadyResult>;
@@ -98,6 +100,16 @@ type BridgeEventListeners = {
 type StabilityRecoveryOptions = {
   runToken?: number;
   sharedStabilityRecoveryClaimed?: boolean;
+};
+
+const normalizeStabilityRecoveryOptions = (
+  callerTokenOrOptions: number | StabilityRecoveryOptions | undefined,
+): StabilityRecoveryOptions => {
+  if (typeof callerTokenOrOptions === 'number') {
+    return { runToken: callerTokenOrOptions };
+  }
+
+  return callerTokenOrOptions ?? {};
 };
 
 type PreparedLocalProbeUse = {
@@ -163,6 +175,7 @@ const isAudioSessionRunCancelledError = (error: unknown): boolean => {
 const sharedReplacementGracefulStopTimeoutMs = 750;
 const releaseExclusiveOnPauseGracefulStopTimeoutMs = 1_500;
 const releaseExclusiveOnPausePlayWaitTimeoutMs = 900;
+const decoderStopTimeoutMs = 500;
 const minReliableAsioSampleRate = 44_100;
 type SharedOutputProfile = Pick<
   NativeOutputStartOptions,
@@ -905,6 +918,7 @@ export class AudioSession extends EventEmitter {
   private attachedBridgeEvents: { bridge: OutputBridgeLike; listeners: BridgeEventListeners } | null = null;
   private nativeHostNotificationQueue: Promise<void> = Promise.resolve();
   private decoderRun: DecoderRun | null = null;
+  private decoderStopInProgress: Promise<void> | null = null;
   private gainTransform: PcmVolumeTransform | null = null;
   private speedTransform: PcmPlaybackRateTransform | null = null;
   private levelMeterTransform: PcmLevelMeterTransform | null = null;
@@ -1236,7 +1250,10 @@ export class AudioSession extends EventEmitter {
   async playLocalFile(request: AudioSessionPlayRequest): Promise<AudioStatus> {
     const token = this.runToken + 1;
     this.runToken = token;
-    this.stopDecoderRun();
+    const decoderStop = this.stopDecoderRun();
+    if (decoderStop) {
+      await decoderStop;
+    }
     this.logger(
       `[AudioSession] playLocalFile: file="${redactUrlSecrets(request.filePath)}" trackId=${request.trackId ?? 'n/a'} start=${
         request.startSeconds ?? 0
@@ -1504,6 +1521,146 @@ export class AudioSession extends EventEmitter {
     }
   }
 
+  async playPcmStream(request: AudioSessionPlayPcmStreamRequest): Promise<AudioStatus> {
+    const token = this.runToken + 1;
+    this.runToken = token;
+    const decoderStop = this.stopDecoderRun();
+    if (decoderStop) {
+      await decoderStop;
+    }
+    this.logger(
+      `[AudioSession] playPcmStream: source="${redactUrlSecrets(request.sourceId)}" trackId=${request.trackId ?? 'n/a'} sampleRate=${
+        request.sampleRate
+      } channels=${request.channels}`,
+    );
+
+    this.state = 'loading';
+    this.hostStatus = 'starting';
+    this.errorMessage = null;
+    this.outputWarnings = [
+      ...(this.watchdogPendingWarning ? [this.watchdogPendingWarning] : []),
+      ...this.pendingOutputWarnings,
+    ];
+    this.exclusiveReleasedOnPause = false;
+    this.watchdogPendingWarning = null;
+    this.pendingOutputWarnings = [];
+    this.resetWatchdogProgress();
+    this.resetLevelMeter();
+    this.resetNativeTelemetry();
+    this.currentFilePath = request.sourceId;
+    this.currentInputHeaders = null;
+    this.currentTrackId = request.trackId ?? null;
+    this.pausedPositionSeconds = null;
+    this.currentProbe = null;
+    this.currentPlan = null;
+    this.currentResidentOutputSampleRate = null;
+    this.currentOutputBackend = null;
+    this.currentOutputBackendImpl = null;
+    this.currentOutputDeviceType = null;
+    this.currentOutputDeviceName = null;
+    this.currentResamplerEngine = 'default';
+    this.currentResamplerFallbackActive = false;
+    this.currentDecodeBackendImpl = 'airplay-raop-pcm';
+    this.currentOutputSettings = this.createOutputSettingsForRequest(request.output);
+    this.currentUseJuceOutputRequested = this.currentOutputSettings.useJuceOutput === true;
+    this.currentUseJuceDecodeRequested = false;
+    this.currentDsdOutputModeRequested = 'pcm';
+    this.currentActiveDsdOutputMode = null;
+    this.currentDsdNativeSampleRate = null;
+    this.currentDsdTransportSampleRate = null;
+    this.currentDevice = this.resolvePlanDeviceForSettings(this.currentOutputSettings);
+    this.resetSharedStabilityForFreshPlayback(this.currentOutputSettings.outputMode ?? 'shared', this.currentOutputSettings, this.currentDevice);
+    this.emitStatus();
+
+    try {
+      const sampleRate = Math.max(8_000, Math.round(request.sampleRate));
+      const channels = Math.max(1, Math.min(8, Math.round(request.channels)));
+      const probe: AudioProbeResult = {
+        filePath: request.sourceId,
+        durationSeconds: Math.max(0, request.durationSeconds ?? 0),
+        fileSampleRate: sampleRate,
+        channels,
+        codec: 'pcm-f32le',
+        bitDepth: 32,
+        bitrate: sampleRate * channels * 32,
+      };
+      this.currentProbe = probe;
+      let { bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(probe, token, 0);
+      this.assertCurrentRun(token);
+      this.applyReadyResult(ready);
+      try {
+        this.assertReadySampleRateConsistent();
+      } catch (error) {
+        const failedPlan = this.currentPlan as SampleRatePlan | null;
+        if (failedPlan?.outputMode !== 'exclusive') {
+          throw error;
+        }
+
+        const fallback = await this.startSharedFallbackForProbe(
+          probe,
+          token,
+          0,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        bridge = fallback.bridge;
+        plan = fallback.plan;
+        ready = fallback.ready;
+        hostReused = fallback.hostReused;
+        hostRestartReason = fallback.hostRestartReason;
+        this.assertCurrentRun(token);
+        this.applyReadyResult(ready);
+      }
+
+      const activePlan = this.currentPlan ?? plan;
+      this.logAudioTransition(activePlan, {
+        hostReused,
+        hostRestartReason,
+        preparedLocalProbeUsed: false,
+        preparedLocalProbeAgeMs: null,
+      });
+      await this.syncEqStateForPlayback();
+      this.assertCurrentRun(token);
+      const sessionId = bridge.beginSession?.({
+        startSeconds: 0,
+        playbackRate: this.currentOutputSettings.playbackRate,
+        durationSeconds: probe.durationSeconds,
+      });
+      const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
+      if (!writable) {
+        throw new Error('native output bridge did not expose a writable PCM stream');
+      }
+
+      const runDone = new Promise<void>((resolve, reject) => {
+        request.stream.once('end', resolve);
+        request.stream.once('close', resolve);
+        request.stream.once('error', reject);
+      });
+      const run: DecoderRun = {
+        stream: request.stream,
+        stop: () => request.stream.destroy(),
+        done: runDone,
+        decoderBackendImpl: 'airplay-raop-pcm',
+        resamplerEngine: 'default',
+        resamplerFallbackActive: false,
+      };
+      this.currentDecodeBackendImpl = 'airplay-raop-pcm';
+      this.startDecoderRun(run, writable, token);
+
+      this.state = 'playing';
+      this.hostStatus = 'ready';
+      this.resetWatchdogProgress();
+      this.emitStatus();
+      return this.getStatus();
+    } catch (error) {
+      request.stream.destroy();
+      if (this.runToken === token) {
+        this.handleError(error instanceof Error ? error : new Error(String(error)));
+      }
+
+      throw error;
+    }
+  }
+
   restorePlaybackMemory(memory: PlaybackMemory): AudioStatus {
     if (this.state !== 'idle' && this.state !== 'stopped') {
       return this.getStatus();
@@ -1567,6 +1724,7 @@ export class AudioSession extends EventEmitter {
         this.hostStatus === 'ready';
 
       if (canResumePreparedBridge && bridge && currentProbe && currentPlan) {
+        this.runToken += 1;
         const token = this.runToken;
         const startSeconds = this.pausedPositionSeconds ?? this.clock.getPositionSeconds();
         this.pausedPositionSeconds = null;
@@ -1659,7 +1817,10 @@ export class AudioSession extends EventEmitter {
     positionSeconds: number,
     sampleRate: number | null,
   ): Promise<void> {
-    this.stopDecoderRun();
+    const decoderStop = this.stopDecoderRun();
+    if (decoderStop) {
+      await decoderStop;
+    }
     try {
       bridge.endSession?.();
     } catch {
@@ -1755,7 +1916,10 @@ export class AudioSession extends EventEmitter {
         return this.getStatus();
       }
       if (keepResidentBridge) {
-        this.stopDecoderRun();
+        const decoderStop = this.stopDecoderRun();
+        if (decoderStop) {
+          await decoderStop;
+        }
         try {
           this.bridge?.endSession?.();
         } catch {
@@ -1918,7 +2082,10 @@ export class AudioSession extends EventEmitter {
     if (this.state === 'playing' && this.bridge && isWritableUsable(this.bridge.writable) && this.currentProbe && this.currentPlan) {
       const token = this.runToken + 1;
       this.runToken = token;
-      this.stopDecoderRun();
+      const decoderStop = this.stopDecoderRun();
+      if (decoderStop) {
+        await decoderStop;
+      }
       await this.syncEqStateForPlayback();
       this.assertCurrentRun(token);
 
@@ -2178,39 +2345,45 @@ export class AudioSession extends EventEmitter {
   }
 
   async checkPlaybackWatchdog(): Promise<void> {
-    if (
-      this.state !== 'playing' ||
-      this.watchdogRecovering ||
-      this.sharedStabilityRecovering ||
-      !this.bridge ||
-      !this.currentFilePath ||
-      !this.currentOutputSettings
-    ) {
-      this.resetWatchdogProgress();
-      return;
-    }
+    const token = this.runToken;
 
-    const positionSeconds = this.bridge.getPositionSeconds();
-    if (!Number.isFinite(positionSeconds)) {
-      this.resetWatchdogProgress();
-      return;
-    }
+    try {
+      if (
+        this.state !== 'playing' ||
+        this.watchdogRecovering ||
+        this.sharedStabilityRecovering ||
+        !this.bridge ||
+        !this.currentFilePath ||
+        !this.currentOutputSettings
+      ) {
+        this.resetWatchdogProgress();
+        return;
+      }
 
-    if (
-      this.watchdogLastPositionSeconds === null ||
-      positionSeconds > this.watchdogLastPositionSeconds + watchdogPositionEpsilonSeconds
-    ) {
-      this.watchdogLastPositionSeconds = positionSeconds;
-      this.watchdogStalledChecks = 0;
-      return;
-    }
+      const positionSeconds = this.bridge.getPositionSeconds();
+      if (!Number.isFinite(positionSeconds)) {
+        this.resetWatchdogProgress();
+        return;
+      }
 
-    this.watchdogStalledChecks += 1;
-    if (this.watchdogStalledChecks < this.watchdogStallChecks) {
-      return;
-    }
+      if (
+        this.watchdogLastPositionSeconds === null ||
+        positionSeconds > this.watchdogLastPositionSeconds + watchdogPositionEpsilonSeconds
+      ) {
+        this.watchdogLastPositionSeconds = positionSeconds;
+        this.watchdogStalledChecks = 0;
+        return;
+      }
 
-    await this.recoverFromWatchdogStall(positionSeconds);
+      this.watchdogStalledChecks += 1;
+      if (this.watchdogStalledChecks < this.watchdogStallChecks) {
+        return;
+      }
+
+      await this.recoverFromWatchdogStall(positionSeconds, token);
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   dispose(): void {
@@ -3159,7 +3332,7 @@ export class AudioSession extends EventEmitter {
 
       if (this.bridge && !previousBridgeStopped) {
         if (this.shouldDetachSharedReplacement(outputMode, sharedBackend)) {
-          this.detachSharedReplacementBridge('replace-output');
+          await this.detachSharedReplacementBridge('replace-output');
         } else {
           await this.stopResourcesGracefully('replace-output');
         }
@@ -3584,6 +3757,7 @@ export class AudioSession extends EventEmitter {
           return;
         }
 
+        this.deviceService.invalidateCache?.();
         this.enqueueNativeHostNotification(event, token);
       },
     };
@@ -3818,58 +3992,72 @@ export class AudioSession extends EventEmitter {
   }
 
   private async checkNativeUnderrunRecovery(): Promise<void> {
-    if (
-      this.state !== 'playing' ||
-      this.watchdogRecovering ||
-      this.sharedStabilityRecovering ||
-      !this.currentFilePath ||
-      !this.currentOutputSettings ||
-      !this.currentPlan ||
-      !this.currentProbe
-    ) {
-      return;
+    const token = this.runToken;
+
+    try {
+      if (
+        this.state !== 'playing' ||
+        this.watchdogRecovering ||
+        this.sharedStabilityRecovering ||
+        !this.currentFilePath ||
+        !this.currentOutputSettings ||
+        !this.currentPlan ||
+        !this.currentProbe
+      ) {
+        return;
+      }
+
+      const now = Date.now();
+      if (!this.nativeUnderrunWindow || now - this.nativeUnderrunWindow.startedAt > nativeUnderrunWindowMs) {
+        this.nativeUnderrunWindow = {
+          startedAt: now,
+          callbacks: this.nativeTelemetry.underrunCallbacks,
+          frames: this.nativeTelemetry.underrunFrames,
+        };
+        return;
+      }
+
+      const callbackDelta = this.nativeTelemetry.underrunCallbacks - this.nativeUnderrunWindow.callbacks;
+      const frameDelta = this.nativeTelemetry.underrunFrames - this.nativeUnderrunWindow.frames;
+      const sampleRate = this.currentPlan.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate;
+      const frameThreshold = Math.max(1, Math.round((sampleRate * nativeUnderrunFramesThresholdMs) / 1000));
+
+      if (callbackDelta < nativeUnderrunCallbackThreshold && frameDelta < frameThreshold) {
+        return;
+      }
+
+      const positionSeconds = this.clock.getPositionSeconds();
+      if (this.currentPlan.outputMode === 'exclusive') {
+        await this.fallbackExclusiveToSharedForInstability(positionSeconds, token);
+        return;
+      }
+
+      const reason = this.currentPlan.outputMode === 'shared' ? 'shared_output_underrun_detected' : 'native_output_underrun_detected';
+      await this.recoverOutputStability(reason, positionSeconds, token);
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)));
     }
-
-    const now = Date.now();
-    if (!this.nativeUnderrunWindow || now - this.nativeUnderrunWindow.startedAt > nativeUnderrunWindowMs) {
-      this.nativeUnderrunWindow = {
-        startedAt: now,
-        callbacks: this.nativeTelemetry.underrunCallbacks,
-        frames: this.nativeTelemetry.underrunFrames,
-      };
-      return;
-    }
-
-    const callbackDelta = this.nativeTelemetry.underrunCallbacks - this.nativeUnderrunWindow.callbacks;
-    const frameDelta = this.nativeTelemetry.underrunFrames - this.nativeUnderrunWindow.frames;
-    const sampleRate = this.currentPlan.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate;
-    const frameThreshold = Math.max(1, Math.round((sampleRate * nativeUnderrunFramesThresholdMs) / 1000));
-
-    if (callbackDelta < nativeUnderrunCallbackThreshold && frameDelta < frameThreshold) {
-      return;
-    }
-
-    if (this.currentPlan.outputMode === 'exclusive') {
-      await this.fallbackExclusiveToSharedForInstability(this.clock.getPositionSeconds());
-      return;
-    }
-
-    const reason = this.currentPlan.outputMode === 'shared' ? 'shared_output_underrun_detected' : 'native_output_underrun_detected';
-    await this.recoverOutputStability(reason, this.clock.getPositionSeconds());
   }
 
-  private stopDecoderRun(): void {
+  private stopDecoderRun(): Promise<void> | null {
+    const previousStop = this.decoderStopInProgress;
     this.decoderPipelineCleanup?.();
     this.decoderPipelineCleanup = null;
 
-    if (this.decoderRun) {
+    const run = this.decoderRun;
+    this.decoderRun = null;
+    if (run) {
       try {
-        this.decoderRun.stream.unpipe();
+        run.stream.unpipe();
       } catch {
         // Best-effort resource cleanup.
       }
-      this.decoderRun.stop();
-      this.decoderRun = null;
+      try {
+        run.stream.destroy();
+      } catch {
+        // Best-effort resource cleanup.
+      }
+      run.stop();
     }
 
     if (this.gainTransform) {
@@ -3897,6 +4085,68 @@ export class AudioSession extends EventEmitter {
         // Best-effort resource cleanup.
       }
       this.levelMeterTransform = null;
+    }
+
+    if (!previousStop && run?.waitForExitOnStop !== true) {
+      return null;
+    }
+
+    const stopPromise = (async (): Promise<void> => {
+      if (previousStop) {
+        try {
+          await previousStop;
+        } catch {
+          // Prior cleanup already logged or was superseded.
+        }
+      }
+
+      if (run?.waitForExitOnStop === true) {
+        await this.waitForDecoderRunExit(run);
+      }
+    })();
+
+    this.decoderStopInProgress = stopPromise;
+    return stopPromise.finally(() => {
+      if (this.decoderStopInProgress === stopPromise) {
+        this.decoderStopInProgress = null;
+      }
+    });
+  }
+
+  private async waitForDecoderRunExit(run: DecoderRun): Promise<void> {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
+
+    try {
+      await Promise.race([
+        run.done.catch(() => undefined),
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, decoderStopTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (!timedOut) {
+      return;
+    }
+
+    this.logger('[AudioSession] decoder process did not exit after stop; forcing cleanup');
+    try {
+      run.stop();
+    } catch {
+      // Best-effort decoder cleanup.
+    }
+    try {
+      run.stream.destroy();
+    } catch {
+      // Best-effort decoder cleanup.
     }
   }
 
@@ -4037,7 +4287,7 @@ export class AudioSession extends EventEmitter {
   }
 
   private stopResources(): void {
-    this.stopDecoderRun();
+    void this.stopDecoderRun();
 
     if (this.bridge) {
       this.detachBridgeEvents(this.bridge);
@@ -4055,7 +4305,10 @@ export class AudioSession extends EventEmitter {
   }
 
   private async stopResourcesGracefully(reason: string, waitForExitOverride?: boolean): Promise<void> {
-    this.stopDecoderRun();
+    const decoderStop = this.stopDecoderRun();
+    if (decoderStop) {
+      await decoderStop;
+    }
 
     const bridge = this.bridge;
     if (!bridge) {
@@ -4116,8 +4369,11 @@ export class AudioSession extends EventEmitter {
     return false;
   }
 
-  private detachSharedReplacementBridge(reason: string): void {
-    this.stopDecoderRun();
+  private async detachSharedReplacementBridge(reason: string): Promise<void> {
+    const decoderStop = this.stopDecoderRun();
+    if (decoderStop) {
+      await decoderStop;
+    }
 
     const bridge = this.bridge;
     if (!bridge) {
@@ -4446,8 +4702,9 @@ export class AudioSession extends EventEmitter {
 
   private async fallbackExclusiveToSharedForInstability(
     positionSeconds: number,
-    options: StabilityRecoveryOptions = {},
+    callerTokenOrOptions: number | StabilityRecoveryOptions = {},
   ): Promise<void> {
+    const options = normalizeStabilityRecoveryOptions(callerTokenOrOptions);
     const token = options.runToken ?? this.runToken;
     const releaseSharedStabilityRecovery = options.sharedStabilityRecoveryClaimed || !this.sharedStabilityRecovering;
     if (!options.sharedStabilityRecoveryClaimed) {
@@ -4534,8 +4791,9 @@ export class AudioSession extends EventEmitter {
   private async recoverOutputStability(
     reason: string,
     positionSeconds: number,
-    options: StabilityRecoveryOptions = {},
+    callerTokenOrOptions: number | StabilityRecoveryOptions = {},
   ): Promise<void> {
+    const options = normalizeStabilityRecoveryOptions(callerTokenOrOptions);
     const token = options.runToken ?? this.runToken;
     const releaseSharedStabilityRecovery = options.sharedStabilityRecoveryClaimed || !this.sharedStabilityRecovering;
     if (!options.sharedStabilityRecoveryClaimed) {
@@ -4641,13 +4899,24 @@ export class AudioSession extends EventEmitter {
     return runToken === undefined || this.runToken === runToken;
   }
 
-  private async recoverFromWatchdogStall(positionSeconds: number): Promise<void> {
-    if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || this.state !== 'playing') {
-      this.resetWatchdogProgress();
+  private async recoverFromWatchdogStall(positionSeconds: number, callerToken?: number): Promise<void> {
+    const token = callerToken ?? this.runToken;
+
+    if (this.watchdogRecovering || this.sharedStabilityRecovering) {
       return;
     }
 
-    await this.recoverOutputStability('audio_watchdog_recovered_native_output', positionSeconds);
+    this.watchdogRecovering = true;
+    try {
+      if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || this.state !== 'playing') {
+        this.resetWatchdogProgress();
+        return;
+      }
+
+      await this.recoverOutputStability('audio_watchdog_recovered_native_output', positionSeconds, token);
+    } finally {
+      this.watchdogRecovering = false;
+    }
   }
 }
 

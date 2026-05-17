@@ -646,7 +646,7 @@ export const FoldersPage = (): JSX.Element => {
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'open-osu-timing') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'reload-embedded-tags' && action !== 'open-osu-timing') {
         setError(t('folders.error.desktopFileActions'));
         return;
       }
@@ -658,6 +658,7 @@ export const FoldersPage = (): JSX.Element => {
         if (
           track.mediaType === 'remote' &&
           (action === 'edit-tags' ||
+            action === 'reload-embedded-tags' ||
             action === 'open-osu-timing' ||
             action === 'show-in-folder' ||
             action === 'copy-path' ||
@@ -706,6 +707,18 @@ export const FoldersPage = (): JSX.Element => {
             setIsTagEditorOpen(false);
             setEditingTrack(track);
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'reload-embedded-tags':
+            {
+              const result = await library!.loadEmbeddedTrackTags(track.id);
+              setTracks((current) => current.map((item) => (item.id === result.track.id ? result.track : item)));
+              if (editingTrack?.id === result.track.id) {
+                setEditingTrack(result.track);
+              }
+              setMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              void refreshOverviews();
+              window.dispatchEvent(new Event('library:changed'));
+            }
             return;
           case 'go-to-album':
             if (!(await openAlbumDetailForTrack(track))) {
@@ -778,7 +791,7 @@ export const FoldersPage = (): JSX.Element => {
         setError(formatFolderError(actionError, t));
       }
     },
-    [appendToQueue, folderSource, playTrackNext, refreshOverviews, removeTrackFromQueue, t],
+    [appendToQueue, editingTrack, folderSource, playTrackNext, refreshOverviews, removeTrackFromQueue, t],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -1102,6 +1115,11 @@ export const FoldersPage = (): JSX.Element => {
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+        onTrackUpdated={(updatedTrack) => {
+          setEditingTrack(updatedTrack);
+          setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
+          window.dispatchEvent(new Event('library:changed'));
+        }}
       />
 
       <OsuTimingPanel

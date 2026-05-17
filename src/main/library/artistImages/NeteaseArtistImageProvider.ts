@@ -45,7 +45,8 @@ export const isNeteaseDefaultArtistImageUrl = (url: string | null | undefined): 
 
   const normalized = url.toLocaleLowerCase();
   return /(?:default|nopic|no_pic|placeholder|avatar_default|artist_default|singer_default)/u.test(normalized)
-    || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized);
+    || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized)
+    || /6y-uleoritedbvrolv0q8a|5639395138885805/u.test(normalized);
 };
 
 const normalizeNeteaseImageUrl = (url: string, size: number): string => {

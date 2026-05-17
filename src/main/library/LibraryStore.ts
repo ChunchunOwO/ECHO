@@ -1682,9 +1682,13 @@ export class LibraryStore {
       discNo: number | null;
       year: number | null;
       genre: string | null;
+      bpm?: number | null;
       sizeBytes: number;
       mtimeMs: number;
       fieldSources: Record<string, string>;
+      embeddedMetadataStatus?: LibraryTrack['embeddedMetadataStatus'];
+      embeddedCoverStatus?: LibraryTrack['embeddedCoverStatus'];
+      metadataStatus?: string;
     },
     timestamp = nowIso(),
   ): LibraryTrack {
@@ -1710,8 +1714,11 @@ export class LibraryStore {
         disc_no = ?,
         year = ?,
         genre = ?,
+        bpm = COALESCE(?, bpm),
         search_terms = ?,
         metadata_status = ?,
+        embedded_metadata_status = COALESCE(?, embedded_metadata_status),
+        embedded_cover_status = COALESCE(?, embedded_cover_status),
         field_sources_json = ?,
         updated_at = ?
       WHERE id = ? AND missing = 0`,
@@ -1725,8 +1732,11 @@ export class LibraryStore {
       update.discNo,
       update.year,
       update.genre,
+      update.bpm ?? null,
       searchTerms,
-      'ok',
+      update.metadataStatus ?? 'ok',
+      update.embeddedMetadataStatus ?? null,
+      update.embeddedCoverStatus ?? null,
       JSON.stringify(update.fieldSources),
       timestamp,
       trackId,

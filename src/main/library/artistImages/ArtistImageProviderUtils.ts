@@ -43,7 +43,8 @@ export const isLikelyDefaultRemoteImageUrl = (url: string | null | undefined): b
   const normalized = url.toLocaleLowerCase();
   return /(?:default|nopic|no_pic|placeholder|avatar_default|singer_default|artist_default|noimage|no_image)/u.test(normalized)
     || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized)
-    || /2a96cbd8b46e442fc41c2b86b821562f/u.test(normalized);
+    || /2a96cbd8b46e442fc41c2b86b821562f/u.test(normalized)
+    || /6y-uleoritedbvrolv0q8a|5639395138885805/u.test(normalized);
 };
 
 export const requestJson = async (

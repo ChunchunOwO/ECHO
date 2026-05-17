@@ -53,4 +53,22 @@ describe('PlayerStatusChips', () => {
 
     expect(screen.queryByText('128 BPM')).toBeNull();
   });
+
+  it('labels AirPlay receiver temporary tracks', () => {
+    render(
+      <PlayerStatusChips
+        status={null}
+        state="playing"
+        track={track({
+          id: 'airplay-receiver:session-1',
+          mediaType: 'remote',
+          isTemporary: true,
+          codec: null,
+          fieldSources: { title: 'airplay' },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('AIRPLAY')).toBeTruthy();
+  });
 });

@@ -1,11 +1,11 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, type execFileSync as nodeExecFileSync } from 'node:child_process';
 import type { AudioDeviceInfo } from './audioTypes';
 import { isAdvancedNativeOutputPlatform, isNativeSharedOutputPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import { resolveHostBinary } from './NativeOutputBridge';
 
 export type DeviceServiceDependencies = {
   hostBinary?: string | null;
-  execFileSync?: typeof execFileSync;
+  execFileSync?: typeof nodeExecFileSync;
   execFile?: typeof execFile;
   platform?: NodeJS.Platform | string;
   logger?: (message: string) => void;
@@ -74,7 +74,6 @@ const parseDeviceListLine = (line: string, outputMode: AudioDeviceInfo['outputMo
 };
 
 export class DeviceService {
-  private readonly exec: typeof execFileSync;
   private readonly execAsync: typeof execFile;
   private readonly hostBinary: string | null;
   private readonly platform: NodeJS.Platform | string;
@@ -88,7 +87,6 @@ export class DeviceService {
   private cacheGeneration = 0;
 
   constructor(dependencies: DeviceServiceDependencies = {}) {
-    this.exec = dependencies.execFileSync ?? execFileSync;
     this.execAsync = dependencies.execFile ?? execFile;
     this.hostBinary = dependencies.hostBinary ?? null;
     this.platform = dependencies.platform ?? process.platform;
@@ -108,13 +106,16 @@ export class DeviceService {
   }
 
   async refresh(options: DeviceListOptions = {}): Promise<AudioDeviceInfo[]> {
+    this.invalidateCache();
+    return this.listDevicesAsync(options);
+  }
+
+  invalidateCache(): void {
     this.cacheGeneration += 1;
     this.sharedCache.clear();
     this.asioCache.clear();
     this.sharedPending.clear();
     this.asioPending.clear();
-
-    return this.listDevicesAsync(options);
   }
 
   async openAsioControlPanel(options: AsioControlPanelOptions = {}): Promise<void> {
@@ -179,12 +180,7 @@ export class DeviceService {
       return [...cache.devices];
     }
 
-    const devices = this.runDeviceList(this.createListArgs(outputMode, options), outputMode);
-    const nextCache = { at: now, devices };
-
-    cacheMap.set(cacheKey, nextCache);
-
-    return [...devices];
+    return [];
   }
 
   private async getCachedDevicesAsync(outputMode: AudioDeviceInfo['outputMode'], options: DeviceListOptions): Promise<AudioDeviceInfo[]> {
@@ -239,33 +235,6 @@ export class DeviceService {
     }
 
     return args;
-  }
-
-  private runDeviceList(args: string[], outputMode: AudioDeviceInfo['outputMode']): AudioDeviceInfo[] {
-    const bin = this.hostBinary ?? (this.platform === process.platform ? resolveHostBinary() : null);
-
-    if (!bin) {
-      this.logger(`[DeviceService] echo-audio-host binary not found for ${outputMode} device enumeration`);
-      return [];
-    }
-
-    try {
-      const output = this.exec(bin, args, {
-        timeout: 5000,
-        encoding: 'utf-8',
-      });
-
-      const devices = this.parseDeviceListOutput(String(output), outputMode);
-
-      if (outputMode === 'asio' && devices.length === 0) {
-        this.logger(`[DeviceService] ASIO device enumeration returned no devices; host="${bin}" args="${args.join(' ')}"`);
-      }
-
-      return devices;
-    } catch (error) {
-      this.logDeviceListFailure(error, bin, args, outputMode);
-      return [];
-    }
   }
 
   private runDeviceListAsync(args: string[], outputMode: AudioDeviceInfo['outputMode']): Promise<AudioDeviceInfo[]> {

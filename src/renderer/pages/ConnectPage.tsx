@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Cast, Loader2, Pause, Play, Power, RefreshCw, Smartphone, Square, Unplug, Volume2, Wifi } from 'lucide-react';
-import type { ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 
@@ -25,6 +25,23 @@ const defaultReceiverStatus: ConnectReceiverStatus = {
   currentClient: null,
   currentUri: null,
   metadata: null,
+  positionSeconds: 0,
+  durationSeconds: 0,
+  volume: 100,
+  error: null,
+  debugEvents: [],
+  updatedAt: new Date(0).toISOString(),
+};
+
+const defaultAirPlayReceiverStatus: AirPlayReceiverStatus = {
+  enabled: false,
+  state: 'disabled',
+  advertisedName: 'ECHO Next (AirPlay)',
+  nativeAvailable: false,
+  currentSourceId: null,
+  currentClient: null,
+  metadata: null,
+  artworkUrl: null,
   positionSeconds: 0,
   durationSeconds: 0,
   volume: 100,
@@ -64,6 +81,18 @@ const receiverStateLabel: Record<ConnectReceiverStatus['state'], string> = {
   error: '错误',
 };
 
+const airPlayStateLabel: Record<AirPlayReceiverStatus['state'], string> = {
+  disabled: '未开启',
+  unavailable: '原生后端不可用',
+  idle: '等待 iPhone',
+  starting: '启动中',
+  ready: '已连接',
+  playing: 'AirPlay 播放中',
+  paused: '已暂停',
+  stopped: '已停止',
+  error: '错误',
+};
+
 const formatTime = (seconds: number): string => {
   const safe = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(safe / 60);
@@ -89,9 +118,11 @@ export const ConnectPage = (): JSX.Element => {
   const [devices, setDevices] = useState<ConnectDevice[]>([]);
   const [status, setStatus] = useState<ConnectSessionStatus>(defaultStatus);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus>(defaultReceiverStatus);
+  const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus>(defaultAirPlayReceiverStatus);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReceiverBusy, setIsReceiverBusy] = useState(false);
+  const [isAirPlayReceiverBusy, setIsAirPlayReceiverBusy] = useState(false);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
@@ -125,6 +156,14 @@ export const ConnectPage = (): JSX.Element => {
   const receiverProgressPercent =
     receiverStatus.durationSeconds > 0
       ? Math.min(100, Math.max(0, (receiverStatus.positionSeconds / receiverStatus.durationSeconds) * 100))
+      : 0;
+  const airPlayTitle = airPlayReceiverStatus.metadata?.title ?? '等待 iPhone 投送';
+  const airPlayArtist = airPlayReceiverStatus.metadata?.artist ?? 'Unknown Artist';
+  const airPlayAlbum = airPlayReceiverStatus.metadata?.album ?? null;
+  const airPlayCover = airPlayReceiverStatus.artworkUrl || airPlayReceiverStatus.metadata?.coverHttpUrl || null;
+  const airPlayProgressPercent =
+    airPlayReceiverStatus.durationSeconds > 0
+      ? Math.min(100, Math.max(0, (airPlayReceiverStatus.positionSeconds / airPlayReceiverStatus.durationSeconds) * 100))
       : 0;
 
   const refreshDevices = useCallback(async (): Promise<void> => {
@@ -176,6 +215,13 @@ export const ConnectPage = (): JSX.Element => {
         }
       }).catch(() => undefined);
     }
+    if (connect.getAirPlayReceiverStatus) {
+      void connect.getAirPlayReceiverStatus().then((nextStatus) => {
+        if (!disposed) {
+          setAirPlayReceiverStatus(nextStatus);
+        }
+      }).catch(() => undefined);
+    }
     void refreshDevices();
     const unsubscribe = connect.onStatus((nextStatus) => {
       setStatus(nextStatus);
@@ -189,11 +235,18 @@ export const ConnectPage = (): JSX.Element => {
         setError(nextStatus.error);
       }
     }) ?? (() => undefined);
+    const unsubscribeAirPlayReceiver = connect.onAirPlayReceiverStatus?.((nextStatus) => {
+      setAirPlayReceiverStatus(nextStatus);
+      if (nextStatus.error) {
+        setError(nextStatus.error);
+      }
+    }) ?? (() => undefined);
 
     return () => {
       disposed = true;
       unsubscribe();
       unsubscribeReceiver();
+      unsubscribeAirPlayReceiver();
     };
   }, [refreshDevices]);
 
@@ -232,6 +285,42 @@ export const ConnectPage = (): JSX.Element => {
       setError(receiverError instanceof Error ? receiverError.message : String(receiverError));
     } finally {
       setIsReceiverBusy(false);
+    }
+  }, []);
+
+  const toggleAirPlayReceiver = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    if (!connect?.setAirPlayReceiverEnabled) {
+      setError('AirPlay receiver bridge unavailable.');
+      return;
+    }
+
+    setIsAirPlayReceiverBusy(true);
+    setError(null);
+    try {
+      setAirPlayReceiverStatus(await connect.setAirPlayReceiverEnabled(!airPlayReceiverStatus.enabled));
+    } catch (receiverError) {
+      setError(receiverError instanceof Error ? receiverError.message : String(receiverError));
+    } finally {
+      setIsAirPlayReceiverBusy(false);
+    }
+  }, [airPlayReceiverStatus.enabled]);
+
+  const stopAirPlayReceiverPlayback = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    if (!connect?.stopAirPlayReceiverPlayback) {
+      setError('AirPlay receiver bridge unavailable.');
+      return;
+    }
+
+    setIsAirPlayReceiverBusy(true);
+    setError(null);
+    try {
+      setAirPlayReceiverStatus(await connect.stopAirPlayReceiverPlayback());
+    } catch (receiverError) {
+      setError(receiverError instanceof Error ? receiverError.message : String(receiverError));
+    } finally {
+      setIsAirPlayReceiverBusy(false);
     }
   }, []);
 
@@ -368,20 +457,90 @@ export const ConnectPage = (): JSX.Element => {
             停止接收播放
           </button>
         </div>
-        <div className="connect-receiver-debug" aria-label="DLNA request log">
-          <span>DLNA Debug</span>
-          {receiverStatus.debugEvents.length > 0 ? (
-            receiverStatus.debugEvents.slice(0, 6).map((event) => (
-              <code key={event.id}>
-                {new Date(event.at).toLocaleTimeString()} {event.remoteAddress ?? '-'} {event.method} {event.path}
-                {event.action ? ` #${event.action}` : ''} {event.statusCode ?? '-'}
-                {event.message ? ` ${event.message}` : ''}
-              </code>
-            ))
-          ) : (
-            <small>No DLNA requests yet</small>
-          )}
+        <details className="connect-receiver-debug" aria-label="DLNA request log">
+          <summary>
+            <span>DLNA Debug</span>
+            <small>{receiverStatus.debugEvents.length > 0 ? `${receiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+          </summary>
+          <div className="connect-receiver-debug__items">
+            {receiverStatus.debugEvents.length > 0 ? (
+              receiverStatus.debugEvents.slice(0, 6).map((event) => (
+                <code key={event.id}>
+                  {new Date(event.at).toLocaleTimeString()} {event.remoteAddress ?? '-'} {event.method} {event.path}
+                  {event.action ? ` #${event.action}` : ''} {event.statusCode ?? '-'}
+                  {event.message ? ` ${event.message}` : ''}
+                </code>
+              ))
+            ) : (
+              <small>No DLNA requests yet</small>
+            )}
+          </div>
+        </details>
+      </section>
+
+      <section className="connect-receiver-panel" aria-label="AirPlay 实验接收">
+        <div className="connect-section-title">
+          <div>
+            <span>AirPlay Spike</span>
+            <h2>接收来自 iPhone</h2>
+          </div>
+          <button className="settings-action-button" type="button" onClick={() => void toggleAirPlayReceiver()} disabled={isAirPlayReceiverBusy}>
+            {isAirPlayReceiverBusy ? <Loader2 className="spinning-icon" size={16} /> : <Power size={16} />}
+            {airPlayReceiverStatus.enabled ? '关闭 AirPlay' : '开启 AirPlay'}
+          </button>
         </div>
+        <div className="connect-receiver-body">
+          <div className="connect-artwork" data-empty={!airPlayCover}>
+            {airPlayCover ? <img alt="" src={airPlayCover} /> : <Cast size={42} />}
+          </div>
+          <div className="connect-now-copy">
+            <span>{airPlayStateLabel[airPlayReceiverStatus.state]}</span>
+            <h2>{airPlayTitle}</h2>
+            <p>{airPlayArtist}{airPlayAlbum ? ` 路 ${airPlayAlbum}` : ''}</p>
+            <div className="connect-progress" aria-label="AirPlay 播放进度">
+              <span style={{ width: `${airPlayProgressPercent}%` }} />
+            </div>
+            <small>
+              {formatTime(airPlayReceiverStatus.positionSeconds)} / {formatTime(airPlayReceiverStatus.durationSeconds)}
+            </small>
+          </div>
+          <div className="connect-receiver-meta">
+            <span>{airPlayReceiverStatus.advertisedName}</span>
+            <small>{airPlayReceiverStatus.currentClient ? `来自 ${airPlayReceiverStatus.currentClient.address}` : '等待 iPhone / iPad'}</small>
+            <small>
+              {airPlayReceiverStatus.nativeAvailable
+                ? 'RAOP 后端已加载'
+                : airPlayReceiverStatus.error ?? '需要可用的 AirPlay 原生后端'}
+            </small>
+          </div>
+          <button
+            className="settings-action-button"
+            type="button"
+            onClick={() => void stopAirPlayReceiverPlayback()}
+            disabled={isAirPlayReceiverBusy || !airPlayReceiverStatus.currentSourceId}
+          >
+            <Square size={15} />
+            停止 AirPlay
+          </button>
+        </div>
+        <details className="connect-receiver-debug" aria-label="AirPlay receiver log">
+          <summary>
+            <span>AirPlay Debug</span>
+            <small>{airPlayReceiverStatus.debugEvents.length > 0 ? `${airPlayReceiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+          </summary>
+          <div className="connect-receiver-debug__items">
+            {airPlayReceiverStatus.debugEvents.length > 0 ? (
+              airPlayReceiverStatus.debugEvents.slice(0, 6).map((event) => (
+                <code key={event.id}>
+                  {new Date(event.at).toLocaleTimeString()} {event.method} {event.action ?? '-'}
+                  {event.message ? ` ${event.message}` : ''}
+                </code>
+              ))
+            ) : (
+              <small>No AirPlay events yet</small>
+            )}
+          </div>
+        </details>
       </section>
 
       <section className="connect-now" aria-label="当前投送">

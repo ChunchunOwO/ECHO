@@ -1088,33 +1088,56 @@ static DWORD WINAPI render_thread_proc(void* param) {
         BYTE* endpointBuffer = NULL;
         HRESULT hr = runtime->renderClient->GetBuffer(framesAvailable, &endpointBuffer);
         if (FAILED(hr)) {
-            fprintf(stderr, "[echo-audio-host] WASAPI render GetBuffer failed hr=0x%08lx\n", (unsigned long)hr);
+            if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
+                fprintf(stderr, "[echo-audio-host] WASAPI render device invalidated hr=0x%08lx\n", (unsigned long)hr);
+                dispatch_notification(
+                    runtime->notificationCallback,
+                    runtime->notificationUserData,
+                    "audio_session_disconnected",
+                    runtime->deviceId,
+                    "device_invalidated",
+                    (unsigned int)hr,
+                    1,
+                    runtime->followsDefaultDevice);
+            } else {
+                fprintf(stderr, "[echo-audio-host] WASAPI render GetBuffer failed hr=0x%08lx\n", (unsigned long)hr);
+            }
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
         }
 
-        if (runtime->renderMode == WASAPI_RENDER_DOP) {
-            memset(dopScratch.data(), 0, (size_t)framesAvailable * runtime->channels * sizeof(uint32_t));
-            if (runtime->dopCallback != NULL) {
-                runtime->dopCallback(runtime->userData, dopScratch.data(), framesAvailable, runtime->channels);
+        try {
+            if (runtime->renderMode == WASAPI_RENDER_DOP) {
+                memset(dopScratch.data(), 0, (size_t)framesAvailable * runtime->channels * sizeof(uint32_t));
+                if (runtime->dopCallback != NULL) {
+                    runtime->dopCallback(runtime->userData, dopScratch.data(), framesAvailable, runtime->channels);
+                }
+                convert_dop_to_endpoint(
+                    dopScratch.data(),
+                    endpointBuffer,
+                    framesAvailable,
+                    runtime->channels,
+                    runtime->format.kind);
+            } else {
+                memset(scratch.data(), 0, (size_t)framesAvailable * runtime->channels * sizeof(float));
+                if (runtime->callback != NULL) {
+                    runtime->callback(runtime->userData, scratch.data(), framesAvailable, runtime->channels);
+                }
+                convert_float_to_endpoint(
+                    scratch.data(),
+                    endpointBuffer,
+                    framesAvailable,
+                    runtime->channels,
+                    runtime->format.kind);
             }
-            convert_dop_to_endpoint(
-                dopScratch.data(),
-                endpointBuffer,
-                framesAvailable,
-                runtime->channels,
-                runtime->format.kind);
-        } else {
-            memset(scratch.data(), 0, (size_t)framesAvailable * runtime->channels * sizeof(float));
-            if (runtime->callback != NULL) {
-                runtime->callback(runtime->userData, scratch.data(), framesAvailable, runtime->channels);
+        } catch (...) {
+            HRESULT releaseHr = runtime->renderClient->ReleaseBuffer(framesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
+            if (FAILED(releaseHr)) {
+                fprintf(stderr, "[echo-audio-host] WASAPI render ReleaseBuffer after callback exception failed hr=0x%08lx\n", (unsigned long)releaseHr);
             }
-            convert_float_to_endpoint(
-                scratch.data(),
-                endpointBuffer,
-                framesAvailable,
-                runtime->channels,
-                runtime->format.kind);
+            fprintf(stderr, "[echo-audio-host] WASAPI render callback threw; released silent buffer\n");
+            InterlockedExchange(&runtime->renderFailed, 1);
+            break;
         }
 
         hr = runtime->renderClient->ReleaseBuffer(framesAvailable, 0);
@@ -1247,6 +1270,8 @@ static int wasapi_exclusive_start_impl(
         (unsigned int)sampleRate,
         (unsigned int)channels,
         (unsigned int)requestedBufferFrames);
+    /* Render callbacks are immutable while the render thread is alive: assigned before
+       CreateThread and cleared only after WaitForSingleObject confirms thread exit. */
     runtime->callback = callback;
     runtime->dopCallback = dopCallback;
     runtime->userData = userData;
@@ -1405,7 +1430,11 @@ void wasapi_exclusive_stop(wasapi_exclusive_runtime* runtime) {
             return;
         }
         CloseHandle(runtime->thread);
+        runtime->thread = NULL;
     }
+    runtime->callback = NULL;
+    runtime->dopCallback = NULL;
+    runtime->userData = NULL;
     if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) {
         runtime->audioClient->Stop();
         runtime->audioClient->Reset();

@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <thread>
+#include <algorithm>
 #include <vector>
 
 namespace echo_wasapi_timeout {
@@ -33,7 +34,50 @@ static std::mutex& init_future_graveyard_mutex() {
     return *mutex;
 }
 
+static void sweep_future_graveyard() {
+    auto& graveyard = init_future_graveyard();
+    std::lock_guard<std::mutex> lock(init_future_graveyard_mutex());
+    graveyard.erase(
+        std::remove_if(
+            graveyard.begin(),
+            graveyard.end(),
+            [](std::future<HRESULT>& future) {
+                return !future.valid() ||
+                    future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+            }),
+        graveyard.end());
+}
+
+static void drain_future_graveyard() {
+    std::vector<std::future<HRESULT>> pending;
+    {
+        std::lock_guard<std::mutex> lock(init_future_graveyard_mutex());
+        pending.swap(init_future_graveyard());
+    }
+
+    for (auto& future : pending) {
+        if (!future.valid()) continue;
+        future.wait();
+        try {
+            (void)future.get();
+        } catch (...) {
+        }
+    }
+}
+
+struct future_graveyard_shutdown_guard {
+    ~future_graveyard_shutdown_guard() {
+        drain_future_graveyard();
+    }
+};
+
+static void ensure_future_graveyard_shutdown_guard() {
+    static future_graveyard_shutdown_guard guard;
+    (void)guard;
+}
+
 static void abandon_future(std::future<HRESULT>&& future) {
+    ensure_future_graveyard_shutdown_guard();
     std::lock_guard<std::mutex> lock(init_future_graveyard_mutex());
     init_future_graveyard().push_back(std::move(future));
 }
@@ -83,6 +127,7 @@ static std::vector<unsigned char> copy_wave_format(const WAVEFORMATEX* format) {
 }
 
 [[maybe_unused]] static HRESULT activate_audio_client_with_timeout(IMMDevice* device, IAudioClient** outClient) {
+    sweep_future_graveyard();
     if (outClient == NULL) return E_POINTER;
     *outClient = NULL;
     if (device == NULL) return E_POINTER;
@@ -143,6 +188,7 @@ static HRESULT initialize_with_timeout(
     REFERENCE_TIME hnsPeriodicity,
     const WAVEFORMATEX* format,
     LPCGUID audioSessionGuid) {
+    sweep_future_graveyard();
     if (client == NULL) return E_POINTER;
 
     const std::vector<unsigned char> formatCopy = copy_wave_format(format);
@@ -202,6 +248,7 @@ static HRESULT initialize_with_timeout(
     IAudioClient* client,
     REFERENCE_TIME* defaultPeriod,
     REFERENCE_TIME* minPeriod) {
+    sweep_future_graveyard();
     if (client == NULL || defaultPeriod == NULL || minPeriod == NULL) return E_POINTER;
 
     auto defaultPeriodCopy = std::make_shared<REFERENCE_TIME>(0);
@@ -242,6 +289,7 @@ static HRESULT initialize_with_timeout(
 }
 
 static HRESULT start_with_timeout(IAudioClient* client) {
+    sweep_future_graveyard();
     if (client == NULL) return E_POINTER;
 
     const DWORD testHangMs = read_test_hang_ms("ECHO_TEST_WASAPI_START_HANG_MS");

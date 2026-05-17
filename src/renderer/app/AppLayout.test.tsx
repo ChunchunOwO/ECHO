@@ -85,6 +85,54 @@ describe('AppLayout standalone routes', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('shows page notices in the upper-left chrome notice area', async () => {
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: '随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。'),
+    );
+  });
+
+  it('opens a markdown crash report from the abnormal-exit notice', async () => {
+    const openCrashReport = vi.fn().mockResolvedValue('D:\\ECHO\\crash-report.md');
+
+    window.echo = {
+      diagnostics: {
+        getLastCrashSummary: vi.fn().mockResolvedValue({
+          sessionId: 'session-1',
+          startedAt: '2026-05-18T00:00:00.000Z',
+          detectedAt: '2026-05-18T00:01:00.000Z',
+          sessionBasename: 'session-1',
+          sessionPathHash: 'hash',
+          reason: 'abnormalExit',
+        }),
+        openCrashReport,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByText(/没有正常退出/)).toBeTruthy());
+    const diagnosticsNotice = screen.getByText(/没有正常退出/).closest('.chrome-notice--diagnostics');
+    if (!diagnosticsNotice) {
+      throw new Error('diagnostics notice was not rendered');
+    }
+    fireEvent.click(within(diagnosticsNotice as HTMLElement).getByRole('button', { name: '打开报告' }));
+
+    await waitFor(() => expect(openCrashReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Markdown 报告已打开/)).toBeTruthy();
+  });
+
   it('keeps the songs route mounted when navigating away and back', async () => {
     const onSongsMount = vi.fn();
     const onSongsUnmount = vi.fn();

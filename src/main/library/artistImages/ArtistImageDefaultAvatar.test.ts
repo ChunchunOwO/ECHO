@@ -13,6 +13,34 @@ describe('artist default avatar detection', () => {
     await expect(isLikelyDefaultArtistAvatarImage(image)).resolves.toBe(true);
   });
 
+  it('detects NetEase singer silhouette default artist artwork', async () => {
+    const data = new Uint8Array(16 * 16 * 3).fill(74);
+    const setPixel = (x: number, y: number, color: readonly [number, number, number]): void => {
+      const offset = (y * 16 + x) * 3;
+      data.set(color, offset);
+    };
+
+    [
+      [1, 1, [69, 69, 69]],
+      [8, 1, [74, 74, 74]],
+      [14, 1, [69, 69, 69]],
+      [3, 4, [101, 101, 101]],
+      [8, 4, [83, 83, 83]],
+      [12, 4, [103, 103, 103]],
+      [4, 8, [105, 105, 105]],
+      [8, 8, [38, 38, 38]],
+      [12, 8, [97, 97, 97]],
+      [3, 12, [52, 52, 52]],
+      [8, 12, [30, 30, 30]],
+      [12, 12, [51, 51, 51]],
+      [8, 14, [19, 19, 19]],
+    ].forEach(([x, y, color]) => setPixel(x as number, y as number, color as [number, number, number]));
+
+    const image = sharp(data, { raw: { width: 16, height: 16, channels: 3 } });
+
+    await expect(isLikelyDefaultArtistAvatarImage(image)).resolves.toBe(true);
+  });
+
   it('does not reject ordinary artist artwork', async () => {
     const image = sharp(svgImage(
       '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#28364f"/><circle cx="170" cy="210" r="112" fill="#ddc7b7"/><circle cx="340" cy="210" r="112" fill="#947c70"/><rect x="72" y="312" width="368" height="148" rx="26" fill="#151a24"/></svg>',

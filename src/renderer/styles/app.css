@@ -2772,6 +2772,12 @@
   background: #eaf6ff;
 }
 
+.tag-airplay {
+  color: #5a3d9a;
+  border-color: rgba(90, 61, 154, 0.16);
+  background: #f1edff;
+}
+
 .tag-lossless {
   color: #2a617f;
   border-color: rgba(42, 97, 127, 0.1);
@@ -8687,7 +8693,7 @@ html[data-theme="dark"] .history-play-count {
 
 .connect-receiver-debug {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--color-border);
@@ -8695,10 +8701,35 @@ html[data-theme="dark"] .history-play-count {
   background: var(--theme-control-bg);
 }
 
+.connect-receiver-debug summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.connect-receiver-debug summary::-webkit-details-marker {
+  display: none;
+}
+
 .connect-receiver-debug span {
   color: var(--theme-heading-text);
   font-size: 11px;
   font-weight: 820;
+}
+
+.connect-receiver-debug__items {
+  display: grid;
+  max-height: 116px;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.connect-receiver-debug[open] .connect-receiver-debug__items {
+  overflow: auto;
 }
 
 .connect-receiver-debug code,

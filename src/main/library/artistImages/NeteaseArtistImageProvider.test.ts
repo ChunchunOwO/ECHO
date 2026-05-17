@@ -60,4 +60,26 @@ describe('NeteaseArtistImageProvider', () => {
 
     expect(candidates).toEqual([]);
   });
+
+  it('filters NetEase singer silhouette placeholder URLs', async () => {
+    const streamingProvider = {
+      search: vi.fn().mockResolvedValue({
+        artists: [
+          {
+            id: 'netease:artist:177232',
+            provider: 'netease',
+            providerArtistId: '177232',
+            name: 'Miku',
+            avatarUrl: 'https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg?param=600y600',
+            coverUrl: null,
+          },
+        ],
+      }),
+    };
+    const provider = new NeteaseArtistImageProvider(streamingProvider as never);
+
+    const candidates = await provider.searchArtistImage({ artistName: 'MIKU', artistKey: 'miku' });
+
+    expect(candidates).toEqual([]);
+  });
 });

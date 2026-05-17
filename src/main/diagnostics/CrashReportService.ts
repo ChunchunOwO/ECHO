@@ -536,12 +536,12 @@ export class CrashReportService {
     return shell.openPath(this.getCrashReportsRoot());
   }
 
-  getCrashReportFilePath(): string {
-    return this.sessionDir ? join(this.sessionDir, 'crash-report.md') : join(this.getCrashReportsRoot(), 'crash-report.md');
+  getCrashReportFilePath(sessionDir = this.sessionDir): string {
+    return sessionDir ? join(sessionDir, 'crash-report.md') : join(this.getCrashReportsRoot(), 'crash-report.md');
   }
 
-  getAudioCrashReportFilePath(): string {
-    return this.sessionDir ? join(this.sessionDir, 'audio-crash-report.md') : join(this.getCrashReportsRoot(), 'audio-crash-report.md');
+  getAudioCrashReportFilePath(sessionDir = this.sessionDir): string {
+    return sessionDir ? join(sessionDir, 'audio-crash-report.md') : join(this.getCrashReportsRoot(), 'audio-crash-report.md');
   }
 
   getAudioCrashReportsDir(): string {
@@ -552,8 +552,8 @@ export class CrashReportService {
     return audioCrashDir;
   }
 
-  async openCrashReportFile(): Promise<string> {
-    const reportPath = this.writeCrashReportFile();
+  async openCrashReportFile(options: { preferLastAbnormal?: boolean } = {}): Promise<string> {
+    const reportPath = this.writeCrashReportFile(undefined, { preferLastAbnormal: options.preferLastAbnormal ?? false });
     const result = await shell.openPath(reportPath);
     if (result) {
       throw new Error(result);
@@ -632,35 +632,64 @@ export class CrashReportService {
     this.logger?.error('crash', 'audio error', record);
   }
 
-  private writeCrashReportFile(record?: CrashRecord | null): string {
-    const reportPath = this.getCrashReportFilePath();
-    mkdirSync(this.sessionDir ?? this.getCrashReportsRoot(), { recursive: true });
-    const crashRecord = record ?? (this.sessionDir ? readJson<CrashRecord>(join(this.sessionDir, 'crash.json')) : null);
-    writeFileSync(reportPath, this.createCrashReportMarkdown(crashRecord));
+  private writeCrashReportFile(
+    record?: CrashRecord | null,
+    options: { preferLastAbnormal?: boolean; sessionDir?: string | null } = {},
+  ): string {
+    const targetSessionDir = options.sessionDir ?? this.resolveCrashReportSessionDir(options.preferLastAbnormal ?? false);
+    const reportPath = this.getCrashReportFilePath(targetSessionDir);
+    mkdirSync(targetSessionDir ?? this.getCrashReportsRoot(), { recursive: true });
+    const crashRecord = record ?? (targetSessionDir ? readJson<CrashRecord>(join(targetSessionDir, 'crash.json')) : null);
+    writeFileSync(reportPath, this.createCrashReportMarkdown(crashRecord, { reportPath, sessionDir: targetSessionDir }));
     return reportPath;
   }
 
-  private writeAudioCrashReportFile(record?: AudioCrashRecord | null): string {
-    const reportPath = this.getAudioCrashReportFilePath();
-    mkdirSync(this.sessionDir ?? this.getCrashReportsRoot(), { recursive: true });
-    const audioRecord = record ?? (this.sessionDir ? readJson<AudioCrashRecord>(join(this.sessionDir, 'audio-crash.latest.json')) : null);
-    writeFileSync(reportPath, this.createAudioCrashReportMarkdown(audioRecord));
+  private writeAudioCrashReportFile(record?: AudioCrashRecord | null, sessionDir = this.sessionDir): string {
+    const reportPath = this.getAudioCrashReportFilePath(sessionDir);
+    mkdirSync(sessionDir ?? this.getCrashReportsRoot(), { recursive: true });
+    const audioRecord = record ?? (sessionDir ? readJson<AudioCrashRecord>(join(sessionDir, 'audio-crash.latest.json')) : null);
+    writeFileSync(reportPath, this.createAudioCrashReportMarkdown(audioRecord, { reportPath, sessionDir }));
     return reportPath;
   }
 
-  private createCrashReportMarkdown(record: CrashRecord | null): string {
-    const session = this.getCurrentSessionSnapshot();
+  private createCrashReportMarkdown(
+    record: CrashRecord | null,
+    options: { reportPath: string; sessionDir: string | null },
+  ): string {
+    const session = this.getCurrentSessionSnapshot(options.sessionDir);
+    const lastAbnormalSessionDir = this.getLastAbnormalSessionDir();
+    const isLastAbnormalReport = Boolean(options.sessionDir && lastAbnormalSessionDir === options.sessionDir);
+    const summaryMessage = record?.message ?? (
+      isLastAbnormalReport
+        ? 'Previous ECHO Next session did not close normally.'
+        : 'No normal crash has been recorded in this session.'
+    );
+    const runtimeSnapshotMarkdown = isLastAbnormalReport
+      ? formatTextBlock('Live runtime snapshots are omitted because this report is for a previous abnormal session. Use the log tails below for the failing run.')
+      : [
+          '### Playback',
+          '',
+          formatJsonBlock(this.getSafePlaybackStatus()),
+          '',
+          '### Audio',
+          '',
+          formatJsonBlock(this.getSafeAudioStatus()),
+          '',
+          '### App Settings',
+          '',
+          formatJsonBlock(getAppSettings()),
+        ].join('\n');
     const lines = [
       '# ECHO Next Crash Report',
       '',
       `Generated: ${nowIso()}`,
-      `Report file: ${basename(this.getCrashReportFilePath())}`,
+      `Report file: ${basename(options.reportPath)}`,
       '',
       '## Summary',
       '',
       `- Type: ${record?.type ?? 'no_crash_recorded'}`,
-      `- Message: ${record?.message ?? 'No normal crash has been recorded in this session.'}`,
-      `- Reason: ${record?.reason ?? 'n/a'}`,
+      `- Message: ${summaryMessage}`,
+      `- Reason: ${record?.reason ?? (isLastAbnormalReport ? 'abnormalExit' : 'n/a')}`,
       `- Exit code: ${record?.exitCode ?? 'n/a'}`,
       `- Crash timestamp: ${record?.timestamp ?? 'n/a'}`,
       '',
@@ -674,7 +703,13 @@ export class CrashReportService {
       '',
       '## Crash Details',
       '',
-      formatJsonBlock(record ?? { message: 'No crash.json exists for the current session.' }),
+      formatJsonBlock(
+        record ?? {
+          message: isLastAbnormalReport
+            ? 'No crash.json exists for the previous session. abnormalExit was detected from session.json.'
+            : 'No crash.json exists for the current session.',
+        },
+      ),
       '',
       '## Stack',
       '',
@@ -682,21 +717,11 @@ export class CrashReportService {
       '',
       '## Safe Runtime Snapshots',
       '',
-      '### Playback',
-      '',
-      formatJsonBlock(this.getSafePlaybackStatus()),
-      '',
-      '### Audio',
-      '',
-      formatJsonBlock(this.getSafeAudioStatus()),
-      '',
-      '### App Settings',
-      '',
-      formatJsonBlock(getAppSettings()),
+      runtimeSnapshotMarkdown,
       '',
       '## Recent Logs',
       '',
-      this.createLogTailMarkdown(['crash.log', 'main.log', 'renderer.log']),
+      this.createLogTailMarkdown(['crash.log', 'main.log', 'renderer.log'], options.sessionDir),
       '',
       '## Privacy',
       '',
@@ -707,14 +732,17 @@ export class CrashReportService {
     return `${lines.join('\n')}\n`;
   }
 
-  private createAudioCrashReportMarkdown(record: AudioCrashRecord | null): string {
-    const session = this.getCurrentSessionSnapshot();
-    const relatedAudioRecords = this.getRecentAudioCrashRecords(record);
+  private createAudioCrashReportMarkdown(
+    record: AudioCrashRecord | null,
+    options: { reportPath: string; sessionDir: string | null },
+  ): string {
+    const session = this.getCurrentSessionSnapshot(options.sessionDir);
+    const relatedAudioRecords = this.getRecentAudioCrashRecords(record, 12, options.sessionDir);
     const lines = [
       '# ECHO Next Audio Crash Report',
       '',
       `Generated: ${nowIso()}`,
-      `Report file: ${basename(this.getAudioCrashReportFilePath())}`,
+      `Report file: ${basename(options.reportPath)}`,
       '',
       '## Summary',
       '',
@@ -753,11 +781,11 @@ export class CrashReportService {
       '## Recent Audio Logs',
       '',
       record
-        ? this.createLogTailMarkdown(['audio.log', 'main.log'])
+        ? this.createLogTailMarkdown(['audio.log', 'main.log'], options.sessionDir)
         : [
             'No audio crash was recorded, so renderer and crash logs are omitted from this audio-only report.',
             '',
-            this.createLogTailMarkdown(['audio.log', 'main.log']),
+            this.createLogTailMarkdown(['audio.log', 'main.log'], options.sessionDir),
           ].join('\n'),
       '',
       '## Notes For Audio Debugging',
@@ -775,12 +803,12 @@ export class CrashReportService {
     return `${lines.join('\n')}\n`;
   }
 
-  private getRecentAudioCrashRecords(currentRecord: AudioCrashRecord | null, maxRecords = 12): AudioCrashRecord[] {
-    if (!this.sessionDir) {
+  private getRecentAudioCrashRecords(currentRecord: AudioCrashRecord | null, maxRecords = 12, sessionDir = this.sessionDir): AudioCrashRecord[] {
+    if (!sessionDir) {
       return currentRecord ? [currentRecord] : [];
     }
 
-    const audioCrashDir = join(this.sessionDir, 'audio-crashes');
+    const audioCrashDir = join(sessionDir, 'audio-crashes');
     const records: AudioCrashRecord[] = [];
 
     try {
@@ -805,26 +833,86 @@ export class CrashReportService {
       .slice(-maxRecords);
   }
 
-  private getCurrentSessionSnapshot(): unknown {
-    if (this.session) {
+  private getCurrentSessionSnapshot(sessionDir = this.sessionDir): unknown {
+    if (sessionDir && sessionDir === this.sessionDir && this.session) {
       return this.session;
     }
 
-    if (this.sessionDir) {
-      return readJson<CrashSessionInfo>(join(this.sessionDir, 'session.json'));
+    if (sessionDir) {
+      return readJson<CrashSessionInfo>(join(sessionDir, 'session.json'));
     }
 
     return null;
   }
 
-  private createLogTailMarkdown(fileNames: string[]): string {
-    if (!this.sessionDir) {
+  private createLogTailMarkdown(fileNames: string[], sessionDir = this.sessionDir): string {
+    if (!sessionDir) {
       return formatTextBlock('Diagnostics session has not been initialized.');
     }
 
     return fileNames
-      .map((fileName) => [`### ${fileName}`, '', formatTextBlock(readLogTail(join(this.sessionDir!, fileName)))].join('\n'))
+      .map((fileName) => [`### ${fileName}`, '', formatTextBlock(readLogTail(join(sessionDir, fileName)))].join('\n'))
       .join('\n\n');
+  }
+
+  async exportDiagnosticsMarkdown(destinationPath?: string): Promise<string> {
+    const sourcePath = this.writeDefaultDiagnosticsMarkdown();
+    const outputPath = destinationPath ?? (await this.chooseDiagnosticsMarkdownPath());
+
+    if (!outputPath) {
+      throw new Error('Diagnostics report export was cancelled.');
+    }
+
+    writeFileSync(outputPath, readFileSync(sourcePath));
+    this.logger?.info('main', 'diagnostics markdown exported', { outputPath });
+    return outputPath;
+  }
+
+  private writeDefaultDiagnosticsMarkdown(): string {
+    if (this.sessionDir && existsSync(join(this.sessionDir, 'audio-crash.latest.json'))) {
+      return this.writeAudioCrashReportFile();
+    }
+
+    return this.writeCrashReportFile(undefined, { preferLastAbnormal: true });
+  }
+
+  private async chooseDiagnosticsMarkdownPath(): Promise<string | null> {
+    const defaultPath = join(
+      app.getPath('downloads'),
+      `ECHO-Next-Diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.md`,
+    );
+    const result: SaveDialogReturnValue = await dialog.showSaveDialog({
+      title: 'Export ECHO diagnostics report',
+      defaultPath,
+      filters: [{ name: 'Markdown report', extensions: ['md'] }],
+    });
+
+    return result.canceled ? null : (result.filePath ?? null);
+  }
+
+  private resolveCrashReportSessionDir(preferLastAbnormal: boolean): string | null {
+    if (preferLastAbnormal) {
+      return this.getLastAbnormalSessionDir() ?? this.sessionDir;
+    }
+
+    return this.sessionDir;
+  }
+
+  private getLastAbnormalSessionDir(): string | null {
+    if (!this.lastCrashSummary?.sessionBasename) {
+      return null;
+    }
+
+    const sessionDir = join(this.getSessionsDir(), this.lastCrashSummary.sessionBasename);
+    if (hashText(sessionDir) !== this.lastCrashSummary.sessionPathHash) {
+      return null;
+    }
+
+    try {
+      return existsSync(sessionDir) && statSync(sessionDir).isDirectory() ? sessionDir : null;
+    } catch {
+      return null;
+    }
   }
 
   async exportDiagnosticsZip(destinationPath?: string): Promise<string> {

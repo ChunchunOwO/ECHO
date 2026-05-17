@@ -13,6 +13,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
@@ -76,7 +77,31 @@ struct BufferAttempt
     ASIOError error = ASE_OK;
 };
 
-asio_runtime* activeRuntime = nullptr;
+std::atomic<asio_runtime*> activeRuntime { nullptr };
+std::atomic<int> activeAsioCallbacks { 0 };
+
+struct asio_callback_guard
+{
+    asio_callback_guard()
+    {
+        activeAsioCallbacks.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    ~asio_callback_guard()
+    {
+        activeAsioCallbacks.fetch_sub(1, std::memory_order_acq_rel);
+    }
+};
+
+void wait_for_asio_callbacks()
+{
+    for (int attempt = 0; attempt < 1000; ++attempt)
+    {
+        if (activeAsioCallbacks.load(std::memory_order_acquire) == 0)
+            return;
+        Sleep(1);
+    }
+}
 
 std::vector<bool> build_buffer_include_input_attempts(
     long inputChannelCount,
@@ -992,7 +1017,8 @@ bool should_force_native_dsd_packed_msb(const char* selectedUtf8)
 
 void render_asio_output(long bufferIndex)
 {
-    asio_runtime* runtime = activeRuntime;
+    asio_callback_guard callbackGuard;
+    asio_runtime* runtime = activeRuntime.load(std::memory_order_acquire);
     if (runtime == nullptr)
         return;
 
@@ -1112,8 +1138,9 @@ ASIOTime* asio_buffer_switch_time_info(ASIOTime* params, long index, ASIOBool pr
 
 void asio_sample_rate_changed(ASIOSampleRate sampleRate)
 {
-    if (activeRuntime != nullptr)
-        activeRuntime->sampleRate = sampleRate;
+    asio_runtime* runtime = activeRuntime.load(std::memory_order_acquire);
+    if (runtime != nullptr)
+        runtime->sampleRate = sampleRate;
 }
 
 long asio_messages(long selector, long value, void* message, double* opt)
@@ -1598,7 +1625,7 @@ static int asio_start_impl(
     if (error != nullptr && errorLen > 0)
         error[0] = '\0';
 
-    if (activeRuntime != nullptr)
+    if (activeRuntime.load(std::memory_order_acquire) != nullptr)
     {
         set_error(error, errorLen, "ASIO runtime already active");
         return -1;
@@ -1779,7 +1806,7 @@ static int asio_start_impl(
         runtime->granularity,
         requestedBufferFrames);
 
-    activeRuntime = runtime;
+    activeRuntime.store(runtime, std::memory_order_release);
     fprintf(stderr, "[echo-audio-host] ASIOCreateBuffers attempts starting: %s\n", selectedUtf8);
     if (! create_buffers_with_candidates(runtime, candidates, error, errorLen))
     {
@@ -1790,7 +1817,7 @@ static int asio_start_impl(
 
         if (! retry_create_buffers_after_sample_rate_recovery(runtime, requestedRate, requestedBufferFrames, error, errorLen))
         {
-            activeRuntime = nullptr;
+            activeRuntime.store(nullptr, std::memory_order_release);
             asio_stop(runtime);
             return -1;
         }
@@ -1812,7 +1839,7 @@ static int asio_start_impl(
         if (runtime->nativeDsdScratch == nullptr)
         {
             set_error(error, errorLen, "failed to allocate ASIO native DSD render scratch buffer");
-            activeRuntime = nullptr;
+            activeRuntime.store(nullptr, std::memory_order_release);
             asio_stop(runtime);
             return -1;
         }
@@ -1825,7 +1852,7 @@ static int asio_start_impl(
         if (runtime->dopScratch == nullptr)
         {
             set_error(error, errorLen, "failed to allocate ASIO DoP render scratch buffer");
-            activeRuntime = nullptr;
+            activeRuntime.store(nullptr, std::memory_order_release);
             asio_stop(runtime);
             return -1;
         }
@@ -1838,7 +1865,7 @@ static int asio_start_impl(
         if (runtime->scratch == nullptr)
         {
             set_error(error, errorLen, "failed to allocate ASIO render scratch buffer");
-            activeRuntime = nullptr;
+            activeRuntime.store(nullptr, std::memory_order_release);
             asio_stop(runtime);
             return -1;
         }
@@ -1851,7 +1878,7 @@ static int asio_start_impl(
         char message[256] {};
         snprintf(message, sizeof(message), "ASIOStart failed error=%s(%ld)", asio_error_name(result), static_cast<long>(result));
         set_error(error, errorLen, message);
-        activeRuntime = nullptr;
+        activeRuntime.store(nullptr, std::memory_order_release);
         asio_stop(runtime);
         return -1;
     }
@@ -1982,11 +2009,21 @@ void asio_stop(asio_runtime* runtime)
     if (runtime == nullptr)
         return;
 
+    asio_runtime* expectedRuntime = runtime;
+    activeRuntime.compare_exchange_strong(
+        expectedRuntime,
+        nullptr,
+        std::memory_order_acq_rel,
+        std::memory_order_acquire);
+    wait_for_asio_callbacks();
+
     if (runtime->started)
     {
         ASIOStop();
         runtime->started = false;
     }
+
+    wait_for_asio_callbacks();
 
     if (runtime->buffersCreated)
     {
@@ -2004,9 +2041,6 @@ void asio_stop(asio_runtime* runtime)
         ASIOExit();
         runtime->initialized = false;
     }
-
-    if (activeRuntime == runtime)
-        activeRuntime = nullptr;
 
     if (runtime->sysRefWindow != nullptr)
     {

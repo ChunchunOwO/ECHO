@@ -100,6 +100,7 @@ const echoApi: EchoApi = {
     deletePlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryDeletePlaylist, playlistId),
     getPlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylist, playlistId),
     getPlaylistItems: (playlistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylistItems, playlistId, query),
+    importPlaylistFile: () => ipcRenderer.invoke(IpcChannels.LibraryImportPlaylistFile),
     exportPlaylist: (request) => ipcRenderer.invoke(IpcChannels.LibraryExportPlaylist, request),
     addTrackToPlaylist: (playlistId, trackId) => ipcRenderer.invoke(IpcChannels.LibraryAddTrackToPlaylist, playlistId, trackId),
     addStreamingTrackToPlaylist: (playlistId, track) => ipcRenderer.invoke(IpcChannels.LibraryAddStreamingTrackToPlaylist, playlistId, track),
@@ -265,6 +266,16 @@ const echoApi: EchoApi = {
       };
       ipcRenderer.on(IpcChannels.ConnectReceiverStatus, listener);
       return () => ipcRenderer.off(IpcChannels.ConnectReceiverStatus, listener);
+    },
+    getAirPlayReceiverStatus: () => ipcRenderer.invoke(IpcChannels.ConnectAirPlayReceiverGetStatus),
+    setAirPlayReceiverEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.ConnectAirPlayReceiverSetEnabled, enabled),
+    stopAirPlayReceiverPlayback: () => ipcRenderer.invoke(IpcChannels.ConnectAirPlayReceiverStopPlayback),
+    onAirPlayReceiverStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as Awaited<ReturnType<EchoApi['connect']['getAirPlayReceiverStatus']>>);
+      };
+      ipcRenderer.on(IpcChannels.ConnectAirPlayReceiverStatus, listener);
+      return () => ipcRenderer.off(IpcChannels.ConnectAirPlayReceiverStatus, listener);
     },
   },
   streaming: {

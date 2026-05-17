@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
+import { decodeTextFileBytes } from '../../shared/utils/decodeTextFile';
 
 export type CueTrack = {
   cuePath: string;
@@ -22,17 +23,7 @@ export type CueSheet = {
 
 const cueTrackSuffixPattern = /#cueTrack=(\d+)$/iu;
 
-const decodeCueText = (buffer: Buffer): string => {
-  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
-    return buffer.subarray(2).toString('utf16le');
-  }
-
-  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
-    return buffer.subarray(3).toString('utf8');
-  }
-
-  return buffer.toString('utf8');
-};
+const decodeCueText = (buffer: Buffer): string => decodeTextFileBytes(buffer);
 
 const cueValue = (line: string, command: string): string | null => {
   const pattern = new RegExp(`^${command}\\s+(?:"([^"]*)"|(.*))$`, 'iu');

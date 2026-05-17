@@ -38,7 +38,8 @@ describe('TrackRow', () => {
     render(<TrackRow isPlaying={false} track={track()} />);
 
     expect(screen.getByText('Afraid')).toBeTruthy();
-    expect(screen.getByText('2hollis / Nate Sib - afraid')).toBeTruthy();
+    expect(screen.getByText('2hollis / Nate Sib')).toBeTruthy();
+    expect(screen.getByText('afraid')).toBeTruthy();
     expect(screen.getByText('FLAC')).toBeTruthy();
     expect(screen.getByText('24bit / 96kHz')).toBeTruthy();
     expect(screen.getByText('900kbps')).toBeTruthy();
@@ -102,6 +103,22 @@ describe('TrackRow', () => {
     expect(onPlay).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Add to queue Afraid' }));
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it('opens artist and album links without playing the row', () => {
+    const onPlay = vi.fn();
+    const onOpenArtist = vi.fn();
+    const onOpenAlbum = vi.fn();
+    const item = track();
+    render(<TrackRow isPlaying={false} track={item} onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '2hollis / Nate Sib' }));
+    expect(onOpenArtist).toHaveBeenCalledWith(item);
+    expect(onPlay).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'afraid' }));
+    expect(onOpenAlbum).toHaveBeenCalledWith(item);
     expect(onPlay).not.toHaveBeenCalled();
   });
 

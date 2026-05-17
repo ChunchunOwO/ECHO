@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
 import type { StreamingAudioQuality, StreamingProviderName } from '../../shared/types/streaming';
@@ -175,6 +175,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showNewPlaylistForm, setShowNewPlaylistForm] = useState(false);
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
+  const [isImportingPlaylistFile, setIsImportingPlaylistFile] = useState(false);
   const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
@@ -693,6 +694,38 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   };
 
+  const handleImportPlaylistFile = async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.importPlaylistFile) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to import playlist files.');
+      setStatusMessage(null);
+      return;
+    }
+
+    setIsImportingPlaylistFile(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const result = await library.importPlaylistFile();
+      if (!result) {
+        return;
+      }
+
+      await loadPlaylists();
+      setSelectedPlaylistId(result.playlistId);
+      setPlaylistSearchInput('');
+      setPlaylistSearch('');
+      await loadItems(result.playlistId, 1, 'replace', '');
+      setStatusMessage(`已导入歌单：${result.playlistName}，共 ${result.importedCount} 首`);
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+      setStatusMessage(null);
+    } finally {
+      setIsImportingPlaylistFile(false);
+    }
+  };
+
   const handleChoosePlaylistCover = async (): Promise<void> => {
     const library = window.echo?.library;
     if (!library || !selectedPlaylist) {
@@ -814,7 +847,12 @@ export const PlaylistsPage = (): JSX.Element => {
 
         if (
           track.mediaType === 'remote' &&
-          (action === 'open-osu-timing' || action === 'show-in-folder' || action === 'copy-path' || action === 'open-system' || action === 'delete-song')
+          (action === 'reload-embedded-tags' ||
+            action === 'open-osu-timing' ||
+            action === 'show-in-folder' ||
+            action === 'copy-path' ||
+            action === 'open-system' ||
+            action === 'delete-song')
         ) {
           setError('远程歌曲暂不支持本地文件操作。');
           return;
@@ -839,6 +877,35 @@ export const PlaylistsPage = (): JSX.Element => {
                   ? `已从播放队列移除：${track.title}`
                   : `播放队列里没有这首歌：${track.title}`,
               );
+            }
+            return;
+          case 'reload-embedded-tags':
+            {
+              if (!library || track.mediaType === 'streaming' || track.mediaType === 'remote' || track.isTemporary) {
+                setError('这首歌不支持重新加载嵌入标签。');
+                return;
+              }
+
+              const result = await library.loadEmbeddedTrackTags(track.id);
+              setItemsPage((current) => ({
+                ...current,
+                items: current.items.map((item) =>
+                  item.track?.id === result.track.id
+                    ? {
+                        ...item,
+                        track: result.track,
+                        titleSnapshot: result.track.title,
+                        artistSnapshot: result.track.artist,
+                        albumSnapshot: result.track.album,
+                        durationSnapshot: result.track.duration,
+                        coverId: result.track.coverId,
+                        coverThumb: result.track.coverThumb,
+                      }
+                    : item,
+                ),
+              }));
+              setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              window.dispatchEvent(new Event('library:changed'));
             }
             return;
           case 'show-in-folder':
@@ -902,6 +969,9 @@ export const PlaylistsPage = (): JSX.Element => {
       <aside className="playlist-sidebar" aria-label="Playlists">
         <div className="playlist-sidebar-header">
           <h1>Playlists</h1>
+          <button className="tool-button" type="button" aria-label="导入 M3U/M3U8 歌单" title="导入 M3U/M3U8 歌单" disabled={isImportingPlaylistFile} onClick={() => void handleImportPlaylistFile()}>
+            {isImportingPlaylistFile ? <Loader2 className="spinning-icon" size={17} /> : <Upload size={17} />}
+          </button>
           <button className="tool-button" type="button" aria-label="新建本地歌单" title="新建本地歌单" onClick={handleShowNewPlaylistForm}>
             <Plus size={17} />
           </button>

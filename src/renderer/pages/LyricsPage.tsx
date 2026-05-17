@@ -169,7 +169,7 @@ const isStreamingTrack = (
   track.providerTrackId.trim().length > 0;
 
 const isSnapshotLyricsTrack = (track: LibraryTrack | null, trackId: string | null): track is LibraryTrack =>
-  Boolean(track?.isTemporary || trackId?.startsWith("dlna-receiver:"));
+  Boolean(track?.isTemporary || trackId?.startsWith("dlna-receiver:") || trackId?.startsWith("airplay-receiver:"));
 
 const streamingLyricsToState = (
   result: StreamingLyricsResult,

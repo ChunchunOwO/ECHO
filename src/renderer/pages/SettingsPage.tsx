@@ -303,6 +303,7 @@ const accountProviderLabels: Record<AccountProvider, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
   spotify: 'Spotify',
+  osu: 'osu!',
 };
 
 type ArtistImageProgress = ArtistImageJobStatus & {
@@ -326,9 +327,10 @@ const accountLoginUrls: Record<AccountProvider, string> = {
   youtube: 'https://www.youtube.com/',
   soundcloud: 'https://soundcloud.com/',
   spotify: 'https://accounts.spotify.com/',
+  osu: 'https://osu.ppy.sh/',
 };
 
-const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud'];
+const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud', 'osu'];
 const youtubeBrowserOptions: Array<{ value: YouTubeBrowser; label: string }> = [
   { value: 'edge', label: 'Edge' },
   { value: 'chrome', label: 'Chrome' },
@@ -968,6 +970,7 @@ const AccountCookieCard = ({
       <span>登录 {status?.lastLoginAt ?? 'n/a'} · 检查 {status?.lastCheckedAt ?? 'n/a'}</span>
     </div>
     {provider === 'soundcloud' ? <p className="settings-inline-note settings-account-note">SoundCloud 流播放使用这里保存的登录 Cookie，不需要 Artist Pro 或开发者 API。</p> : null}
+    {provider === 'osu' ? <p className="settings-inline-note settings-account-note">osu! 谱面下载会优先使用这里保存的登录 Cookie；官方失败时会自动尝试 Sayobot、Catboy 和 NeriNyan 镜像。</p> : null}
     {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
     {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
   </article>
@@ -1184,6 +1187,7 @@ export const SettingsPage = (): JSX.Element => {
     youtube: '',
     soundcloud: '',
     spotify: '',
+    osu: '',
   });
   const [accountBusy, setAccountBusy] = useState<Partial<Record<AccountProvider, AccountBusyAction>>>({});
   const [accountErrors, setAccountErrors] = useState<Partial<Record<AccountProvider, string | null>>>({});
@@ -1385,8 +1389,8 @@ export const SettingsPage = (): JSX.Element => {
         sectionKey: 'about',
         targetId: 'settings-row-diagnostics',
         title: 'Diagnostics / 崩溃报告',
-        description: '本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。',
-        terms: ['Diagnostics / 崩溃报告', '本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。', 'diagnostics', 'crash', 'logs', 'status', '诊断', '崩溃', '日志', '状态'],
+        description: '报错默认生成轻量 Markdown 报告；日志目录仍保留在本地，不会自动上传。',
+        terms: ['Diagnostics / 崩溃报告', 'Markdown 报告', 'diagnostics', 'crash', 'logs', 'status', '诊断', '崩溃', '日志', '状态'],
       },
     ];
 
@@ -2439,7 +2443,7 @@ export const SettingsPage = (): JSX.Element => {
       setDiagnosticsBusy(true);
       setDiagnosticsMessage(null);
       const exportedPath = await diagnostics.exportDiagnostics();
-      setDiagnosticsMessage(`诊断包已导出：${exportedPath}`);
+      setDiagnosticsMessage(`Markdown 报告已导出：${exportedPath}`);
     } catch (diagnosticsError) {
       setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
     } finally {
@@ -2472,7 +2476,7 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       const openedPath = await diagnostics.openCrashReport();
-      setDiagnosticsMessage(`Crash report: ${openedPath}`);
+      setDiagnosticsMessage(`崩溃报告：${openedPath}`);
     } catch (diagnosticsError) {
       setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
     }
@@ -2488,7 +2492,7 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       const openedPath = await diagnostics.openAudioCrashReport();
-      setDiagnosticsMessage(`Audio crash report: ${openedPath}`);
+      setDiagnosticsMessage(`音频报告：${openedPath}`);
     } catch (diagnosticsError) {
       setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
     }
@@ -2531,17 +2535,22 @@ export const SettingsPage = (): JSX.Element => {
   const artistImageSummary = artistImageProgress?.summary ?? emptyArtistImageSummary;
   const artistImageQueuedTotal = artistImageProgress?.lastQueued.queued ?? 0;
   const artistImageRuntimeActive = (artistImageProgress?.queued ?? 0) + (artistImageProgress?.active ?? 0);
-  const artistImageActive = artistImageHasSummary ? artistImageRuntimeActive : artistImageQueuedTotal;
-  const artistImageProgressTotal = artistImageQueuedTotal > 0 ? artistImageQueuedTotal : Math.max(artistImageSummary.total, 1);
+  const artistImageFailed = artistImageSummary.error + artistImageSummary.rateLimited;
+  const artistImageTerminalTotal = artistImageSummary.matched + artistImageSummary.notFound + artistImageFailed;
+  const artistImagePersistedActive = artistImageSummary.pending + artistImageSummary.loading;
+  const artistImageActive = artistImageHasSummary ? Math.max(artistImageRuntimeActive, artistImagePersistedActive) : artistImageQueuedTotal;
+  const artistImageProgressTotal = Math.max(
+    artistImageSummary.total,
+    artistImageTerminalTotal + artistImageActive,
+    artistImageQueuedTotal,
+    1,
+  );
   const artistImageProgressDone =
     !artistImageHasSummary
       ? 0
-      : artistImageQueuedTotal > 0
-      ? Math.max(0, Math.min(artistImageQueuedTotal, artistImageQueuedTotal - Math.min(artistImageQueuedTotal, artistImageActive)))
-      : Math.max(0, artistImageSummary.total - artistImageActive);
+      : Math.max(0, Math.min(artistImageProgressTotal, artistImageTerminalTotal));
   const artistImageProgressPercent =
     artistImageProgressTotal > 0 ? Math.max(0, Math.min(100, Math.round((artistImageProgressDone / artistImageProgressTotal) * 100))) : 0;
-  const artistImageFailed = artistImageSummary.error + artistImageSummary.rateLimited;
   const artistImagePaused = artistImageProgress?.paused ?? appSettings?.artistImageFetchPaused ?? false;
   const artistImageStatusLabel = !appSettings?.autoFetchArtistImages
     ? '未启用'
@@ -2834,7 +2843,7 @@ export const SettingsPage = (): JSX.Element => {
           return;
         }
 
-        const status = await library.kickoffArtistImageBackfill({ force: true, limit: 500 });
+        const status = await library.kickoffArtistImageBackfill({ force: false, limit: 500 });
         setArtistImageProgress({ ...status, startedAt: Date.now() });
         setArtistImageMessage(
           t('settings.appearance.artistAvatars.message.queued', {
@@ -4577,7 +4586,7 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-diagnostics"
                 highlighted={highlightedSettingId === 'settings-row-diagnostics'}
                 title="Diagnostics / 崩溃报告"
-                description="本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。"
+                description="报错默认生成轻量 Markdown 报告；日志目录仍保留在本地，不会自动上传。"
               >
                 <div className="settings-cache-panel settings-cache-panel--diagnostics">
                   <div className="settings-status-grid">
@@ -4601,7 +4610,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={diagnosticsBusy} onClick={() => void handleDiagnosticsExport()}>
                       <Download size={15} />
-                      {diagnosticsBusy ? '导出中...' : '导出诊断包'}
+                      {diagnosticsBusy ? '导出中...' : '导出 Markdown'}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenFolder()}>
                       <FolderOpen size={15} />
@@ -4609,11 +4618,11 @@ export const SettingsPage = (): JSX.Element => {
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenCrashReport()}>
                       <FileText size={15} />
-                      View crash report
+                      打开崩溃报告
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenAudioCrashReport()}>
                       <Headphones size={15} />
-                      View audio crash report
+                      打开音频报告
                     </button>
                     <button
                       className="settings-action-button"

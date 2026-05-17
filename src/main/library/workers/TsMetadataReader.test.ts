@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import iconv from 'iconv-lite';
 import type { IAudioMetadata } from 'music-metadata';
 import { parseFile } from 'music-metadata';
 import { readMetadata, readPictures } from 'taglib-wasm';
@@ -64,12 +65,19 @@ const riffChunk = (id: string, data: Buffer): Buffer => Buffer.concat([
   data.length % 2 ? Buffer.from([0]) : Buffer.alloc(0),
 ]);
 
-const writeWaveWithInfo = (filePath: string, tags: Record<string, string>): void => {
-  const infoChunks = Object.entries(tags).map(([id, value]) => riffChunk(id, Buffer.from(`${value}\0`, 'utf8')));
+const writeWaveWithRawInfo = (filePath: string, tags: Record<string, Buffer>): void => {
+  const infoChunks = Object.entries(tags).map(([id, value]) => riffChunk(id, value));
   const listData = Buffer.concat([Buffer.from('INFO', 'ascii'), ...infoChunks]);
   const listChunk = riffChunk('LIST', listData);
   const riffSize = 4 + listChunk.length;
   writeFileSync(filePath, Buffer.concat([Buffer.from('RIFF', 'ascii'), uint32Le(riffSize), Buffer.from('WAVE', 'ascii'), listChunk]));
+};
+
+const writeWaveWithInfo = (filePath: string, tags: Record<string, string>): void => {
+  writeWaveWithRawInfo(
+    filePath,
+    Object.fromEntries(Object.entries(tags).map(([id, value]) => [id, Buffer.from(`${value}\0`, 'utf8')])),
+  );
 };
 
 describe('TsMetadataReader WAV INFO text decoding', () => {
@@ -87,6 +95,8 @@ describe('TsMetadataReader WAV INFO text decoding', () => {
   it('keeps ordinary UTF-8 and ASCII WAV INFO text unchanged', () => {
     expect(decodeWaveInfoText(Buffer.from('Transcend Lights\0', 'utf8'))).toBe('Transcend Lights');
     expect(decodeWaveInfoText(Buffer.from('ONGEKI Sound Collection 06\0', 'utf8'))).toBe('ONGEKI Sound Collection 06');
+    expect(decodeWaveInfoText(Buffer.from('\u5c71\u6d77\0', 'utf8'))).toBe('\u5c71\u6d77');
+    expect(decodeWaveInfoText(Buffer.from('\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9\0', 'utf8'))).toBe('\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9');
   });
 
   it('repairs common UTF-8 mojibake without changing normal CJK text', () => {
@@ -363,6 +373,50 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fieldSources.trackNo).toBe('embedded');
   });
 
+  it('prefers valid ID3/common WAV tags over corrupted RIFF INFO text', async () => {
+    const root = makeTempRoot();
+    const wavePath = join(root, '10 \u5c71\u6d77.wav');
+    writeWaveWithRawInfo(wavePath, {
+      INAM: Buffer.from('e11f57\0', 'utf8'),
+      IART: Buffer.from([0x68, 0x0d, 0x09, 0x64, 0x38, 0x1c, 0x66, 0x32, 0x21, 0x66, 0x1c, 0x09, 0x66, 0x34, 0x3e, 0x65, 0x2f, 0x39, 0x00]),
+      IPRD: Buffer.from([0x64, 0x38, 0x11, 0x65, 0x25, 0x34, 0x65, 0x04, 0x3f, 0x00]),
+      ITRK: Buffer.from('10\0', 'utf8'),
+    });
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      common: {
+        title: '\u5c71\u6d77',
+        artist: '\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9',
+        album: '\u4e11\u5974\u513f',
+        track: { no: 10, of: null },
+        year: 2016,
+      },
+      native: {
+        exif: [
+          { id: 'INAM', value: 'e11f57' },
+          { id: 'IART', value: 'h\r\td8\u001cf2!f\u001c\tf4>e/9' },
+          { id: 'IPRD', value: 'd8\u0011e%4e\u0004?' },
+        ],
+      },
+      format: {
+        duration: 251.05,
+        codec: 'PCM',
+      },
+    }));
+
+    const result = await new TsMetadataReader().read(wavePath);
+
+    expect(result.fields).toMatchObject({
+      title: '\u5c71\u6d77',
+      artist: '\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9',
+      album: '\u4e11\u5974\u513f',
+      trackNo: 10,
+      year: 2016,
+    });
+    expect(result.fieldSources.title).toBe('embedded');
+    expect(result.fieldSources.artist).toBe('embedded');
+    expect(result.fieldSources.album).toBe('embedded');
+  });
+
   it('keeps cue sheet track tags and cue duration over source-file fallbacks', async () => {
     const root = makeTempRoot();
     const audioPath = join(root, 'album.wav');
@@ -405,6 +459,43 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fields.duration).toBe(60);
     expect(result.fieldSources.title).toBe('sidecar');
     expect(result.fieldSources.duration).toBe('sidecar');
+  });
+
+  it('decodes legacy GB18030 cue sheet text during virtual-track import', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'album.wav');
+    const cuePath = join(root, 'album.cue');
+    writeFileSync(audioPath, 'fake audio');
+    writeFileSync(
+      cuePath,
+      iconv.encode(
+        [
+          'PERFORMER "\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9"',
+          'TITLE "\u4e11\u5974\u513f"',
+          'FILE "album.wav" WAVE',
+          '  TRACK 01 AUDIO',
+          '    TITLE "\u5c71\u6d77"',
+          '    INDEX 01 00:00:00',
+        ].join('\r\n'),
+        'gb18030',
+      ),
+    );
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      format: {
+        duration: 251,
+        codec: 'PCM',
+      },
+    }));
+
+    const result = await new TsMetadataReader().read(`${cuePath}#cueTrack=1`);
+
+    expect(result.fields.title).toBe('\u5c71\u6d77');
+    expect(result.fields.artist).toBe('\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9');
+    expect(result.fields.album).toBe('\u4e11\u5974\u513f');
+    expect(result.fields.albumArtist).toBe('\u8349\u4e1c\u6ca1\u6709\u6d3e\u5bf9');
+    expect(result.fieldSources.title).toBe('sidecar');
+    expect(result.fieldSources.artist).toBe('sidecar');
+    expect(result.fieldSources.album).toBe('sidecar');
   });
 });
 

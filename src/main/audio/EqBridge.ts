@@ -263,7 +263,7 @@ export class EqBridge extends EventEmitter {
       return;
     }
 
-    const socket = net.createConnection({ host: '127.0.0.1', port });
+    const socket = net.createConnection({ host: '127.0.0.1', port, timeout: 5000 });
     this.socket = socket;
     this.activeControlPort = port;
     socket.setNoDelay(true);
@@ -272,9 +272,14 @@ export class EqBridge extends EventEmitter {
         return;
       }
 
+      socket.setTimeout(0);
+      socket.setKeepAlive(true, 30000);
       void this.syncStateToNative().catch((error: unknown) => {
         this.emit('error', error instanceof Error ? error : new Error(String(error)));
       });
+    });
+    socket.on('timeout', () => {
+      socket.destroy(new Error('eq_control_connection_timeout'));
     });
     socket.on('data', (chunk) => this.handleData(chunk));
     socket.on('error', (error) => {
@@ -510,8 +515,7 @@ export class EqBridge extends EventEmitter {
       this.pending.push({ resolve: (state) => resolve(state as EqState), reject });
       socket.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) {
-          const pending = this.pending.shift();
-          pending?.reject(error);
+          this.rejectPending(error);
         }
       });
     });
@@ -528,8 +532,7 @@ export class EqBridge extends EventEmitter {
       this.pending.push({ resolve: (state) => resolve(state as ChannelBalanceState), reject });
       socket.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) {
-          const pending = this.pending.shift();
-          pending?.reject(error);
+          this.rejectPending(error);
         }
       });
     });

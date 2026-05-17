@@ -81,6 +81,25 @@ export type ConnectReceiverDebugEvent = {
   message: string | null;
 };
 
+export type AirPlayReceiverState = 'disabled' | 'unavailable' | 'idle' | 'starting' | 'ready' | 'playing' | 'paused' | 'stopped' | 'error';
+
+export type AirPlayReceiverStatus = {
+  enabled: boolean;
+  state: AirPlayReceiverState;
+  advertisedName: string;
+  nativeAvailable: boolean;
+  currentSourceId: string | null;
+  currentClient: ConnectReceiverClient | null;
+  metadata: ConnectMetadata | null;
+  artworkUrl: string | null;
+  positionSeconds: number;
+  durationSeconds: number;
+  volume: number;
+  error: string | null;
+  debugEvents: ConnectReceiverDebugEvent[];
+  updatedAt: string;
+};
+
 export type ConnectReceiverStatus = {
   enabled: boolean;
   state: ConnectReceiverState;

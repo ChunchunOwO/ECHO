@@ -17,6 +17,8 @@ type TrackListProps = {
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
   onDownload?: (track: LibraryTrack) => void;
+  onOpenArtist?: (track: LibraryTrack) => void;
+  onOpenAlbum?: (track: LibraryTrack) => void;
   downloadingTrackIds?: Record<string, boolean>;
   downloadProgressByTrackId?: Record<string, number>;
   duplicateHiddenCounts?: Record<string, number>;
@@ -32,7 +34,7 @@ type TrackListProps = {
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, onAddToQueue, onDownload, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, onAddToQueue, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
@@ -207,6 +209,8 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
                       onPlay={onPlay}
                       onAddToQueue={onAddToQueue}
                       onDownload={onDownload}
+                      onOpenArtist={onOpenArtist}
+                      onOpenAlbum={onOpenAlbum}
                       isDownloading={downloadingTrackIds[track.id] === true}
                       downloadProgress={downloadProgressByTrackId[track.id]}
                       onShowVersions={onShowVersions}

@@ -78,7 +78,8 @@ const mvSyncCorrectionCooldownMs = 1000;
 const playbackSeekedEvent = 'playback:seeked';
 const mvEndedBeforeAudioEvent = 'mv:ended-before-audio';
 const lyricsSmartReadableVideoSampleEvent = 'lyrics:smart-readable-video-sample';
-const isDlnaReceiverTrackId = (value: string | null | undefined): value is string => Boolean(value?.startsWith('dlna-receiver:'));
+const isReceiverTrackId = (value: string | null | undefined): value is string =>
+  Boolean(value?.startsWith('dlna-receiver:') || value?.startsWith('airplay-receiver:'));
 const mvSettingsKeys = [
   'enabled',
   'autoSearch',
@@ -390,7 +391,7 @@ export const MvPanel = ({
       return;
     }
 
-    if (isDlnaReceiverTrackId(trackId) && mvApi.searchNetworkCandidatesForSnapshot) {
+    if (isReceiverTrackId(trackId) && mvApi.searchNetworkCandidatesForSnapshot) {
       await mvApi.searchNetworkCandidatesForSnapshot({
         trackId,
         title: title?.trim() || 'DLNA stream',

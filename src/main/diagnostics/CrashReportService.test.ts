@@ -242,6 +242,36 @@ describe('CrashReportService', () => {
     expect(readJson<{ status: string }>(join(previousDir, 'session.json')).status).toBe('abnormalExit');
   });
 
+  it('opens a markdown report for the previous abnormal session', async () => {
+    const sessionsDir = join(tempDir, 'crash-reports', 'sessions');
+    const previousDir = join(sessionsDir, '0001');
+    mkdirSync(previousDir, { recursive: true });
+    writeFileSync(
+      join(previousDir, 'session.json'),
+      JSON.stringify({
+        sessionId: '0001',
+        appVersion: '1.0.1-test',
+        electronVersion: 'test',
+        chromeVersion: 'test',
+        nodeVersion: 'test',
+        platform: 'win32',
+        arch: 'x64',
+        startedAt: '2026-05-13T00:00:00.000Z',
+        status: 'running',
+      }),
+    );
+    writeFileSync(join(previousDir, 'main.log'), 'previous session log tail\n');
+
+    const service = new CrashReportService(tempDir);
+    service.initialize();
+    const reportPath = await service.openCrashReportFile({ preferLastAbnormal: true });
+
+    expect(reportPath).toBe(join(previousDir, 'crash-report.md'));
+    const report = readFileSync(reportPath, 'utf8');
+    expect(report).toContain('Previous ECHO Next session did not close normally.');
+    expect(report).toContain('previous session log tail');
+  });
+
   it('writes renderer errors to renderer and crash logs', () => {
     const service = new CrashReportService(tempDir);
     service.initialize();
@@ -518,6 +548,21 @@ describe('CrashReportService', () => {
     expect(report).not.toContain('D:\\Music\\private-song.flac');
     const { shell } = await import('electron');
     expect(shell.openPath).toHaveBeenCalledWith(reportPath);
+  });
+
+  it('exports markdown diagnostics by default', async () => {
+    const service = new CrashReportService(tempDir);
+    const outputPath = join(tempDir, 'diagnostics.md');
+    service.initialize();
+    service.reportCrash({ type: 'test', message: 'Synthetic crash' });
+
+    const exportedPath = await service.exportDiagnosticsMarkdown(outputPath);
+
+    expect(exportedPath).toBe(outputPath);
+    const report = readFileSync(outputPath, 'utf8');
+    expect(report).toContain('# ECHO Next Crash Report');
+    expect(report).toContain('Synthetic crash');
+    expect(report.startsWith('PK')).toBe(false);
   });
 
   it('redacts sensitive log payload fields', () => {

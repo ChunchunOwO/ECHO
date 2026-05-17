@@ -86,6 +86,8 @@ const maxImageBytes = 5 * 1024 * 1024;
 const imageRequestTimeoutMs = 8000;
 const minAcceptedImageSide = 240;
 const defaultProvider = 'qqmusic';
+const providerRotationConfidenceTolerance = 0.03;
+const firstPassPrimaryProviderCount = 3;
 const preferredPrimaryProviderNames = new Set([
   'qqmusic',
   'netease',
@@ -117,6 +119,23 @@ const statusOrPending = (value: unknown): ArtistImageCacheStatus =>
     : 'pending';
 
 const hashText = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+const stableIndexForText = (value: string, modulo: number): number => {
+  if (modulo <= 1) {
+    return 0;
+  }
+
+  return Number.parseInt(hashText(value).slice(0, 8), 16) % modulo;
+};
+
+const rotateProviders = <Provider extends ArtistImageProvider>(providers: Provider[], seed: string): Provider[] => {
+  if (providers.length <= 1) {
+    return providers;
+  }
+
+  const start = stableIndexForText(seed, providers.length);
+  return providers.slice(start).concat(providers.slice(0, start));
+};
 
 const defaultArtistImageProviders = (): ArtistImageProvider[] => [
   new QQMusicArtistImageProvider(),
@@ -312,7 +331,12 @@ export class ArtistImageCacheService {
       return this.getJobStatus();
     }
 
-    this.backfillForce = options.force !== false;
+    const force = options.force === true;
+    if (this.backfillActive && !force) {
+      return this.getJobStatus();
+    }
+
+    this.backfillForce = force;
     this.backfillLimit = Math.max(1, Math.min(1000, Math.floor(options.limit ?? 500)));
 
     if (!this.backfillActive) {
@@ -539,44 +563,45 @@ export class ArtistImageCacheService {
 
   private async fetchAndStore(artist: ResolvedArtist): Promise<ArtistImageCacheEntry> {
     const primaryProviders = this.providers.filter((provider) => !fallbackProviderNames.has(provider.name));
-    const fallbackProviders = this.providers.filter((provider) => fallbackProviderNames.has(provider.name));
+    const fallbackProviders = rotateProviders(
+      this.providers.filter((provider) => fallbackProviderNames.has(provider.name)),
+      `${artist.artistKey}:fallback`,
+    );
     const attemptedImageUrls = new Set<string>();
     const results: ProviderLookupResult[] = [];
-    const primarySearchProviders = primaryProviders.length > 0 ? primaryProviders : this.providers;
-    const pendingPrimaryResults = new Map(
-      primarySearchProviders.map((provider) => [provider, this.searchProvider(provider, artist)] as const),
+    const preferredPrimaryProviders = rotateProviders(
+      primaryProviders.filter((provider) => preferredPrimaryProviderNames.has(provider.name)),
+      artist.artistKey,
     );
-    const preferredPrimaryProviders = primarySearchProviders.filter((provider) => preferredPrimaryProviderNames.has(provider.name));
-    const remainingPrimaryProviders = primarySearchProviders.filter((provider) => !preferredPrimaryProviderNames.has(provider.name));
-    const primaryProviderGroups =
+    const firstPassPrimaryProviders = preferredPrimaryProviders.slice(
+      0,
+      Math.min(firstPassPrimaryProviderCount, preferredPrimaryProviders.length),
+    );
+    const deferredPrimaryProviders = preferredPrimaryProviders.slice(firstPassPrimaryProviders.length);
+    const remainingPrimaryProviders = rotateProviders(
+      primaryProviders.filter((provider) => !preferredPrimaryProviderNames.has(provider.name)),
+      `${artist.artistKey}:primary-rest`,
+    );
+    const providerPriority = this.createProviderPriority([
+      ...preferredPrimaryProviders,
+      ...remainingPrimaryProviders,
+      ...fallbackProviders,
+    ]);
+    const providerGroups =
       preferredPrimaryProviders.length > 0
-        ? [preferredPrimaryProviders, remainingPrimaryProviders]
-        : [primarySearchProviders];
+        ? [firstPassPrimaryProviders, deferredPrimaryProviders, remainingPrimaryProviders, fallbackProviders]
+        : [primaryProviders, fallbackProviders];
     let candidates: ArtistImageCandidate[] = [];
     let attemptedAutoMatchCount = 0;
     const downloadErrors: Array<{ candidate: ArtistImageCandidate; error: unknown }> = [];
 
-    for (const providerGroup of primaryProviderGroups) {
+    for (const providerGroup of providerGroups) {
       if (providerGroup.length === 0) {
         continue;
       }
 
-      results.push(...await Promise.all(providerGroup.map((provider) => pendingPrimaryResults.get(provider)!)));
-      candidates = this.sortCandidates(results.flatMap((result) => result.candidates));
-      const storeResult = await this.tryStoreCandidates(artist, candidates, attemptedImageUrls);
-
-      if (storeResult.entry) {
-        return storeResult.entry;
-      }
-
-      attemptedAutoMatchCount += storeResult.attemptedCount;
-      downloadErrors.push(...storeResult.downloadErrors);
-    }
-
-    if (primaryProviders.length > 0 && fallbackProviders.length > 0) {
-      const fallbackResults = await Promise.all(fallbackProviders.map((provider) => this.searchProvider(provider, artist)));
-      results.push(...fallbackResults);
-      candidates = this.sortCandidates(results.flatMap((result) => result.candidates));
+      results.push(...await Promise.all(providerGroup.map((provider) => this.searchProvider(provider, artist))));
+      candidates = this.sortCandidates(results.flatMap((result) => result.candidates), providerPriority);
       const storeResult = await this.tryStoreCandidates(artist, candidates, attemptedImageUrls);
 
       if (storeResult.entry) {
@@ -637,9 +662,23 @@ export class ArtistImageCacheService {
     });
   }
 
-  private sortCandidates(candidates: ArtistImageCandidate[]): ArtistImageCandidate[] {
+  private createProviderPriority(providers: ArtistImageProvider[]): Map<string, number> {
+    return new Map(providers.map((provider, index) => [provider.name, index]));
+  }
+
+  private sortCandidates(candidates: ArtistImageCandidate[], providerPriority: Map<string, number> = new Map()): ArtistImageCandidate[] {
     return candidates.sort((left, right) => {
       const confidenceDelta = right.confidence - left.confidence;
+      if (Math.abs(confidenceDelta) > providerRotationConfidenceTolerance) {
+        return confidenceDelta;
+      }
+
+      const providerDelta = (providerPriority.get(left.provider) ?? Number.MAX_SAFE_INTEGER)
+        - (providerPriority.get(right.provider) ?? Number.MAX_SAFE_INTEGER);
+      if (providerDelta !== 0) {
+        return providerDelta;
+      }
+
       if (confidenceDelta !== 0) {
         return confidenceDelta;
       }

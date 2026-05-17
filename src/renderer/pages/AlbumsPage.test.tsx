@@ -192,6 +192,26 @@ describe('AlbumsPage', () => {
     expect(getTracks).not.toHaveBeenCalled();
   });
 
+  it('returns to songs when an album detail was opened from the song list', async () => {
+    const targetAlbum = album('1', { title: 'Dream within a dream' });
+    const navigateSongs = vi.fn();
+    installLibrary(
+      vi.fn().mockResolvedValue(page([targetAlbum])),
+      vi.fn(),
+      vi.fn().mockResolvedValue(trackPage([])),
+      vi.fn().mockResolvedValue(null),
+    );
+    window.addEventListener('app:navigate:songs', navigateSongs);
+
+    renderAlbumsPage();
+    await screen.findByText('Dream within a dream');
+    window.dispatchEvent(new CustomEvent('app:navigate:album-detail', { detail: { album: targetAlbum, returnTo: 'songs' } }));
+    fireEvent.click(await screen.findByRole('button', { name: /Albums/ }));
+
+    await waitFor(() => expect(navigateSongs).toHaveBeenCalledTimes(1));
+    window.removeEventListener('app:navigate:songs', navigateSongs);
+  });
+
   it('loads page 2 when the album wall scrolls to the spacer bottom', async () => {
     const getAlbums = vi
       .fn()
@@ -372,6 +392,14 @@ describe('AlbumsPage', () => {
       },
       coverId: 'cover-embedded',
       coverThumb: 'echo-cover://thumb/cover-embedded',
+      track: track('track-1', {
+        album: 'Embedded Album',
+        albumArtist: 'Embedded Album Artist',
+        year: 2024,
+        genre: 'Jazz',
+        coverId: 'cover-embedded',
+        coverThumb: 'echo-cover://thumb/cover-embedded',
+      }),
     });
     installLibrary(getAlbums, vi.fn(), getAlbumTracks);
     window.echo.library.loadEmbeddedTrackTags = loadEmbeddedTrackTags;

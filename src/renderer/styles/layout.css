@@ -278,7 +278,7 @@ html[data-theme="dark"] .app-shell--lyrics .window-control:hover {
   bottom: clamp(8px, 1.6vh, 16px);
   left: 50%;
   z-index: 20;
-  width: min(780px, calc(100vw - 96px));
+  width: min(720px, calc(100vw - 96px));
   pointer-events: auto;
   transform: translateX(-50%);
 }

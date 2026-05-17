@@ -48,8 +48,9 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="14" fill="#eaf1f8"/><circle cx="31" cy="32" r="12" fill="#9fb6cc"/><path d="M28 67c11-19 25-25 42-9" fill="none" stroke="#5f7f9d" stroke-width="8" stroke-linecap="round"/></svg>',
 )}`;
 
-const providerPriority: StreamingProviderName[] = ['soundcloud', 'spotify', 'netease', 'qqmusic', 'mock'];
-const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'soundcloud']);
+const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8']);
+const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'soundcloud', 'spotify', 'bilibili'];
+const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify']);
 const emptyTracks: StreamingTrack[] = [];
 const emptyAlbums: StreamingAlbum[] = [];
 const emptyArtists: StreamingArtist[] = [];
@@ -100,7 +101,9 @@ const streamingTrackWebUrl = (track: StreamingTrack): string | null => {
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(track.providerTrackId)}`;
     case 'soundcloud':
-      return `https://soundcloud.com/search/sounds?q=${encodeURIComponent(track.title ? `${track.artist} ${track.title}` : track.providerTrackId)}`;
+      return track.providerTrackId.startsWith('http')
+        ? track.providerTrackId
+        : `https://soundcloud.com/search/sounds?q=${encodeURIComponent(track.title ? `${track.artist} ${track.title}` : track.providerTrackId)}`;
     default:
       return null;
   }
@@ -208,7 +211,20 @@ export const StreamingSearchPage = (): JSX.Element => {
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
 
   const providerOptions = useMemo(
-    () => (providers.length > 0 ? providers : [{ name: 'mock' as const, displayName: 'Mock', enabled: true, supportsSearch: true, supportsLyrics: true, supportsMv: true, requiresAccount: false }]),
+    () => {
+      const visibleProviders = providers.filter((item) => !hiddenProviderTabs.has(item.name));
+      return visibleProviders.length > 0
+        ? visibleProviders
+        : [{
+            name: 'netease' as const,
+            displayName: 'NetEase Cloud Music',
+            enabled: true,
+            supportsSearch: true,
+            supportsLyrics: true,
+            supportsMv: true,
+            requiresAccount: false,
+          }];
+    },
     [providers],
   );
   const currentProvider = providerOptions.find((item) => item.name === provider) ?? providerOptions[0];
@@ -282,9 +298,10 @@ export const StreamingSearchPage = (): JSX.Element => {
       .getProviders()
       .then((items) => {
         setProviders(items);
-        const currentEnabled = items.some((item) => item.name === provider && item.enabled);
+        const visibleItems = items.filter((item) => !hiddenProviderTabs.has(item.name));
+        const currentEnabled = visibleItems.some((item) => item.name === provider && item.enabled);
         if (!currentEnabled) {
-          setProvider(providerPriority.find((name) => items.some((item) => item.name === name && item.enabled)) ?? items.find((item) => item.enabled)?.name ?? 'mock');
+          setProvider(providerPriority.find((name) => visibleItems.some((item) => item.name === name && item.enabled)) ?? visibleItems.find((item) => item.enabled)?.name ?? 'netease');
         }
       })
       .catch(() => undefined);

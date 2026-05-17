@@ -173,7 +173,7 @@ const streamingTrackKey = (track: LibraryTrack & { provider: StreamingProviderNa
   track.stableKey?.trim() || `streaming:${track.provider}:${track.providerTrackId}`;
 
 const shouldUseSnapshotMvSearch = (track: LibraryTrack | null): track is LibraryTrack =>
-  Boolean(track?.isTemporary || track?.id.startsWith('dlna-receiver:'));
+  Boolean(track?.isTemporary || track?.id.startsWith('dlna-receiver:') || track?.id.startsWith('airplay-receiver:'));
 
 const mvTrackKey = (track: LibraryTrack | null, fallbackTrackId: string | null): string | null => {
   if (isStreamingTrack(track)) {

@@ -20,6 +20,7 @@ import {
 import { isPlaybackCancellationError, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
+import { openArtistDetailForTrack } from '../utils/artistNavigation';
 
 const pageSize = 100;
 const sortOptions: Array<{ value: LibrarySort; label: string }> = [
@@ -45,6 +46,7 @@ const songsSortStorageKey = 'echo-next.songs.sort';
 const songsHideDuplicatesStorageKey = 'echo-next.songs.hide-duplicates';
 const validSortValues = new Set<LibrarySort>(sortOptions.map((option) => option.value));
 const scanPollIntervalMs = 500;
+const showChromeNoticeEvent = 'app:show-chrome-notice';
 const finishedScanStatuses = new Set<LibraryScanStatus['status']>(['completed', 'cancelled', 'failed']);
 const scanPhaseLabels: Record<LibraryScanStatus['phase'], string> = {
   queued: '排队中',
@@ -97,6 +99,10 @@ const writeStoredHideDuplicates = (hideDuplicates: boolean): void => {
 const uniqueIds = (ids: string[]): string[] => Array.from(new Set(ids.filter(Boolean)));
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const showChromeNotice = (message: string): void => {
+  window.dispatchEvent(new CustomEvent(showChromeNoticeEvent, { detail: message }));
+};
 
 const summarizeScanJobs = (statuses: LibraryScanStatus[]): string => {
   const active = statuses.find((status) => !finishedScanStatuses.has(status.status)) ?? statuses[statuses.length - 1];
@@ -190,6 +196,7 @@ export const SongsPage = (): JSX.Element => {
   const duplicateHiddenCountsRef = useRef<Record<string, number>>({});
   const ignoreNextLibraryChangedRef = useRef(false);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
+  const lastAnnouncedPageNoticeRef = useRef<string | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
   const visibleTrackIdsKey = useMemo(() => visibleTrackIds.join('\0'), [visibleTrackIds]);
@@ -542,6 +549,30 @@ export const SongsPage = (): JSX.Element => {
     window.dispatchEvent(new Event('app:navigate:import-folder'));
   };
 
+  const handleOpenTrackArtist = useCallback(async (track: LibraryTrack): Promise<void> => {
+    try {
+      setError(null);
+      const artist = await openArtistDetailForTrack(track, { returnTo: 'songs' });
+      if (!artist) {
+        setError(`未找到艺术家：${track.artist || 'Unknown Artist'}`);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const handleOpenTrackAlbum = useCallback(async (track: LibraryTrack): Promise<void> => {
+    try {
+      setError(null);
+      const album = await openAlbumDetailForTrack(track, { returnTo: 'songs' });
+      if (!album) {
+        setError(`未找到专辑：${track.album || 'Unknown Album'}`);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
   const handleMaintainLibrary = async (): Promise<void> => {
     const library = window.echo?.library;
 
@@ -814,7 +845,7 @@ export const SongsPage = (): JSX.Element => {
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'open-osu-timing') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'reload-embedded-tags' && action !== 'open-osu-timing') {
         setError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
         return;
       }
@@ -825,6 +856,7 @@ export const SongsPage = (): JSX.Element => {
         if (
           track.mediaType === 'remote' &&
           (action === 'edit-tags' ||
+            action === 'reload-embedded-tags' ||
             action === 'open-osu-timing' ||
             action === 'show-in-folder' ||
             action === 'copy-path' ||
@@ -868,8 +900,19 @@ export const SongsPage = (): JSX.Element => {
             setEditingTrack(track);
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
             return;
+          case 'reload-embedded-tags':
+            {
+              const result = await library!.loadEmbeddedTrackTags(track.id);
+              setTracks((current) => current.map((item) => (item.id === result.track.id ? result.track : item)));
+              if (editingTrack?.id === result.track.id) {
+                setEditingTrack(result.track);
+              }
+              setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              window.dispatchEvent(new Event('library:changed'));
+            }
+            return;
           case 'go-to-album':
-            if (!(await openAlbumDetailForTrack(track))) {
+            if (!(await openAlbumDetailForTrack(track, { returnTo: 'songs' }))) {
               setError(`Album not found: ${track.album || 'Unknown Album'}`);
             }
             return;
@@ -941,7 +984,7 @@ export const SongsPage = (): JSX.Element => {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [appendToQueue, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue],
+    [appendToQueue, editingTrack, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -988,6 +1031,18 @@ export const SongsPage = (): JSX.Element => {
   );
 
   const showIndexLoading = isLoading && tracks.length === 0;
+  const pageNoticeMessage =
+    error ??
+    statusMessage ??
+    duplicateMessage ??
+    (isMaintainingLibrary ? '正在维护曲库...' : isClearing ? '正在清空列表...' : showIndexLoading ? '正在读取本地索引...' : null);
+
+  useEffect(() => {
+    if (pageNoticeMessage && pageNoticeMessage !== lastAnnouncedPageNoticeRef.current) {
+      lastAnnouncedPageNoticeRef.current = pageNoticeMessage;
+      showChromeNotice(pageNoticeMessage);
+    }
+  }, [pageNoticeMessage]);
 
   return (
     <div className="songs-page">
@@ -1093,6 +1148,8 @@ export const SongsPage = (): JSX.Element => {
         onEndReached={handleLoadMore}
         onStartReached={handleLoadPrevious}
         onAddToQueue={handleAddTrackToQueue}
+        onOpenArtist={(track) => void handleOpenTrackArtist(track)}
+        onOpenAlbum={(track) => void handleOpenTrackAlbum(track)}
         duplicateHiddenCounts={duplicateHiddenCounts}
         onShowVersions={(track) => void handleShowVersions(track)}
         likedTrackIds={likedTrackIds}
@@ -1103,12 +1160,6 @@ export const SongsPage = (): JSX.Element => {
         followCurrentTrack={followCurrentTrack}
         currentTrackIndex={currentTrackAbsoluteIndex}
       />
-
-      {error || statusMessage || duplicateMessage || showIndexLoading || isMaintainingLibrary || isClearing ? (
-        <div className={`list-footer${isMaintainingLibrary ? ' list-footer--active' : ''}`}>
-          <span>{error ?? statusMessage ?? duplicateMessage ?? (isMaintainingLibrary ? '正在维护曲库...' : isClearing ? '正在清空列表...' : '正在读取本地索引...')}</span>
-        </div>
-      ) : null}
 
       {trackMenu ? (
         <TrackContextMenu
@@ -1127,6 +1178,11 @@ export const SongsPage = (): JSX.Element => {
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+        onTrackUpdated={(updatedTrack) => {
+          setEditingTrack(updatedTrack);
+          setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
+          window.dispatchEvent(new Event('library:changed'));
+        }}
       />
 
       <OsuTimingPanel

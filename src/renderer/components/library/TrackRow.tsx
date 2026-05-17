@@ -18,6 +18,8 @@ type TrackRowProps = {
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
   onDownload?: (track: LibraryTrack) => void;
+  onOpenArtist?: (track: LibraryTrack) => void;
+  onOpenAlbum?: (track: LibraryTrack) => void;
   isDownloading?: boolean;
   downloadProgress?: number | null;
   onShowVersions?: (track: LibraryTrack) => void;
@@ -87,7 +89,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, duplicateHiddenCount = 0, onPlay, onAddToQueue, onDownload, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, duplicateHiddenCount = 0, onPlay, onAddToQueue, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
@@ -150,6 +152,20 @@ export const TrackRow = memo(
       },
       [onDownload, track],
     );
+    const handleOpenArtist = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        onOpenArtist?.(track);
+      },
+      [onOpenArtist, track],
+    );
+    const handleOpenAlbum = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        onOpenAlbum?.(track);
+      },
+      [onOpenAlbum, track],
+    );
     const handleShowVersions = useCallback(
       (event: MouseEvent<HTMLButtonElement>): void => {
         event.stopPropagation();
@@ -205,7 +221,21 @@ export const TrackRow = memo(
             ) : null}
           </div>
           <div className="track-subtitle">
-            {track.artist} - {track.album}
+            {onOpenArtist ? (
+              <button className="track-subtitle-link" type="button" title={`打开艺术家：${track.artist}`} onClick={handleOpenArtist}>
+                {track.artist}
+              </button>
+            ) : (
+              <span>{track.artist}</span>
+            )}
+            <span className="track-subtitle-separator">-</span>
+            {onOpenAlbum ? (
+              <button className="track-subtitle-link" type="button" title={`打开专辑：${track.album}`} onClick={handleOpenAlbum}>
+                {track.album}
+              </button>
+            ) : (
+              <span>{track.album}</span>
+            )}
           </div>
           <div className="tag-row track-tags" aria-label="Audio specifications">
             {tags.map((tag) => (
@@ -254,6 +284,8 @@ export const TrackRow = memo(
     previous.onPlay === next.onPlay &&
     previous.onAddToQueue === next.onAddToQueue &&
     previous.onDownload === next.onDownload &&
+    previous.onOpenArtist === next.onOpenArtist &&
+    previous.onOpenAlbum === next.onOpenAlbum &&
     previous.isDownloading === next.isDownloading &&
     previous.downloadProgress === next.downloadProgress &&
     previous.onShowVersions === next.onShowVersions &&

@@ -365,7 +365,7 @@ class FramedSessionWritable extends Writable {
 
   override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     if (this.sessionClosed) {
-      callback();
+      callback(new Error('native output session is already closed'));
       return;
     }
 
@@ -388,8 +388,10 @@ class FramedSessionWritable extends Writable {
       return;
     }
 
-    this.sessionClosed = true;
-    this.owner.endSession(this.sessionId, callback);
+    this.owner.endSession(this.sessionId, (error) => {
+      this.sessionClosed = true;
+      callback(error);
+    });
   }
 
   override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
@@ -433,6 +435,8 @@ export class NativeOutputBridge extends EventEmitter {
   private readyMessage: NativeBridgeReadyMessage | null = null;
   private eqControlPort: number | null = null;
   private pendingGracefulStop: PendingGracefulStop | null = null;
+  private stdoutReadline: readline.Interface | null = null;
+  private stderrReadline: readline.Interface | null = null;
   private shutdownAckReceived = false;
   private lastOutputMode: NativeOutputMode | null = null;
   inputFormat: NativeOutputStartOptions['inputFormat'] = 'pcm-f32le';
@@ -572,12 +576,14 @@ export class NativeOutputBridge extends EventEmitter {
         this.emit('error', hostError);
       });
 
-      const stdout = readline.createInterface({ input: this.proc.stdout });
+      this.stdoutReadline = readline.createInterface({ input: this.proc.stdout });
+      const stdout = this.stdoutReadline;
       stdout.on('line', (line) => {
         this.handleStdoutLine(line, settleResolve, settleReject, spawnedProc, createError);
       });
 
-      const stderr = readline.createInterface({ input: this.proc.stderr });
+      this.stderrReadline = readline.createInterface({ input: this.proc.stderr });
+      const stderr = this.stderrReadline;
       stderr.on('line', (line) => {
         appendTailLine(stderrLines, line);
         this.logger(`[echo-audio-host] ${line}`);
@@ -602,6 +608,7 @@ export class NativeOutputBridge extends EventEmitter {
         this.ready = false;
         this.stopRequested = false;
         this.clearReadyTimer();
+        this.closeReadlineInterfaces();
 
         if (this.pendingGracefulStop?.proc === spawnedProc) {
           this.logger('[NativeOutputBridge] process exited during graceful shutdown');
@@ -1156,7 +1163,7 @@ export class NativeOutputBridge extends EventEmitter {
         return;
       }
 
-      if (this.currentSessionId && !this.currentSessionHasPcm) {
+      if (!this.currentSessionId) {
         return;
       }
 
@@ -1175,6 +1182,16 @@ export class NativeOutputBridge extends EventEmitter {
         typeof message.reason === 'string' && /^[a-z0-9_.:-]+$/iu.test(message.reason)
           ? message.reason
           : 'error_event';
+      if (nativeReason === 'device_invalidated') {
+        this.emit('device-event', {
+          event: 'audio_session_disconnected',
+          reason: nativeReason,
+          currentDevice: true,
+          followsDefaultDevice: true,
+        } satisfies NativeHostNotificationEvent);
+        return;
+      }
+
       const error = createError?.(nativeReason, nativeMessage) ?? new Error('echo-audio-host error event');
       if (!this.ready) {
         this.clearReadyTimer();
@@ -1220,6 +1237,7 @@ export class NativeOutputBridge extends EventEmitter {
   private cleanupBridgeReferences(): void {
     const eqControlPort = this.eqControlPort;
     this.clearReadyTimer();
+    this.closeReadlineInterfaces();
     this.proc = null;
     this.bridgeWritable = null;
     this.sessionWritable = null;
@@ -1231,6 +1249,13 @@ export class NativeOutputBridge extends EventEmitter {
     this.currentSessionId = 0;
     this.currentSessionHasPcm = false;
     getEqBridge().disconnect(eqControlPort);
+  }
+
+  private closeReadlineInterfaces(): void {
+    this.stdoutReadline?.close();
+    this.stdoutReadline = null;
+    this.stderrReadline?.close();
+    this.stderrReadline = null;
   }
 
   private clearReadyTimer(): void {

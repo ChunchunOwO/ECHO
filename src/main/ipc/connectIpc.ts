@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getConnectReceiverService } from '../connect/ConnectReceiverService';
 import { getConnectService, normalizeConnectStartRequest } from '../connect/ConnectService';
 
@@ -20,6 +21,14 @@ const sendConnectReceiverStatus = (status: ConnectReceiverStatus): void => {
   }
 };
 
+const sendAirPlayReceiverStatus = (status: AirPlayReceiverStatus): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.ConnectAirPlayReceiverStatus, status);
+    }
+  }
+};
+
 const normalizeSeconds = (value: unknown): number => {
   const next = Number(value);
   return Number.isFinite(next) && next > 0 ? next : 0;
@@ -33,8 +42,10 @@ const normalizeVolume = (value: unknown): number => {
 export const registerConnectIpc = (): void => {
   const service = getConnectService();
   const receiverService = getConnectReceiverService();
+  const airPlayReceiverService = getAirPlayReceiverSpikeService();
   service.on('status', sendConnectStatus);
   receiverService.on('status', sendConnectReceiverStatus);
+  airPlayReceiverService.on('status', sendAirPlayReceiverStatus);
 
   ipcMain.handle(IpcChannels.ConnectListDevices, (): ConnectDevice[] => service.listDevices());
   ipcMain.handle(IpcChannels.ConnectRefresh, (): Promise<ConnectDevice[]> => service.refreshDevices());
@@ -57,4 +68,11 @@ export const registerConnectIpc = (): void => {
     receiverService.setEnabled(enabled === true),
   );
   ipcMain.handle(IpcChannels.ConnectReceiverStopPlayback, (): ConnectReceiverStatus => receiverService.stopPlayback());
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverGetStatus, (): AirPlayReceiverStatus => airPlayReceiverService.getStatus());
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverSetEnabled, (_event, enabled: unknown): Promise<AirPlayReceiverStatus> =>
+    airPlayReceiverService.setEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverStopPlayback, (): Promise<AirPlayReceiverStatus> =>
+    airPlayReceiverService.stopPlayback(),
+  );
 };

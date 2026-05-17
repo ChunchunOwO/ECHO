@@ -195,7 +195,7 @@ vi.mock('../utils/echoBridge', () => ({
   }),
   getDiagnosticsBridge: () => ({
     clearLastCrashSummary: vi.fn(),
-    exportDiagnostics: vi.fn().mockResolvedValue('D:\\Echo\\diagnostics.zip'),
+    exportDiagnostics: vi.fn().mockResolvedValue('D:\\Echo\\diagnostics.md'),
     getLastCrashSummary: vi.fn().mockResolvedValue(null),
     openDiagnosticsFolder: vi.fn(),
     openCrashReport: vi.fn().mockResolvedValue('D:\\Echo\\crash-report.md'),
@@ -510,7 +510,7 @@ describe('SettingsPage', () => {
         artistImageFetchPaused: false,
       }),
     );
-    expect(kickoffArtistImageBackfillMock).toHaveBeenCalledWith({ force: true, limit: 500 });
+    expect(kickoffArtistImageBackfillMock).toHaveBeenCalledWith({ force: false, limit: 500 });
     expect(await screen.findByText('settings.appearance.artistAvatars.message.queued')).toBeTruthy();
   });
 

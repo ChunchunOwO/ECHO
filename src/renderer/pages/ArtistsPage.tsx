@@ -8,6 +8,8 @@ import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '.
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/ui/MediaWallScrollSpacer';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
+import type { DetailReturnTarget } from '../utils/albumNavigation';
+import { artistDetailNavigationEvent, consumePendingArtistDetailNavigation } from '../utils/artistNavigation';
 
 const pageSize = 96;
 const artistSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
@@ -51,6 +53,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(null);
+  const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(null);
   const [artistWallAlbumArtwork, setArtistWallAlbumArtwork] = useState(false);
   const [artistWallAlbumFallbackForMissingAvatars, setArtistWallAlbumFallbackForMissingAvatars] = useState(false);
   const [artistImagesAutoFetch, setArtistImagesAutoFetch] = useState(false);
@@ -357,11 +360,40 @@ export const ArtistsPage = (): JSX.Element => {
     [applyUpdatedArtist, artistImagesAutoFetch],
   );
 
-  const openArtistDetail = useCallback((artist: LibraryArtist): void => {
+  const openArtistDetail = useCallback((artist: LibraryArtist, returnTo: DetailReturnTarget | null = null): void => {
     pageScrollTopRef.current = readPageScrollTop(pageRootRef.current);
-    shouldRestorePageScrollRef.current = true;
+    shouldRestorePageScrollRef.current = !returnTo;
+    setSelectedArtistReturnTo(returnTo);
     setSelectedArtist(artist);
   }, []);
+
+  useEffect(() => {
+    const pendingRequest = consumePendingArtistDetailNavigation();
+    if (pendingRequest) {
+      openArtistDetail(pendingRequest.artist, pendingRequest.returnTo ?? null);
+    }
+
+    const handleNavigateArtistDetail = (event: Event): void => {
+      const request = (event as CustomEvent<{ artist?: LibraryArtist; returnTo?: DetailReturnTarget }>).detail;
+      if (request?.artist) {
+        consumePendingArtistDetailNavigation();
+        openArtistDetail(request.artist, request.returnTo ?? null);
+      }
+    };
+
+    window.addEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
+    return () => window.removeEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
+  }, [openArtistDetail]);
+
+  const handleBackFromArtistDetail = useCallback((): void => {
+    if (selectedArtistReturnTo === 'songs') {
+      window.dispatchEvent(new Event('app:navigate:songs'));
+      return;
+    }
+
+    setSelectedArtistReturnTo(null);
+    setSelectedArtist(null);
+  }, [selectedArtistReturnTo]);
 
   const handleArtistKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, artist: LibraryArtist): void => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -371,7 +403,7 @@ export const ArtistsPage = (): JSX.Element => {
   }, [openArtistDetail]);
 
   if (selectedArtist) {
-    return <ArtistDetailView artist={selectedArtist} onBack={() => setSelectedArtist(null)} />;
+    return <ArtistDetailView artist={selectedArtist} onBack={handleBackFromArtistDetail} />;
   }
 
   return (

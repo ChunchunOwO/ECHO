@@ -20,6 +20,7 @@ import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
 import { getStreamingService } from '../streaming/StreamingService';
+import { enqueueAudioCommand } from './audioCommandQueue';
 import { normalizePlaybackFilePath } from './playbackPath';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
@@ -657,7 +658,7 @@ export const registerPlaybackIpc = (): void => {
   registerPlaybackMemoryPersistence();
   registerExpiredUrlRecovery();
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
-  ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => {
+  ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
     clearActiveMediaPlayback();
     const playbackRun = beginPlaybackStartRun();
     try {
@@ -672,7 +673,7 @@ export const registerPlaybackIpc = (): void => {
       }
       throw error;
     }
-  });
+  }));
   ipcMain.handle(IpcChannels.PlaybackPrepareMediaItem, async (_event, rawRequest: unknown): Promise<void> => {
     try {
       await prepareMediaItem(normalizeMediaPlayRequest(rawRequest));
@@ -707,37 +708,7 @@ export const registerPlaybackIpc = (): void => {
       const prepared = await resolveMediaItemForPlayback(request);
       assertPlaybackStartRunCurrent(playbackRun);
 
-      await getAudioSession().playLocalFile({
-        filePath: prepared.filePath,
-        inputHeaders: prepared.inputHeaders,
-        trackId: item.trackId,
-        startSeconds: request.startSeconds,
-        output: request.output,
-        probe: prepared.probe,
-      });
-      assertPlaybackStartRunCurrent(playbackRun);
-      savePlaybackMemoryNow();
-      const status = toPlaybackStatus();
-      if (item.mediaType === 'remote' && status.durationMs > 0) {
-        getRemoteSourceService().backfillDuration(item.trackId, status.durationMs / 1000);
-      }
-      if (item.mediaType === 'remote') {
-        getRemoteSourceService().setPlaybackActive(true);
-      }
-      setActiveMediaPlayback(request);
-      void syncSmtcStatus();
-      return status;
-    } catch (error) {
-      if ((item.mediaType !== 'streaming' && item.mediaType !== 'remote') || !isLikelyExpiredUrlError(error)) {
-        if (!isSupersededPlaybackRun(error)) {
-          reportPlaybackAudioError(error, 'play-media-item-ipc', { request: rawRequest });
-        }
-        throw error;
-      }
-
-      preparedMediaCache.delete(createPreparedMediaKey(request));
-      try {
-        const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
+      return await enqueueAudioCommand(async () => {
         assertPlaybackStartRunCurrent(playbackRun);
         await getAudioSession().playLocalFile({
           filePath: prepared.filePath,
@@ -759,6 +730,42 @@ export const registerPlaybackIpc = (): void => {
         setActiveMediaPlayback(request);
         void syncSmtcStatus();
         return status;
+      });
+    } catch (error) {
+      if ((item.mediaType !== 'streaming' && item.mediaType !== 'remote') || !isLikelyExpiredUrlError(error)) {
+        if (!isSupersededPlaybackRun(error)) {
+          reportPlaybackAudioError(error, 'play-media-item-ipc', { request: rawRequest });
+        }
+        throw error;
+      }
+
+      preparedMediaCache.delete(createPreparedMediaKey(request));
+      try {
+        const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
+        assertPlaybackStartRunCurrent(playbackRun);
+        return await enqueueAudioCommand(async () => {
+          assertPlaybackStartRunCurrent(playbackRun);
+          await getAudioSession().playLocalFile({
+            filePath: prepared.filePath,
+            inputHeaders: prepared.inputHeaders,
+            trackId: item.trackId,
+            startSeconds: request.startSeconds,
+            output: request.output,
+            probe: prepared.probe,
+          });
+          assertPlaybackStartRunCurrent(playbackRun);
+          savePlaybackMemoryNow();
+          const status = toPlaybackStatus();
+          if (item.mediaType === 'remote' && status.durationMs > 0) {
+            getRemoteSourceService().backfillDuration(item.trackId, status.durationMs / 1000);
+          }
+          if (item.mediaType === 'remote') {
+            getRemoteSourceService().setPlaybackActive(true);
+          }
+          setActiveMediaPlayback(request);
+          void syncSmtcStatus();
+          return status;
+        });
       } catch (retryError) {
         if (!isSupersededPlaybackRun(retryError)) {
           reportPlaybackAudioError(retryError, 'play-media-item-retry-ipc', { request: rawRequest });
@@ -767,7 +774,7 @@ export const registerPlaybackIpc = (): void => {
       }
     }
   });
-  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => {
+  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
     try {
       await getAudioSession().play();
       savePlaybackMemoryNow();
@@ -781,14 +788,14 @@ export const registerPlaybackIpc = (): void => {
       reportPlaybackAudioError(error, 'playback-resume-ipc');
       throw error;
     }
-  });
-  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => {
+  }));
+  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
     await getAudioSession().pause();
     savePlaybackMemoryNow();
     void syncSmtcStatus();
     return toPlaybackStatus();
-  });
-  ipcMain.handle(IpcChannels.PlaybackStop, (): PlaybackStatus => {
+  }));
+  ipcMain.handle(IpcChannels.PlaybackStop, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
     clearActiveMediaPlayback();
     beginPlaybackStartRun();
     getAudioSession().stop();
@@ -796,8 +803,8 @@ export const registerPlaybackIpc = (): void => {
     getPlaybackMemoryStore().clear();
     void syncSmtcStatus();
     return toPlaybackStatus();
-  });
-  ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => {
+  }));
+  ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
     try {
       await getAudioSession().seek(optionalNonNegativeNumber(positionSeconds) ?? 0);
       savePlaybackMemoryNow();
@@ -807,7 +814,7 @@ export const registerPlaybackIpc = (): void => {
       reportPlaybackAudioError(error, 'playback-seek-ipc', { positionSeconds });
       throw error;
     }
-  });
+  }));
   ipcMain.handle(IpcChannels.PlaybackOpenLocalAudioFile, async (): Promise<string | null> => {
     const filePaths = await showOpenLocalAudioFiles(['openFile']);
 

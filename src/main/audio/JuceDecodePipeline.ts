@@ -200,6 +200,7 @@ export class JuceDecodePipeline {
       stream,
       ready,
       done,
+      waitForExitOnStop: true,
       decoderBackendImpl: getDecoderBackendImpl(request.filePath),
       stop: () => {
         stopped = true;

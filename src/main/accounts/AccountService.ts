@@ -13,6 +13,7 @@ import { sanitizeAccountData } from '../../shared/utils/sanitizeAccountData';
 import type { AccountProviderBase, StoredAccountRecord } from './providers/AccountProviderBase';
 import { BilibiliAccountProvider } from './providers/BilibiliAccountProvider';
 import { NeteaseAccountProvider } from './providers/NeteaseAccountProvider';
+import { OsuAccountProvider } from './providers/OsuAccountProvider';
 import { QQMusicAccountProvider } from './providers/QQMusicAccountProvider';
 import { SoundCloudAccountProvider } from './providers/SoundCloudAccountProvider';
 import { SpotifyAccountProvider } from './providers/SpotifyAccountProvider';
@@ -79,6 +80,7 @@ export class AccountService {
       youtube,
       soundcloud: new SoundCloudAccountProvider(),
       spotify: new SpotifyAccountProvider(),
+      osu: new OsuAccountProvider(),
     };
   }
 

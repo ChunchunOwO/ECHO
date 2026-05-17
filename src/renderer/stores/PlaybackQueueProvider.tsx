@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import type { AudioPlaybackState } from '../../shared/types/audio';
-import type { ConnectReceiverStatus } from '../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectReceiverStatus } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LocalFileResolveResult, PlaybackStatus } from '../../shared/types/playback';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
@@ -335,9 +335,13 @@ const toPlayableTrack = (track: LibraryTrack): PlayableTrack => {
 const manualSource: QueueSource = { type: 'manual', label: 'Manual queue' };
 
 const receiverTrackIdPrefix = 'dlna-receiver:';
+const airPlayReceiverTrackIdPrefix = 'airplay-receiver:';
 
 const isActiveReceiverStatus = (status: ConnectReceiverStatus): boolean =>
   Boolean(status.currentUri && ['ready', 'loading', 'playing', 'paused'].includes(status.state));
+
+const isActiveAirPlayReceiverStatus = (status: AirPlayReceiverStatus): boolean =>
+  Boolean(status.metadata && ['ready', 'playing', 'paused'].includes(status.state));
 
 const receiverStatusToPlaybackState = (status: ConnectReceiverStatus): AudioPlaybackState => {
   switch (status.state) {
@@ -347,6 +351,21 @@ const receiverStatusToPlaybackState = (status: ConnectReceiverStatus): AudioPlay
     case 'stopped':
     case 'error':
       return status.state;
+    default:
+      return 'stopped';
+  }
+};
+
+const airPlayStatusToPlaybackState = (status: AirPlayReceiverStatus): AudioPlaybackState => {
+  switch (status.state) {
+    case 'playing':
+    case 'paused':
+    case 'stopped':
+    case 'error':
+      return status.state;
+    case 'ready':
+    case 'starting':
+      return 'loading';
     default:
       return 'stopped';
   }
@@ -386,6 +405,46 @@ const createReceiverTrackSnapshot = (status: ConnectReceiverStatus): LibraryTrac
       album: 'dlna',
       albumArtist: 'dlna',
       cover: 'dlna',
+    },
+  };
+};
+
+const createAirPlayTrackSnapshot = (status: AirPlayReceiverStatus): LibraryTrack | null => {
+  if (!status.metadata) {
+    return null;
+  }
+
+  const sourceId = status.currentSourceId ?? `${airPlayReceiverTrackIdPrefix}${status.updatedAt}`;
+  const path = sourceId;
+  return {
+    id: sourceId,
+    mediaType: 'remote',
+    isTemporary: true,
+    path,
+    sourceId: null,
+    remotePath: path,
+    stableKey: path,
+    title: status.metadata.title,
+    artist: status.metadata.artist,
+    album: status.metadata.album ?? '',
+    albumArtist: status.metadata.albumArtist ?? status.metadata.artist,
+    trackNo: null,
+    discNo: null,
+    year: null,
+    genre: null,
+    duration: status.durationSeconds || status.metadata.durationSeconds || 0,
+    codec: 'AirPlay',
+    sampleRate: null,
+    bitDepth: null,
+    bitrate: null,
+    coverId: null,
+    coverThumb: status.artworkUrl || status.metadata.coverHttpUrl || null,
+    fieldSources: {
+      title: 'airplay',
+      artist: 'airplay',
+      album: 'airplay',
+      albumArtist: 'airplay',
+      cover: 'airplay',
     },
   };
 };
@@ -595,6 +654,46 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       }
 
       if (currentTrackIdRef.current?.startsWith(receiverTrackIdPrefix)) {
+        setCurrentQueueId(null);
+        setCurrentTrackIdInternal(null);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.connect?.onAirPlayReceiverStatus?.((status) => {
+      if (status.enabled && isActiveAirPlayReceiverStatus(status)) {
+        const airPlayTrack = createAirPlayTrackSnapshot(status);
+        if (!airPlayTrack) {
+          return;
+        }
+        if (currentQueueIdRef.current !== null) {
+          setCurrentQueueId(null);
+        }
+        if (!isSameReceiverTrackSnapshot(lastPlayedTrackRef.current, airPlayTrack)) {
+          setLastPlayedTrack(airPlayTrack);
+        }
+        if (currentTrackIdRef.current !== airPlayTrack.id) {
+          setCurrentTrackIdInternal(airPlayTrack.id);
+        }
+        setPlaybackStatusSnapshot({
+          playbackStatus: {
+            state: airPlayStatusToPlaybackState(status),
+            currentTrackId: airPlayTrack.id,
+            positionMs: Math.round(status.positionSeconds * 1000),
+            durationMs: Math.round((status.durationSeconds || airPlayTrack.duration) * 1000),
+            filePath: airPlayTrack.path,
+          },
+          error: status.error,
+        });
+        return;
+      }
+
+      if (currentTrackIdRef.current?.startsWith(airPlayReceiverTrackIdPrefix)) {
         setCurrentQueueId(null);
         setCurrentTrackIdInternal(null);
       }

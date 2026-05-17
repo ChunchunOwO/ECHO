@@ -225,6 +225,7 @@ export const LyricsView = ({
       isPlain,
     ),
   );
+  const lastCenteredActiveIndexRef = useRef(activeIndex);
   activeIndexRef.current = activeIndex;
 
   const stopScrollAnimation = useCallback((): void => {
@@ -471,9 +472,16 @@ export const LyricsView = ({
       cancelLyricAnimationFrame(activeCenterFrameRef.current);
     }
 
+    const previousCenteredActiveIndex = lastCenteredActiveIndexRef.current;
+    const shouldJumpToSeekTarget =
+      previousCenteredActiveIndex >= 0 &&
+      activeIndex >= 0 &&
+      (activeIndex < previousCenteredActiveIndex || Math.abs(activeIndex - previousCenteredActiveIndex) > 1);
+    lastCenteredActiveIndexRef.current = activeIndex;
+
     activeCenterFrameRef.current = requestLyricAnimationFrame(() => {
       activeCenterFrameRef.current = null;
-      centerActiveLyric('animated');
+      centerActiveLyric(shouldJumpToSeekTarget ? 'instant' : 'animated');
     });
 
     return () => {

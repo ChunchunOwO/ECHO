@@ -1136,6 +1136,78 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(screen.getByText('128 BPM')).toBeTruthy(), { timeout: 3000 });
   }, 10000);
 
+  it('does not start streaming BPM analysis for SoundCloud playback', async () => {
+    const track = makeTrack(7, {
+      id: 'streaming:soundcloud:track-7',
+      path: 'streaming:soundcloud:track-7',
+      mediaType: 'streaming',
+      provider: 'soundcloud',
+      providerTrackId: 'https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A7',
+      stableKey: 'streaming:soundcloud:track-7',
+      streamingQuality: 'standard',
+      codec: null,
+      sampleRate: null,
+      bitDepth: null,
+      bitrate: null,
+      bpm: null,
+      bpmConfidence: null,
+      analysisStatus: 'none',
+    });
+    const analyzeBpm = vi.fn().mockResolvedValue({
+      trackId: track.id,
+      bpm: 128,
+      confidence: 0.9,
+      beatOffsetMs: 0,
+      status: 'complete',
+      error: null,
+      updatedAt: '2026-05-17T00:00:00.000Z',
+    });
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 4000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        playMediaItem: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      streaming: {
+        analyzeBpm,
+      },
+      library: {
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true, audioAnalysisEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 7');
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+    expect(analyzeBpm).not.toHaveBeenCalled();
+  });
+
   it('routes SMTC pause, previous, and next commands through the playback queue', async () => {
     const firstTrack = makeTrack(1);
     const secondTrack = makeTrack(2);

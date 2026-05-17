@@ -980,6 +980,55 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('loading embedded track tags refreshes persisted text tags and embedded cover', async () => {
+    let currentMetadata = metadataResult({ title: 'Old Title', artist: 'Old Artist', album: 'Old Album', albumArtist: 'Old Artist' });
+    const metadataReader: MetadataReader = {
+      async read() {
+        return currentMetadata;
+      },
+    };
+    const coverExtractor = new FakeCoverExtractor({ sourceHash: 'embedded-reload-cover' });
+    const harness = createHarness({ metadataReader, coverExtractor });
+    const filePath = writeAudioFile(harness.folder, 'Reload Tags.flac');
+
+    const imported = await harness.service.importAudioFile(filePath);
+    currentMetadata = metadataResult(
+      {
+        title: '山海',
+        artist: '草东没有派对',
+        album: '丑奴儿',
+        albumArtist: '草东没有派对',
+        trackNo: 10,
+        year: 2016,
+        bpm: 108,
+      },
+      {
+        embeddedCover: {
+          data: validCoverPng(),
+          mimeType: 'image/png',
+        },
+        embeddedCoverStatus: 'present',
+      },
+    );
+
+    const result = await harness.service.loadEmbeddedTrackTags(imported.id);
+    const updated = harness.service.getTrack(imported.id);
+
+    expect(result.track.title).toBe('山海');
+    expect(result.track.artist).toBe('草东没有派对');
+    expect(result.track.album).toBe('丑奴儿');
+    expect(result.track.coverId).toBeTruthy();
+    expect(result.coverThumb).toBe(`echo-cover://thumb/${encodeURIComponent(String(result.track.coverId))}`);
+    expect(updated?.title).toBe('山海');
+    expect(updated?.artist).toBe('草东没有派对');
+    expect(updated?.album).toBe('丑奴儿');
+    expect(updated?.bpm).toBe(108);
+    expect(updated?.coverId).toBe(result.track.coverId);
+    expect(updated?.fieldSources.title).toBe('embedded');
+    expect(updated?.embeddedCoverStatus).toBe('present');
+    harness.cleanup();
+  });
+
   it('path + size + mtime unchanged with complete cover cache skips cover work', async () => {
     const coverExtractor = new FakeCoverExtractor();
     const harness = createHarness({ coverExtractor });

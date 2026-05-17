@@ -264,7 +264,7 @@ export const QueuePage = (): JSX.Element => {
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing' && action !== 'reload-embedded-tags') {
         setActionError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
         return;
       }
@@ -275,6 +275,7 @@ export const QueuePage = (): JSX.Element => {
         if (
           (track.mediaType === 'remote' || track.isTemporary) &&
           (action === 'edit-tags' ||
+            action === 'reload-embedded-tags' ||
             action === 'open-osu-timing' ||
             action === 'copy-path' ||
             action === 'open-system' ||
@@ -317,6 +318,17 @@ export const QueuePage = (): JSX.Element => {
             setIsTagEditorOpen(false);
             setEditingTrack(track);
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'reload-embedded-tags':
+            {
+              const result = await library!.loadEmbeddedTrackTags(track.id);
+              queue.updateTrackSnapshot(result.track.id, result.track);
+              if (editingTrack?.id === result.track.id) {
+                setEditingTrack(result.track);
+              }
+              setActionError(null);
+              window.dispatchEvent(new Event('library:changed'));
+            }
             return;
           case 'go-to-album':
             if (!(await openAlbumDetailForTrack(track))) {
@@ -391,7 +403,7 @@ export const QueuePage = (): JSX.Element => {
         setActionError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [queue, queueMenuSource],
+    [editingTrack, queue, queueMenuSource],
   );
 
   const handlePlayItemNext = useCallback(
@@ -738,6 +750,11 @@ export const QueuePage = (): JSX.Element => {
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+        onTrackUpdated={(updatedTrack) => {
+          setEditingTrack(updatedTrack);
+          queue.updateTrackSnapshot(updatedTrack.id, updatedTrack);
+          window.dispatchEvent(new Event('library:changed'));
+        }}
       />
 
       <OsuTimingPanel

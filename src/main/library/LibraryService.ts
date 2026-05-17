@@ -490,7 +490,7 @@ export class LibraryService {
     }
 
     return this.artistImageCacheService.kickoffBackfill({
-      force: options.force !== false,
+      force: options.force === true,
       limit: options.limit ?? 500,
     });
   }
@@ -505,7 +505,7 @@ export class LibraryService {
     this.artistImageCacheService.setPaused(paused);
 
     if (!paused) {
-      return this.artistImageCacheService.kickoffBackfill({ force: true, limit: 500 });
+      return this.artistImageCacheService.kickoffBackfill({ force: false, limit: 500 });
     }
 
     return this.artistImageCacheService.getJobStatus();
@@ -832,6 +832,7 @@ export class LibraryService {
     }
 
     const metadata = await this.metadataReader.read(currentTrack.path);
+    const fileStat = statSync(currentTrack.path);
     let coverId = currentTrack.coverId;
 
     if (metadata.embeddedCover) {
@@ -839,13 +840,37 @@ export class LibraryService {
         cacheRoot: this.coverCacheDir,
         metadata,
       });
-      coverId = this.store.transaction(() => {
-        const nextCoverId = this.store.upsertCover({ ...coverResult, source: 'embedded' });
-        this.store.updateTrackCover(trackId, nextCoverId);
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        return nextCoverId;
-      });
+      coverId = this.store.upsertCover({ ...coverResult, source: 'embedded' });
     }
+
+    const updatedTrack = this.store.transaction(() => {
+      const updated = this.store.updateTrackTags(trackId, {
+        title: metadata.fields.title,
+        artist: metadata.fields.artist,
+        album: metadata.fields.album,
+        albumArtist: metadata.fields.albumArtist,
+        trackNo: metadata.fields.trackNo,
+        discNo: metadata.fields.discNo,
+        year: metadata.fields.year,
+        genre: metadata.fields.genre,
+        bpm: metadata.fields.bpm ?? null,
+        sizeBytes: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        fieldSources: {
+          ...currentTrack.fieldSources,
+          ...metadata.fieldSources,
+        },
+        embeddedMetadataStatus: metadata.embeddedMetadataStatus,
+        embeddedCoverStatus: metadata.embeddedCover ? 'present' : currentTrack.embeddedCoverStatus,
+        metadataStatus: metadata.status,
+      });
+      if (coverId !== currentTrack.coverId) {
+        this.store.updateTrackCover(trackId, coverId);
+      }
+      this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+      this.store.refreshArtists();
+      return this.store.getTrack(trackId) ?? updated;
+    });
 
     return {
       tags: {
@@ -860,6 +885,7 @@ export class LibraryService {
       },
       coverId,
       coverThumb: coverId ? `echo-cover://thumb/${encodeURIComponent(coverId)}` : null,
+      track: updatedTrack,
     };
   }
 

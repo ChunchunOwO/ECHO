@@ -469,14 +469,18 @@ describe("LyricsPage", () => {
     const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
 
     expect(layoutCss).toMatch(/\.app-shell--lyrics-player-drawer \{[\s\S]*?grid-template-rows: var\(--titlebar-height\) minmax\(0, 1fr\) 0;/);
-    expect(layoutCss).toMatch(/\.lyrics-player-drawer-host \{[\s\S]*?position: fixed;[\s\S]*?width: min\(780px, calc\(100vw - 96px\)\);/);
-    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-bar \{[\s\S]*?min-height: 54px;[\s\S]*?border-radius: 999px;[\s\S]*?background: var\(--lyrics-mini-player-background, rgba\(35, 33, 32, 0\.78\)\);/);
+    expect(layoutCss).toMatch(/\.lyrics-player-drawer-host \{[\s\S]*?position: fixed;[\s\S]*?width: min\(720px, calc\(100vw - 96px\)\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-bar \{[\s\S]*?grid-template-columns: auto auto;[\s\S]*?justify-content: center;[\s\S]*?min-height: 54px;[\s\S]*?border-radius: 999px;[\s\S]*?background: var\(--lyrics-mini-player-background, rgba\(35, 33, 32, 0\.78\)\);/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-center \{[\s\S]*?grid-template-columns: auto auto;[\s\S]*?justify-content: center;/);
-    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-row \{[\s\S]*?width: clamp\(210px, 22vw, 280px\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-row \{[\s\S]*?width: clamp\(230px, 21vw, 286px\);/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: clamp\(54px, 8vh, 86px\) minmax\(0, 1fr\);/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-scroll \{[\s\S]*?padding-bottom: clamp\(76px, 10vh, 112px\);/);
-    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{[\s\S]*?position: absolute;[\s\S]*?top: clamp\(72px, 8\.2vh, 104px\);[\s\S]*?left: clamp\(28px, 4vw, 72px\);[\s\S]*?width: min\(660px, calc\(100% - 56px\)\);[\s\S]*?grid-template-columns: clamp\(82px, 6\.2vw, 112px\) minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-cover \{[\s\S]*?width: clamp\(82px, 6\.2vw, 112px\);[\s\S]*?margin-top: 0;/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-copy h1 \{[\s\S]*?font-size: clamp\(26px, 2\.15vw, 36px\);/);
+    expect(css).not.toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
     expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: 58px minmax\(0, 1fr\);/);
+    expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{[\s\S]*?top: 66px;[\s\S]*?grid-template-columns: 64px minmax\(0, 1fr\);/);
     expect(polishCss).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-bar \{[\s\S]*?background: var\(--lyrics-mini-player-background, rgba\(35, 33, 32, 0\.78\)\);[\s\S]*?backdrop-filter: blur\(22px\) saturate\(1\.18\);/);
     expect(css).not.toMatch(/\.app-shell:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.player-bar \{/);
     expect(polishCss).not.toMatch(/\.app-shell:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.player-bar \{/);

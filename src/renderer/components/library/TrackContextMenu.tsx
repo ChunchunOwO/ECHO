@@ -13,6 +13,7 @@ import {
   PanelTopOpen,
   Play,
   Plus,
+  RefreshCw,
   Timer,
   Tag,
   Trash2,
@@ -29,6 +30,7 @@ export type TrackMenuAction =
   | 'toggle-liked'
   | 'remove-from-queue'
   | 'edit-tags'
+  | 'reload-embedded-tags'
   | 'open-osu-timing'
   | 'go-to-album'
   | 'show-in-folder'
@@ -57,7 +59,7 @@ type MenuItem = {
 
 const viewportPadding = 8;
 const pointerOffset = 6;
-const remoteHiddenActions = new Set<TrackMenuAction>(['edit-tags', 'open-osu-timing', 'show-in-folder', 'copy-path', 'open-system', 'delete-song']);
+const remoteHiddenActions = new Set<TrackMenuAction>(['edit-tags', 'reload-embedded-tags', 'open-osu-timing', 'show-in-folder', 'copy-path', 'open-system', 'delete-song']);
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
@@ -108,6 +110,7 @@ export const TrackContextMenu = ({ track, position, liked = false, onAction, onC
     { action: 'remove-from-queue', labelKey: 'trackMenu.action.removeFromQueue', icon: Minus },
     { action: 'open-osu-timing', labelKey: 'trackMenu.action.openOsuTiming', icon: Timer },
     { action: 'edit-tags', labelKey: 'trackMenu.action.editTags', icon: Tag },
+    { action: 'reload-embedded-tags', labelKey: 'trackMenu.action.reloadEmbeddedTags', icon: RefreshCw },
     { action: 'go-to-album', labelKey: 'trackMenu.action.goToAlbum', icon: Disc3 },
     { action: 'show-in-folder', labelKey: 'trackMenu.action.showInFolder', icon: FolderOpen },
     { action: 'copy-path', labelKey: 'trackMenu.action.copyPath', icon: Copy },

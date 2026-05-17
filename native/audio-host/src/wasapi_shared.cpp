@@ -77,6 +77,8 @@ struct wasapi_shared_runtime {
     volatile LONG renderFailed;
     int comNeedsUninit;
     bool audioClientLeakedOnTimeout;
+    float* scratch;
+    size_t scratchSampleCapacity;
     DWORD testInvalidateAfterMs;
     ULONGLONG renderStartedAtMs;
     int testInvalidationTriggered;
@@ -1098,7 +1100,6 @@ static void convert_float_to_endpoint(
 
 static DWORD WINAPI render_thread_proc(void* param) {
     wasapi_shared_runtime* runtime = (wasapi_shared_runtime*)param;
-    std::vector<float> scratch;
     DWORD taskIndex = 0;
     HANDLE avrtHandle = NULL;
     HANDLE waits[2];
@@ -1112,7 +1113,6 @@ static DWORD WINAPI render_thread_proc(void* param) {
         return 1;
     }
 
-    scratch.resize((size_t)runtime->bufferFrameCount * runtime->channels);
     avrtHandle = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
     waits[0] = runtime->stopEvent;
     waits[1] = runtime->renderEvent;
@@ -1224,15 +1224,21 @@ static DWORD WINAPI render_thread_proc(void* param) {
         }
 
         const size_t scratchSamples = (size_t)framesAvailable * runtime->channels;
-        if (scratch.size() < scratchSamples) {
-            scratch.resize(scratchSamples);
+        if (runtime->scratch == NULL || runtime->scratchSampleCapacity < scratchSamples) {
+            fprintf(stderr, "[echo-audio-host] WASAPI shared scratch buffer too small frames=%u channels=%u capacity=%zu\n",
+                (unsigned int)framesAvailable,
+                (unsigned int)runtime->channels,
+                runtime->scratchSampleCapacity);
+            runtime->renderClient->ReleaseBuffer(framesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
+            InterlockedExchange(&runtime->renderFailed, 1);
+            break;
         }
-        memset(scratch.data(), 0, (size_t)framesAvailable * runtime->channels * sizeof(float));
+        memset(runtime->scratch, 0, scratchSamples * sizeof(float));
         if (runtime->callback != NULL) {
-            runtime->callback(runtime->userData, scratch.data(), framesAvailable, runtime->channels);
+            runtime->callback(runtime->userData, runtime->scratch, framesAvailable, runtime->channels);
         }
         convert_float_to_endpoint(
-            scratch.data(),
+            runtime->scratch,
             endpointBuffer,
             framesAvailable,
             runtime->channels,
@@ -1409,6 +1415,12 @@ int wasapi_shared_start(
     runtime->followsDefaultDevice = (targetDeviceIndex < 0 && (targetDeviceName == NULL || targetDeviceName[0] == '\0')) ? 1 : 0;
     copy_device_id(device, runtime->deviceId, sizeof(runtime->deviceId) / sizeof(runtime->deviceId[0]));
     runtime->comNeedsUninit = com.needsUninit;
+    runtime->scratchSampleCapacity = (size_t)runtime->bufferFrameCount * runtime->channels;
+    runtime->scratch = (float*)calloc(runtime->scratchSampleCapacity, sizeof(float));
+    if (runtime->scratch == NULL) {
+        set_error(error, errorLen, "Failed to allocate WASAPI shared render scratch buffer", S_OK);
+        goto done;
+    }
     com.needsUninit = 0;
     audioClient = NULL;
     renderClient = NULL;
@@ -1513,6 +1525,8 @@ void wasapi_shared_stop(wasapi_shared_runtime* runtime) {
     runtime->sessionWatcher = NULL;
     runtime->sessionControl = NULL;
     if (runtime->comNeedsUninit && !runtime->audioClientLeakedOnTimeout) CoUninitialize();
+    free(runtime->scratch);
+    runtime->scratch = NULL;
     free(runtime);
 }
 

@@ -517,6 +517,7 @@ export type EmbeddedTrackTagsLoadResult = {
   tags: EditableTrackTags;
   coverId: string | null;
   coverThumb: string | null;
+  track: LibraryTrack;
 };
 
 export type LibraryTrackTagUpdateRequest = {

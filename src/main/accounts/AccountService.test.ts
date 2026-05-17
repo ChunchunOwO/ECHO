@@ -34,6 +34,7 @@ describe('AccountService', () => {
         expect.objectContaining({ provider: 'bilibili', connected: false }),
         expect.objectContaining({ provider: 'youtube', connected: false }),
         expect.objectContaining({ provider: 'soundcloud', connected: false }),
+        expect.objectContaining({ provider: 'osu', connected: false }),
       ]),
     );
   });
@@ -90,6 +91,7 @@ describe('AccountService', () => {
     expect(statuses.find((status) => status.provider === 'qqmusic')?.lastCheckedAt).toBeNull();
     expect(statuses.find((status) => status.provider === 'bilibili')?.lastCheckedAt).toBeNull();
     expect(statuses.find((status) => status.provider === 'soundcloud')?.lastCheckedAt).toBeNull();
+    expect(statuses.find((status) => status.provider === 'osu')?.lastCheckedAt).toBeNull();
   });
 
   it('falls back to empty statuses when accounts.json is damaged', () => {

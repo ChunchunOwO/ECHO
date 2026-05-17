@@ -15,6 +15,7 @@ import { getAppSettings } from './appSettings';
 import { ensureDataProtection } from './dataProtection';
 import { disposeBackgroundPlaybackShortcuts, initializeBackgroundPlaybackShortcuts } from './backgroundPlaybackShortcuts';
 import { getAccountService } from '../accounts/AccountService';
+import { disposeAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { disposeConnectReceiverService } from '../connect/ConnectReceiverService';
 import { disposeConnectService } from '../connect/ConnectService';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -102,6 +103,7 @@ export const registerAppLifecycle = (): void => {
     savePlaybackMemoryNow();
     disposeLastFmIntegration();
     disposeDiscordPresenceIntegration();
+    await disposeAirPlayReceiverSpikeService();
     await disposeConnectReceiverService();
     await disposeConnectService();
     await disposeSmtcIntegration();

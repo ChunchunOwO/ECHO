@@ -11,7 +11,7 @@ export type DownloadJobStatus =
   | 'failed'
   | 'cancelled';
 
-export type DownloadSourceProvider = 'youtube' | 'bilibili' | 'unknown';
+export type DownloadSourceProvider = 'youtube' | 'bilibili' | 'soundcloud' | 'osu' | 'unknown';
 
 export type DownloadSearchProvider = 'youtube' | 'bilibili';
 

@@ -304,7 +304,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing' && action !== 'reload-embedded-tags') {
         setPlayError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
         return;
       }
@@ -316,6 +316,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         if (
           track.mediaType === 'remote' &&
           (action === 'edit-tags' ||
+            action === 'reload-embedded-tags' ||
             action === 'open-osu-timing' ||
             action === 'show-in-folder' ||
             action === 'copy-path' ||
@@ -354,6 +355,20 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             setIsTagEditorOpen(false);
             setEditingTrack(track);
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'reload-embedded-tags':
+            {
+              const result = await library!.loadEmbeddedTrackTags(track.id);
+              const nextTrack = withAlbumCoverFallback(result.track);
+              setLoadedTracks((current) => current.map((item) => (item.id === nextTrack.id ? nextTrack : item)));
+              setFirstTrack((current) => (current?.id === nextTrack.id ? nextTrack : current));
+              if (editingTrack?.id === nextTrack.id) {
+                setEditingTrack(nextTrack);
+              }
+              updateTrackSnapshot(nextTrack.id, nextTrack);
+              setTrackActionMessage(`已从内嵌标签重新加载：${nextTrack.title}`);
+              window.dispatchEvent(new Event('library:changed'));
+            }
             return;
           case 'go-to-album':
             if (!(await openAlbumDetailForTrack(track))) {
@@ -433,11 +448,13 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       album.title,
       albumSource,
       appendToQueue,
+      editingTrack,
       firstTrack?.id,
       handleToggleTrackLiked,
       loadedTracks,
       playTrackNext,
       removeTrackFromQueue,
+      updateTrackSnapshot,
       withAlbumCoverFallback,
     ],
   );
@@ -558,6 +575,14 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+        onTrackUpdated={(updatedTrack) => {
+          const nextTrack = withAlbumCoverFallback(updatedTrack);
+          setEditingTrack(nextTrack);
+          setLoadedTracks((current) => current.map((item) => (item.id === nextTrack.id ? nextTrack : item)));
+          setFirstTrack((current) => (current?.id === nextTrack.id ? nextTrack : current));
+          updateTrackSnapshot(nextTrack.id, nextTrack);
+          window.dispatchEvent(new Event('library:changed'));
+        }}
       />
 
       <OsuTimingPanel

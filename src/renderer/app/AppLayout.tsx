@@ -23,6 +23,7 @@ import { clearSongsFirstPageSnapshot } from '../stores/songsFirstPageSnapshot';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
+import { artistDetailNavigationEvent } from '../utils/artistNavigation';
 
 type AppLayoutProps = {
   routes: AppRoute[];
@@ -72,6 +73,7 @@ const accountProviderLabels: Record<AccountProvider, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
   spotify: 'Spotify',
+  osu: 'osu!',
 };
 
 const isSpotifyPlaybackSetupError = (message: string): boolean =>
@@ -132,6 +134,7 @@ const tintedMiniPlayerRgb = (sample: ReadableColorSample): Rgb => {
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const showChromeNoticeEvent = 'app:show-chrome-notice';
 
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const { t } = useI18n();
@@ -354,6 +357,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     return () => window.clearTimeout(timer);
   }, [chromeNotice, isChromeNoticeVisible]);
+
+  useEffect(() => {
+    const handleShowChromeNotice = (event: Event): void => {
+      const message = (event as CustomEvent<string>).detail;
+      if (typeof message === 'string' && message.trim()) {
+        setChromeNotice(message);
+      }
+    };
+
+    window.addEventListener(showChromeNoticeEvent, handleShowChromeNotice);
+    return () => window.removeEventListener(showChromeNoticeEvent, handleShowChromeNotice);
+  }, []);
 
   useEffect(() => {
     if (!accountNotice) {
@@ -595,6 +610,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateQueue = (): void => {
       navigateRoute('queue');
     };
+    const handleNavigateSongs = (): void => {
+      navigateRoute('songs');
+    };
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
     };
@@ -612,20 +630,27 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateAlbumDetail = (): void => {
       navigateRoute('albums');
     };
+    const handleNavigateArtistDetail = (): void => {
+      navigateRoute('artists');
+    };
 
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
+    window.addEventListener('app:navigate:songs', handleNavigateSongs);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
     window.addEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
     window.addEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
+    window.addEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
     return () => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
+      window.removeEventListener('app:navigate:songs', handleNavigateSongs);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
       window.removeEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
       window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
+      window.removeEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
     };
   }, [activeRouteId, navigateRoute]);
 
@@ -833,11 +858,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     [t],
   );
 
-  const handleExportDiagnostics = useCallback(async (): Promise<void> => {
+  const handleOpenCrashReportNotice = useCallback(async (): Promise<void> => {
     try {
-      const exportedPath = await window.echo?.diagnostics.exportDiagnostics();
+      const reportPath = await window.echo?.diagnostics.openCrashReport();
       setDiagnosticsNotice(false);
-      setChromeNotice(exportedPath ? `Diagnostics exported: ${exportedPath}` : 'Diagnostics export finished.');
+      setChromeNotice(reportPath ? `Markdown 报告已打开：${reportPath}` : 'Markdown 报告已打开。');
     } catch (error) {
       setChromeNotice(error instanceof Error ? error.message : String(error));
     }
@@ -976,13 +1001,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       {diagnosticsNotice ? (
         <div className="chrome-notice chrome-notice--diagnostics" role="status">
-          <span>ECHO did not close normally last time. Export diagnostics to help locate the issue.</span>
+          <span>上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。</span>
           <div className="chrome-notice-actions">
-            <button type="button" onClick={() => void handleExportDiagnostics()}>
-              Export diagnostics
+            <button type="button" onClick={() => void handleOpenCrashReportNotice()}>
+              打开报告
             </button>
             <button type="button" onClick={() => void handleDismissDiagnosticsNotice()}>
-              Dismiss
+              忽略
             </button>
           </div>
         </div>

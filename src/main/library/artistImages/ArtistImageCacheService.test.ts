@@ -202,6 +202,63 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
+  it('does not retry terminal cache rows during default background backfill', async () => {
+    const database = createDatabase(':memory:');
+    const missingKey = insertArtist(database, 'artist-1', 'Missing Artist');
+    const errorKey = insertArtist(database, 'artist-2', 'Error Artist');
+    const rateLimitedKey = insertArtist(database, 'artist-3', 'Rate Limited Artist');
+    insertCache(database, missingKey, 'not_found', { failureReason: 'no_result', sourceHash: artistImageCacheSourceHash('no-result') });
+    insertCache(database, errorKey, 'error', { failureReason: 'network', sourceHash: artistImageCacheSourceHash('network') });
+    insertCache(database, rateLimitedKey, 'rate_limited', { failureReason: 'rate_limited', sourceHash: artistImageCacheSourceHash('rate') });
+    const providerSearch = vi.fn().mockResolvedValue([]);
+    const service = createService(database, createProvider(providerSearch));
+
+    const status = service.kickoffBackfill({ limit: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(status.lastQueued).toEqual({ queued: 0, skipped: 0 });
+    expect(providerSearch).not.toHaveBeenCalled();
+    database.close();
+  });
+
+  it('does not enqueue an extra batch when default background backfill is already running', async () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'First Artist');
+    insertArtist(database, 'artist-2', 'Second Artist');
+    insertArtist(database, 'artist-3', 'Third Artist');
+    const lookup = createDeferred<ArtistImageCandidate[]>();
+    const providerSearch = vi.fn(() => lookup.promise);
+    const service = createService(database, createProvider(providerSearch), makeTempRoot(), { concurrency: 1 });
+
+    service.kickoffBackfill({ limit: 2 });
+    await waitFor(() => providerSearch.mock.calls.length === 1);
+    const status = service.kickoffBackfill({ force: false, limit: 2 });
+
+    expect(status).toMatchObject({ queued: 1, active: 1 });
+    expect(status.lastQueued).toEqual({ queued: 2, skipped: 0 });
+    expect(providerSearch).toHaveBeenCalledTimes(1);
+
+    lookup.resolve([]);
+    await waitFor(() => service.getJobStatus().active === 0);
+    database.close();
+  });
+
+  it('retries terminal cache rows when background backfill is forced', async () => {
+    const database = createDatabase(':memory:');
+    const missingKey = insertArtist(database, 'artist-1', 'Missing Artist');
+    const errorKey = insertArtist(database, 'artist-2', 'Error Artist');
+    insertCache(database, missingKey, 'not_found', { failureReason: 'no_result', sourceHash: artistImageCacheSourceHash('no-result') });
+    insertCache(database, errorKey, 'error', { failureReason: 'network', sourceHash: artistImageCacheSourceHash('network') });
+    const providerSearch = vi.fn().mockResolvedValue([]);
+    const service = createService(database, createProvider(providerSearch));
+
+    const status = service.kickoffBackfill({ force: true, limit: 10 });
+    await waitFor(() => providerSearch.mock.calls.length === 2);
+
+    expect(status.lastQueued).toEqual({ queued: 2, skipped: 0 });
+    database.close();
+  });
+
   it('retries stale loading rows on the next service run', async () => {
     const database = createDatabase(':memory:');
     const artistKey = insertArtist(database, 'artist-1', 'Interrupted Artist');
@@ -480,38 +537,155 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
-  it('chooses the highest-confidence candidate across providers', async () => {
+  it('uses a rotated first-pass provider before touching every primary provider', async () => {
     const database = createDatabase(':memory:');
-    insertArtist(database, 'artist-1', 'Arika');
+    insertArtist(database, 'artist-1', 'Artist One');
     const qqSearch = vi.fn().mockResolvedValue([
       {
         provider: 'qqmusic',
-        providerArtistId: 'qq-arika',
-        artistName: 'Arika Official',
+        providerArtistId: 'qq-artist-one',
+        artistName: 'Artist One',
         imageUrl: 'https://y.gtimg.cn/arika.jpg',
-        confidence: 0.86,
-      },
-    ]);
-    const neteaseSearch = vi.fn().mockResolvedValue([
-      {
-        provider: 'netease',
-        providerArtistId: '55240314',
-        artistName: 'Arika',
-        imageUrl: 'https://p2.music.126.net/arika.jpg?param=500y500',
         confidence: 0.96,
       },
     ]);
+    const neteaseSearch = vi.fn().mockResolvedValue([]);
+    const kuwoSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'kuwo',
+        providerArtistId: 'kuwo-artist-one',
+        artistName: 'Artist One',
+        imageUrl: 'https://img2.kuwo.cn/star/starheads/500/artist-one.jpg',
+        confidence: 0.96,
+      },
+    ]);
+    const kugouSearch = vi.fn().mockResolvedValue([]);
+    const miguSearch = vi.fn().mockResolvedValue([]);
     const service = createService(database, [
       createProvider(qqSearch, 'qqmusic'),
       createProvider(neteaseSearch, 'netease'),
+      createProvider(kuwoSearch, 'kuwo'),
+      createProvider(kugouSearch, 'kugou'),
+      createProvider(miguSearch, 'migu'),
     ]);
 
     const result = await service.refreshArtistImage('artist-1', true);
 
     expect(result.entry).toMatchObject({
       status: 'matched',
+      provider: 'kuwo',
+      providerArtistId: 'kuwo-artist-one',
+      confidence: 0.96,
+    });
+    expect(kuwoSearch).toHaveBeenCalledTimes(1);
+    expect(kugouSearch).toHaveBeenCalledTimes(1);
+    expect(miguSearch).toHaveBeenCalledTimes(1);
+    expect(neteaseSearch).not.toHaveBeenCalled();
+    expect(qqSearch).not.toHaveBeenCalled();
+    database.close();
+  });
+
+  it('uses NetEase when the rotated first-pass providers are too weak', async () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'Artist One');
+    const qqSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'qqmusic',
+        providerArtistId: 'qq-artist-one',
+        artistName: 'Artist One Fan Page',
+        imageUrl: 'https://y.gtimg.cn/arika.jpg',
+        confidence: 0.72,
+      },
+    ]);
+    const neteaseSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'netease',
+        providerArtistId: '55240314',
+        artistName: 'Artist One',
+        imageUrl: 'https://p2.music.126.net/arika.jpg?param=500y500',
+        confidence: 0.96,
+      },
+    ]);
+    const kuwoSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'kuwo',
+        providerArtistId: 'kuwo-artist-one',
+        artistName: 'Artist One Fan Page',
+        imageUrl: 'https://img2.kuwo.cn/star/starheads/500/artist-one.jpg',
+        confidence: 0.72,
+      },
+    ]);
+    const kugouSearch = vi.fn().mockResolvedValue([]);
+    const miguSearch = vi.fn().mockResolvedValue([]);
+    const service = createService(database, [
+      createProvider(qqSearch, 'qqmusic'),
+      createProvider(neteaseSearch, 'netease'),
+      createProvider(kuwoSearch, 'kuwo'),
+      createProvider(kugouSearch, 'kugou'),
+      createProvider(miguSearch, 'migu'),
+    ]);
+
+    const result = await service.refreshArtistImage('artist-1', true);
+
+    expect(kuwoSearch).toHaveBeenCalledTimes(1);
+    expect(kugouSearch).toHaveBeenCalledTimes(1);
+    expect(miguSearch).toHaveBeenCalledTimes(1);
+    expect(qqSearch).toHaveBeenCalledTimes(1);
+    expect(neteaseSearch).toHaveBeenCalledTimes(1);
+    expect(result.entry).toMatchObject({
+      status: 'matched',
       provider: 'netease',
       providerArtistId: '55240314',
+      confidence: 0.96,
+    });
+    database.close();
+  });
+
+  it('rotates same-confidence primary providers by artist key instead of always preferring NetEase quality', async () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'Arika');
+    const qqSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'qqmusic',
+        providerArtistId: 'qq-arika',
+        artistName: 'Arika',
+        imageUrl: 'https://y.gtimg.cn/arika.jpg',
+        confidence: 0.96,
+        quality: 500,
+      },
+    ]);
+    const neteaseSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'netease',
+        providerArtistId: 'netease-arika',
+        artistName: 'Arika',
+        imageUrl: 'https://p2.music.126.net/arika.jpg?param=1000y1000',
+        confidence: 0.96,
+        quality: 1000,
+      },
+    ]);
+    const kuwoSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'kuwo',
+        providerArtistId: 'kuwo-arika',
+        artistName: 'Arika',
+        imageUrl: 'https://img2.kuwo.cn/star/starheads/500/arika.jpg',
+        confidence: 0.96,
+        quality: 500,
+      },
+    ]);
+    const service = createService(database, [
+      createProvider(qqSearch, 'qqmusic'),
+      createProvider(neteaseSearch, 'netease'),
+      createProvider(kuwoSearch, 'kuwo'),
+    ]);
+
+    const result = await service.refreshArtistImage('artist-1', true);
+
+    expect(result.entry).toMatchObject({
+      status: 'matched',
+      provider: 'kuwo',
+      providerArtistId: 'kuwo-arika',
       confidence: 0.96,
     });
     database.close();

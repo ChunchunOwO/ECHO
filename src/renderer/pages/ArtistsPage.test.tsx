@@ -137,6 +137,35 @@ describe('ArtistsPage', () => {
     expect(screen.getByText('安田')).toBeTruthy();
   });
 
+  it('opens an artist detail from a cross-page navigation event', async () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+
+    renderArtistsPage();
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new CustomEvent('app:navigate:artist-detail', { detail: { artist: targetArtist } }));
+
+    expect(await screen.findByText('Detail: BURTON')).toBeTruthy();
+  });
+
+  it('returns to songs when an artist detail was opened from the song list', async () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const navigateSongs = vi.fn();
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+    window.addEventListener('app:navigate:songs', navigateSongs);
+
+    renderArtistsPage();
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
+    window.dispatchEvent(new CustomEvent('app:navigate:artist-detail', { detail: { artist: targetArtist, returnTo: 'songs' } }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
+
+    expect(navigateSongs).toHaveBeenCalledTimes(1);
+    window.removeEventListener('app:navigate:songs', navigateSongs);
+  });
+
   it('loads the next artist page when the artist wall scrolls to the spacer bottom', async () => {
     const getArtists = vi
       .fn()

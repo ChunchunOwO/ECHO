@@ -68,6 +68,60 @@ const trimText = (value: string | null | undefined): string | null => {
   return trimmed ? trimmed : null;
 };
 
+const safeDecodeUriComponent = (value: string): string => {
+  if (!/%[0-9a-f]{2}|\+/iu.test(value)) {
+    return value;
+  }
+
+  try {
+    return decodeURIComponent(value.replace(/\+/gu, '%20'));
+  } catch {
+    return value;
+  }
+};
+
+const hasCjkOrKana = (value: string): boolean => /[\u3040-\u30ff\u3400-\u9fff]/u.test(value);
+
+const looksLikeEncodedBlob = (value: string): boolean =>
+  value.length >= 16 &&
+  /^[A-Za-z0-9+/=_-]+$/u.test(value) &&
+  /[+/=_-]/u.test(value) &&
+  !hasCjkOrKana(value) &&
+  (value.endsWith('=') ||
+    (value.length >= 24 &&
+      [...value].filter((char) => /\d/u.test(char)).length >= 3 &&
+      [...value].filter((char) => /[A-Z]/u.test(char)).length >= 3 &&
+      [...value].filter((char) => /[a-z]/u.test(char)).length >= 3));
+
+const cleanMetadataText = (value: string | null | undefined): string | null => {
+  const trimmed = trimText(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  if (looksLikeEncodedBlob(trimmed)) {
+    return null;
+  }
+
+  const decoded = trimText(safeDecodeUriComponent(trimmed)) ?? trimmed;
+  return looksLikeEncodedBlob(decoded) ? null : decoded;
+};
+
+const splitTitleArtist = (title: string, artist: string | null): { title: string; artist: string | null } => {
+  if (artist && artist !== unknownArtist) {
+    return { title, artist };
+  }
+
+  const match = title.match(/^(.{1,120}?)\s+(?:-|\/|\||~|:|\u2013|\u2014|\uff1a|\uff0f)\s+(.{1,120})$/u);
+  if (!match) {
+    return { title, artist };
+  }
+
+  const nextTitle = cleanMetadataText(match[1]);
+  const nextArtist = cleanMetadataText(match[2]);
+  return nextTitle && nextArtist ? { title: nextTitle, artist: nextArtist } : { title, artist };
+};
+
 export const titleFromUri = (uri: string | null | undefined): string | null => {
   if (!uri) {
     return null;
@@ -75,9 +129,9 @@ export const titleFromUri = (uri: string | null | undefined): string | null => {
 
   try {
     const url = new URL(uri);
-    const queryTitle = url.searchParams.get('title') ?? url.searchParams.get('name') ?? url.searchParams.get('songName');
-    if (queryTitle?.trim()) {
-      return queryTitle.trim();
+    const queryTitle = cleanMetadataText(url.searchParams.get('title') ?? url.searchParams.get('name') ?? url.searchParams.get('songName'));
+    if (queryTitle) {
+      return queryTitle;
     }
 
     const pathTitle = decodeURIComponent(basename(url.pathname));
@@ -126,7 +180,7 @@ const queryText = (uri: string, names: string[]): string | null => {
   try {
     const url = new URL(uri);
     for (const name of names) {
-      const value = trimText(url.searchParams.get(name));
+      const value = cleanMetadataText(url.searchParams.get(name));
       if (value) {
         return value;
       }
@@ -139,17 +193,20 @@ const queryText = (uri: string, names: string[]): string | null => {
 
 export const parseReceiverMetadata = (metadataXml: string | null | undefined, uri: string): ConnectMetadata => {
   const xml = normalizeMetadataXml(metadataXml);
-  const title = trimText(xmlText(xml, 'title')) ?? queryText(uri, ['title', 'name', 'songName']) ?? titleFromUri(uri) ?? defaultReceiverTitle;
-  const albumArtist = trimText(xmlText(xml, 'albumArtist')) ?? queryText(uri, ['albumArtist']);
-  const artist =
-    trimText(xmlText(xml, 'artist')) ??
-    trimText(xmlText(xml, 'creator')) ??
-    trimText(xmlText(xml, 'author')) ??
+  const rawTitle = cleanMetadataText(xmlText(xml, 'title')) ?? queryText(uri, ['title', 'name', 'songName']) ?? titleFromUri(uri) ?? defaultReceiverTitle;
+  const albumArtist = cleanMetadataText(xmlText(xml, 'albumArtist')) ?? queryText(uri, ['albumArtist']);
+  const rawArtist =
+    cleanMetadataText(xmlText(xml, 'artist')) ??
+    cleanMetadataText(xmlText(xml, 'creator')) ??
+    cleanMetadataText(xmlText(xml, 'author')) ??
     queryText(uri, ['artist', 'singer', 'artistName']) ??
     albumArtist ??
     unknownArtist;
-  const album = trimText(xmlText(xml, 'album')) ?? queryText(uri, ['album', 'albumName']);
-  const coverHttpUrl = trimText(xmlText(xml, 'albumArtURI')) ?? trimText(xmlText(xml, 'icon')) ?? queryText(uri, ['cover', 'pic', 'image']) ?? '';
+  const split = splitTitleArtist(rawTitle, rawArtist);
+  const title = split.title;
+  const artist = split.artist ?? unknownArtist;
+  const album = cleanMetadataText(xmlText(xml, 'album')) ?? queryText(uri, ['album', 'albumName']);
+  const coverHttpUrl = cleanMetadataText(xmlText(xml, 'albumArtURI')) ?? cleanMetadataText(xmlText(xml, 'icon')) ?? queryText(uri, ['cover', 'pic', 'image']) ?? '';
   const durationSeconds = parseResDuration(xml);
 
   return {

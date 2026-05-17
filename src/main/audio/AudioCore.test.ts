@@ -436,6 +436,18 @@ class ThrowingStopBridge extends FakeBridge {
   });
 }
 
+class ThrowingPositionBridge extends FakeBridge {
+  failPositionReads = false;
+
+  override getPositionSeconds(): number {
+    if (this.failPositionReads) {
+      throw new Error('position read failed');
+    }
+
+    return super.getPositionSeconds();
+  }
+}
+
 class DelayedReadyBridge extends FakeBridge {
   private resolveStarted: (() => void) | null = null;
   private resolveReady: (() => void) | null = null;
@@ -3664,6 +3676,35 @@ describe('AudioSession playback watchdog', () => {
     expect(session.getDiagnostics().recentWatchdogRecoveryCount).toBe(1);
   });
 
+  it('surfaces watchdog checker failures through normal audio errors', async () => {
+    const reportAudioError = vi.fn();
+    const bridge = new ThrowingPositionBridge();
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      reportAudioError,
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 1,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+      bridge.failPositionReads = true;
+      await expect(session.checkPlaybackWatchdog()).resolves.toBeUndefined();
+
+      expect(session.getStatus().state).toBe('error');
+      expect(session.getStatus().error).toBe('position read failed');
+      expect(reportAudioError).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'position read failed',
+        severity: 'fatal',
+      }));
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('does not turn a superseded stability recovery into a fatal audio error', async () => {
     const decoder = new FakeDecoder(new Map([
       ['first.flac', probe('first.flac', 44100)],
@@ -4522,7 +4563,7 @@ describe('NativeOutputBridge host arguments', () => {
     bridge.stop();
   });
 
-  it('ignores stale framed ended events that arrive before PCM for a new session', async () => {
+  it('emits framed ended events for very short sessions after begin-session', async () => {
     const stdoutRef = new PassThrough();
     const fakeSpawn = (): ChildProcessWithoutNullStreams => {
       const stdin = new PassThrough();
@@ -4553,18 +4594,22 @@ describe('NativeOutputBridge host arguments', () => {
     });
     bridge.on('ended', ended);
 
-    bridge.beginSession({ startSeconds: 0 });
     stdoutRef.write('{"event":"ended"}\n');
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(ended).not.toHaveBeenCalled();
 
-    const sessionId = bridge.beginSession({ startSeconds: 0 });
-    bridge.writePcmFrame(sessionId, pcmBuffer([0.1, -0.1]), () => undefined);
+    bridge.beginSession({ startSeconds: 0 });
+    stdoutRef.write('{"event":"ended"}\n');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ended).toHaveBeenCalledTimes(1);
+
+    const nextSessionId = bridge.beginSession({ startSeconds: 0 });
+    bridge.writePcmFrame(nextSessionId, pcmBuffer([0.1, -0.1]), () => undefined);
     stdoutRef.write('{"event":"ended"}\n');
     stdoutRef.write('{"event":"ended"}\n');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(ended).toHaveBeenCalledTimes(1);
+    expect(ended).toHaveBeenCalledTimes(2);
     bridge.stop();
   });
 
@@ -5606,48 +5651,57 @@ describe('AudioSession graceful output cleanup', () => {
 });
 
 describe('DeviceService diagnostics', () => {
-  it('logs native host list failures instead of silently returning an empty ASIO list', () => {
+  it('logs native host list failures instead of silently returning an empty ASIO list', async () => {
     const logs: string[] = [];
     const failure = Object.assign(new Error('command failed'), {
       status: 2,
       stderr: Buffer.from('[echo-audio-host] ASIO support is disabled at build time'),
       stdout: Buffer.from(''),
     });
-    const execMock = vi.fn(() => {
-      throw failure;
+    const execMock = vi.fn((_bin, _args, _options, callback) => {
+      queueMicrotask(() => callback(failure, '', failure.stderr));
+      return {} as ReturnType<typeof nodeExecFile>;
     });
     const service = new DeviceService({
       hostBinary: 'echo-audio-host.exe',
-      execFileSync: execMock as unknown as typeof nodeExecFileSync,
+      execFile: execMock as unknown as typeof nodeExecFile,
       logger: (message) => logs.push(message),
     });
 
-    expect(service.listAsioDevices()).toEqual([]);
+    await expect(service.listAsioDevicesAsync()).resolves.toEqual([]);
     expect(logs[0]).toContain('asio device enumeration failed');
     expect(logs[0]).toContain('echo-audio-host.exe');
     expect(logs[0]).toContain('ASIO support is disabled');
   });
 
-  it('logs an empty ASIO list distinctly from an enumeration failure', () => {
+  it('logs an empty ASIO list distinctly from an enumeration failure', async () => {
     const logs: string[] = [];
+    const execMock = vi.fn((_bin, _args, _options, callback) => {
+      queueMicrotask(() => callback(null, '', ''));
+      return {} as ReturnType<typeof nodeExecFile>;
+    });
     const service = new DeviceService({
       hostBinary: 'echo-audio-host.exe',
-      execFileSync: vi.fn(() => '') as unknown as typeof nodeExecFileSync,
+      execFile: execMock as unknown as typeof nodeExecFile,
       logger: (message) => logs.push(message),
     });
 
-    expect(service.listAsioDevices()).toEqual([]);
+    await expect(service.listAsioDevicesAsync()).resolves.toEqual([]);
     expect(logs[0]).toContain('ASIO device enumeration returned no devices');
   });
 
-  it('parses optional ASIO output channel metadata', () => {
+  it('parses optional ASIO output channel metadata', async () => {
+    const execMock = vi.fn((_bin, _args, _options, callback) => {
+      queueMicrotask(() => callback(null, '0\tASIO4ALL v2\t0\t1\t0\t4\t0\tRealtek 1|Realtek 2|USB 1|USB 2\n', ''));
+      return {} as ReturnType<typeof nodeExecFile>;
+    });
     const service = new DeviceService({
       hostBinary: 'echo-audio-host.exe',
-      execFileSync: vi.fn(() => '0\tASIO4ALL v2\t0\t1\t0\t4\t0\tRealtek 1|Realtek 2|USB 1|USB 2\n') as unknown as typeof nodeExecFileSync,
+      execFile: execMock as unknown as typeof nodeExecFile,
       logger: noopLogger,
     });
 
-    expect(service.listAsioDevices()).toMatchObject([
+    await expect(service.listAsioDevicesAsync()).resolves.toMatchObject([
       {
         id: 'asio:0',
         name: 'ASIO4ALL v2',
@@ -6638,6 +6692,55 @@ describe('NativeOutputBridge diagnostics', () => {
       currentDevice: true,
       followsDefaultDevice: false,
     });
+    bridge.stop();
+  });
+
+  it('routes device_invalidated host errors as device events after ready', async () => {
+    let hostStdout!: PassThrough;
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      hostStdout = stdout;
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"wasapi-exclusive","deviceName":"TEAC USB"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+    const runtimeError = vi.fn();
+    bridge.on('error', runtimeError);
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+      exclusive: true,
+    });
+
+    const notification = new Promise<NativeHostNotificationEvent>((resolve) => {
+      bridge.once('device-event', (event) => resolve(event as NativeHostNotificationEvent));
+    });
+    hostStdout.write('{"event":"error","reason":"device_invalidated","message":"WASAPI device invalidated"}\n');
+
+    await expect(notification).resolves.toMatchObject({
+      event: 'audio_session_disconnected',
+      reason: 'device_invalidated',
+      currentDevice: true,
+      followsDefaultDevice: true,
+    });
+    expect(runtimeError).not.toHaveBeenCalled();
     bridge.stop();
   });
 

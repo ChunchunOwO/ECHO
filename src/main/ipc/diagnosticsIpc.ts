@@ -25,10 +25,10 @@ export const registerDiagnosticsIpc = (): void => {
   ipcMain.handle(IpcChannels.DiagnosticsClearLastCrashSummary, (): void => {
     getCrashReportService().clearLastCrashSummary();
   });
-  ipcMain.handle(IpcChannels.DiagnosticsExport, (): Promise<string> => getCrashReportService().exportDiagnosticsZip());
+  ipcMain.handle(IpcChannels.DiagnosticsExport, (): Promise<string> => getCrashReportService().exportDiagnosticsMarkdown());
   ipcMain.handle(IpcChannels.DiagnosticsOpenFolder, (): Promise<string> => getCrashReportService().openDiagnosticsFolder());
   ipcMain.handle(IpcChannels.DiagnosticsOpenCrashReport, (): Promise<string> =>
-    getCrashReportService().openCrashReportFile(),
+    getCrashReportService().openCrashReportFile({ preferLastAbnormal: true }),
   );
   ipcMain.handle(IpcChannels.DiagnosticsOpenAudioCrashReport, (): Promise<string> =>
     getCrashReportService().openAudioCrashReportFile(),

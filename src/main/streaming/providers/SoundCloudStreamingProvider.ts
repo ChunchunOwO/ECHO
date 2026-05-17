@@ -17,6 +17,13 @@ import { asRecord, integer, streamingImageProxyUrl, text } from './chinaStreamin
 
 const provider = 'soundcloud' as const;
 const soundCloudReferer = 'https://soundcloud.com/';
+const soundCloudUserAgent =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const soundCloudPlaybackHeaders: Record<string, string> = {
+  'User-Agent': soundCloudUserAgent,
+  Accept: '*/*',
+  Referer: soundCloudReferer,
+};
 const ytDlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const ytDlpTimeoutMs = 45_000;
 const ytDlpMaxBuffer = 1024 * 1024 * 12;
@@ -117,7 +124,7 @@ const pickPlaybackFormat = (value: unknown): YtDlpFormat | null => {
   const directAudioFormats = formats.filter((format) => {
     const protocol = text(format.protocol);
     const acodec = text(format.acodec);
-    return protocol === 'http' && acodec !== 'none';
+    return /^https?$/iu.test(protocol ?? '') && acodec !== 'none';
   });
 
   return (
@@ -131,11 +138,14 @@ const pickPlaybackFormat = (value: unknown): YtDlpFormat | null => {
 
 const headersFromFormat = (format: YtDlpFormat): Record<string, string> => {
   const headers = asRecord(format.http_headers);
-  return Object.fromEntries(
-    Object.entries(headers).filter(
-      ([key, value]) => typeof value === 'string' && !/authorization|cookie/iu.test(key),
+  return {
+    ...soundCloudPlaybackHeaders,
+    ...Object.fromEntries(
+      Object.entries(headers).filter(
+        ([key, value]) => typeof value === 'string' && !/authorization|cookie/iu.test(key),
+      ),
     ),
-  ) as Record<string, string>;
+  } as Record<string, string>;
 };
 
 const playbackMimeType = (format: YtDlpFormat, url: string): string => {
@@ -242,7 +252,7 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
       enabled: status.connected,
       supportsSearch: true,
       supportsPlayback: true,
-      supportsDownload: false,
+      supportsDownload: true,
       supportsLyrics: false,
       supportsMv: false,
       requiresAccount: true,
@@ -315,7 +325,7 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
     const cookie = requireCookie();
     const metadata = await ytDlpJson<unknown>(
-      ['--no-playlist', '-f', 'http_mp3_1_0/bestaudio/best', resolvedTrackUrl(request.providerTrackId)],
+      ['--no-playlist', '-f', 'http_mp3_0_1/http_mp3_1_0/http_mp3_0_0/bestaudio/best', resolvedTrackUrl(request.providerTrackId)],
       cookie,
     );
     const format = pickPlaybackFormat(metadata);

@@ -2,20 +2,28 @@ import type { LibraryAlbum, LibraryTrack } from '../../shared/types/library';
 
 export const albumDetailNavigationEvent = 'app:navigate:album-detail';
 
-let pendingAlbumDetail: LibraryAlbum | null = null;
+export type DetailReturnTarget = 'songs';
 
-export const requestAlbumDetailNavigation = (album: LibraryAlbum): void => {
-  pendingAlbumDetail = album;
-  window.dispatchEvent(new CustomEvent<{ album: LibraryAlbum }>(albumDetailNavigationEvent, { detail: { album } }));
+export type AlbumDetailNavigationRequest = {
+  album: LibraryAlbum;
+  returnTo?: DetailReturnTarget;
 };
 
-export const consumePendingAlbumDetailNavigation = (): LibraryAlbum | null => {
-  const album = pendingAlbumDetail;
+let pendingAlbumDetail: AlbumDetailNavigationRequest | null = null;
+
+export const requestAlbumDetailNavigation = (album: LibraryAlbum, options: { returnTo?: DetailReturnTarget } = {}): void => {
+  const request = { album, returnTo: options.returnTo };
+  pendingAlbumDetail = request;
+  window.dispatchEvent(new CustomEvent<AlbumDetailNavigationRequest>(albumDetailNavigationEvent, { detail: request }));
+};
+
+export const consumePendingAlbumDetailNavigation = (): AlbumDetailNavigationRequest | null => {
+  const request = pendingAlbumDetail;
   pendingAlbumDetail = null;
-  return album;
+  return request;
 };
 
-export const openAlbumDetailForTrack = async (track: LibraryTrack): Promise<LibraryAlbum | null> => {
+export const openAlbumDetailForTrack = async (track: LibraryTrack, options: { returnTo?: DetailReturnTarget } = {}): Promise<LibraryAlbum | null> => {
   const library = window.echo?.library;
 
   if (!library?.getAlbumForTrack) {
@@ -25,7 +33,7 @@ export const openAlbumDetailForTrack = async (track: LibraryTrack): Promise<Libr
   const album = await library.getAlbumForTrack(track.id);
 
   if (album) {
-    requestAlbumDetailNavigation(album);
+    requestAlbumDetailNavigation(album, options);
   }
 
   return album;

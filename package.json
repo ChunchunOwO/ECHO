@@ -18,6 +18,7 @@
     "smoke:smtc-host": "node scripts/smoke-smtc-host.mjs",
     "ensure:native:electron": "node scripts/ensure-native-abi.mjs electron",
     "ensure:native:node": "node scripts/ensure-native-abi.mjs node",
+    "build:airplay-raop": "node scripts/build-airplay-raop.mjs",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
@@ -46,6 +47,7 @@
     "discord-rpc": "^4.0.1",
     "electron-updater": "^6.8.3",
     "electron-vite": "^5.0.0",
+    "fflate": "^0.8.3",
     "iconv-lite": "^0.6.3",
     "kuroshiro": "^1.2.0",
     "kuroshiro-analyzer-kuromoji": "^1.1.0",
@@ -58,6 +60,9 @@
     "shaka-player": "^4.16.31",
     "sharp": "^0.34.5",
     "taglib-wasm": "^1.1.2"
+  },
+  "optionalDependencies": {
+    "@lox-audioserver/node-libraop": "0.3.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",

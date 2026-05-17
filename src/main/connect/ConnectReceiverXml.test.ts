@@ -103,6 +103,40 @@ describe('Connect receiver XML and SOAP helpers', () => {
     expect(metadata.artist).toBe('Such / ヨシカ');
   });
 
+  it('does not expose opaque DLNA tokens as song titles', () => {
+    const metadata = parseReceiverMetadata(
+      '<DIDL-Lite><item><dc:title>NUoqIw37w+aETdIDWJ44r65J83e38sCE=</dc:title></item></DIDL-Lite>',
+      'http://m701.music.126.net/stream?id=123',
+    );
+
+    expect(metadata.title).toBe('External stream');
+    expect(metadata.artist).toBe('Unknown Artist');
+  });
+
+  it('decodes URL-style metadata and splits title artist fallbacks', () => {
+    const metadata = parseReceiverMetadata(
+      '<DIDL-Lite><item><dc:title>se+kai+no+shikumi+-+Guiano</dc:title></item></DIDL-Lite>',
+      'http://phone.local/stream?id=1',
+    );
+
+    expect(metadata.title).toBe('se kai no shikumi');
+    expect(metadata.artist).toBe('Guiano');
+  });
+
+  it('uses decoded query metadata before noisy stream basenames', () => {
+    const metadata = parseReceiverMetadata(
+      '',
+      'http://phone.local/play?title=Sky+Song&artist=Guiano&album=The+Sky&cover=http%3A%2F%2Fcover.test%2Fa.jpg',
+    );
+
+    expect(metadata).toMatchObject({
+      title: 'Sky Song',
+      artist: 'Guiano',
+      album: 'The Sky',
+      coverHttpUrl: 'http://cover.test/a.jpg',
+    });
+  });
+
   it('avoids showing noisy stream URLs as titles', () => {
     const metadata = parseReceiverMetadata('', 'http://m701.music.126.net/song?id=123');
 

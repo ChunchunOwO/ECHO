@@ -47,7 +47,8 @@ const activeDownloadStatuses = new Set<DownloadJobStatus>([
   'binding_mv',
 ]);
 const terminalDownloadStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
-const unsupportedPlayerDownloadProviders = new Set<StreamingProviderName>(['mock', 'spotify', 'soundcloud']);
+const unsupportedPlayerDownloadProviders = new Set<StreamingProviderName>(['mock', 'spotify']);
+const unsupportedStreamingBpmAnalysisProviders = new Set<StreamingProviderName>(['spotify', 'soundcloud']);
 const downloadStatusLabels: Record<DownloadJobStatus, string> = {
   queued: '排队中',
   probing: '解析链接',
@@ -93,7 +94,9 @@ const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: 
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(providerTrackId)}`;
     case 'soundcloud':
-      return `https://soundcloud.com/search/sounds?q=${encodeURIComponent(providerTrackId)}`;
+      return providerTrackId.startsWith('http')
+        ? providerTrackId
+        : `https://soundcloud.com/search/sounds?q=${encodeURIComponent(providerTrackId)}`;
     default:
       return null;
   }
@@ -566,9 +569,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       const detail =
         currentStreamingDownloadProvider === 'spotify'
           ? 'Spotify 由官方播放器播放，不提供可下载音频 URL。'
-          : currentStreamingDownloadProvider === 'soundcloud'
-            ? 'SoundCloud 在 ECHO Next 中仅用于流播放，不写入下载任务。'
-            : 'Mock 流媒体用于开发预览，不写入下载任务。';
+          : 'Mock 流媒体用于开发预览，不写入下载任务。';
       showStreamingDownloadNotice(
         {
           tone: 'error',
@@ -991,7 +992,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       audioAnalysisEnabled === true &&
       isPlaying &&
       streamingTrackMediaType === 'streaming' &&
-      streamingTrackProvider !== 'spotify' &&
+      !unsupportedStreamingBpmAnalysisProviders.has(streamingTrackProvider as StreamingProviderName) &&
       !isReliableBpmAnalysis(streamingTrackBpm, streamingTrackBpmConfidence, streamingTrackAnalysisStatus) &&
       streamingTrackAnalysisStatus !== 'analyzing' &&
       (streamingTrackAnalysisStatus !== 'complete' ||
@@ -1120,7 +1121,10 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
             return;
           }
 
-          if ((currentTrack?.isTemporary || trackId.startsWith('dlna-receiver:')) && mv.searchNetworkCandidatesForSnapshot) {
+          if (
+            (currentTrack?.isTemporary || trackId.startsWith('dlna-receiver:') || trackId.startsWith('airplay-receiver:')) &&
+            mv.searchNetworkCandidatesForSnapshot
+          ) {
             await mv.searchNetworkCandidatesForSnapshot({
               trackId: currentTrack?.id ?? trackId,
               title: currentTrack?.title?.trim() || title,

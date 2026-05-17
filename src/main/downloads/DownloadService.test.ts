@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { zipSync } from 'fflate';
 import { DownloadService } from './DownloadService';
 
 const tempRoots: string[] = [];
@@ -19,6 +20,19 @@ const makeToolPath = (): string => {
   writeFileSync(toolPath, 'stub');
   return toolPath;
 };
+
+const osuCoverBytes = [255, 216, 255, 224, 1, 2, 3, 4];
+
+const makeOsuArchive = (audioName = 'audio.mp3', audioBytes: number[] = [1, 2, 3, 4], coverName = 'bg.jpg', coverBytes: number[] = osuCoverBytes): Uint8Array =>
+  zipSync({
+    'artist - song.osu': new TextEncoder().encode(
+      `[General]\nAudioFilename: ${audioName}\n\n[Metadata]\nTitle: Song\nArtist: Artist\nCreator: Mapper\nVersion: Hard\n\n[Events]\n0,0,"${coverName}",0,0\n`,
+    ),
+    [audioName]: new Uint8Array(audioBytes),
+    [coverName]: new Uint8Array(coverBytes),
+  });
+
+const responseBody = (bytes: Uint8Array): ArrayBuffer => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 
 const flushMicrotasks = async (): Promise<void> => {
   for (let index = 0; index < 8; index += 1) {
@@ -40,17 +54,6 @@ const waitForJob = async (service: DownloadService, jobId: string): Promise<Retu
     throw new Error(`Missing job ${jobId}`);
   }
   return job;
-};
-
-const waitForCondition = async (condition: () => boolean, describeFailure: string | (() => string) = 'Timed out waiting for condition'): Promise<void> => {
-  for (let index = 0; index < 40; index += 1) {
-    if (condition()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-
-  throw new Error(typeof describeFailure === 'function' ? describeFailure() : describeFailure);
 };
 
 afterEach(() => {
@@ -82,7 +85,7 @@ describe('DownloadService', () => {
     expect(() => service.createUrlJob('https://www.youtube.com/watch?v=probe')).toThrow('请选择下载文件夹');
   });
 
-  it('rejects playback-only streaming URLs before creating a download job', () => {
+  it('rejects Spotify playback-only URLs before creating a download job', () => {
     const service = new DownloadService();
 
     expect(() => service.createUrlJob('https://open.spotify.com/track/spotify-track-id')).toThrow(
@@ -91,9 +94,246 @@ describe('DownloadService', () => {
     expect(() => service.createUrlJob('https://example.com/audio.mp3', { webpageUrl: 'spotify:track:spotify-track-id' })).toThrow(
       'This streaming platform is playback-only in ECHO Next',
     );
-    expect(() => service.createUrlJob('https://api-media.soundcloud.com/stream/example', { webpageUrl: 'https://soundcloud.com/artist/track' })).toThrow(
-      'This streaming platform is playback-only in ECHO Next',
+  });
+
+  it('allows SoundCloud jobs and passes saved cookies to yt-dlp', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const outputPath = join(outputDirectory, 'SoundCloud Song [sc].m4a');
+    const commandRunner = vi.fn(() => ({
+      promise: Promise.resolve({
+        stdout: JSON.stringify({
+          title: 'SoundCloud Song',
+          duration: 180,
+          webpage_url: 'https://soundcloud.com/artist/track',
+        }),
+        stderr: '',
+        exitCode: 0,
+      }),
+      kill: vi.fn(),
+    }));
+    const streamingCommandRunner = vi.fn((_command, _args, listeners) => {
+      writeFileSync(outputPath, 'audio');
+      listeners.onStdout?.(outputPath);
+      return {
+        promise: Promise.resolve({ stdout: outputPath, stderr: '', exitCode: 0 }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({
+        provider,
+        cookie: provider === 'soundcloud' ? 'oauth_token=sc-secret; sc_anonymous_id=test' : undefined,
+      }),
+      streamingCommandRunner,
+    });
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://soundcloud.com/artist/track', { importToLibrary: false });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(job.provider).toBe('soundcloud');
+    expect(commandRunner).toHaveBeenCalledWith(
+      ytDlpPath,
+      expect.arrayContaining([
+        '--add-header',
+        'Referer: https://soundcloud.com/',
+        '--add-header',
+        'Cookie: oauth_token=sc-secret; sc_anonymous_id=test',
+      ]),
     );
+    expect(streamingCommandRunner).toHaveBeenCalledWith(
+      ytDlpPath,
+      expect.arrayContaining([
+        '--add-header',
+        'Referer: https://soundcloud.com/',
+        '--add-header',
+        'Cookie: oauth_token=sc-secret; sc_anonymous_id=test',
+      ]),
+      expect.any(Object),
+    );
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.outputPath).toBe(outputPath);
+  });
+
+  it('downloads an osu beatmapset archive from the official endpoint and extracts the mapped audio file', async () => {
+    const outputDirectory = makeTempRoot();
+    const archiveBytes = makeOsuArchive('audio.mp3', [11, 22, 33]);
+    const fetchRunner = vi.fn(async () => {
+      return new Response(responseBody(archiveBytes), {
+        status: 200,
+        headers: {
+          'content-type': 'application/x-osu-beatmap-archive',
+          'content-length': String(archiveBytes.length),
+        },
+      });
+    }) as unknown as typeof fetch;
+    const writeEmbeddedTrackTags = vi.fn(async () => undefined);
+    const service = new DownloadService(undefined, undefined, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({
+        provider,
+        cookie: provider === 'osu' ? 'osu_session=secret' : undefined,
+      }),
+      writeEmbeddedTrackTags,
+    });
+    service.setSettings({ outputDirectory, importToLibrary: false, bindMvAfterImport: true });
+
+    const job = service.createUrlJob('https://osu.ppy.sh/beatmapsets/2492872#fruits/5477400', { importToLibrary: false });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(job.provider).toBe('osu');
+    expect(fetchRunner).toHaveBeenCalledWith(
+      'https://osu.ppy.sh/beatmapsets/2492872/download?noVideo=1',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Cookie: 'osu_session=secret',
+          Referer: 'https://osu.ppy.sh/',
+        }),
+      }),
+    );
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.title).toBe('Artist - Song');
+    expect(completedJob.outputPath).toMatch(/Artist - Song\.mp3$/u);
+    expect([...readFileSync(completedJob.outputPath!)]).toEqual([11, 22, 33]);
+    expect(writeEmbeddedTrackTags).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filePath: completedJob.outputPath,
+        coverData: {
+          data: new Uint8Array(osuCoverBytes),
+          mimeType: 'image/jpeg',
+        },
+        tags: expect.objectContaining({
+          title: 'Song',
+          artist: 'Artist',
+          album: 'osu! beatmapset 2492872',
+        }),
+      }),
+    );
+  });
+
+  it('never binds MV links for imported osu beatmap audio', async () => {
+    const outputDirectory = makeTempRoot();
+    const archiveBytes = makeOsuArchive('audio.mp3', [44, 55, 66]);
+    const bindMvUrl = vi.fn(() => {
+      throw new Error('Unsupported MV link. Paste a YouTube or Bilibili video URL.');
+    });
+    const importAudioFile = vi.fn(async () => ({ id: 'osu-track-1' }));
+    const service = new DownloadService(undefined, undefined, {
+      bindMvUrl,
+      fetch: vi.fn(async () => {
+        return new Response(responseBody(archiveBytes), {
+          status: 200,
+          headers: { 'content-type': 'application/x-osu-beatmap-archive' },
+        });
+      }) as unknown as typeof fetch,
+      getAccountCredentials: (provider) => ({ provider }),
+      importAudioFile,
+      writeEmbeddedTrackTags: vi.fn(async () => undefined),
+    });
+    service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: true });
+
+    const job = service.createUrlJob('https://osu.ppy.sh/beatmapsets/2492872#fruits/5477400', {
+      importToLibrary: true,
+      bindMvAfterImport: true,
+    });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.importedTrackId).toBe('osu-track-1');
+    expect(importAudioFile).toHaveBeenCalledWith(
+      completedJob.outputPath,
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          title: 'Song',
+          artist: 'Artist',
+          album: 'osu! beatmapset 2492872',
+        }),
+      }),
+    );
+    expect(bindMvUrl).not.toHaveBeenCalled();
+  });
+
+  it('uses the largest image in an osu archive as cover art when the beatmap event is missing', async () => {
+    const outputDirectory = makeTempRoot();
+    const archiveBytes = zipSync({
+      'artist - song.osu': new TextEncoder().encode(
+        '[General]\nAudioFilename: audio.mp3\n\n[Metadata]\nTitle: Song\nArtist: Artist\n',
+      ),
+      'audio.mp3': new Uint8Array([1, 2, 3]),
+      'small.png': new Uint8Array([1, 2]),
+      'large.png': new Uint8Array([9, 8, 7, 6]),
+    });
+    const writeEmbeddedTrackTags = vi.fn(async () => undefined);
+    const service = new DownloadService(undefined, undefined, {
+      fetch: vi.fn(async () => {
+        return new Response(responseBody(archiveBytes), {
+          status: 200,
+          headers: { 'content-type': 'application/zip' },
+        });
+      }) as unknown as typeof fetch,
+      getAccountCredentials: (provider) => ({ provider }),
+      writeEmbeddedTrackTags,
+    });
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://osu.ppy.sh/beatmapsets/2492872#osu/5477400', { importToLibrary: false });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(completedJob.status).toBe('completed');
+    expect(writeEmbeddedTrackTags).toHaveBeenCalledWith(
+      expect.objectContaining({
+        coverData: {
+          data: new Uint8Array([9, 8, 7, 6]),
+          mimeType: 'image/png',
+        },
+      }),
+    );
+  });
+
+  it('falls through osu mirrors when official or Sayobot responses are unavailable', async () => {
+    const outputDirectory = makeTempRoot();
+    const archiveBytes = makeOsuArchive('fallback.ogg', [5, 6, 7, 8]);
+    const fetchMock = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+      const rawUrl = String(url);
+      if (rawUrl.includes('osu.ppy.sh')) {
+        return new Response('<html>login required</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      if (rawUrl.includes('dl.sayobot.cn')) {
+        return new Response('busy', { status: 503, headers: { 'content-type': 'text/plain' } });
+      }
+      if (rawUrl.includes('catboy.best')) {
+        return new Response(responseBody(archiveBytes), { status: 200, headers: { 'content-type': 'application/zip' } });
+      }
+      return new Response('should not reach NeriNyan', { status: 500 });
+    });
+    const service = new DownloadService(undefined, undefined, {
+      fetch: fetchMock as unknown as typeof fetch,
+      getAccountCredentials: (provider) => ({ provider }),
+      writeEmbeddedTrackTags: vi.fn(async () => undefined),
+    });
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    const job = service.createUrlJob('https://osu.ppy.sh/beatmapsets/2492872#osu/5477400', { importToLibrary: false });
+    const completedJob = await waitForJob(service, job.id);
+    const calledUrls = fetchMock.mock.calls.map((call) => String(call[0]));
+
+    expect(calledUrls).toEqual([
+      'https://osu.ppy.sh/beatmapsets/2492872/download?noVideo=1',
+      'https://dl.sayobot.cn/beatmaps/download/novideo/2492872',
+      'https://catboy.best/d/2492872',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Referer: 'https://sayobot.cn/',
+          'User-Agent': expect.stringContaining('ECHO Next'),
+        }),
+      }),
+    );
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.outputPath).toMatch(/Artist - Song\.ogg$/u);
+    expect([...readFileSync(completedJob.outputPath!)]).toEqual([5, 6, 7, 8]);
   });
 
   it('loads and saves download settings through the settings store', () => {
@@ -877,19 +1117,20 @@ describe('DownloadService', () => {
     expect(bindMvUrl).toHaveBeenCalledWith('track-1', 'https://www.bilibili.com/video/BV1ECHO');
   });
 
-  it('defers library import while audio playback is active', async () => {
+  it('keeps the downloaded audio imported when MV binding rejects the source URL', async () => {
     const ytDlpPath = makeToolPath();
     const outputDirectory = makeTempRoot();
-    const outputPath = join(outputDirectory, 'Deferred Song [deferred].m4a');
-    let playbackState = 'playing';
-    const importAudioFile = vi.fn(async () => ({ id: 'track-deferred' }));
-    const bindMvUrl = vi.fn();
+    const outputPath = join(outputDirectory, 'Plain Audio [plain].m4a');
+    const importAudioFile = vi.fn(async () => ({ id: 'track-imported' }));
+    const bindMvUrl = vi.fn(() => {
+      throw new Error('Unsupported MV link. Paste a YouTube or Bilibili video URL.');
+    });
     const service = new DownloadService(
       () => ({
         promise: Promise.resolve({
           stdout: JSON.stringify({
-            title: 'Deferred Song',
-            webpage_url: 'https://www.youtube.com/watch?v=deferred',
+            title: 'Plain Audio',
+            webpage_url: 'https://example.com/audio-page',
           }),
           stderr: '',
           exitCode: 0,
@@ -900,8 +1141,6 @@ describe('DownloadService', () => {
       {
         importAudioFile,
         bindMvUrl,
-        getPlaybackState: () => playbackState,
-        postDownloadImportRetryMs: 5,
         streamingCommandRunner: (_command, _args, listeners) => {
           writeFileSync(outputPath, 'audio');
           listeners.onStdout?.(outputPath);
@@ -914,23 +1153,57 @@ describe('DownloadService', () => {
     );
     service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: true });
 
-    const job = service.createUrlJob('https://www.youtube.com/watch?v=deferred');
+    const job = service.createUrlJob('https://example.com/audio-page');
     const completedJob = await waitForJob(service, job.id);
 
     expect(completedJob.status).toBe('completed');
-    expect(completedJob.importedTrackId).toBeNull();
-    expect(importAudioFile).not.toHaveBeenCalled();
+    expect(completedJob.error).toBeNull();
+    expect(completedJob.importedTrackId).toBe('track-imported');
+    expect(existsSync(outputPath)).toBe(true);
+    expect(importAudioFile).toHaveBeenCalledWith(outputPath, { folderPath: outputDirectory });
+    expect(bindMvUrl).toHaveBeenCalledWith('track-imported', 'https://example.com/audio-page');
+  });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(importAudioFile).not.toHaveBeenCalled();
+  it('imports the downloaded file immediately while audio playback is active', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const outputPath = join(outputDirectory, 'Immediate Song [immediate].m4a');
+    const importAudioFile = vi.fn(async () => ({ id: 'track-immediate' }));
+    const bindMvUrl = vi.fn();
+    const service = new DownloadService(
+      () => ({
+        promise: Promise.resolve({
+          stdout: JSON.stringify({
+            title: 'Immediate Song',
+            webpage_url: 'https://www.youtube.com/watch?v=immediate',
+          }),
+          stderr: '',
+          exitCode: 0,
+        }),
+        kill: vi.fn(),
+      }),
+      () => ytDlpPath,
+      {
+        importAudioFile,
+        bindMvUrl,
+        streamingCommandRunner: (_command, _args, listeners) => {
+          writeFileSync(outputPath, 'audio');
+          listeners.onStdout?.(outputPath);
+          return {
+            promise: Promise.resolve({ stdout: outputPath, stderr: '', exitCode: 0 }),
+            kill: vi.fn(),
+          };
+        },
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: true });
 
-    playbackState = 'paused';
-    await waitForCondition(() => service.getJobs()[0]?.importedTrackId === 'track-deferred');
+    const job = service.createUrlJob('https://www.youtube.com/watch?v=immediate');
+    const completedJob = await waitForJob(service, job.id);
 
-    expect(service.getJobs()[0]).toMatchObject({
-      status: 'completed',
-      importedTrackId: 'track-deferred',
-    });
-    expect(bindMvUrl).toHaveBeenCalledWith('track-deferred', 'https://www.youtube.com/watch?v=deferred');
+    expect(completedJob.status).toBe('completed');
+    expect(completedJob.importedTrackId).toBe('track-immediate');
+    expect(importAudioFile).toHaveBeenCalledWith(outputPath, { folderPath: outputDirectory });
+    expect(bindMvUrl).toHaveBeenCalledWith('track-immediate', 'https://www.youtube.com/watch?v=immediate');
   });
 });

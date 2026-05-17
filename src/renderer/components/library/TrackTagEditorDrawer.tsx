@@ -11,6 +11,7 @@ type TrackTagEditorDrawerProps = {
   error: string | null;
   onClose: () => void;
   onSave: (track: LibraryTrack, tags: EditableTrackTags, coverPath: string | null, coverUrl: string | null, coverMimeType: string | null) => void;
+  onTrackUpdated?: (track: LibraryTrack) => void;
 };
 
 type TagFormState = {
@@ -195,7 +196,7 @@ export const applyNetworkCandidateToForm = (
   genre: fields.genre && candidate.genre ? candidate.genre : form.genre,
 });
 
-export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, onSave }: TrackTagEditorDrawerProps): JSX.Element | null => {
+export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, onSave, onTrackUpdated }: TrackTagEditorDrawerProps): JSX.Element | null => {
   const [form, setForm] = useState<TagFormState>(() => stateFromTrack(track));
   const [selectedCover, setSelectedCover] = useState<TrackCoverSelection | null>(null);
   const [pendingNetworkCover, setPendingNetworkCover] = useState<PendingNetworkCover | null>(null);
@@ -336,6 +337,7 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
 
     try {
       const result = await library.loadEmbeddedTrackTags(track.id);
+      onTrackUpdated?.(result.track);
       setForm({
         title: result.tags.title,
         artist: result.tags.artist,
@@ -349,6 +351,7 @@ export const TrackTagEditorDrawer = ({ track, isOpen, isSaving, error, onClose, 
       setSelectedCover(null);
       setPendingNetworkCover(null);
       setLoadedCoverThumb(result.coverThumb);
+      setNetworkMessage('已从源文件内嵌标签重新加载，并同步更新媒体库。');
       setShowDiscardConfirm(false);
     } catch (loadError) {
       setLocalError(loadError instanceof Error ? loadError.message : String(loadError));

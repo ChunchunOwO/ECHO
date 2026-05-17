@@ -319,7 +319,7 @@ export const ArtistTrackList = ({
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'reload-embedded-tags') {
         setError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
         return;
       }
@@ -331,6 +331,7 @@ export const ArtistTrackList = ({
         if (
           track.mediaType === 'remote' &&
           (action === 'edit-tags' ||
+            action === 'reload-embedded-tags' ||
             action === 'open-osu-timing' ||
             action === 'show-in-folder' ||
             action === 'copy-path' ||
@@ -372,6 +373,17 @@ export const ArtistTrackList = ({
             setIsTagEditorOpen(false);
             setEditingTrack(track);
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'reload-embedded-tags':
+            {
+              const result = await library!.loadEmbeddedTrackTags(track.id);
+              setTracks((current) => current.map((item) => (item.id === result.track.id ? result.track : item)));
+              if (editingTrack?.id === result.track.id) {
+                setEditingTrack(result.track);
+              }
+              setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              window.dispatchEvent(new Event('library:changed'));
+            }
             return;
           case 'go-to-album':
             await handleGoToAlbum(track);
@@ -441,7 +453,7 @@ export const ArtistTrackList = ({
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [handleGoToAlbum, onAppendToQueue, onPlayNext, removeTrackFromQueue],
+    [editingTrack, handleGoToAlbum, onAppendToQueue, onPlayNext, removeTrackFromQueue],
   );
 
   return (
@@ -566,6 +578,11 @@ export const ArtistTrackList = ({
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+        onTrackUpdated={(updatedTrack) => {
+          setEditingTrack(updatedTrack);
+          setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
+          window.dispatchEvent(new Event('library:changed'));
+        }}
       />
     </section>
   );

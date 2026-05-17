@@ -18,6 +18,7 @@ import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
+import { enqueueAudioCommand } from './audioCommandQueue';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
@@ -189,7 +190,7 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.AudioGetStatus, (): AudioStatus => getAudioSession().getStatus());
   ipcMain.handle(IpcChannels.AudioGetDiagnostics, (): AudioDiagnostics => getAudioSession().getDiagnostics());
   ipcMain.handle(IpcChannels.AudioListDevices, async (): Promise<AudioDeviceInfo[]> => getAudioSession().listDevicesAsync());
-  ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> => {
+  ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> => enqueueAudioCommand(async () => {
     try {
       const normalized = normalizeOutputSettings(settings);
       return await getAudioSession().setOutput(normalized);
@@ -197,7 +198,7 @@ export const registerAudioIpc = (): void => {
       reportAudioIpcError(error, 'set-output-ipc', { settings });
       throw error;
     }
-  });
+  }));
   ipcMain.handle(IpcChannels.AudioOpenAsioControlPanel, async (_event, settings: unknown): Promise<void> => {
     try {
       const normalized = normalizeOutputSettings({ ...(typeof settings === 'object' && settings ? settings : {}), outputMode: 'asio' });
@@ -207,15 +208,15 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   });
-  ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => {
+  ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => enqueueAudioCommand(async () => {
     try {
       return await getAudioSession().forceRestart('reset-audio-engine');
     } catch (error) {
       reportAudioIpcError(error, 'reset-engine-ipc');
       throw error;
     }
-  });
-  ipcMain.handle(IpcChannels.AudioForceRestart, async (_event, reason: unknown): Promise<AudioStatus> => {
+  }));
+  ipcMain.handle(IpcChannels.AudioForceRestart, async (_event, reason: unknown): Promise<AudioStatus> => enqueueAudioCommand(async () => {
     try {
       const resetReason = typeof reason === 'string' && reason.trim() ? reason : 'force-restart';
       return await getAudioSession().forceRestart(resetReason);
@@ -223,8 +224,8 @@ export const registerAudioIpc = (): void => {
       reportAudioIpcError(error, 'force-restart-ipc', { reason });
       throw error;
     }
-  });
-  ipcMain.handle(IpcChannels.AudioRestartWindowsAudioService, async (): Promise<AudioStatus> => {
+  }));
+  ipcMain.handle(IpcChannels.AudioRestartWindowsAudioService, async (): Promise<AudioStatus> => enqueueAudioCommand(async () => {
     try {
       const session = getAudioSession();
       await session.stopForWindowsAudioServiceRestart();
@@ -234,7 +235,7 @@ export const registerAudioIpc = (): void => {
       reportAudioIpcError(error, 'restart-windows-audio-service-ipc');
       throw error;
     }
-  });
+  }));
   ipcMain.handle(IpcChannels.EqGetState, (): EqState => getEqBridge().getState());
   ipcMain.handle(IpcChannels.EqSetEnabled, async (_event, enabled: unknown): Promise<EqState> =>
     getEqBridge().setEnabled(Boolean(enabled)),

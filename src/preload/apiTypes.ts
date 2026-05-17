@@ -10,7 +10,7 @@ import type { AppSettings } from '../shared/types/appSettings';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
-import type { ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type {
@@ -31,6 +31,7 @@ import type {
   LibraryFolderOverview,
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
+  ImportPlaylistFileResult,
   LibraryPage,
   LibraryPageQuery,
   LibraryPlaylist,
@@ -190,6 +191,7 @@ export type EchoApi = {
     deletePlaylist: (playlistId: string) => Promise<void>;
     getPlaylist: (playlistId: string) => Promise<LibraryPlaylist | null>;
     getPlaylistItems: (playlistId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize' | 'search'>) => Promise<LibraryPage<LibraryPlaylistItem>>;
+    importPlaylistFile: () => Promise<ImportPlaylistFileResult | null>;
     exportPlaylist: (request: ExportPlaylistRequest) => Promise<string | null>;
     addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<LibraryPlaylistItem>;
     addStreamingTrackToPlaylist: (playlistId: string, track: LibraryTrack) => Promise<LibraryPlaylistItem>;
@@ -332,6 +334,10 @@ export type EchoApi = {
     setReceiverEnabled: (enabled: boolean) => Promise<ConnectReceiverStatus>;
     stopReceiverPlayback: () => Promise<ConnectReceiverStatus>;
     onReceiverStatus: (handler: (status: ConnectReceiverStatus) => void) => () => void;
+    getAirPlayReceiverStatus: () => Promise<AirPlayReceiverStatus>;
+    setAirPlayReceiverEnabled: (enabled: boolean) => Promise<AirPlayReceiverStatus>;
+    stopAirPlayReceiverPlayback: () => Promise<AirPlayReceiverStatus>;
+    onAirPlayReceiverStatus: (handler: (status: AirPlayReceiverStatus) => void) => () => void;
   };
   streaming: {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;

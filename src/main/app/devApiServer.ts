@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { getAudioSession } from '../audio/AudioSession';
 import { getStreamingService } from '../streaming/StreamingService';
 
 const devApiPort = 5174;
@@ -66,6 +67,16 @@ export const startDevApiServer = (): void => {
       const url = requestUrl(request);
       if (request.method === 'GET' && url.pathname === '/health') {
         sendJson(response, 200, { ok: true });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/audio/status') {
+        sendJson(response, 200, getAudioSession().getStatus());
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/audio/diagnostics') {
+        sendJson(response, 200, getAudioSession().getDiagnostics());
         return;
       }
 

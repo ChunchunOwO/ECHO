@@ -183,6 +183,45 @@ describe('TrackTagEditorDrawer network tags', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it('loading embedded tags updates the form and notifies the parent with the refreshed track', async () => {
+    const onTrackUpdated = vi.fn();
+    const updatedTrack = track({
+      title: '山海',
+      artist: '草东没有派对',
+      album: '丑奴儿',
+      albumArtist: '草东没有派对',
+      trackNo: 10,
+      year: 2016,
+      coverThumb: 'echo-cover://thumb/reloaded',
+    });
+    installEcho();
+    window.echo.library.loadEmbeddedTrackTags = vi.fn().mockResolvedValue({
+      tags: {
+        title: updatedTrack.title,
+        artist: updatedTrack.artist,
+        album: updatedTrack.album,
+        albumArtist: updatedTrack.albumArtist,
+        trackNo: updatedTrack.trackNo,
+        discNo: updatedTrack.discNo,
+        year: updatedTrack.year,
+        genre: updatedTrack.genre,
+      },
+      coverId: 'reloaded',
+      coverThumb: updatedTrack.coverThumb,
+      track: updatedTrack,
+    });
+
+    render(<TrackTagEditorDrawer track={track()} isOpen isSaving={false} error={null} onClose={vi.fn()} onSave={vi.fn()} onTrackUpdated={onTrackUpdated} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '从内嵌标签加载' }));
+
+    await waitFor(() => expect(window.echo.library.loadEmbeddedTrackTags).toHaveBeenCalledWith('track-1'));
+    expect(onTrackUpdated).toHaveBeenCalledWith(updatedTrack);
+    expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('山海');
+    expect((screen.getByLabelText('艺术家') as HTMLInputElement).value).toBe('草东没有派对');
+    expect(screen.getByText('已从源文件内嵌标签重新加载，并同步更新媒体库。')).toBeTruthy();
+  });
+
   it('toggles all candidate fields from the select-all checkbox', async () => {
     const searchNetworkTagCandidates = vi.fn().mockResolvedValue([candidate({ confidence: 0.88 })]);
     installEcho(searchNetworkTagCandidates);

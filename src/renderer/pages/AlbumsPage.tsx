@@ -12,7 +12,7 @@ import { likedAlbumsChangedEvent, likedChangedEvent } from '../hooks/useLikedMed
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
-import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation } from '../utils/albumNavigation';
+import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, type DetailReturnTarget } from '../utils/albumNavigation';
 
 const pageSize = 60;
 const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
@@ -47,6 +47,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
+  const [selectedAlbumReturnTo, setSelectedAlbumReturnTo] = useState<DetailReturnTarget | null>(null);
   const [albumMenu, setAlbumMenu] = useState<AlbumMenuState | null>(null);
   const [likedAlbumIds, setLikedAlbumIds] = useState<Record<string, boolean>>({});
   const [editingAlbum, setEditingAlbum] = useState<LibraryAlbum | null>(null);
@@ -203,29 +204,40 @@ export const AlbumsPage = (): JSX.Element => {
     shouldRestorePageScrollRef.current = false;
   }, [selectedAlbum]);
 
-  const openAlbumDetail = useCallback((album: LibraryAlbum): void => {
+  const openAlbumDetail = useCallback((album: LibraryAlbum, returnTo: DetailReturnTarget | null = null): void => {
     pageScrollTopRef.current = readPageScrollTop(pageRootRef.current);
-    shouldRestorePageScrollRef.current = true;
+    shouldRestorePageScrollRef.current = !returnTo;
+    setSelectedAlbumReturnTo(returnTo);
     setSelectedAlbum(album);
   }, []);
 
   useEffect(() => {
-    const pendingAlbum = consumePendingAlbumDetailNavigation();
-    if (pendingAlbum) {
-      openAlbumDetail(pendingAlbum);
+    const pendingRequest = consumePendingAlbumDetailNavigation();
+    if (pendingRequest) {
+      openAlbumDetail(pendingRequest.album, pendingRequest.returnTo ?? null);
     }
 
     const handleNavigateAlbumDetail = (event: Event): void => {
-      const album = (event as CustomEvent<{ album?: LibraryAlbum }>).detail?.album;
-      if (album) {
+      const request = (event as CustomEvent<{ album?: LibraryAlbum; returnTo?: DetailReturnTarget }>).detail;
+      if (request?.album) {
         consumePendingAlbumDetailNavigation();
-        openAlbumDetail(album);
+        openAlbumDetail(request.album, request.returnTo ?? null);
       }
     };
 
     window.addEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
     return () => window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
   }, [openAlbumDetail]);
+
+  const handleBackFromAlbumDetail = useCallback((): void => {
+    if (selectedAlbumReturnTo === 'songs') {
+      window.dispatchEvent(new Event('app:navigate:songs'));
+      return;
+    }
+
+    setSelectedAlbumReturnTo(null);
+    setSelectedAlbum(null);
+  }, [selectedAlbumReturnTo]);
 
   const getAllAlbumTracks = useCallback(async (albumId: string): Promise<LibraryTrack[]> => {
     const library = window.echo?.library;
@@ -429,7 +441,7 @@ export const AlbumsPage = (): JSX.Element => {
   }, []);
 
   if (selectedAlbum) {
-    return <AlbumDetailView album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />;
+    return <AlbumDetailView album={selectedAlbum} onBack={handleBackFromAlbumDetail} />;
   }
 
   return (

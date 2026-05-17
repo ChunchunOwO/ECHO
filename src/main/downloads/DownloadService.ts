@@ -2,9 +2,10 @@ import { EventEmitter } from 'node:events';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { app } from 'electron';
+import { strFromU8, unzipSync } from 'fflate';
 import type {
   CreateDownloadUrlJobOptions,
   DownloadJob,
@@ -28,7 +29,6 @@ import { getLibraryService } from '../library/LibraryService';
 import { getNcmConverter } from '../library/NcmConverter';
 import { writeEmbeddedTrackTags } from '../library/TagWriter';
 import { getMvService } from '../mv/MvService';
-import { getAudioSession } from '../audio/AudioSession';
 
 const defaultSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -40,10 +40,15 @@ const defaultSettings: DownloadSettings = {
 const terminalStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
 const cancellableStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const progressEmitIntervalMs = 500;
-const postDownloadImportRetryMs = 5000;
 const maxCommandOutputBytes = 1024 * 1024 * 4;
 const ytDlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const outputTemplate = '%(title).180B.%(ext)s';
+const browserUserAgent =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const osuDownloadUserAgent = 'ECHO Next/26.5 osu downloader (https://github.com/moekotori/echo)';
+const osuArchiveAccept = 'application/x-osu-beatmap-archive,application/zip,application/octet-stream,*/*';
+const osuAudioExtensions = new Set(['.mp3', '.ogg', '.wav', '.m4a', '.flac', '.aac', '.opus']);
+const osuCoverExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
 const searchProvidersForScope = (scope: DownloadSearchScope | undefined): DownloadSearchProvider[] => {
   if (scope === 'youtube' || scope === 'bilibili') {
@@ -64,6 +69,14 @@ const inferProvider = (url: string): DownloadSourceProvider => {
     return 'bilibili';
   }
 
+  if (normalized.includes('soundcloud.com') || normalized.includes('sndcdn.com')) {
+    return 'soundcloud';
+  }
+
+  if (parseOsuBeatmapsetId(url)) {
+    return 'osu';
+  }
+
   return 'unknown';
 };
 
@@ -77,12 +90,23 @@ const isPlaybackOnlyStreamingHost = (host: string): boolean => {
     normalized === 'scdn.co' ||
     normalized.endsWith('.scdn.co') ||
     normalized === 'spotifycdn.com' ||
-    normalized.endsWith('.spotifycdn.com') ||
-    normalized === 'soundcloud.com' ||
-    normalized.endsWith('.soundcloud.com') ||
-    normalized === 'sndcdn.com' ||
-    normalized.endsWith('.sndcdn.com')
+    normalized.endsWith('.spotifycdn.com')
   );
+};
+
+const parseOsuBeatmapsetId = (value: string): string | null => {
+  try {
+    const url = new URL(value.trim());
+    const host = url.hostname.toLowerCase();
+    if (host !== 'osu.ppy.sh' && host !== 'www.osu.ppy.sh') {
+      return null;
+    }
+
+    const match = url.pathname.match(/^\/(?:beatmapsets|s)\/(\d+)(?:\/|$)/u);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
 };
 
 const isPlaybackOnlyDownloadUrl = (value: unknown): boolean => {
@@ -145,6 +169,7 @@ type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'b
   suggestedAlbum: string | null;
   suggestedAlbumArtist: string | null;
   suggestedCoverUrl: string | null;
+  suggestedCoverData: { data: Uint8Array; mimeType: string } | null;
   webpageUrl: string | null;
   directAudio: boolean;
   directAudioMimeType: string | null;
@@ -176,8 +201,6 @@ type DownloadServiceDependencies = {
   loadSettings?: () => Partial<DownloadSettings> | null;
   saveSettings?: (settings: DownloadSettings) => void;
   getAccountCredentials?: (provider: AccountProvider) => AccountCredentials;
-  getPlaybackState?: () => string | null | undefined;
-  postDownloadImportRetryMs?: number;
   writeEmbeddedTrackTags?: typeof writeEmbeddedTrackTags;
 };
 
@@ -219,6 +242,26 @@ type BilibiliSearchApiResponse = {
   data?: {
     result?: unknown;
   };
+};
+
+type OsuArchiveMetadata = {
+  audioFilename: string | null;
+  coverFilename: string | null;
+  title: string | null;
+  artist: string | null;
+  creator: string | null;
+  version: string | null;
+};
+
+type OsuDownloadSource = {
+  label: string;
+  url: string;
+  headers: Record<string, string>;
+};
+
+type OsuArchiveEntry = {
+  name: string;
+  data: Uint8Array;
 };
 
 const getProcessResourcesPath = (): string | null => {
@@ -477,12 +520,6 @@ export class DownloadService extends EventEmitter {
 
   private jobOptions = new Map<string, DownloadJobOptions>();
 
-  private postDownloadImportQueue: string[] = [];
-
-  private postDownloadImportTimer: ReturnType<typeof setTimeout> | null = null;
-
-  private postDownloadImportActive = false;
-
   constructor(
     private readonly commandRunner: CommandRunner = runCommand,
     private readonly ytDlpPathResolver: ToolResolver = resolveBundledYtDlpPath,
@@ -530,11 +567,12 @@ export class DownloadService extends EventEmitter {
     const streamingProvider = sanitizeStreamingProvider(options.streamingProvider);
     const streamingProviderTrackId = sanitizeTextOption(options.streamingProviderTrackId, 512);
     const streamingStableKey = sanitizeTextOption(options.streamingStableKey, 768);
+    const provider = inferProvider(sourceUrl);
     const now = new Date().toISOString();
     const job: DownloadJob = {
       id: randomUUID(),
       sourceUrl,
-      provider: inferProvider(sourceUrl),
+      provider,
       audioStrategy: 'best_available',
       status: 'queued',
       title: suggestedTitle,
@@ -556,13 +594,14 @@ export class DownloadService extends EventEmitter {
 
     this.jobOptions.set(job.id, {
       importToLibrary: options.importToLibrary ?? this.settings.importToLibrary,
-      bindMvAfterImport: options.bindMvAfterImport ?? this.settings.bindMvAfterImport,
+      bindMvAfterImport: provider === 'osu' ? false : (options.bindMvAfterImport ?? this.settings.bindMvAfterImport),
       requestHeaders,
       suggestedTitle,
       suggestedArtist,
       suggestedAlbum,
       suggestedAlbumArtist,
       suggestedCoverUrl,
+      suggestedCoverData: null,
       webpageUrl,
       directAudio: options.directAudio === true,
       directAudioMimeType,
@@ -1078,16 +1117,13 @@ export class DownloadService extends EventEmitter {
 
   private async runJob(jobId: string): Promise<void> {
     try {
-      if (!this.jobOptions.get(jobId)?.directAudio) {
+      const job = this.requireJob(jobId);
+      if (job.provider !== 'osu' && !this.jobOptions.get(jobId)?.directAudio) {
         await this.probe(jobId);
       }
       await this.download(jobId);
       await this.writeDownloadedEmbeddedTags(jobId);
-      if (this.shouldImportAfterDownload(jobId) && this.isPlaybackBusyForPostDownloadImport()) {
-        this.queuePostDownloadImport(jobId);
-      } else {
-        await this.importAndBind(jobId);
-      }
+      await this.importAndBind(jobId);
       this.updateJob(jobId, {
         status: 'completed',
         progress: 100,
@@ -1119,7 +1155,12 @@ export class DownloadService extends EventEmitter {
 
     const job = this.requireJob(jobId);
     const options = this.jobOptions.get(jobId);
-    const command = this.commandRunner(ytDlpPath, [...this.headerArgs(options?.requestHeaders ?? {}), '--dump-json', '--no-playlist', job.sourceUrl]);
+    const command = this.commandRunner(ytDlpPath, [
+      ...this.headerArgs(this.ytDlpRequestHeaders(job, options?.requestHeaders ?? {})),
+      '--dump-json',
+      '--no-playlist',
+      job.sourceUrl,
+    ]);
     this.runningCommands.set(jobId, command);
     const result = await command.promise;
     if (this.runningCommands.get(jobId) !== command) {
@@ -1148,6 +1189,10 @@ export class DownloadService extends EventEmitter {
       await this.downloadDirectAudio(jobId, options);
       return;
     }
+    if (job.provider === 'osu') {
+      await this.downloadOsuBeatmapAudio(jobId);
+      return;
+    }
 
     const ytDlpPath = this.ytDlpPathResolver();
     const ffmpegToolchain = this.getFfmpegToolchain();
@@ -1170,7 +1215,7 @@ export class DownloadService extends EventEmitter {
       '--newline',
       '--no-playlist',
       '--no-mtime',
-      ...this.headerArgs(this.jobOptions.get(jobId)?.requestHeaders ?? {}),
+      ...this.headerArgs(this.ytDlpRequestHeaders(job, this.jobOptions.get(jobId)?.requestHeaders ?? {})),
       '-f',
       'bestaudio/best',
       '--extract-audio',
@@ -1226,6 +1271,346 @@ export class DownloadService extends EventEmitter {
     });
   }
 
+  private async downloadOsuBeatmapAudio(jobId: string): Promise<void> {
+    const job = this.requireJob(jobId);
+    const outputDirectory = this.settings.outputDirectory;
+    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const beatmapsetId = parseOsuBeatmapsetId(job.sourceUrl);
+
+    if (!outputDirectory) {
+      throw new Error('请选择下载文件夹');
+    }
+    if (!fetchRunner) {
+      throw new Error('fetch is not available for osu! downloads');
+    }
+    if (!beatmapsetId) {
+      throw new Error('osu! download URL must be a beatmapset link');
+    }
+
+    const archivePath = this.uniqueOutputPath(outputDirectory, `osu-${beatmapsetId}.osz`);
+    const errors: string[] = [];
+    this.updateJob(jobId, {
+      title: job.title ?? `osu! beatmapset ${beatmapsetId}`,
+      outputPath: archivePath,
+      status: 'downloading',
+      progress: Math.max(job.progress, 1),
+    });
+
+    for (const source of this.osuDownloadSources(beatmapsetId)) {
+      try {
+        const response = await fetchRunner(source.url, { headers: source.headers });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        if (!this.isOsuArchiveResponse(response)) {
+          throw new Error(`unexpected response type ${response.headers.get('content-type') ?? 'unknown'}`);
+        }
+
+        this.updateJob(jobId, {
+          webpageUrl: job.webpageUrl ?? job.sourceUrl,
+          outputPath: archivePath,
+        });
+        await this.writeResponseBodyToFile(jobId, response, archivePath);
+        const extracted = this.extractOsuAudioFromArchive(archivePath, outputDirectory, beatmapsetId);
+        const displayTitle = [extracted.metadata.artist, extracted.metadata.title].filter(Boolean).join(' - ') || extracted.metadata.title || `osu! beatmapset ${beatmapsetId}`;
+        const options = this.jobOptions.get(jobId);
+        if (options) {
+          this.jobOptions.set(jobId, {
+            ...options,
+            suggestedTitle: extracted.metadata.title,
+            suggestedArtist: extracted.metadata.artist,
+            suggestedAlbum: `osu! beatmapset ${beatmapsetId}`,
+            suggestedAlbumArtist: extracted.metadata.artist,
+            suggestedCoverData: extracted.coverData,
+            webpageUrl: job.webpageUrl ?? job.sourceUrl,
+          });
+        }
+
+        this.deleteTempFile(archivePath);
+        this.updateJob(jobId, {
+          title: displayTitle,
+          status: 'extracting_audio',
+          outputPath: extracted.outputPath,
+          progress: 96,
+          downloadedBytes: this.safeFileSize(extracted.outputPath),
+          totalBytes: null,
+          speedBytesPerSecond: null,
+          etaSeconds: null,
+        });
+        return;
+      } catch (error) {
+        this.deleteTempFile(archivePath);
+        errors.push(`${source.label}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    throw new Error(`osu! beatmap download failed: ${errors.join(' | ')}`);
+  }
+
+  private osuDownloadSources(beatmapsetId: string): OsuDownloadSource[] {
+    const osuCookie = this.getCredentials('osu').cookie?.trim();
+    const officialHeaders: Record<string, string> = {
+      Accept: osuArchiveAccept,
+      Referer: 'https://osu.ppy.sh/',
+      'User-Agent': browserUserAgent,
+    };
+    if (osuCookie) {
+      officialHeaders.Cookie = osuCookie;
+    }
+
+    const mirrorHeaders: Record<string, string> = {
+      Accept: osuArchiveAccept,
+      Referer: 'https://sayobot.cn/',
+      'User-Agent': osuDownloadUserAgent,
+    };
+
+    return [
+      {
+        label: 'osu! official',
+        url: `https://osu.ppy.sh/beatmapsets/${encodeURIComponent(beatmapsetId)}/download?noVideo=1`,
+        headers: officialHeaders,
+      },
+      {
+        label: 'Sayobot',
+        url: `https://dl.sayobot.cn/beatmaps/download/novideo/${encodeURIComponent(beatmapsetId)}`,
+        headers: mirrorHeaders,
+      },
+      {
+        label: 'Catboy',
+        url: `https://catboy.best/d/${encodeURIComponent(beatmapsetId)}`,
+        headers: mirrorHeaders,
+      },
+      {
+        label: 'NeriNyan',
+        url: `https://api.nerinyan.moe/d/${encodeURIComponent(beatmapsetId)}`,
+        headers: mirrorHeaders,
+      },
+    ];
+  }
+
+  private isOsuArchiveResponse(response: Response): boolean {
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    const disposition = response.headers.get('content-disposition')?.toLowerCase() ?? '';
+    if (contentType.includes('text/html') || contentType.includes('application/json')) {
+      return false;
+    }
+
+    return (
+      contentType.length === 0 ||
+      contentType.includes('application/x-osu-beatmap-archive') ||
+      contentType.includes('application/zip') ||
+      contentType.includes('application/octet-stream') ||
+      disposition.includes('.osz') ||
+      disposition.includes('.zip')
+    );
+  }
+
+  private extractOsuAudioFromArchive(
+    archivePath: string,
+    outputDirectory: string,
+    beatmapsetId: string,
+  ): { outputPath: string; metadata: OsuArchiveMetadata; coverData: { data: Uint8Array; mimeType: string } | null } {
+    const archive = unzipSync(new Uint8Array(readFileSync(archivePath)));
+    const entries = Object.entries(archive)
+      .filter(([, data]) => data.length > 0)
+      .map(([name, data]) => ({ name, data }));
+    const metadata = this.pickOsuArchiveMetadata(entries);
+    const audioEntry = this.pickOsuAudioEntry(entries, metadata.audioFilename);
+    if (!audioEntry) {
+      throw new Error('osu! archive does not contain a supported audio file');
+    }
+    const coverEntry = this.pickOsuCoverEntry(entries, metadata.coverFilename);
+
+    const extension = extname(audioEntry.name).toLowerCase() || '.mp3';
+    const title = metadata.title ?? `osu! beatmapset ${beatmapsetId}`;
+    const outputName = [metadata.artist, title].filter(Boolean).join(' - ') || title;
+    const outputPath = this.uniqueOutputPath(outputDirectory, `${sanitizeFilePart(outputName)}${extension}`);
+    writeFileSync(outputPath, Buffer.from(audioEntry.data));
+
+    return {
+      outputPath,
+      metadata: {
+        ...metadata,
+        title,
+      },
+      coverData: coverEntry
+        ? {
+            data: coverEntry.data,
+            mimeType: this.mimeTypeForOsuCoverEntry(coverEntry.name),
+          }
+        : null,
+    };
+  }
+
+  private pickOsuArchiveMetadata(entries: OsuArchiveEntry[]): OsuArchiveMetadata {
+    const osuEntries = entries.filter((entry) => entry.name.toLowerCase().endsWith('.osu'));
+    for (const entry of osuEntries) {
+      const metadata = this.parseOsuFileMetadata(strFromU8(entry.data));
+      if (metadata.audioFilename) {
+        return metadata;
+      }
+    }
+
+    return osuEntries[0] ? this.parseOsuFileMetadata(strFromU8(osuEntries[0].data)) : {
+      audioFilename: null,
+      title: null,
+      artist: null,
+      coverFilename: null,
+      creator: null,
+      version: null,
+    };
+  }
+
+  private parseOsuFileMetadata(content: string): OsuArchiveMetadata {
+    let section = '';
+    const metadata: OsuArchiveMetadata = {
+      audioFilename: null,
+      coverFilename: null,
+      title: null,
+      artist: null,
+      creator: null,
+      version: null,
+    };
+
+    for (const rawLine of content.split(/\r?\n/u)) {
+      const line = rawLine.trim();
+      const sectionMatch = line.match(/^\[([^\]]+)\]$/u);
+      if (sectionMatch) {
+        section = sectionMatch[1].toLowerCase();
+        continue;
+      }
+
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = line.slice(0, separatorIndex).trim();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (!value) {
+        continue;
+      }
+
+      if (section === 'general' && key === 'AudioFilename') {
+        metadata.audioFilename = value;
+      } else if (section === 'metadata') {
+        if (key === 'TitleUnicode') {
+          metadata.title = value;
+        } else if (key === 'Title') {
+          metadata.title = metadata.title ?? value;
+        } else if (key === 'ArtistUnicode') {
+          metadata.artist = value;
+        } else if (key === 'Artist') {
+          metadata.artist = metadata.artist ?? value;
+        } else if (key === 'Creator') {
+          metadata.creator = value;
+        } else if (key === 'Version') {
+          metadata.version = value;
+        }
+      } else if (section === 'events' && !metadata.coverFilename) {
+        metadata.coverFilename = this.parseOsuBackgroundFilename(line);
+      }
+    }
+
+    return metadata;
+  }
+
+  private parseOsuBackgroundFilename(line: string): string | null {
+    const parts = this.parseOsuCsvLine(line);
+    const eventType = parts[0]?.trim().toLowerCase();
+    if (eventType !== '0' && eventType !== 'background') {
+      return null;
+    }
+
+    const filename = parts[2]?.trim();
+    return filename && osuCoverExtensions.has(extname(filename).toLowerCase()) ? filename : null;
+  }
+
+  private parseOsuCsvLine(line: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let quoted = false;
+
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      if (char === '"') {
+        if (quoted && line[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          quoted = !quoted;
+        }
+        continue;
+      }
+
+      if (char === ',' && !quoted) {
+        parts.push(current);
+        current = '';
+        continue;
+      }
+
+      current += char;
+    }
+
+    parts.push(current);
+    return parts;
+  }
+
+  private pickOsuAudioEntry(entries: OsuArchiveEntry[], audioFilename: string | null): OsuArchiveEntry | null {
+    const audioEntries = entries.filter((entry) => osuAudioExtensions.has(extname(entry.name).toLowerCase()));
+    if (audioEntries.length === 0) {
+      return null;
+    }
+
+    const normalizedAudioFilename = audioFilename ? this.normalizeArchivePath(audioFilename) : null;
+    if (normalizedAudioFilename) {
+      const namedEntry = audioEntries.find((entry) => {
+        const normalizedName = this.normalizeArchivePath(entry.name);
+        return normalizedName === normalizedAudioFilename || normalizedName.endsWith(`/${normalizedAudioFilename}`);
+      });
+      if (namedEntry) {
+        return namedEntry;
+      }
+    }
+
+    return [...audioEntries].sort((left, right) => right.data.length - left.data.length)[0] ?? null;
+  }
+
+  private pickOsuCoverEntry(entries: OsuArchiveEntry[], coverFilename: string | null): OsuArchiveEntry | null {
+    const coverEntries = entries.filter((entry) => osuCoverExtensions.has(extname(entry.name).toLowerCase()));
+    if (coverEntries.length === 0) {
+      return null;
+    }
+
+    const normalizedCoverFilename = coverFilename ? this.normalizeArchivePath(coverFilename) : null;
+    if (normalizedCoverFilename) {
+      const namedEntry = coverEntries.find((entry) => {
+        const normalizedName = this.normalizeArchivePath(entry.name);
+        return normalizedName === normalizedCoverFilename || normalizedName.endsWith(`/${normalizedCoverFilename}`);
+      });
+      if (namedEntry) {
+        return namedEntry;
+      }
+    }
+
+    return [...coverEntries].sort((left, right) => right.data.length - left.data.length)[0] ?? null;
+  }
+
+  private mimeTypeForOsuCoverEntry(entryName: string): string {
+    const extension = extname(entryName).toLowerCase();
+    if (extension === '.png') {
+      return 'image/png';
+    }
+    if (extension === '.webp') {
+      return 'image/webp';
+    }
+    return 'image/jpeg';
+  }
+
+  private normalizeArchivePath(value: string): string {
+    return value.replace(/\\/gu, '/').replace(/^\/+/u, '').toLowerCase();
+  }
+
   private async downloadDirectAudio(jobId: string, options: DownloadJobOptions): Promise<void> {
     const job = this.requireJob(jobId);
     const outputDirectory = this.settings.outputDirectory;
@@ -1271,7 +1656,7 @@ export class DownloadService extends EventEmitter {
     const job = this.requireJob(jobId);
     const options = this.jobOptions.get(jobId);
 
-    if (!job.outputPath || !options?.directAudio) {
+    if (!job.outputPath || !options) {
       return;
     }
 
@@ -1284,7 +1669,7 @@ export class DownloadService extends EventEmitter {
       return;
     }
 
-    const coverData = options.suggestedCoverUrl ? await this.readDownloadCoverImage(options.suggestedCoverUrl).catch(() => null) : null;
+    const coverData = options.suggestedCoverData ?? (options.suggestedCoverUrl ? await this.readDownloadCoverImage(options.suggestedCoverUrl).catch(() => null) : null);
 
     try {
       const writeTags = this.dependencies.writeEmbeddedTrackTags ?? writeEmbeddedTrackTags;
@@ -1403,12 +1788,14 @@ export class DownloadService extends EventEmitter {
   private directAudioRequestHeaders(job: DownloadJob, options: DownloadJobOptions): Record<string, string> {
     const headers = { ...options.requestHeaders };
     const url = `${job.webpageUrl ?? ''} ${job.sourceUrl}`.toLocaleLowerCase();
-    const provider: Extract<AccountProvider, 'netease' | 'qqmusic'> | null =
+    const provider: Extract<AccountProvider, 'netease' | 'qqmusic' | 'soundcloud'> | null =
       url.includes('music.163.com') || url.includes('music.126.net')
         ? 'netease'
         : url.includes('y.qq.com') || url.includes('qqmusic.qq.com') || url.includes('gtimg.cn')
           ? 'qqmusic'
-          : null;
+          : url.includes('soundcloud.com') || url.includes('sndcdn.com') || url.includes('soundcloud.cloud')
+            ? 'soundcloud'
+            : null;
 
     if (!hasHeader(headers, 'User-Agent')) {
       headers['User-Agent'] =
@@ -1429,10 +1816,36 @@ export class DownloadService extends EventEmitter {
       if (!hasHeader(headers, 'Origin')) {
         headers.Origin = 'https://y.qq.com';
       }
+    } else if (provider === 'soundcloud') {
+      if (!hasHeader(headers, 'Referer')) {
+        headers.Referer = 'https://soundcloud.com/';
+      }
     }
 
     if (provider && !hasHeader(headers, 'Cookie')) {
       const cookie = this.getCredentials(provider).cookie?.trim();
+      if (cookie) {
+        headers.Cookie = cookie;
+      }
+    }
+
+    return headers;
+  }
+
+  private ytDlpRequestHeaders(job: DownloadJob, requestHeaders: Record<string, string>): Record<string, string> {
+    const headers = { ...requestHeaders };
+    if (job.provider !== 'soundcloud') {
+      return headers;
+    }
+
+    if (!hasHeader(headers, 'User-Agent')) {
+      headers['User-Agent'] = browserUserAgent;
+    }
+    if (!hasHeader(headers, 'Referer')) {
+      headers.Referer = 'https://soundcloud.com/';
+    }
+    if (!hasHeader(headers, 'Cookie')) {
+      const cookie = this.getCredentials('soundcloud').cookie?.trim();
       if (cookie) {
         headers.Cookie = cookie;
       }
@@ -1459,6 +1872,7 @@ export class DownloadService extends EventEmitter {
       suggestedAlbum: null,
       suggestedAlbumArtist: null,
       suggestedCoverUrl: null,
+      suggestedCoverData: null,
       webpageUrl: null,
       directAudio: false,
       directAudioMimeType: null,
@@ -1482,9 +1896,14 @@ export class DownloadService extends EventEmitter {
     const importFolderPath = this.settings.outputDirectory ?? dirname(job.outputPath);
     this.ensureOutputDirectoryInLibrary(importFolderPath);
     const importAudioFile = this.dependencies.importAudioFile ?? ((filePath, importOptions) => getLibraryService().importAudioFile(filePath, importOptions));
+    const hasSuggestedMetadata =
+      Boolean(options.suggestedTitle) ||
+      Boolean(options.suggestedArtist) ||
+      Boolean(options.suggestedAlbum) ||
+      Boolean(options.suggestedAlbumArtist);
     const track = await importAudioFile(job.outputPath, {
       folderPath: importFolderPath,
-      metadata: options.directAudio
+      metadata: hasSuggestedMetadata
         ? {
             title: options.suggestedTitle ?? undefined,
             artist: options.suggestedArtist ?? undefined,
@@ -1492,7 +1911,7 @@ export class DownloadService extends EventEmitter {
             albumArtist: options.suggestedAlbumArtist ?? options.suggestedArtist ?? undefined,
           }
         : undefined,
-      coverUrl: options.directAudio ? options.suggestedCoverUrl : undefined,
+      coverUrl: options.suggestedCoverUrl ?? undefined,
     });
     this.updateJob(jobId, { importedTrackId: track.id });
     if (options.streamingProvider && options.streamingProviderTrackId) {
@@ -1515,78 +1934,10 @@ export class DownloadService extends EventEmitter {
       this.updateJob(jobId, { status: 'binding_mv', progress: 99 });
     }
     const bindMvUrl = this.dependencies.bindMvUrl ?? ((trackId, url) => getMvService().bindUrl(trackId, url));
-    bindMvUrl(track.id, job.webpageUrl ?? job.sourceUrl);
-  }
-
-  private shouldImportAfterDownload(jobId: string): boolean {
-    const job = this.jobs.find((item) => item.id === jobId);
-    const options = this.jobOptions.get(jobId);
-    return Boolean(job?.outputPath && (options?.importToLibrary ?? this.settings.importToLibrary));
-  }
-
-  private isPlaybackBusyForPostDownloadImport(): boolean {
     try {
-      const state = this.dependencies.getPlaybackState?.() ?? getAudioSession().getStatus().state;
-      return state === 'playing' || state === 'loading';
+      bindMvUrl(track.id, job.webpageUrl ?? job.sourceUrl);
     } catch {
-      return false;
-    }
-  }
-
-  private queuePostDownloadImport(jobId: string): void {
-    if (!this.postDownloadImportQueue.includes(jobId)) {
-      this.postDownloadImportQueue.push(jobId);
-    }
-    this.schedulePostDownloadImport();
-  }
-
-  private getPostDownloadImportRetryMs(): number {
-    const configured = Number(this.dependencies.postDownloadImportRetryMs);
-    return Number.isFinite(configured) && configured >= 0 ? configured : postDownloadImportRetryMs;
-  }
-
-  private schedulePostDownloadImport(delayMs = this.getPostDownloadImportRetryMs()): void {
-    if (this.postDownloadImportTimer !== null || this.postDownloadImportActive || this.postDownloadImportQueue.length === 0) {
-      return;
-    }
-
-    this.postDownloadImportTimer = setTimeout(() => {
-      this.postDownloadImportTimer = null;
-      void this.processPostDownloadImportQueue();
-    }, delayMs);
-  }
-
-  private async processPostDownloadImportQueue(): Promise<void> {
-    if (this.postDownloadImportActive) {
-      return;
-    }
-
-    if (this.isPlaybackBusyForPostDownloadImport()) {
-      this.schedulePostDownloadImport();
-      return;
-    }
-
-    const jobId = this.postDownloadImportQueue.shift();
-    if (!jobId) {
-      return;
-    }
-
-    const job = this.jobs.find((item) => item.id === jobId);
-    if (!job || job.status === 'cancelled' || job.importedTrackId || !this.shouldImportAfterDownload(jobId)) {
-      this.schedulePostDownloadImport(0);
-      return;
-    }
-
-    this.postDownloadImportActive = true;
-    try {
-      await this.importAndBind(jobId, { emitProgress: false });
-    } catch (error) {
-      this.updateJob(jobId, {
-        error: `Library import failed after download: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    } finally {
-      this.postDownloadImportActive = false;
-      this.schedulePostDownloadImport(0);
+      // MV binding is an optional follow-up; a bad source URL must not undo a successful audio import.
     }
   }
 

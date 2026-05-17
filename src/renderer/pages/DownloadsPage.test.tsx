@@ -83,10 +83,17 @@ const updateJob = (jobId: string, patch: Partial<DownloadJob>): void => {
 
 const makeJob = (sourceUrl: string): DownloadJob => {
   const now = new Date().toISOString();
+  const provider = sourceUrl.includes('osu.ppy.sh')
+    ? 'osu'
+    : sourceUrl.includes('soundcloud.com')
+      ? 'soundcloud'
+      : sourceUrl.includes('bilibili')
+        ? 'bilibili'
+        : 'youtube';
   return {
     id: `job-${++jobCounter}`,
     sourceUrl,
-    provider: sourceUrl.includes('bilibili') ? 'bilibili' : 'youtube',
+    provider,
     audioStrategy: settings.audioStrategy,
     status: 'queued',
     title: null,
@@ -180,7 +187,7 @@ vi.mock('../utils/echoBridge', () => ({
 const createJobFromUi = async (): Promise<void> => {
   render(<DownloadsPage />);
   await act(async () => {});
-  fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+  fireEvent.change(screen.getByPlaceholderText('粘贴 YouTube / Bilibili / SoundCloud / osu! 链接'), {
     target: { value: 'https://www.youtube.com/watch?v=echo' },
   });
   fireEvent.click(screen.getByRole('button', { name: /加入队列/ }));
@@ -320,7 +327,7 @@ describe('DownloadsPage', () => {
     settings = { ...settings, outputDirectory: null };
     render(<DownloadsPage />);
     await act(async () => {});
-    fireEvent.change(screen.getByPlaceholderText('https://www.youtube.com/watch?v=...'), {
+    fireEvent.change(screen.getByPlaceholderText('粘贴 YouTube / Bilibili / SoundCloud / osu! 链接'), {
       target: { value: 'https://www.youtube.com/watch?v=echo' },
     });
     fireEvent.click(screen.getByRole('button', { name: /加入队列/ }));

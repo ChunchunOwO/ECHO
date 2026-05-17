@@ -35,6 +35,11 @@ const loginConfigs: Partial<Record<AccountProvider, LoginConfig>> = {
     domains: ['soundcloud.com', '.soundcloud.com'],
     requiredCookieNames: ['oauth_token', 'sc_anonymous_id'],
   },
+  osu: {
+    url: 'https://osu.ppy.sh/',
+    domains: ['osu.ppy.sh', '.osu.ppy.sh', 'ppy.sh', '.ppy.sh'],
+    requiredCookieNames: ['osu_session'],
+  },
 };
 
 const toCookieHeader = (cookies: Cookie[]): string =>

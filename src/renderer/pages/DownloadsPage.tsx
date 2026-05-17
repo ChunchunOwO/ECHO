@@ -38,6 +38,8 @@ const statusLabels: Record<DownloadJobStatus, string> = {
 const providerLabels: Record<DownloadJob['provider'], string> & Record<DownloadSearchProvider, string> = {
   youtube: 'YouTube',
   bilibili: 'Bilibili',
+  soundcloud: 'SoundCloud',
+  osu: 'osu!',
   unknown: 'URL',
 };
 
@@ -480,7 +482,7 @@ export const DownloadsPage = (): JSX.Element => {
             <input
               type="url"
               value={url}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="粘贴 YouTube / Bilibili / SoundCloud / osu! 链接"
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {

@@ -74,6 +74,14 @@ const isDlnaReceiverTrack = (track: LibraryTrack | null): boolean =>
       (track.id.startsWith('dlna-receiver:') || track.fieldSources?.title === 'dlna'),
   );
 
+const isAirPlayReceiverTrack = (track: LibraryTrack | null): boolean =>
+  Boolean(
+    track &&
+      track.mediaType === 'remote' &&
+      track.isTemporary &&
+      (track.id.startsWith('airplay-receiver:') || track.fieldSources?.title === 'airplay'),
+  );
+
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const codec = (track?.codec ?? status?.codec)?.toUpperCase() ?? null;
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
@@ -87,6 +95,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const chips: Chip[] = [
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
+    isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
     track?.mediaType === 'streaming' ? { label: '流媒体', className: 'tag-streaming' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitrate, bitDepth, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,

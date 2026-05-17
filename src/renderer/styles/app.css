@@ -2766,6 +2766,12 @@
   background: #eefaf7;
 }
 
+.tag-dlna {
+  color: #115c8e;
+  border-color: rgba(17, 92, 142, 0.15);
+  background: #eaf6ff;
+}
+
 .tag-lossless {
   color: #2a617f;
   border-color: rgba(42, 97, 127, 0.1);

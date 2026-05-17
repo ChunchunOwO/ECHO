@@ -66,6 +66,14 @@ const isHiResSource = ({
   Boolean(sampleRate && sampleRate >= 88200) ||
   Boolean(bitrate && bitrate >= 900000);
 
+const isDlnaReceiverTrack = (track: LibraryTrack | null): boolean =>
+  Boolean(
+    track &&
+      track.mediaType === 'remote' &&
+      track.isTemporary &&
+      (track.id.startsWith('dlna-receiver:') || track.fieldSources?.title === 'dlna'),
+  );
+
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const codec = (track?.codec ?? status?.codec)?.toUpperCase() ?? null;
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
@@ -78,6 +86,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const chips: Chip[] = [
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
+    isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     track?.mediaType === 'streaming' ? { label: '流媒体', className: 'tag-streaming' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitrate, bitDepth, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,

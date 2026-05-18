@@ -52,6 +52,11 @@ describe('playback media prepare IPC', () => {
     vi.resetModules();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('uses a prepared streaming playback source without resolving again', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const playLocalFile = vi.fn().mockResolvedValue(undefined);
@@ -588,5 +593,80 @@ describe('playback media prepare IPC', () => {
     }));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('prepareLocalFile failed'));
     warn.mockRestore();
+  });
+
+  it('returns the current playback status when an enqueued audio command times out', async () => {
+    vi.useFakeTimers();
+
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const status = {
+      state: 'playing',
+      currentTrackId: 'track-timeout',
+      positionSeconds: 42.4,
+      durationSeconds: 180,
+      currentFilePath: 'D:\\Music\\stable.flac',
+    };
+    const pause = vi.fn(() => new Promise<void>(() => undefined));
+
+    vi.doMock('electron', () => ({
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => status,
+        on: vi.fn(),
+        restorePlaybackMemory: vi.fn(),
+        pause,
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: vi.fn(() => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../diagnostics/CrashReportService', () => ({
+      getCrashReportService: () => ({ reportAudioError: vi.fn() }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive: vi.fn(),
+        refreshTrackMetadata: vi.fn(),
+        createStreamUrl: vi.fn(),
+        backfillDuration: vi.fn(),
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback: vi.fn(),
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    const result = handlers.get(IpcChannels.PlaybackPause)?.({}) as Promise<unknown>;
+    await vi.advanceTimersByTimeAsync(15_100);
+
+    await expect(result).resolves.toEqual({
+      state: 'playing',
+      currentTrackId: 'track-timeout',
+      positionMs: 42400,
+      durationMs: 180000,
+      filePath: 'D:\\Music\\stable.flac',
+    });
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith('[playback] audio command timed out; returning current playback status');
   });
 });

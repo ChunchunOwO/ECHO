@@ -1015,6 +1015,22 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 29,
+    apply: (database) => {
+      addColumnIfMissing(database, 'tracks', 'replay_gain_track_gain_db', 'replay_gain_track_gain_db REAL');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_album_gain_db', 'replay_gain_album_gain_db REAL');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_track_peak', 'replay_gain_track_peak REAL');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_album_peak', 'replay_gain_album_peak REAL');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_integrated_lufs', 'replay_gain_integrated_lufs REAL');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_source', "replay_gain_source TEXT NOT NULL DEFAULT 'none'");
+      addColumnIfMissing(database, 'tracks', 'replay_gain_status', "replay_gain_status TEXT NOT NULL DEFAULT 'none'");
+      addColumnIfMissing(database, 'tracks', 'replay_gain_version', 'replay_gain_version INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_error', 'replay_gain_error TEXT');
+      addColumnIfMissing(database, 'tracks', 'replay_gain_updated_at', 'replay_gain_updated_at TEXT');
+      database.exec('CREATE INDEX IF NOT EXISTS idx_tracks_replay_gain_status ON tracks(replay_gain_status)');
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

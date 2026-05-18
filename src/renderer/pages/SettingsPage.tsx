@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   Captions,
   Check,
+  Clapperboard,
   Download,
   ExternalLink,
   FileText,
@@ -31,7 +32,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
-import type { AppSettings, AppThemeMode } from '../../shared/types/appSettings';
+import type { AppSettings, AppThemeMode, AppThemePreset, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
+import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
 import {
   createDefaultGlobalShortcuts,
   createRecommendedGlobalShortcuts,
@@ -45,7 +47,7 @@ import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import type { LastFmStatus } from '../../shared/types/lastfm';
-import type { ArtistImageCacheSummary, ArtistImageJobStatus, BpmAnalysisJobStatus, DuplicateTrackIndexSummary } from '../../shared/types/library';
+import type { ArtistImageCacheSummary, ArtistImageJobStatus, BpmAnalysisJobStatus, ReplayGainAnalysisJobStatus, DuplicateTrackIndexSummary } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -63,8 +65,20 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
-import { defaultThemeMode, updateThemeMode } from '../preferences/themePreferences';
+import {
+  applyThemeMode,
+  defaultThemeMode,
+  defaultThemePreset,
+  normalizeThemeHexColor,
+  normalizeThemePreset,
+  normalizeThemePresetOverrides,
+  readThemePreset,
+  readThemePresetOverrides,
+  updateThemePreferences,
+  updateThemePresetOverrides,
+} from '../preferences/themePreferences';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
+import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import {
   getAccountsBridge,
   getAppBridge,
@@ -244,8 +258,100 @@ const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][numb
 };
 const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'musicbrainz'];
 const defaultNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music'];
+const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
+const mvProviderLabels: Record<NetworkMvProviderId, string> = {
+  bilibili: 'Bilibili',
+  youtube: 'YouTube',
+};
+const mvQualityCaps: MvSettings['maxQuality'][] = ['720p', '1080p', '1440p', '2160p', 'max'];
+const mvImmersiveBackgroundDefaults = {
+  immersiveBackgroundScalePercent: 115,
+  immersiveBackgroundOffsetXPercent: 50,
+  immersiveBackgroundOffsetYPercent: 50,
+  immersiveBackgroundBlurPx: 0,
+  immersiveBackgroundBrightnessPercent: 100,
+  immersiveBackgroundOverlayOpacityPercent: 0,
+} satisfies Partial<MvSettings>;
 
-type SettingsNavKey = 'general' | 'playback' | 'shortcuts' | 'lyrics' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
+const hasOwn = <T extends object>(value: T, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key);
+
+const formatMvPercent = (value: number | undefined, fallback: number): string => `${Math.round(value ?? fallback)}%`;
+const formatMvThreshold = (threshold: number | undefined): string => `${Math.round((threshold ?? 0.7) * 100)}%`;
+const mvThresholdFromPercent = (value: number): number => Math.max(30, Math.min(100, Math.round(value))) / 100;
+
+const normalizeMvProviderOrder = (value: NetworkMvProviderId[] | undefined): NetworkMvProviderId[] => {
+  const ordered = (value ?? mvNetworkProviders).filter((provider): provider is NetworkMvProviderId => mvNetworkProviders.includes(provider));
+  const missing = mvNetworkProviders.filter((provider) => !ordered.includes(provider));
+  return [...ordered, ...missing];
+};
+
+const appSettingsPatchFromMvSettingsPatch = (patch: Partial<MvSettings>): Partial<AppSettings> => {
+  const appPatch: Partial<AppSettings> = {};
+
+  if (hasOwn(patch, 'enabled')) {
+    appPatch.mvEnabled = patch.enabled;
+  }
+  if (hasOwn(patch, 'enabledProviders') && patch.enabledProviders) {
+    appPatch.mvEnabledProviders = patch.enabledProviders;
+  }
+  if (hasOwn(patch, 'providerOrder') && patch.providerOrder) {
+    appPatch.mvProviderOrder = patch.providerOrder;
+  }
+  if (hasOwn(patch, 'autoSearch') && patch.autoSearch !== undefined) {
+    appPatch.mvAutoSearch = patch.autoSearch;
+  }
+  if (hasOwn(patch, 'autoPreload')) {
+    appPatch.mvAutoPreload = patch.autoPreload;
+  }
+  if (hasOwn(patch, 'autoApplyThreshold')) {
+    appPatch.mvAutoApplyThreshold = patch.autoApplyThreshold;
+  }
+  if (hasOwn(patch, 'immersiveBackground')) {
+    appPatch.mvImmersiveBackground = patch.immersiveBackground;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundScalePercent')) {
+    appPatch.mvImmersiveBackgroundScalePercent = patch.immersiveBackgroundScalePercent;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundOffsetXPercent')) {
+    appPatch.mvImmersiveBackgroundOffsetXPercent = patch.immersiveBackgroundOffsetXPercent;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundOffsetYPercent')) {
+    appPatch.mvImmersiveBackgroundOffsetYPercent = patch.immersiveBackgroundOffsetYPercent;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundBlurPx')) {
+    appPatch.mvImmersiveBackgroundBlurPx = patch.immersiveBackgroundBlurPx;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundBrightnessPercent')) {
+    appPatch.mvImmersiveBackgroundBrightnessPercent = patch.immersiveBackgroundBrightnessPercent;
+  }
+  if (hasOwn(patch, 'immersiveBackgroundOverlayOpacityPercent')) {
+    appPatch.mvImmersiveBackgroundOverlayOpacityPercent = patch.immersiveBackgroundOverlayOpacityPercent;
+  }
+  if (hasOwn(patch, 'lyricsReadabilityEnhanced')) {
+    appPatch.mvLyricsReadabilityEnhanced = patch.lyricsReadabilityEnhanced;
+  }
+  if (hasOwn(patch, 'restartAudioOnLoad')) {
+    appPatch.mvRestartAudioOnLoad = patch.restartAudioOnLoad;
+  }
+  if (hasOwn(patch, 'replayAudioOnChange')) {
+    appPatch.mvReplayAudioOnChange = patch.replayAudioOnChange;
+  }
+  if (hasOwn(patch, 'maxQuality') && patch.maxQuality) {
+    appPatch.mvMaxQuality = patch.maxQuality;
+  }
+  if (hasOwn(patch, 'allow60fps') && patch.allow60fps !== undefined) {
+    appPatch.mvAllow60fps = patch.allow60fps;
+  }
+
+  return appPatch;
+};
+
+const normalizeExternalAppSettingsPatch = (patch: Partial<AppSettings> | Partial<MvSettings>): Partial<AppSettings> => ({
+  ...(patch as Partial<AppSettings>),
+  ...appSettingsPatchFromMvSettingsPatch(patch as Partial<MvSettings>),
+});
+
+type SettingsNavKey = 'general' | 'playback' | 'shortcuts' | 'lyrics' | 'mv' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
 
 type SettingsNavItem = {
   key: SettingsNavKey;
@@ -400,6 +506,7 @@ const settingsNavItems: SettingsNavItem[] = [
   { key: 'playback', labelKey: 'settings.nav.playback.label', descriptionKey: 'settings.nav.playback.description', icon: Zap },
   { key: 'shortcuts', labelKey: 'settings.nav.shortcuts.label', descriptionKey: 'settings.nav.shortcuts.description', icon: Keyboard },
   { key: 'lyrics', labelKey: 'route.lyricsSettings.label', descriptionKey: 'route.lyricsSettings.description', icon: Captions },
+  { key: 'mv', labelKey: 'route.mvSettings.label', descriptionKey: 'route.mvSettings.description', icon: Clapperboard },
   { key: 'integrations', labelKey: 'settings.nav.integrations.label', descriptionKey: 'settings.nav.integrations.description', icon: Link2 },
   { key: 'remote', labelKey: 'settings.nav.remote.label', descriptionKey: 'settings.nav.remote.description', icon: Globe2 },
   { key: 'eq', labelKey: 'settings.nav.eq.label', descriptionKey: 'settings.nav.eq.description', icon: SlidersHorizontal },
@@ -437,6 +544,7 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
   ],
   shortcuts: ['shortcuts', 'hotkeys', 'keyboard', 'global shortcut', 'record shortcut', '快捷键', '热键', '键盘', '全局快捷键'],
   lyrics: ['lyrics', 'lrc', 'karaoke', 'offset', 'provider', 'romaji', '歌词', '逐字', '偏移', '音译', '罗马音', '歌词源'],
+  mv: ['mv', 'music video', 'video', 'bilibili', 'youtube', 'auto search', 'preload', 'quality', 'immersive', 'background'],
   integrations: [
     'integrations',
     'account',
@@ -787,6 +895,1392 @@ const themeModeOptions: Array<{ mode: AppThemeMode; labelKey: TranslationKey }> 
   { mode: 'dark', labelKey: 'settings.appearance.theme.dark' },
   { mode: 'system', labelKey: 'settings.appearance.theme.followSystem' },
 ];
+
+const themePresetOptions: Array<{
+  preset: AppThemePreset;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  preview: string;
+  swatches: string[];
+}> = [
+  {
+    preset: 'classic',
+    labelKey: 'settings.appearance.themePreset.classic',
+    descriptionKey: 'settings.appearance.themePreset.classic.description',
+    preview: 'linear-gradient(135deg, #f8fbfd 0%, #eef3f7 52%, #dfe8f2 100%)',
+    swatches: ['#eef3f7', '#2f6da8', '#101318'],
+  },
+  {
+    preset: 'echoTwilight',
+    labelKey: 'settings.appearance.themePreset.echoTwilight',
+    descriptionKey: 'settings.appearance.themePreset.echoTwilight.description',
+    preview: 'linear-gradient(135deg, #fff4ef 0%, #f3d7cf 48%, #efe5f2 100%)',
+    swatches: ['#fff4ef', '#df6b5f', '#8ccfc8'],
+  },
+  {
+    preset: 'sakuraMilk',
+    labelKey: 'settings.appearance.themePreset.sakuraMilk',
+    descriptionKey: 'settings.appearance.themePreset.sakuraMilk.description',
+    preview: 'linear-gradient(135deg, #fff6f9 0%, #f7d9e7 48%, #f0eefc 100%)',
+    swatches: ['#fff6f9', '#cf5d7d', '#7fc8d6'],
+  },
+  {
+    preset: 'peachSoda',
+    labelKey: 'settings.appearance.themePreset.peachSoda',
+    descriptionKey: 'settings.appearance.themePreset.peachSoda.description',
+    preview: 'linear-gradient(135deg, #fff2e8 0%, #ffd6bd 44%, #d7f4ee 100%)',
+    swatches: ['#fff2e8', '#d96d4c', '#5eb9ad'],
+  },
+  {
+    preset: 'mintCandy',
+    labelKey: 'settings.appearance.themePreset.mintCandy',
+    descriptionKey: 'settings.appearance.themePreset.mintCandy.description',
+    preview: 'linear-gradient(135deg, #f6fff8 0%, #d7f2df 46%, #ffe5ec 100%)',
+    swatches: ['#f6fff8', '#3f9274', '#dd6e86'],
+  },
+  {
+    preset: 'berryDream',
+    labelKey: 'settings.appearance.themePreset.berryDream',
+    descriptionKey: 'settings.appearance.themePreset.berryDream.description',
+    preview: 'linear-gradient(135deg, #f8f5ff 0%, #e2d9fb 46%, #ffddec 100%)',
+    swatches: ['#f8f5ff', '#7657b8', '#cf5f95'],
+  },
+  {
+    preset: 'matchaCream',
+    labelKey: 'settings.appearance.themePreset.matchaCream',
+    descriptionKey: 'settings.appearance.themePreset.matchaCream.description',
+    preview: 'linear-gradient(135deg, #fbfaeb 0%, #e1edc9 48%, #f6d9d7 100%)',
+    swatches: ['#fbfaeb', '#6e8f49', '#c8757a'],
+  },
+  {
+    preset: 'lemonMochi',
+    labelKey: 'settings.appearance.themePreset.lemonMochi',
+    descriptionKey: 'settings.appearance.themePreset.lemonMochi.description',
+    preview: 'linear-gradient(135deg, #fffbe6 0%, #f6e7ad 48%, #eaf4fb 100%)',
+    swatches: ['#fffbe6', '#c99a26', '#86bdd4'],
+  },
+  {
+    preset: 'cottonCloud',
+    labelKey: 'settings.appearance.themePreset.cottonCloud',
+    descriptionKey: 'settings.appearance.themePreset.cottonCloud.description',
+    preview: 'linear-gradient(135deg, #f8fbff 0%, #dfe9ff 48%, #ffe5f0 100%)',
+    swatches: ['#f8fbff', '#6c88d8', '#dc6f9b'],
+  },
+  {
+    preset: 'melonCream',
+    labelKey: 'settings.appearance.themePreset.melonCream',
+    descriptionKey: 'settings.appearance.themePreset.melonCream.description',
+    preview: 'linear-gradient(135deg, #f8fff0 0%, #dff0c9 48%, #ffe2d8 100%)',
+    swatches: ['#f8fff0', '#6ca344', '#db7b62'],
+  },
+  {
+    preset: 'seaSaltJelly',
+    labelKey: 'settings.appearance.themePreset.seaSaltJelly',
+    descriptionKey: 'settings.appearance.themePreset.seaSaltJelly.description',
+    preview: 'linear-gradient(135deg, #f1fffb 0%, #cfeeea 48%, #ffe3dd 100%)',
+    swatches: ['#f1fffb', '#3c9a92', '#d66d5e'],
+  },
+  {
+    preset: 'caramelPudding',
+    labelKey: 'settings.appearance.themePreset.caramelPudding',
+    descriptionKey: 'settings.appearance.themePreset.caramelPudding.description',
+    preview: 'linear-gradient(135deg, #fff7e8 0%, #f5d29b 46%, #ffdce6 100%)',
+    swatches: ['#fff7e8', '#b7772f', '#d56f86'],
+  },
+  {
+    preset: 'neonCandy',
+    labelKey: 'settings.appearance.themePreset.neonCandy',
+    descriptionKey: 'settings.appearance.themePreset.neonCandy.description',
+    preview: 'linear-gradient(135deg, #f6f7ff 0%, #e7dcff 45%, #d8fff7 100%)',
+    swatches: ['#f6f7ff', '#8b5cf6', '#ff6fb1'],
+  },
+  {
+    preset: 'wisteriaBubble',
+    labelKey: 'settings.appearance.themePreset.wisteriaBubble',
+    descriptionKey: 'settings.appearance.themePreset.wisteriaBubble.description',
+    preview: 'linear-gradient(135deg, #fbf7ff 0%, #e8d9ff 46%, #dcfff4 100%)',
+    swatches: ['#fbf7ff', '#8f6ed5', '#67cdb3'],
+  },
+  {
+    preset: 'strawberryCookie',
+    labelKey: 'settings.appearance.themePreset.strawberryCookie',
+    descriptionKey: 'settings.appearance.themePreset.strawberryCookie.description',
+    preview: 'linear-gradient(135deg, #fff8f0 0%, #f7dcc6 46%, #ffe3ee 100%)',
+    swatches: ['#fff8f0', '#d75a72', '#c5924f'],
+  },
+  {
+    preset: 'graphiteAurora',
+    labelKey: 'settings.appearance.themePreset.graphiteAurora',
+    descriptionKey: 'settings.appearance.themePreset.graphiteAurora.description',
+    preview: 'linear-gradient(135deg, #f5f7f8 0%, #dfe6e8 48%, #d8f3ec 100%)',
+    swatches: ['#f5f7f8', '#2f7f73', '#496a9f'],
+  },
+  {
+    preset: 'amberNoir',
+    labelKey: 'settings.appearance.themePreset.amberNoir',
+    descriptionKey: 'settings.appearance.themePreset.amberNoir.description',
+    preview: 'linear-gradient(135deg, #fbf7ee 0%, #ead9bb 48%, #f3e7d4 100%)',
+    swatches: ['#fbf7ee', '#9a6a24', '#37302b'],
+  },
+  {
+    preset: 'oceanStudio',
+    labelKey: 'settings.appearance.themePreset.oceanStudio',
+    descriptionKey: 'settings.appearance.themePreset.oceanStudio.description',
+    preview: 'linear-gradient(135deg, #f4f8fb 0%, #d8e8ef 48%, #dce3f2 100%)',
+    swatches: ['#f4f8fb', '#2f7390', '#596b9a'],
+  },
+  {
+    preset: 'rosewoodVinyl',
+    labelKey: 'settings.appearance.themePreset.rosewoodVinyl',
+    descriptionKey: 'settings.appearance.themePreset.rosewoodVinyl.description',
+    preview: 'linear-gradient(135deg, #fbf3ee 0%, #ead3c7 48%, #f0dfe7 100%)',
+    swatches: ['#fbf3ee', '#8f4d48', '#6d4f2c'],
+  },
+  {
+    preset: 'shibuyaNight',
+    labelKey: 'settings.appearance.themePreset.shibuyaNight',
+    descriptionKey: 'settings.appearance.themePreset.shibuyaNight.description',
+    preview: 'linear-gradient(135deg, #0e0b18 0%, #19112c 46%, #111d2a 100%)',
+    swatches: ['#0e0b18', '#ff4fa3', '#37d4e4'],
+  },
+  {
+    preset: 'kyotoKurenai',
+    labelKey: 'settings.appearance.themePreset.kyotoKurenai',
+    descriptionKey: 'settings.appearance.themePreset.kyotoKurenai.description',
+    preview: 'linear-gradient(135deg, #fff7ed 0%, #f1d9c8 48%, #f8e9d0 100%)',
+    swatches: ['#fff7ed', '#b54034', '#b8913a'],
+  },
+  {
+    preset: 'ukiyoIndigo',
+    labelKey: 'settings.appearance.themePreset.ukiyoIndigo',
+    descriptionKey: 'settings.appearance.themePreset.ukiyoIndigo.description',
+    preview: 'linear-gradient(135deg, #f3f7f7 0%, #d9e5ea 48%, #e7dccb 100%)',
+    swatches: ['#f3f7f7', '#2f5f87', '#a7783b'],
+  },
+  {
+    preset: 'fujiSnow',
+    labelKey: 'settings.appearance.themePreset.fujiSnow',
+    descriptionKey: 'settings.appearance.themePreset.fujiSnow.description',
+    preview: 'linear-gradient(135deg, #f8fbff 0%, #dfeeff 48%, #fff0f5 100%)',
+    swatches: ['#f8fbff', '#4978c9', '#d76e9e'],
+  },
+  {
+    preset: 'matsuriLantern',
+    labelKey: 'settings.appearance.themePreset.matsuriLantern',
+    descriptionKey: 'settings.appearance.themePreset.matsuriLantern.description',
+    preview: 'linear-gradient(135deg, #fff5e8 0%, #f5d9b5 48%, #ffe8d1 100%)',
+    swatches: ['#fff5e8', '#c94f3d', '#d39b2e'],
+  },
+  {
+    preset: 'ginzaNoir',
+    labelKey: 'settings.appearance.themePreset.ginzaNoir',
+    descriptionKey: 'settings.appearance.themePreset.ginzaNoir.description',
+    preview: 'linear-gradient(135deg, #0f1013 0%, #18191f 48%, #201b18 100%)',
+    swatches: ['#0f1013', '#d3af5a', '#7aa6c7'],
+  },
+  {
+    preset: 'frostJazz',
+    labelKey: 'settings.appearance.themePreset.frostJazz',
+    descriptionKey: 'settings.appearance.themePreset.frostJazz.description',
+    preview: 'linear-gradient(135deg, #f4f7fb 0%, #dce7f5 48%, #ece2f2 100%)',
+    swatches: ['#f4f7fb', '#446aa6', '#9a5f85'],
+  },
+];
+
+type ThemeTone = 'light' | 'dark';
+type ThemeColorField = keyof Pick<
+  AppThemeToneOverride,
+  'appBg' | 'appBg2' | 'appBg3' | 'panel' | 'panelSoft' | 'accent' | 'accentStrong' | 'secondary' | 'heading' | 'text' | 'muted' | 'border' | 'onAccent' | 'buttonText'
+>;
+type ThemePercentField = keyof Pick<AppThemeToneOverride, 'panelOpacityPercent' | 'glassPercent' | 'shadowPercent'>;
+type ThemeEditorDefaults = Required<Pick<AppThemeToneOverride, ThemeColorField | ThemePercentField>>;
+type ThemeExportPayload = {
+  exportedAt: string;
+  overrides: AppThemePresetOverrides;
+  preset: AppThemePreset;
+  schema: 'echo-next.theme-preset';
+  version: 1;
+};
+
+const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, ThemeEditorDefaults>> = {
+  classic: {
+    light: {
+      appBg: '#f8fbfd',
+      appBg2: '#eef3f7',
+      appBg3: '#dfe8f2',
+      panel: '#ffffff',
+      panelSoft: '#eff5fc',
+      accent: '#2f6da8',
+      accentStrong: '#164b7d',
+      secondary: '#42b3a8',
+      heading: '#1c2735',
+      text: '#32455d',
+      muted: '#65758a',
+      border: '#283e58',
+      onAccent: '#ffffff',
+      buttonText: '#32455d',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#101318',
+      appBg2: '#151a22',
+      appBg3: '#111827',
+      panel: '#1c222b',
+      panelSoft: '#161b23',
+      accent: '#75b7ff',
+      accentStrong: '#cce6ff',
+      secondary: '#7dd7cb',
+      heading: '#f8fbff',
+      text: '#d8e0ea',
+      muted: '#a8b5c4',
+      border: '#647c96',
+      onAccent: '#0f1720',
+      buttonText: '#d8e0ea',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  echoTwilight: {
+    light: {
+      appBg: '#fff4ef',
+      appBg2: '#f3d7cf',
+      appBg3: '#efe5f2',
+      panel: '#fffcf9',
+      panelSoft: '#fbe9e4',
+      accent: '#df6b5f',
+      accentStrong: '#a83e37',
+      secondary: '#8ccfc8',
+      heading: '#352321',
+      text: '#4f3833',
+      muted: '#765d57',
+      border: '#b87065',
+      onAccent: '#ffffff',
+      buttonText: '#4f3833',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#151012',
+      appBg2: '#211719',
+      appBg3: '#171320',
+      panel: '#271e21',
+      panelSoft: '#1f181b',
+      accent: '#e2776d',
+      accentStrong: '#ffd0ca',
+      secondary: '#8fd4ce',
+      heading: '#fff7f4',
+      text: '#f3e3de',
+      muted: '#d2b9b2',
+      border: '#df8479',
+      onAccent: '#2b1513',
+      buttonText: '#f3e3de',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  sakuraMilk: {
+    light: {
+      appBg: '#fff6f9',
+      appBg2: '#f7d9e7',
+      appBg3: '#f0eefc',
+      panel: '#fffdfe',
+      panelSoft: '#fce8f0',
+      accent: '#cf5d7d',
+      accentStrong: '#9a3157',
+      secondary: '#7fc8d6',
+      heading: '#361f29',
+      text: '#55333f',
+      muted: '#765b66',
+      border: '#b05d7c',
+      onAccent: '#ffffff',
+      buttonText: '#55333f',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#151015',
+      appBg2: '#231722',
+      appBg3: '#171627',
+      panel: '#271e26',
+      panelSoft: '#201820',
+      accent: '#e17599',
+      accentStrong: '#ffd0df',
+      secondary: '#8acdda',
+      heading: '#fff6fb',
+      text: '#f4e2ea',
+      muted: '#d4b7c3',
+      border: '#da7797',
+      onAccent: '#2c131d',
+      buttonText: '#f4e2ea',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  peachSoda: {
+    light: {
+      appBg: '#fff2e8',
+      appBg2: '#ffd6bd',
+      appBg3: '#d7f4ee',
+      panel: '#fffdf9',
+      panelSoft: '#faeadc',
+      accent: '#d96d4c',
+      accentStrong: '#9c3e26',
+      secondary: '#5eb9ad',
+      heading: '#33231d',
+      text: '#50392f',
+      muted: '#745d54',
+      border: '#b3684c',
+      onAccent: '#ffffff',
+      buttonText: '#50392f',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#15110f',
+      appBg2: '#241915',
+      appBg3: '#10201f',
+      panel: '#271f1b',
+      panelSoft: '#201916',
+      accent: '#e27b58',
+      accentStrong: '#ffd2c1',
+      secondary: '#78c9be',
+      heading: '#fff5ef',
+      text: '#f4e3d8',
+      muted: '#d2b8ac',
+      border: '#da7e56',
+      onAccent: '#2c1710',
+      buttonText: '#f4e3d8',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  mintCandy: {
+    light: {
+      appBg: '#f6fff8',
+      appBg2: '#d7f2df',
+      appBg3: '#ffe5ec',
+      panel: '#fdfffa',
+      panelSoft: '#e6f5e6',
+      accent: '#3f9274',
+      accentStrong: '#27664f',
+      secondary: '#dd6e86',
+      heading: '#1f3029',
+      text: '#33493e',
+      muted: '#556f63',
+      border: '#5c896f',
+      onAccent: '#ffffff',
+      buttonText: '#33493e',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#101512',
+      appBg2: '#17231c',
+      appBg3: '#23151b',
+      panel: '#1d2721',
+      panelSoft: '#17201b',
+      accent: '#6bc09b',
+      accentStrong: '#c3f5df',
+      secondary: '#e28aa0',
+      heading: '#f5fff8',
+      text: '#e0f0e7',
+      muted: '#b7d0c3',
+      border: '#61b991',
+      onAccent: '#10261c',
+      buttonText: '#e0f0e7',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  berryDream: {
+    light: {
+      appBg: '#f8f5ff',
+      appBg2: '#e2d9fb',
+      appBg3: '#ffddec',
+      panel: '#fffdff',
+      panelSoft: '#efe8fa',
+      accent: '#7657b8',
+      accentStrong: '#563995',
+      secondary: '#cf5f95',
+      heading: '#2d2440',
+      text: '#45395b',
+      muted: '#655878',
+      border: '#725ba6',
+      onAccent: '#ffffff',
+      buttonText: '#45395b',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#11101a',
+      appBg2: '#1b1730',
+      appBg3: '#241421',
+      panel: '#201d2e',
+      panelSoft: '#1a1726',
+      accent: '#9a79dd',
+      accentStrong: '#ddd0ff',
+      secondary: '#e48ab5',
+      heading: '#fbf8ff',
+      text: '#e9e4f7',
+      muted: '#c4badd',
+      border: '#9277d4',
+      onAccent: '#1d1233',
+      buttonText: '#e9e4f7',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  matchaCream: {
+    light: {
+      appBg: '#fbfaeb',
+      appBg2: '#e1edc9',
+      appBg3: '#f6d9d7',
+      panel: '#fffef6',
+      panelSoft: '#ecefd4',
+      accent: '#6e8f49',
+      accentStrong: '#4d6b2f',
+      secondary: '#c8757a',
+      heading: '#2b301d',
+      text: '#42452d',
+      muted: '#62664a',
+      border: '#7c8e4f',
+      onAccent: '#ffffff',
+      buttonText: '#42452d',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#12140e',
+      appBg2: '#1d2215',
+      appBg3: '#241716',
+      panel: '#22261c',
+      panelSoft: '#1c2017',
+      accent: '#95b766',
+      accentStrong: '#e5f5bd',
+      secondary: '#dd8d91',
+      heading: '#fbffe9',
+      text: '#e8eddb',
+      muted: '#c6d0ad',
+      border: '#8ba658',
+      onAccent: '#1d250f',
+      buttonText: '#e8eddb',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  lemonMochi: {
+    light: {
+      appBg: '#fffbe6',
+      appBg2: '#f6e7ad',
+      appBg3: '#eaf4fb',
+      panel: '#fffef5',
+      panelSoft: '#f7eecb',
+      accent: '#c99a26',
+      accentStrong: '#8a6113',
+      secondary: '#86bdd4',
+      heading: '#332a10',
+      text: '#4c3f1c',
+      muted: '#706133',
+      border: '#b28d37',
+      onAccent: '#241800',
+      buttonText: '#4c3f1c',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#15140f',
+      appBg2: '#221f13',
+      appBg3: '#111b23',
+      panel: '#262319',
+      panelSoft: '#201d15',
+      accent: '#d5aa3a',
+      accentStrong: '#ffe59a',
+      secondary: '#8bc8df',
+      heading: '#fff9df',
+      text: '#f5eed2',
+      muted: '#d5c99a',
+      border: '#cfa93f',
+      onAccent: '#2a1d05',
+      buttonText: '#f5eed2',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  cottonCloud: {
+    light: {
+      appBg: '#f8fbff',
+      appBg2: '#dfe9ff',
+      appBg3: '#ffe5f0',
+      panel: '#fdfeff',
+      panelSoft: '#e7eefd',
+      accent: '#6c88d8',
+      accentStrong: '#3f5fb5',
+      secondary: '#dc6f9b',
+      heading: '#20283c',
+      text: '#3a435c',
+      muted: '#5c6680',
+      border: '#6980bc',
+      onAccent: '#ffffff',
+      buttonText: '#3a435c',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#10131d',
+      appBg2: '#171d31',
+      appBg3: '#241521',
+      panel: '#1d2231',
+      panelSoft: '#171c2a',
+      accent: '#8ba5f0',
+      accentStrong: '#dae3ff',
+      secondary: '#e58db3',
+      heading: '#fbfdff',
+      text: '#e8eefc',
+      muted: '#c2cce8',
+      border: '#7e96e4',
+      onAccent: '#11192c',
+      buttonText: '#e8eefc',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  melonCream: {
+    light: {
+      appBg: '#f8fff0',
+      appBg2: '#dff0c9',
+      appBg3: '#ffe2d8',
+      panel: '#fdfff8',
+      panelSoft: '#e7f1d8',
+      accent: '#6ca344',
+      accentStrong: '#47752a',
+      secondary: '#db7b62',
+      heading: '#213218',
+      text: '#354827',
+      muted: '#596f45',
+      border: '#6d9348',
+      onAccent: '#ffffff',
+      buttonText: '#354827',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#10160f',
+      appBg2: '#172415',
+      appBg3: '#251814',
+      panel: '#1d281c',
+      panelSoft: '#172116',
+      accent: '#8cc76a',
+      accentStrong: '#d8f6bf',
+      secondary: '#e18d78',
+      heading: '#f8ffe9',
+      text: '#e8f3dc',
+      muted: '#c3d8ad',
+      border: '#7bb852',
+      onAccent: '#14270e',
+      buttonText: '#e8f3dc',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  seaSaltJelly: {
+    light: {
+      appBg: '#f1fffb',
+      appBg2: '#cfeeea',
+      appBg3: '#ffe3dd',
+      panel: '#fafffd',
+      panelSoft: '#dbf1ee',
+      accent: '#3c9a92',
+      accentStrong: '#226f68',
+      secondary: '#d66d5e',
+      heading: '#183633',
+      text: '#2b4d49',
+      muted: '#4f716d',
+      border: '#48948d',
+      onAccent: '#ffffff',
+      buttonText: '#2b4d49',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#0f1718',
+      appBg2: '#152525',
+      appBg3: '#241714',
+      panel: '#1a292a',
+      panelSoft: '#152223',
+      accent: '#67c9c0',
+      accentStrong: '#c2f5ef',
+      secondary: '#e28b7d',
+      heading: '#f2fffc',
+      text: '#dcf1ee',
+      muted: '#b1d8d2',
+      border: '#50bdb5',
+      onAccent: '#0d2826',
+      buttonText: '#dcf1ee',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  caramelPudding: {
+    light: {
+      appBg: '#fff7e8',
+      appBg2: '#f5d29b',
+      appBg3: '#ffdce6',
+      panel: '#fffaf0',
+      panelSoft: '#f4dfb8',
+      accent: '#b7772f',
+      accentStrong: '#7f4b18',
+      secondary: '#d56f86',
+      heading: '#3a2511',
+      text: '#5a3a20',
+      muted: '#7a5940',
+      border: '#b98245',
+      onAccent: '#ffffff',
+      buttonText: '#5a3a20',
+      panelOpacityPercent: 74,
+      glassPercent: 16,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#18110b',
+      appBg2: '#2a1b10',
+      appBg3: '#2a1019',
+      panel: '#2b1c12',
+      panelSoft: '#21160f',
+      accent: '#e0a45c',
+      accentStrong: '#ffd79a',
+      secondary: '#f18aa7',
+      heading: '#fff3db',
+      text: '#f1d8b7',
+      muted: '#d5b58a',
+      border: '#d68f45',
+      onAccent: '#29170a',
+      buttonText: '#f1d8b7',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  neonCandy: {
+    light: {
+      appBg: '#f6f7ff',
+      appBg2: '#e7dcff',
+      appBg3: '#d8fff7',
+      panel: '#ffffff',
+      panelSoft: '#efe9ff',
+      accent: '#8b5cf6',
+      accentStrong: '#5b39b4',
+      secondary: '#ff6fb1',
+      heading: '#241a3f',
+      text: '#46385f',
+      muted: '#6a5a82',
+      border: '#9275e8',
+      onAccent: '#ffffff',
+      buttonText: '#46385f',
+      panelOpacityPercent: 72,
+      glassPercent: 20,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#101021',
+      appBg2: '#1b1640',
+      appBg3: '#102b2b',
+      panel: '#1f1b39',
+      panelSoft: '#16162b',
+      accent: '#a989ff',
+      accentStrong: '#e1d7ff',
+      secondary: '#ff84be',
+      heading: '#f7f2ff',
+      text: '#e7dcff',
+      muted: '#c4b5e8',
+      border: '#9b7cff',
+      onAccent: '#181033',
+      buttonText: '#e7dcff',
+      panelOpacityPercent: 86,
+      glassPercent: 24,
+      shadowPercent: 100,
+    },
+  },
+  wisteriaBubble: {
+    light: {
+      appBg: '#fbf7ff',
+      appBg2: '#e8d9ff',
+      appBg3: '#dcfff4',
+      panel: '#fffaff',
+      panelSoft: '#eee2ff',
+      accent: '#8f6ed5',
+      accentStrong: '#6043a6',
+      secondary: '#67cdb3',
+      heading: '#2c2144',
+      text: '#4c3c68',
+      muted: '#6f5f8c',
+      border: '#9c82df',
+      onAccent: '#ffffff',
+      buttonText: '#4c3c68',
+      panelOpacityPercent: 72,
+      glassPercent: 18,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#13101d',
+      appBg2: '#211a36',
+      appBg3: '#10251f',
+      panel: '#211a32',
+      panelSoft: '#171423',
+      accent: '#b99cff',
+      accentStrong: '#eee6ff',
+      secondary: '#7be0c5',
+      heading: '#fbf7ff',
+      text: '#e7dcfb',
+      muted: '#c9b9e8',
+      border: '#a88aff',
+      onAccent: '#1c1230',
+      buttonText: '#e7dcfb',
+      panelOpacityPercent: 86,
+      glassPercent: 24,
+      shadowPercent: 100,
+    },
+  },
+  strawberryCookie: {
+    light: {
+      appBg: '#fff8f0',
+      appBg2: '#f7dcc6',
+      appBg3: '#ffe3ee',
+      panel: '#fffaf4',
+      panelSoft: '#f4dfcf',
+      accent: '#d75a72',
+      accentStrong: '#9f3449',
+      secondary: '#c5924f',
+      heading: '#3b211c',
+      text: '#5b3a32',
+      muted: '#7c5d52',
+      border: '#c9798a',
+      onAccent: '#ffffff',
+      buttonText: '#5b3a32',
+      panelOpacityPercent: 74,
+      glassPercent: 16,
+      shadowPercent: 100,
+    },
+    dark: {
+      appBg: '#19100f',
+      appBg2: '#2a1915',
+      appBg3: '#291018',
+      panel: '#2b1b18',
+      panelSoft: '#211412',
+      accent: '#f08aa0',
+      accentStrong: '#ffd0da',
+      secondary: '#e0b66c',
+      heading: '#fff0e8',
+      text: '#f1d2c9',
+      muted: '#d9b2a4',
+      border: '#e18196',
+      onAccent: '#321017',
+      buttonText: '#f1d2c9',
+      panelOpacityPercent: 86,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  graphiteAurora: {
+    light: {
+      appBg: '#f5f7f8',
+      appBg2: '#dfe6e8',
+      appBg3: '#d8f3ec',
+      panel: '#fbfcfc',
+      panelSoft: '#e8eef0',
+      accent: '#2f7f73',
+      accentStrong: '#1f5d55',
+      secondary: '#496a9f',
+      heading: '#1f292b',
+      text: '#3f5053',
+      muted: '#637174',
+      border: '#7a9698',
+      onAccent: '#ffffff',
+      buttonText: '#3f5053',
+      panelOpacityPercent: 76,
+      glassPercent: 18,
+      shadowPercent: 80,
+    },
+    dark: {
+      appBg: '#101416',
+      appBg2: '#182123',
+      appBg3: '#10241f',
+      panel: '#20292b',
+      panelSoft: '#171f21',
+      accent: '#5ec4b5',
+      accentStrong: '#b2efe6',
+      secondary: '#86a8e7',
+      heading: '#edf6f5',
+      text: '#d4e3e1',
+      muted: '#a8bcba',
+      border: '#5fb4aa',
+      onAccent: '#0b2824',
+      buttonText: '#d4e3e1',
+      panelOpacityPercent: 88,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  amberNoir: {
+    light: {
+      appBg: '#fbf7ee',
+      appBg2: '#ead9bb',
+      appBg3: '#f3e7d4',
+      panel: '#fffaf1',
+      panelSoft: '#efe1c9',
+      accent: '#9a6a24',
+      accentStrong: '#624015',
+      secondary: '#6a4b3a',
+      heading: '#33291e',
+      text: '#584737',
+      muted: '#7a6a59',
+      border: '#b99662',
+      onAccent: '#ffffff',
+      buttonText: '#584737',
+      panelOpacityPercent: 76,
+      glassPercent: 14,
+      shadowPercent: 90,
+    },
+    dark: {
+      appBg: '#11100e',
+      appBg2: '#211a12',
+      appBg3: '#2a2118',
+      panel: '#2a241c',
+      panelSoft: '#1d1914',
+      accent: '#d4a64c',
+      accentStrong: '#f5d78f',
+      secondary: '#b88763',
+      heading: '#fff3d8',
+      text: '#ead9bd',
+      muted: '#c3ad8d',
+      border: '#c89a4b',
+      onAccent: '#221405',
+      buttonText: '#ead9bd',
+      panelOpacityPercent: 88,
+      glassPercent: 20,
+      shadowPercent: 100,
+    },
+  },
+  oceanStudio: {
+    light: {
+      appBg: '#f4f8fb',
+      appBg2: '#d8e8ef',
+      appBg3: '#dce3f2',
+      panel: '#fbfdff',
+      panelSoft: '#e5eef4',
+      accent: '#2f7390',
+      accentStrong: '#1d526a',
+      secondary: '#596b9a',
+      heading: '#202d3a',
+      text: '#415363',
+      muted: '#607486',
+      border: '#7da3b7',
+      onAccent: '#ffffff',
+      buttonText: '#415363',
+      panelOpacityPercent: 78,
+      glassPercent: 20,
+      shadowPercent: 80,
+    },
+    dark: {
+      appBg: '#0f151b',
+      appBg2: '#132332',
+      appBg3: '#17203a',
+      panel: '#1e2a34',
+      panelSoft: '#16212b',
+      accent: '#68b4d4',
+      accentStrong: '#c2eaff',
+      secondary: '#9aa7e8',
+      heading: '#edf7ff',
+      text: '#d4e5ef',
+      muted: '#a9bfce',
+      border: '#6cb1cf',
+      onAccent: '#0c2531',
+      buttonText: '#d4e5ef',
+      panelOpacityPercent: 88,
+      glassPercent: 24,
+      shadowPercent: 100,
+    },
+  },
+  rosewoodVinyl: {
+    light: {
+      appBg: '#fbf3ee',
+      appBg2: '#ead3c7',
+      appBg3: '#f0dfe7',
+      panel: '#fff8f4',
+      panelSoft: '#efdcd3',
+      accent: '#8f4d48',
+      accentStrong: '#66312d',
+      secondary: '#8b6a3e',
+      heading: '#35211f',
+      text: '#5c4240',
+      muted: '#7e6662',
+      border: '#b27a73',
+      onAccent: '#ffffff',
+      buttonText: '#5c4240',
+      panelOpacityPercent: 76,
+      glassPercent: 16,
+      shadowPercent: 90,
+    },
+    dark: {
+      appBg: '#140f10',
+      appBg2: '#251717',
+      appBg3: '#201821',
+      panel: '#2a1d1d',
+      panelSoft: '#1e1516',
+      accent: '#d4827b',
+      accentStrong: '#f3b8ae',
+      secondary: '#d2a45c',
+      heading: '#fff0eb',
+      text: '#ebd1cb',
+      muted: '#c7aaa3',
+      border: '#d18279',
+      onAccent: '#2f1210',
+      buttonText: '#ebd1cb',
+      panelOpacityPercent: 88,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  shibuyaNight: {
+    light: {
+      appBg: '#f6f0ff',
+      appBg2: '#dfd4ff',
+      appBg3: '#ffd6e9',
+      panel: '#fffaff',
+      panelSoft: '#eee4ff',
+      accent: '#d93486',
+      accentStrong: '#9d1f60',
+      secondary: '#1c8fa0',
+      heading: '#261b3b',
+      text: '#453a58',
+      muted: '#6c607e',
+      border: '#8d70b8',
+      onAccent: '#ffffff',
+      buttonText: '#453a58',
+      panelOpacityPercent: 76,
+      glassPercent: 22,
+      shadowPercent: 88,
+    },
+    dark: {
+      appBg: '#0e0b18',
+      appBg2: '#19112c',
+      appBg3: '#111d2a',
+      panel: '#211a33',
+      panelSoft: '#171226',
+      accent: '#ff4fa3',
+      accentStrong: '#ffd0eb',
+      secondary: '#37d4e4',
+      heading: '#fff6ff',
+      text: '#eadff8',
+      muted: '#c5b6da',
+      border: '#db67b5',
+      onAccent: '#2a0920',
+      buttonText: '#eadff8',
+      panelOpacityPercent: 88,
+      glassPercent: 26,
+      shadowPercent: 100,
+    },
+  },
+  kyotoKurenai: {
+    light: {
+      appBg: '#fff7ed',
+      appBg2: '#f1d9c8',
+      appBg3: '#f8e9d0',
+      panel: '#fffaf2',
+      panelSoft: '#f2dfcc',
+      accent: '#b54034',
+      accentStrong: '#7e281f',
+      secondary: '#b8913a',
+      heading: '#342016',
+      text: '#55392b',
+      muted: '#765c4d',
+      border: '#aa6a55',
+      onAccent: '#ffffff',
+      buttonText: '#55392b',
+      panelOpacityPercent: 76,
+      glassPercent: 16,
+      shadowPercent: 90,
+    },
+    dark: {
+      appBg: '#160f0c',
+      appBg2: '#281713',
+      appBg3: '#241b10',
+      panel: '#2e211b',
+      panelSoft: '#211713',
+      accent: '#e26354',
+      accentStrong: '#ffc8bd',
+      secondary: '#d6b15d',
+      heading: '#fff3e8',
+      text: '#f0d8c7',
+      muted: '#d0b29d',
+      border: '#d46f5e',
+      onAccent: '#2e0e09',
+      buttonText: '#f0d8c7',
+      panelOpacityPercent: 88,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  ukiyoIndigo: {
+    light: {
+      appBg: '#f3f7f7',
+      appBg2: '#d9e5ea',
+      appBg3: '#e7dccb',
+      panel: '#fbfcfa',
+      panelSoft: '#e2e9ea',
+      accent: '#2f5f87',
+      accentStrong: '#1c4262',
+      secondary: '#a7783b',
+      heading: '#182a38',
+      text: '#364a59',
+      muted: '#5b6f7a',
+      border: '#68879a',
+      onAccent: '#ffffff',
+      buttonText: '#364a59',
+      panelOpacityPercent: 78,
+      glassPercent: 18,
+      shadowPercent: 82,
+    },
+    dark: {
+      appBg: '#0c1219',
+      appBg2: '#102034',
+      appBg3: '#1c1b18',
+      panel: '#192638',
+      panelSoft: '#111b29',
+      accent: '#6aa7d7',
+      accentStrong: '#c5e7ff',
+      secondary: '#d0a45e',
+      heading: '#edf8ff',
+      text: '#d8e8f4',
+      muted: '#abc1d1',
+      border: '#669fc8',
+      onAccent: '#071f34',
+      buttonText: '#d8e8f4',
+      panelOpacityPercent: 88,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  fujiSnow: {
+    light: {
+      appBg: '#f8fbff',
+      appBg2: '#dfeeff',
+      appBg3: '#fff0f5',
+      panel: '#ffffff',
+      panelSoft: '#e7f1ff',
+      accent: '#4978c9',
+      accentStrong: '#2c5599',
+      secondary: '#d76e9e',
+      heading: '#1f2b43',
+      text: '#3a4862',
+      muted: '#5f6f88',
+      border: '#7695c9',
+      onAccent: '#ffffff',
+      buttonText: '#3a4862',
+      panelOpacityPercent: 76,
+      glassPercent: 20,
+      shadowPercent: 82,
+    },
+    dark: {
+      appBg: '#0e121b',
+      appBg2: '#15213a',
+      appBg3: '#211625',
+      panel: '#1d2738',
+      panelSoft: '#151d2c',
+      accent: '#7fa7f5',
+      accentStrong: '#d7e5ff',
+      secondary: '#ee90bd',
+      heading: '#f5f9ff',
+      text: '#dde8fb',
+      muted: '#b6c5dc',
+      border: '#7ea3e4',
+      onAccent: '#0d1d39',
+      buttonText: '#dde8fb',
+      panelOpacityPercent: 88,
+      glassPercent: 24,
+      shadowPercent: 100,
+    },
+  },
+  matsuriLantern: {
+    light: {
+      appBg: '#fff5e8',
+      appBg2: '#f5d9b5',
+      appBg3: '#ffe8d1',
+      panel: '#fffaf2',
+      panelSoft: '#f4dfc2',
+      accent: '#c94f3d',
+      accentStrong: '#8d2e23',
+      secondary: '#b87b12',
+      heading: '#3a2117',
+      text: '#58392b',
+      muted: '#795b49',
+      border: '#b86e55',
+      onAccent: '#ffffff',
+      buttonText: '#58392b',
+      panelOpacityPercent: 76,
+      glassPercent: 16,
+      shadowPercent: 94,
+    },
+    dark: {
+      appBg: '#140d0c',
+      appBg2: '#291512',
+      appBg3: '#231b0f',
+      panel: '#30201b',
+      panelSoft: '#211511',
+      accent: '#f06b58',
+      accentStrong: '#ffd0c5',
+      secondary: '#f0bd55',
+      heading: '#fff0e6',
+      text: '#f1d6c8',
+      muted: '#d3b29c',
+      border: '#e17560',
+      onAccent: '#320f09',
+      buttonText: '#f1d6c8',
+      panelOpacityPercent: 88,
+      glassPercent: 22,
+      shadowPercent: 100,
+    },
+  },
+  ginzaNoir: {
+    light: {
+      appBg: '#f5f3ef',
+      appBg2: '#e6e0d6',
+      appBg3: '#d8dde6',
+      panel: '#fbfaf7',
+      panelSoft: '#ebe6dd',
+      accent: '#80621f',
+      accentStrong: '#594113',
+      secondary: '#3f6484',
+      heading: '#232324',
+      text: '#45413b',
+      muted: '#6c665d',
+      border: '#8d7b5f',
+      onAccent: '#ffffff',
+      buttonText: '#45413b',
+      panelOpacityPercent: 78,
+      glassPercent: 20,
+      shadowPercent: 86,
+    },
+    dark: {
+      appBg: '#0f1013',
+      appBg2: '#18191f',
+      appBg3: '#201b18',
+      panel: '#24242b',
+      panelSoft: '#18191f',
+      accent: '#d3af5a',
+      accentStrong: '#f6dc98',
+      secondary: '#7aa6c7',
+      heading: '#f6f1e7',
+      text: '#e2dacd',
+      muted: '#bdb2a3',
+      border: '#c3a45c',
+      onAccent: '#221805',
+      buttonText: '#e2dacd',
+      panelOpacityPercent: 88,
+      glassPercent: 26,
+      shadowPercent: 100,
+    },
+  },
+  frostJazz: {
+    light: {
+      appBg: '#f4f7fb',
+      appBg2: '#dce7f5',
+      appBg3: '#ece2f2',
+      panel: '#fbfdff',
+      panelSoft: '#e5edf6',
+      accent: '#446aa6',
+      accentStrong: '#294a7e',
+      secondary: '#9a5f85',
+      heading: '#1f2938',
+      text: '#3c4c62',
+      muted: '#627286',
+      border: '#758cab',
+      onAccent: '#ffffff',
+      buttonText: '#3c4c62',
+      panelOpacityPercent: 78,
+      glassPercent: 20,
+      shadowPercent: 82,
+    },
+    dark: {
+      appBg: '#0d1118',
+      appBg2: '#151d2b',
+      appBg3: '#1f1725',
+      panel: '#1d2735',
+      panelSoft: '#141b27',
+      accent: '#78a6e8',
+      accentStrong: '#d1e3ff',
+      secondary: '#d083ad',
+      heading: '#f3f7ff',
+      text: '#dce7f5',
+      muted: '#b5c3d5',
+      border: '#769dd5',
+      onAccent: '#0c1b31',
+      buttonText: '#dce7f5',
+      panelOpacityPercent: 88,
+      glassPercent: 24,
+      shadowPercent: 100,
+    },
+  },
+};
+
+const coreThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { field: 'appBg', labelKey: 'settings.appearance.themeCustom.field.appBg', descriptionKey: 'settings.appearance.themeCustom.field.appBg.description' },
+  { field: 'accent', labelKey: 'settings.appearance.themeCustom.field.accent', descriptionKey: 'settings.appearance.themeCustom.field.accent.description' },
+  { field: 'accentStrong', labelKey: 'settings.appearance.themeCustom.field.accentStrong', descriptionKey: 'settings.appearance.themeCustom.field.accentStrong.description' },
+  { field: 'secondary', labelKey: 'settings.appearance.themeCustom.field.secondary', descriptionKey: 'settings.appearance.themeCustom.field.secondary.description' },
+  { field: 'heading', labelKey: 'settings.appearance.themeCustom.field.heading', descriptionKey: 'settings.appearance.themeCustom.field.heading.description' },
+  { field: 'muted', labelKey: 'settings.appearance.themeCustom.field.muted', descriptionKey: 'settings.appearance.themeCustom.field.muted.description' },
+  { field: 'panel', labelKey: 'settings.appearance.themeCustom.field.panel', descriptionKey: 'settings.appearance.themeCustom.field.panel.description' },
+];
+
+const gradientThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { field: 'appBg2', labelKey: 'settings.appearance.themeCustom.field.appBg2', descriptionKey: 'settings.appearance.themeCustom.field.appBg2.description' },
+  { field: 'appBg3', labelKey: 'settings.appearance.themeCustom.field.appBg3', descriptionKey: 'settings.appearance.themeCustom.field.appBg3.description' },
+];
+
+const advancedThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { field: 'panelSoft', labelKey: 'settings.appearance.themeCustom.field.panelSoft', descriptionKey: 'settings.appearance.themeCustom.field.panelSoft.description' },
+  { field: 'text', labelKey: 'settings.appearance.themeCustom.field.text', descriptionKey: 'settings.appearance.themeCustom.field.text.description' },
+  { field: 'border', labelKey: 'settings.appearance.themeCustom.field.border', descriptionKey: 'settings.appearance.themeCustom.field.border.description' },
+  { field: 'onAccent', labelKey: 'settings.appearance.themeCustom.field.onAccent', descriptionKey: 'settings.appearance.themeCustom.field.onAccent.description' },
+  { field: 'buttonText', labelKey: 'settings.appearance.themeCustom.field.buttonText', descriptionKey: 'settings.appearance.themeCustom.field.buttonText.description' },
+];
+
+const percentThemeFields: Array<{ field: ThemePercentField; labelKey: TranslationKey; descriptionKey: TranslationKey; min: number; max: number }> = [
+  { field: 'panelOpacityPercent', labelKey: 'settings.appearance.themeCustom.field.panelOpacity', descriptionKey: 'settings.appearance.themeCustom.field.panelOpacity.description', min: 40, max: 100 },
+  { field: 'glassPercent', labelKey: 'settings.appearance.themeCustom.field.glass', descriptionKey: 'settings.appearance.themeCustom.field.glass.description', min: 0, max: 80 },
+  { field: 'shadowPercent', labelKey: 'settings.appearance.themeCustom.field.shadow', descriptionKey: 'settings.appearance.themeCustom.field.shadow.description', min: 0, max: 100 },
+];
+
+const hexToRgb = (value: string): { r: number; g: number; b: number } | null => {
+  const color = normalizeThemeHexColor(value);
+  if (!color) {
+    return null;
+  }
+
+  return {
+    r: Number.parseInt(color.slice(1, 3), 16),
+    g: Number.parseInt(color.slice(3, 5), 16),
+    b: Number.parseInt(color.slice(5, 7), 16),
+  };
+};
+
+const getRelativeLuminance = (value: string): number => {
+  const rgb = hexToRgb(value);
+  if (!rgb) {
+    return 0;
+  }
+
+  const channel = (component: number): number => {
+    const normalized = component / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+
+  return channel(rgb.r) * 0.2126 + channel(rgb.g) * 0.7152 + channel(rgb.b) * 0.0722;
+};
+
+const getContrastRatio = (foreground: string, background: string): number => {
+  const foregroundLuminance = getRelativeLuminance(foreground);
+  const backgroundLuminance = getRelativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+const bestReadableColor = (background: string): string => (getContrastRatio('#ffffff', background) >= getContrastRatio('#241a17', background) ? '#ffffff' : '#241a17');
+
+const mergeThemeToneValues = (preset: AppThemePreset, tone: ThemeTone, draft: AppThemeToneOverride): ThemeEditorDefaults => ({
+  ...themeEditorDefaults[preset][tone],
+  ...draft,
+});
+
+const buildThemePresetOverrides = (
+  current: AppThemePresetOverrides,
+  preset: AppThemePreset,
+  tone: ThemeTone,
+  draft: AppThemeToneOverride | null,
+): AppThemePresetOverrides => {
+  const next: AppThemePresetOverrides = { ...current };
+  const currentPresetOverride = { ...(next[preset] ?? {}) };
+
+  if (!draft || Object.keys(draft).length === 0) {
+    delete currentPresetOverride[tone];
+  } else {
+    currentPresetOverride[tone] = draft;
+  }
+
+  if (currentPresetOverride.light || currentPresetOverride.dark) {
+    next[preset] = currentPresetOverride;
+  } else {
+    delete next[preset];
+  }
+
+  return next;
+};
+
+const isThemeExportPayload = (value: unknown): value is Partial<ThemeExportPayload> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const readThemeExportPreset = (value: unknown): AppThemePreset | null => {
+  if (!themePresetOptions.some((option) => option.preset === value)) {
+    return null;
+  }
+  return normalizeThemePreset(value);
+};
+
+const downloadTextFile = (filename: string, content: string): void => {
+  const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
+const getThemeContrastWarnings = (values: ThemeEditorDefaults): string[] => {
+  const warnings: string[] = [];
+
+  if (getContrastRatio(values.text, values.appBg) < 4.5) {
+    warnings.push('body');
+  }
+  if (getContrastRatio(values.heading, values.appBg) < 4.5) {
+    warnings.push('heading');
+  }
+  if (getContrastRatio(values.buttonText, values.panel) < 4.5) {
+    warnings.push('button');
+  }
+  if (getContrastRatio(values.onAccent, values.accent) < 3) {
+    warnings.push('accent');
+  }
+
+  return warnings;
+};
 
 const getUpdateStateLabel = (state: UpdateStatus['state']): string => {
   switch (state) {
@@ -1166,6 +2660,8 @@ const FontPickerModal = ({
 
 export const SettingsPage = (): JSX.Element => {
   const { locale, localeOptions, setLocale, t } = useI18n();
+  const playbackQueue = usePlaybackQueue();
+  const settingsScrollShellRef = useRef<HTMLDivElement | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsNavKey>('general');
   const [settingsQuery, setSettingsQuery] = useState('');
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
@@ -1176,6 +2672,11 @@ export const SettingsPage = (): JSX.Element => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [selectedThemePreset, setSelectedThemePreset] = useState<AppThemePreset>(() => readThemePreset());
+  const [themeCustomTone, setThemeCustomTone] = useState<ThemeTone>('light');
+  const [themeCustomDraft, setThemeCustomDraft] = useState<AppThemeToneOverride>({});
+  const [themeCustomAdvancedOpen, setThemeCustomAdvancedOpen] = useState(false);
+  const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
   const wallpaperPersistTimerRef = useRef<number | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
   const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
@@ -1224,6 +2725,9 @@ export const SettingsPage = (): JSX.Element => {
   const [bpmAnalysisJob, setBpmAnalysisJob] = useState<BpmAnalysisJobStatus | null>(null);
   const [bpmAnalysisBusy, setBpmAnalysisBusy] = useState(false);
   const [bpmAnalysisMessage, setBpmAnalysisMessage] = useState<string | null>(null);
+  const [replayGainAnalysisJob, setReplayGainAnalysisJob] = useState<ReplayGainAnalysisJobStatus | null>(null);
+  const [replayGainAnalysisBusy, setReplayGainAnalysisBusy] = useState(false);
+  const [replayGainAnalysisMessage, setReplayGainAnalysisMessage] = useState<string | null>(null);
   const [audioResetBusy, setAudioResetBusy] = useState(false);
   const [windowsAudioRestartBusy, setWindowsAudioRestartBusy] = useState(false);
   const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
@@ -1325,6 +2829,25 @@ export const SettingsPage = (): JSX.Element => {
         title: t('settings.playback.audioStatus.title'),
         description: t('audioDrawer.note.engine'),
         terms: [t('settings.playback.audioStatus.title'), t('audioDrawer.note.engine'), 'audio status', 'engine status', '状态', '音频状态', '采样率', 'dac', 'wasapi', 'asio', 'juce'],
+      },
+      {
+        id: 'row-automix',
+        sectionKey: 'playback',
+        targetId: 'settings-row-automix',
+        title: t('settings.playback.automix.title'),
+        description: t('settings.playback.automix.description'),
+        terms: [
+          t('settings.playback.automix.title'),
+          t('settings.playback.automix.description'),
+          'automix',
+          'smart crossfade',
+          'crossfade',
+          'gapless',
+          'spotify',
+          'apple music',
+          '智能过渡',
+          '连续播放',
+        ],
       },
       {
         id: 'row-output-device',
@@ -1566,7 +3089,13 @@ export const SettingsPage = (): JSX.Element => {
     const app = getAppBridge();
     void app?.getSettings().then((settings) => {
       setAppSettings(settings);
-      updateThemeMode(settings.appearanceTheme ?? defaultThemeMode);
+      setSelectedThemePreset(settings.appearanceThemePreset ?? defaultThemePreset);
+      updateThemePreferences(
+        settings.appearanceTheme ?? defaultThemeMode,
+        settings.appearanceThemePreset ?? defaultThemePreset,
+        settings.appearanceThemePresetOverrides ?? {},
+      );
+      setThemeCustomDraft(settings.appearanceThemePresetOverrides?.[settings.appearanceThemePreset ?? defaultThemePreset]?.light ?? {});
       if (settings.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
       }
@@ -1689,18 +3218,59 @@ export const SettingsPage = (): JSX.Element => {
   }, [activeSection]);
 
   useEffect(() => {
+    if (activeSection === 'appearance') {
+      setSelectedThemePreset(readThemePreset());
+    }
+  }, [activeSection]);
+
+  const savedThemePresetOverrides = useMemo<AppThemePresetOverrides>(
+    () => appSettings?.appearanceThemePresetOverrides ?? readThemePresetOverrides(),
+    [appSettings?.appearanceThemePresetOverrides],
+  );
+
+  useEffect(() => {
+    setThemeCustomDraft(savedThemePresetOverrides[selectedThemePreset]?.[themeCustomTone] ?? {});
+    setThemeCustomMessage(null);
+  }, [savedThemePresetOverrides, selectedThemePreset, themeCustomTone]);
+
+  useEffect(() => {
+    if (activeSection !== 'appearance') {
+      return;
+    }
+
+    const previewOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    applyThemeMode(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, previewOverrides);
+  }, [activeSection, appSettings?.appearanceTheme, savedThemePresetOverrides, selectedThemePreset, themeCustomDraft, themeCustomTone]);
+
+  useEffect(() => {
     const handleSettingsChanged = (event: Event): void => {
-      const patch = (event as CustomEvent<Partial<AppSettings>>).detail;
+      const patch = (event as CustomEvent<Partial<AppSettings> | Partial<MvSettings>>).detail;
       if (!patch || typeof patch !== 'object') {
         return;
       }
+      const appPatch = normalizeExternalAppSettingsPatch(patch);
 
-      setAppSettings((current) => (current ? { ...current, ...patch } : current));
-      if (patch.appearanceTheme) {
-        updateThemeMode(patch.appearanceTheme);
-      }
-      if (patch.appearancePreferences) {
-        setAppearancePreferences(updateAppearancePreferences(patch.appearancePreferences));
+      setAppSettings((current) => {
+        const nextSettings = current ? { ...current, ...appPatch } : current;
+        if (appPatch.appearanceTheme || appPatch.appearanceThemePreset) {
+          setSelectedThemePreset(nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset);
+          updateThemePreferences(
+            nextSettings?.appearanceTheme ?? appPatch.appearanceTheme ?? defaultThemeMode,
+            nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset,
+            nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides ?? {},
+          );
+        }
+        if (appPatch.appearanceThemePresetOverrides) {
+          updateThemePresetOverrides(
+            nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides,
+            nextSettings?.appearanceTheme ?? defaultThemeMode,
+            nextSettings?.appearanceThemePreset ?? defaultThemePreset,
+          );
+        }
+        return nextSettings;
+      });
+      if (appPatch.appearancePreferences) {
+        setAppearancePreferences(updateAppearancePreferences(appPatch.appearancePreferences));
       }
     };
 
@@ -1839,7 +3409,23 @@ export const SettingsPage = (): JSX.Element => {
     setHighlightedSettingId(options.targetId ?? null);
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        document.getElementById(options.targetId ?? `settings-sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (options.targetId) {
+          document.getElementById(options.targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+
+        const scrollShell = settingsScrollShellRef.current;
+        if (!scrollShell) {
+          document.getElementById(`settings-sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+
+        if (typeof scrollShell.scrollTo === 'function') {
+          scrollShell.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        } else {
+          scrollShell.scrollTop = 0;
+          scrollShell.scrollLeft = 0;
+        }
       });
     });
   };
@@ -2035,16 +3621,171 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeModeChange = (appearanceTheme: AppThemeMode): void => {
-    updateThemeMode(appearanceTheme);
+    updateThemePreferences(appearanceTheme, selectedThemePreset, savedThemePresetOverrides, { animate: true });
     setAppSettings((current) => (current ? { ...current, appearanceTheme } : current));
     patchAppSettings({ appearanceTheme });
   };
 
-  const dispatchSettingsChanged = useCallback((patch: Partial<AppSettings>): void => {
+  const handleThemePresetChange = (appearanceThemePreset: AppThemePreset): void => {
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, appearanceThemePreset, savedThemePresetOverrides, { animate: true });
+    setSelectedThemePreset(appearanceThemePreset);
+    setAppSettings((current) => (current ? { ...current, appearanceThemePreset } : current));
+    patchAppSettings({ appearanceThemePreset });
+  };
+
+  const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
+  const themeCustomWarnings = getThemeContrastWarnings(themeCustomValues);
+  const selectedThemePresetOption = themePresetOptions.find((option) => option.preset === selectedThemePreset) ?? themePresetOptions[0];
+  const themeCustomGradientPreview = `linear-gradient(135deg, ${themeCustomValues.appBg} 0%, ${themeCustomValues.appBg2} 52%, ${themeCustomValues.appBg3} 100%)`;
+
+  const updateThemeCustomColor = (field: ThemeColorField, value: string): void => {
+    const color = normalizeThemeHexColor(value);
+    if (!color) {
+      setThemeCustomMessage(t('settings.appearance.themeCustom.message.invalidColor'));
+      return;
+    }
+
+    setThemeCustomMessage(null);
+    setThemeCustomDraft((current) => {
+      const next = { ...current };
+      if (color === themeEditorDefaults[selectedThemePreset][themeCustomTone][field]) {
+        delete next[field];
+      } else {
+        next[field] = color;
+      }
+      return next;
+    });
+  };
+
+  const updateThemeCustomPercent = (field: ThemePercentField, value: number): void => {
+    const spec = percentThemeFields.find((option) => option.field === field);
+    if (!spec) {
+      return;
+    }
+
+    const normalized = Math.round(Math.min(spec.max, Math.max(spec.min, value)));
+    setThemeCustomMessage(null);
+    setThemeCustomDraft((current) => {
+      const next = { ...current };
+      if (normalized === themeEditorDefaults[selectedThemePreset][themeCustomTone][field]) {
+        delete next[field];
+      } else {
+        next[field] = normalized;
+      }
+      return next;
+    });
+  };
+
+  const handleThemeCustomAutoFix = (): void => {
+    const backgroundText = bestReadableColor(themeCustomValues.appBg);
+    const panelText = bestReadableColor(themeCustomValues.panel);
+    const accentText = bestReadableColor(themeCustomValues.accent);
+    const darkBackground = getRelativeLuminance(themeCustomValues.appBg) < 0.42;
+
+    setThemeCustomDraft((current) => ({
+      ...current,
+      heading: backgroundText,
+      text: backgroundText,
+      muted: darkBackground ? '#c7d1d8' : '#61564d',
+      buttonText: panelText,
+      onAccent: accentText,
+    }));
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.fixed'));
+  };
+
+  const handleThemeCustomSave = (): void => {
+    if (themeCustomWarnings.length > 0) {
+      setThemeCustomMessage(t('settings.appearance.themeCustom.message.lowContrast'));
+      return;
+    }
+
+    const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
+    setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
+    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.saved'));
+  };
+
+  const handleThemeCustomReset = (): void => {
+    const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, null);
+    setThemeCustomDraft({});
+    updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
+    setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
+    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.reset'));
+  };
+
+  const handleThemeCustomExport = (): void => {
+    const currentOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    const presetOverride = currentOverrides[selectedThemePreset];
+    const payload: ThemeExportPayload = {
+      exportedAt: new Date().toISOString(),
+      overrides: presetOverride ? { [selectedThemePreset]: presetOverride } : {},
+      preset: selectedThemePreset,
+      schema: 'echo-next.theme-preset',
+      version: 1,
+    };
+    downloadTextFile(`echo-theme-${selectedThemePreset}.echo-theme.json`, `${JSON.stringify(payload, null, 2)}\n`);
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.exported'));
+  };
+
+  const handleThemeCustomImport = (): void => {
+    const input = document.createElement('input');
+    input.accept = '.json,.echo-theme.json,application/json';
+    input.type = 'file';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      void file
+        .text()
+        .then((content) => {
+          const parsed = JSON.parse(content) as unknown;
+          if (!isThemeExportPayload(parsed)) {
+            throw new Error('Invalid theme payload');
+          }
+
+          const importedPreset = readThemeExportPreset(parsed.preset);
+          if (!importedPreset) {
+            throw new Error('Invalid theme preset');
+          }
+
+          const normalizedOverrides = normalizeThemePresetOverrides(parsed.overrides);
+          const importedOverride = normalizedOverrides[importedPreset];
+          const nextOverrides: AppThemePresetOverrides = { ...savedThemePresetOverrides };
+          if (importedOverride) {
+            nextOverrides[importedPreset] = importedOverride;
+          } else {
+            delete nextOverrides[importedPreset];
+          }
+
+          setSelectedThemePreset(importedPreset);
+          setThemeCustomDraft(nextOverrides[importedPreset]?.[themeCustomTone] ?? {});
+          updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, importedPreset, nextOverrides, { animate: true });
+          setAppSettings((current) =>
+            current
+              ? {
+                  ...current,
+                  appearanceThemePreset: importedPreset,
+                  appearanceThemePresetOverrides: nextOverrides,
+                }
+              : current,
+          );
+          patchAppSettings({ appearanceThemePreset: importedPreset, appearanceThemePresetOverrides: nextOverrides });
+          setThemeCustomMessage(t('settings.appearance.themeCustom.message.imported'));
+        })
+        .catch(() => setThemeCustomMessage(t('settings.appearance.themeCustom.message.importFailed')));
+    };
+    input.click();
+  };
+
+  const dispatchSettingsChanged = useCallback((patch: Partial<AppSettings> | Partial<MvSettings>): void => {
     window.dispatchEvent(new CustomEvent('settings:changed', { detail: patch }));
   }, []);
 
-  const patchAppSettings = useCallback((patch: Partial<AppSettings>, options: { announce?: boolean } = {}): void => {
+  const patchAppSettings = useCallback((patch: Partial<AppSettings>, options: { announce?: boolean; mvSettingsPatch?: Partial<MvSettings> } = {}): void => {
     const app = getAppBridge();
 
     if (!app) {
@@ -2057,13 +3798,62 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         if (options.announce !== false) {
-          dispatchSettingsChanged(settings);
+          dispatchSettingsChanged(options.mvSettingsPatch ? { ...settings, ...options.mvSettingsPatch } : settings);
         }
       })
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged]);
+
+  const mvQualityLabels = useMemo<Record<MvSettings['maxQuality'], string>>(
+    () => ({
+      '720p': '720p',
+      '1080p': '1080p',
+      '1440p': '1440p',
+      '2160p': '4K',
+      max: t('mvSettings.quality.max'),
+    }),
+    [t],
+  );
+  const mvProviderOrder = useMemo(() => normalizeMvProviderOrder(appSettings?.mvProviderOrder), [appSettings?.mvProviderOrder]);
+  const mvEnabledProviders = useMemo(() => new Set(appSettings?.mvEnabledProviders ?? mvNetworkProviders), [appSettings?.mvEnabledProviders]);
+
+  const patchMvSettings = useCallback(
+    (patch: Partial<MvSettings>): void => {
+      patchAppSettings(appSettingsPatchFromMvSettingsPatch(patch), { mvSettingsPatch: patch });
+    },
+    [patchAppSettings],
+  );
+
+  const handleMvProviderToggle = useCallback(
+    (provider: NetworkMvProviderId): void => {
+      const current = appSettings?.mvEnabledProviders ?? mvNetworkProviders;
+      const next = current.includes(provider) ? current.filter((item) => item !== provider) : [...current, provider];
+      patchMvSettings({ enabledProviders: next });
+    },
+    [appSettings?.mvEnabledProviders, patchMvSettings],
+  );
+
+  const handleMvProviderMove = useCallback(
+    (provider: NetworkMvProviderId, direction: -1 | 1): void => {
+      const current = normalizeMvProviderOrder(appSettings?.mvProviderOrder);
+      const index = current.indexOf(provider);
+      const targetIndex = index + direction;
+      if (index < 0 || targetIndex < 0 || targetIndex >= current.length) {
+        return;
+      }
+
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      if (!item) {
+        return;
+      }
+      next.splice(targetIndex, 0, item);
+      patchMvSettings({ providerOrder: next });
+    },
+    [appSettings?.mvProviderOrder, patchMvSettings],
+  );
 
   const handleCheckForUpdates = async (): Promise<void> => {
     const app = getAppBridge();
@@ -3415,7 +5205,7 @@ export const SettingsPage = (): JSX.Element => {
           })}
         </nav>
 
-        <div className="settings-scroll-shell">
+        <div className="settings-scroll-shell" ref={settingsScrollShellRef}>
           <div className="settings-content">
             <SettingSection activeKey={activeSection} icon={MessageSquare} id="general" title={t('settings.nav.general.label')}>
               <SettingRow title={t('settings.general.language.title')} description={t('settings.general.language.description')}>
@@ -3585,6 +5375,23 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
+              <SettingRow
+                id="settings-row-automix"
+                highlighted={highlightedSettingId === 'settings-row-automix'}
+                title={t('settings.playback.automix.title')}
+                description={t('settings.playback.automix.description')}
+              >
+                <div className="settings-chip-row">
+                  {status?.automix?.active && status.automix.transitionMode ? (
+                    <StatusText tone="good">
+                      {`${status.automix.engine ?? 'fallback'} / ${status.automix.transitionMode} / ${
+                        status.automix.overlapSeconds?.toFixed(1) ?? '?'
+                      }s / tempo ${status.automix.tempoRatio?.toFixed(3) ?? '1.000'}`}
+                    </StatusText>
+                  ) : null}
+                  <ToggleButton active={playbackQueue.automixEnabled} onClick={() => playbackQueue.setAutomixEnabled(!playbackQueue.automixEnabled)} />
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.playback.wireless.title')} description={t('settings.playback.wireless.description')}>
                 <ToggleButton />
               </SettingRow>
@@ -3686,6 +5493,201 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Captions} id="lyrics" title={t('route.lyricsSettings.label')}>
               <LyricsSettingsPanel className="settings-lyrics-panel" variant="settings" />
+            </SettingSection>
+
+            <SettingSection activeKey={activeSection} icon={Clapperboard} id="mv" title={t('route.mvSettings.label')}>
+              <SettingRow title={t('route.mvSettings.label')} description={t('route.mvSettings.description')}>
+                <div className="settings-chip-row">
+                  <StatusText tone={(appSettings?.mvEnabled ?? true) ? 'good' : 'muted'}>
+                    {(appSettings?.mvEnabled ?? true) ? t('mvSettings.status.on') : t('mvSettings.status.off')}
+                  </StatusText>
+                  <ToggleButton
+                    active={appSettings?.mvEnabled ?? true}
+                    disabled={!appSettings}
+                    onClick={() => patchMvSettings({ enabled: !(appSettings?.mvEnabled ?? true) })}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow title={t('mvSettings.network.maxQuality')} description={t('mvSettings.aria.maxQuality', { quality: mvQualityLabels[appSettings?.mvMaxQuality ?? 'max'] })}>
+                <div className="settings-chip-row">
+                  {mvQualityCaps.map((quality) => (
+                    <ChipButton
+                      active={(appSettings?.mvMaxQuality ?? 'max') === quality}
+                      key={quality}
+                      onClick={() => patchMvSettings({ maxQuality: quality })}
+                    >
+                      {mvQualityLabels[quality]}
+                    </ChipButton>
+                  ))}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title={t('mvSettings.network.title')}
+                description={t('mvSettings.network.autoApplyThresholdDescription', { threshold: formatMvThreshold(appSettings?.mvAutoApplyThreshold) })}
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.network.autoApply')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvAutoSearch ?? true}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ autoSearch: !(appSettings?.mvAutoSearch ?? true) })}
+                      />
+                    </div>
+                    <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.network.autoPreload')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvAutoPreload ?? true}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ autoPreload: !(appSettings?.mvAutoPreload ?? true) })}
+                      />
+                    </div>
+                    <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.network.restartAudioOnLoad')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvRestartAudioOnLoad === true}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ restartAudioOnLoad: !(appSettings?.mvRestartAudioOnLoad === true) })}
+                      />
+                    </div>
+                    <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.network.replayAudioOnChange')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvReplayAudioOnChange !== false}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ replayAudioOnChange: !(appSettings?.mvReplayAudioOnChange !== false) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="settings-wallpaper-control">
+                    <span>{t('mvSettings.network.autoApplyThreshold')}</span>
+                    <NumberRangeField
+                      min={30}
+                      max={100}
+                      step={1}
+                      suffix="%"
+                      value={Math.round((appSettings?.mvAutoApplyThreshold ?? 0.7) * 100)}
+                      onChange={(value) => patchMvSettings({ autoApplyThreshold: mvThresholdFromPercent(value) })}
+                    />
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    {mvProviderOrder.map((provider, index) => (
+                      <div className="settings-inline-toggle" key={provider}>
+                        <span>{`${index + 1}. ${mvProviderLabels[provider]}`}</span>
+                        <ToggleButton
+                          active={mvEnabledProviders.has(provider)}
+                          disabled={!appSettings}
+                          onClick={() => handleMvProviderToggle(provider)}
+                        />
+                        <button
+                          className="settings-icon-button"
+                          type="button"
+                          aria-label={`Move ${mvProviderLabels[provider]} up`}
+                          disabled={!appSettings || index === 0}
+                          onClick={() => handleMvProviderMove(provider, -1)}
+                        >
+                          <ChevronDown size={14} style={{ transform: 'rotate(180deg)' }} />
+                        </button>
+                        <button
+                          className="settings-icon-button"
+                          type="button"
+                          aria-label={`Move ${mvProviderLabels[provider]} down`}
+                          disabled={!appSettings || index === mvProviderOrder.length - 1}
+                          onClick={() => handleMvProviderMove(provider, 1)}
+                        >
+                          <ChevronDown size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title={t('mvSettings.immersive.title')}
+                description={t('mvSettings.immersive.description')}
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.immersive.title')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvImmersiveBackground !== false}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ immersiveBackground: !(appSettings?.mvImmersiveBackground !== false) })}
+                      />
+                    </div>
+                    <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => patchMvSettings(mvImmersiveBackgroundDefaults)}>
+                      <RotateCw size={15} />
+                      {t('mvSettings.immersive.reset')}
+                    </button>
+                  </div>
+                  <div className="settings-wallpaper-control">
+                    <span>{t('mvSettings.immersive.zoom')}</span>
+                    <NumberRangeField
+                      min={100}
+                      max={220}
+                      step={1}
+                      suffix="%"
+                      value={appSettings?.mvImmersiveBackgroundScalePercent ?? 115}
+                      onChange={(value) => patchMvSettings({ immersiveBackgroundScalePercent: value })}
+                    />
+                  </div>
+                  <div className="settings-wallpaper-control">
+                    <span>{t('mvSettings.immersive.blur')}</span>
+                    <NumberRangeField
+                      min={0}
+                      max={32}
+                      step={1}
+                      suffix="px"
+                      value={appSettings?.mvImmersiveBackgroundBlurPx ?? 0}
+                      onChange={(value) => patchMvSettings({ immersiveBackgroundBlurPx: value })}
+                    />
+                  </div>
+                  <div className="settings-wallpaper-control">
+                    <span>{t('mvSettings.immersive.brightness')}</span>
+                    <NumberRangeField
+                      min={60}
+                      max={140}
+                      step={1}
+                      suffix="%"
+                      value={appSettings?.mvImmersiveBackgroundBrightnessPercent ?? 100}
+                      onChange={(value) => patchMvSettings({ immersiveBackgroundBrightnessPercent: value })}
+                    />
+                  </div>
+                  <div className="settings-wallpaper-control">
+                    <span>{t('mvSettings.immersive.overlay')}</span>
+                    <NumberRangeField
+                      min={0}
+                      max={100}
+                      step={1}
+                      suffix="%"
+                      value={appSettings?.mvImmersiveBackgroundOverlayOpacityPercent ?? 0}
+                      onChange={(value) => patchMvSettings({ immersiveBackgroundOverlayOpacityPercent: value })}
+                    />
+                  </div>
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>{t('mvSettings.immersive.zoom')}</em>
+                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundScalePercent, 115)}</strong>
+                    </span>
+                    <span>
+                      <em>{t('mvSettings.immersive.blur')}</em>
+                      <strong>{appSettings?.mvImmersiveBackgroundBlurPx ?? 0}px</strong>
+                    </span>
+                    <span>
+                      <em>{t('mvSettings.immersive.brightness')}</em>
+                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundBrightnessPercent, 100)}</strong>
+                    </span>
+                    <span>
+                      <em>{t('mvSettings.immersive.overlay')}</em>
+                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundOverlayOpacityPercent, 0)}</strong>
+                    </span>
+                  </div>
+                </div>
+              </SettingRow>
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
@@ -3870,6 +5872,212 @@ export const SettingsPage = (): JSX.Element => {
                       {t(option.labelKey)}
                     </ChipButton>
                   ))}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--theme-presets"
+                title={t('settings.appearance.themePreset.title')}
+                description={t('settings.appearance.themePreset.description')}
+              >
+                <div className="settings-theme-preset-grid">
+                  {themePresetOptions.map((option) => {
+                    const activePreset = selectedThemePreset;
+                    const isActive = activePreset === option.preset;
+
+                    return (
+                      <button
+                        aria-pressed={isActive}
+                        className={`settings-theme-preset-card${isActive ? ' active' : ''}`}
+                        key={option.preset}
+                        onClick={() => handleThemePresetChange(option.preset)}
+                        title={t(option.descriptionKey)}
+                        type="button"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="settings-theme-preset-preview"
+                          style={{ background: option.preview } as CSSProperties}
+                        >
+                          {isActive ? <Check size={16} /> : null}
+                        </span>
+                        <span className="settings-theme-preset-copy">
+                          <strong>{t(option.labelKey)}</strong>
+                          <em>{t(option.descriptionKey)}</em>
+                        </span>
+                        <span aria-hidden="true" className="settings-theme-preset-swatches">
+                          {option.swatches.map((swatch) => (
+                            <span key={swatch} style={{ background: swatch } as CSSProperties} />
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--theme-custom"
+                title={t('settings.appearance.themeCustom.title')}
+                description={t('settings.appearance.themeCustom.description')}
+              >
+                <div className="settings-theme-custom-panel">
+                  <div className="settings-theme-custom-header">
+                    <div className="settings-theme-custom-heading">
+                      <span>{t('settings.appearance.themeCustom.preview.title')}</span>
+                      <strong>{t(selectedThemePresetOption.labelKey)}</strong>
+                      <em>{t('settings.appearance.themeCustom.preview.description')}</em>
+                    </div>
+                    <div className="settings-theme-custom-toolbar">
+                      <div className="settings-chip-row settings-chip-row--left">
+                        <ChipButton active={themeCustomTone === 'light'} onClick={() => setThemeCustomTone('light')}>
+                          {t('settings.appearance.theme.light')}
+                        </ChipButton>
+                        <ChipButton active={themeCustomTone === 'dark'} onClick={() => setThemeCustomTone('dark')}>
+                          {t('settings.appearance.theme.dark')}
+                        </ChipButton>
+                      </div>
+                      <div className="settings-theme-custom-preview" aria-hidden="true" style={{ background: themeCustomGradientPreview }}>
+                        <span style={{ background: themeCustomValues.accent }} />
+                        <span style={{ background: themeCustomValues.accentStrong }} />
+                        <span style={{ background: themeCustomValues.secondary }} />
+                        <strong style={{ background: themeCustomValues.accent, color: themeCustomValues.onAccent }}>Aa</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-section">
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.core')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.core.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-card-grid">
+                      {coreThemeColorFields.map((option) => (
+                        <label className="settings-theme-custom-color-card" key={option.field}>
+                          <span className="settings-theme-custom-color-copy">
+                            <strong>{t(option.labelKey)}</strong>
+                            <em>{t(option.descriptionKey)}</em>
+                          </span>
+                          <span className="settings-theme-custom-color-control">
+                            <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              type="color"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-section settings-theme-custom-section--gradient">
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.gradient')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.gradient.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-gradient-card" style={{ background: themeCustomGradientPreview }}>
+                      {gradientThemeColorFields.map((option) => (
+                        <label className="settings-theme-custom-color-card settings-theme-custom-color-card--compact" key={option.field}>
+                          <span className="settings-theme-custom-color-copy">
+                            <strong>{t(option.labelKey)}</strong>
+                            <em>{t(option.descriptionKey)}</em>
+                          </span>
+                          <span className="settings-theme-custom-color-control">
+                            <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              type="color"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-sliders">
+                    {percentThemeFields.map((option) => (
+                      <label className="settings-theme-custom-slider" key={option.field}>
+                        <span>
+                          <em>
+                            <strong>{t(option.labelKey)}</strong>
+                            {t(option.descriptionKey)}
+                          </em>
+                          <strong>{themeCustomValues[option.field]}%</strong>
+                        </span>
+                        <input
+                          aria-label={t(option.labelKey)}
+                          min={option.min}
+                          max={option.max}
+                          type="range"
+                          value={themeCustomValues[option.field]}
+                          onChange={(event) => updateThemeCustomPercent(option.field, Number(event.currentTarget.value))}
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <button className="settings-theme-custom-advanced-toggle" type="button" onClick={() => setThemeCustomAdvancedOpen((current) => !current)}>
+                    <SlidersHorizontal size={15} />
+                    {themeCustomAdvancedOpen ? t('settings.appearance.themeCustom.advanced.hide') : t('settings.appearance.themeCustom.advanced.show')}
+                  </button>
+
+                  {themeCustomAdvancedOpen ? (
+                    <div className="settings-theme-custom-section">
+                      <div className="settings-theme-custom-section-title">
+                        <strong>{t('settings.appearance.themeCustom.group.advanced')}</strong>
+                        <span>{t('settings.appearance.themeCustom.group.advanced.description')}</span>
+                      </div>
+                      <div className="settings-theme-custom-card-grid settings-theme-custom-card-grid--advanced">
+                        {advancedThemeColorFields.map((option) => (
+                          <label className="settings-theme-custom-color-card" key={option.field}>
+                            <span className="settings-theme-custom-color-copy">
+                              <strong>{t(option.labelKey)}</strong>
+                              <em>{t(option.descriptionKey)}</em>
+                            </span>
+                            <span className="settings-theme-custom-color-control">
+                              <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                              <input
+                                aria-label={t(option.labelKey)}
+                                type="color"
+                                value={themeCustomValues[option.field]}
+                                onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                              />
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {themeCustomWarnings.length > 0 ? (
+                    <p className="settings-theme-custom-warning">{t('settings.appearance.themeCustom.message.lowContrast')}</p>
+                  ) : null}
+                  {themeCustomMessage ? <p className="settings-theme-custom-message">{themeCustomMessage}</p> : null}
+
+                  <div className="settings-theme-custom-actions">
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomAutoFix}>
+                      <Palette size={15} />
+                      {t('settings.appearance.themeCustom.action.autoFix')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomSave} disabled={themeCustomWarnings.length > 0}>
+                      <Save size={15} />
+                      {t('settings.appearance.themeCustom.action.save')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomExport}>
+                      <Download size={15} />
+                      {t('settings.appearance.themeCustom.action.export')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomImport}>
+                      <FolderOpen size={15} />
+                      {t('settings.appearance.themeCustom.action.import')}
+                    </button>
+                    <button className="settings-danger-button" type="button" onClick={handleThemeCustomReset}>
+                      <RotateCw size={15} />
+                      {t('settings.appearance.themeCustom.action.reset')}
+                    </button>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>

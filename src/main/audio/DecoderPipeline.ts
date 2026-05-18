@@ -3,7 +3,7 @@ import type { ChildProcessByStdio, SpawnOptionsWithStdioTuple } from 'node:child
 import { PassThrough, type Readable } from 'node:stream';
 import readline from 'node:readline';
 import { parseFile } from 'music-metadata';
-import type { AudioProbeResult, AudioResamplerEngine, DecoderRun, PcmDecodeRequest } from './audioTypes';
+import type { AudioProbeResult, AudioResamplerEngine, DecoderRun, PcmAutomixDecodeRequest, PcmDecodeRequest } from './audioTypes';
 import { readTagLibAudioTechnicalMetadata, shouldPreferTagLibForAlacTechnicalFields } from './AlacTechnicalMetadata';
 import {
   resolveFfmpegToolchain,
@@ -208,6 +208,22 @@ const createRemoteInputArgs = (decodePath: string): string[] =>
 
 const getPcmStartupTimeoutMs = (decodePath: string): number | null => (isHttpInputPath(decodePath) ? remotePcmStartupTimeoutMs : null);
 
+const normalizeTempoRatio = (value: unknown): number => {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) && ratio > 0 ? Math.max(0.5, Math.min(2, ratio)) : 1;
+};
+
+const createAudioFilters = (resamplerEngine: AudioResamplerEngine, tempoRatio: number): string[] => {
+  const filters: string[] = [];
+  if (Math.abs(tempoRatio - 1) >= 0.001) {
+    filters.push(`atempo=${tempoRatio.toFixed(6)}`);
+  }
+  if (resamplerEngine === 'soxr') {
+    filters.push('aresample=resampler=soxr:precision=20');
+  }
+  return filters;
+};
+
 export class DecoderPipeline {
   private readonly ffmpegPath: string;
   private readonly toolchainInfo: FfmpegToolchainInfo;
@@ -319,11 +335,15 @@ export class DecoderPipeline {
       'pipe:1',
     ];
 
-    const createArgs = (resamplerEngine: AudioResamplerEngine): string[] => [
-      ...baseArgs,
-      ...(resamplerEngine === 'soxr' ? ['-af', 'aresample=resampler=soxr:precision=20'] : []),
-      ...outputArgs,
-    ];
+    const tempoRatio = normalizeTempoRatio(request.tempoRatio);
+    const createArgs = (resamplerEngine: AudioResamplerEngine): string[] => {
+      const filters = createAudioFilters(resamplerEngine, tempoRatio);
+      return [
+        ...baseArgs,
+        ...(filters.length ? ['-af', filters.join(',')] : []),
+        ...outputArgs,
+      ];
+    };
     const requestedResampler = request.resamplerEngine ?? 'default';
     const fallbackAllowed = request.allowResamplerFallback === true;
 
@@ -348,6 +368,105 @@ export class DecoderPipeline {
       fallbackAllowed,
       request.onResamplerFallback,
       pcmStartupTimeoutMs,
+    );
+  }
+
+  decodeAutomixPair(request: PcmAutomixDecodeRequest): DecoderRun {
+    const tracks = [
+      {
+        request: request.current,
+        startSeconds: Math.max(0, request.current.startSeconds),
+      },
+      {
+        request: request.next,
+        startSeconds: Math.max(0, Math.min(request.next.durationSeconds, request.plan.nextStartSeconds)),
+      },
+      ...(request.following ?? []).map((item) => ({
+        request: item.track,
+        startSeconds: Math.max(0, Math.min(item.track.durationSeconds, item.plan.nextStartSeconds)),
+      })),
+    ];
+    const plans = [request.plan, ...(request.following ?? []).map((item) => item.plan)];
+    const inputArgs = tracks.flatMap((track, index) => {
+      const headers = normalizeInputHeaders(track.request.inputHeaders);
+      return [
+        ...(index === 0 || track.startSeconds > 0 ? ['-ss', String(track.startSeconds)] : []),
+        ...(headers ? ['-headers', headers] : []),
+        ...createRemoteInputArgs(track.request.filePath),
+        '-i',
+        track.request.filePath,
+      ];
+    });
+    const segmentFilters = tracks.map((track, index) => {
+      const nextPlan = plans[index] ?? null;
+      const previousPlan = index > 0 ? plans[index - 1] : null;
+      const endSeconds = nextPlan
+        ? Math.max(track.startSeconds + 0.001, Math.min(track.request.durationSeconds, nextPlan.currentEndSeconds))
+        : track.request.durationSeconds;
+      const durationSeconds = Math.max(0.001, endSeconds - track.startSeconds);
+      const filters = [
+        `atrim=0:${durationSeconds.toFixed(3)}`,
+        ...(index > 0 && previousPlan && !previousPlan.skipIntroSilence
+          ? ['silenceremove=start_periods=1:start_duration=0.035:start_threshold=-48dB']
+          : []),
+        ...(nextPlan
+          ? [
+              'areverse',
+              'silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB',
+              'areverse',
+            ]
+          : []),
+        'asetpts=PTS-STARTPTS',
+      ];
+      const gainDb = index === 0 ? nextPlan?.currentGainDb ?? 0 : previousPlan?.nextGainDb ?? 0;
+      const replayGainDb = Number(track.request.replayGainDb ?? 0);
+      const totalGainDb = gainDb + (Number.isFinite(replayGainDb) ? replayGainDb : 0);
+      if (Math.abs(totalGainDb) >= 0.01) {
+        filters.push(`volume=${totalGainDb.toFixed(3)}dB`);
+      }
+
+      return `[${index}:a]${filters.join(',')}[s${index}]`;
+    });
+    const mixFilters = plans.map((plan, index) => {
+      const left = index === 0 ? '[s0]' : `[m${index}]`;
+      const right = `[s${index + 1}]`;
+      const output = index === plans.length - 1 ? '[aout]' : `[m${index + 1}]`;
+      const transitionSeconds = Math.max(0.25, Math.min(12, plan.overlapSeconds));
+      return `${left}${right}acrossfade=d=${transitionSeconds.toFixed(3)}:c1=${plan.curve}:c2=${plan.curve}${output}`;
+    });
+    const filter = [...segmentFilters, ...mixFilters].join(';');
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-nostdin',
+      ...inputArgs,
+      '-filter_complex',
+      filter,
+      '-map',
+      '[aout]',
+      '-vn',
+      '-f',
+      'f32le',
+      '-ac',
+      String(request.current.channels),
+      '-ar',
+      String(request.current.decoderOutputSampleRate),
+      'pipe:1',
+    ];
+
+    this.logger(
+      `[DecoderPipeline] automix: current="${redactUrlSecrets(request.current.filePath)}" next="${redactUrlSecrets(
+        request.next.filePath,
+      )}" tracks=${tracks.length} modes=${plans.map((plan) => plan.mode).join(',')} transitions=${plans
+        .map((plan) => plan.overlapSeconds.toFixed(3))
+        .join(',')}s`,
+    );
+    return this.spawnSimpleDecode(
+      args,
+      request.current.resamplerEngine ?? 'default',
+      false,
+      getPcmStartupTimeoutMs(request.current.filePath),
     );
   }
 

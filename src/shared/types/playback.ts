@@ -17,6 +17,19 @@ export type PlaybackProbeHint = {
   codec?: string | null;
   bitDepth?: number | null;
   bitrate?: number | null;
+  bpm?: number | null;
+  bpmConfidence?: number | null;
+  beatOffsetMs?: number | null;
+};
+
+export type PlaybackAutomixOptions = {
+  enabled?: boolean;
+  maxTransitionSeconds?: number;
+  beatAlignEnabled?: boolean;
+  nextItem?: PlayableTrack | null;
+  nextProbe?: PlaybackProbeHint;
+  upcomingItems?: PlayableTrack[];
+  upcomingProbes?: PlaybackProbeHint[];
 };
 
 export type PlaybackStartRequest = {
@@ -25,6 +38,7 @@ export type PlaybackStartRequest = {
   startSeconds?: number;
   output?: AudioOutputSettings;
   probe?: PlaybackProbeHint;
+  automix?: PlaybackAutomixOptions;
 };
 
 export type PlaybackPrepareLocalFileRequest = {
@@ -37,6 +51,7 @@ export type PlaybackMediaStartRequest = {
   item: PlayableTrack;
   startSeconds?: number;
   output?: AudioOutputSettings;
+  automix?: PlaybackAutomixOptions;
 };
 
 export type LocalFileOpenRejectionReason = 'missing' | 'not_file' | 'unsupported';

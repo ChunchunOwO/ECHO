@@ -100,6 +100,7 @@ int asio_open_control_panel(
     size_t errorLen);
 
 void asio_stop(asio_runtime* runtime);
+int asio_render_failed(asio_runtime* runtime);
 
 #ifdef ECHO_AUDIO_ENGINE_TESTS
 uint32_t asio_build_buffer_candidates_for_tests(
@@ -146,6 +147,8 @@ void asio_write_native_dsd_samples_for_tests(
     uint32_t sourceChannels,
     uint32_t sourceChannel,
     int forcePackedMsb);
+
+int asio_render_guard_catches_exception_for_tests(void);
 #endif
 
 #endif

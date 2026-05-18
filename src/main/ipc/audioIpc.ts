@@ -18,7 +18,7 @@ import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
-import { enqueueAudioCommand } from './audioCommandQueue';
+import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
@@ -26,6 +26,7 @@ const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'low
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
 
 const safeExportFileName = (value: string): string => {
+  // eslint-disable-next-line no-control-regex -- Control chars are illegal in Windows file names.
   const trimmed = value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ');
   return trimmed.length > 0 ? trimmed.slice(0, 96) : 'ECHO Next EQ Preset';
 };
@@ -175,6 +176,19 @@ const reportAudioIpcError = (error: unknown, phase: string, details?: unknown): 
   });
 };
 
+const enqueueAudioStatusCommand = async (fn: () => Promise<AudioStatus> | AudioStatus): Promise<AudioStatus> => {
+  try {
+    return await enqueueAudioCommand(fn);
+  } catch (error) {
+    if (isAudioCommandTimeoutError(error)) {
+      console.warn('[audioIpc] audio command timed out; returning current status');
+      return getAudioSession().getStatus();
+    }
+
+    throw error;
+  }
+};
+
 export const registerAudioIpc = (): void => {
   getAudioSession().on('status', (status: AudioStatus) => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -186,11 +200,16 @@ export const registerAudioIpc = (): void => {
       window.webContents.send(IpcChannels.AudioSessionReset, event);
     }
   });
+  getAudioSession().on('automix-advance', (event: unknown) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(IpcChannels.PlaybackAutomixAdvance, event);
+    }
+  });
 
   ipcMain.handle(IpcChannels.AudioGetStatus, (): AudioStatus => getAudioSession().getStatus());
   ipcMain.handle(IpcChannels.AudioGetDiagnostics, (): AudioDiagnostics => getAudioSession().getDiagnostics());
   ipcMain.handle(IpcChannels.AudioListDevices, async (): Promise<AudioDeviceInfo[]> => getAudioSession().listDevicesAsync());
-  ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> => enqueueAudioStatusCommand(async () => {
     try {
       const normalized = normalizeOutputSettings(settings);
       return await getAudioSession().setOutput(normalized);
@@ -208,7 +227,7 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   });
-  ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => enqueueAudioStatusCommand(async () => {
     try {
       return await getAudioSession().forceRestart('reset-audio-engine');
     } catch (error) {
@@ -216,7 +235,7 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   }));
-  ipcMain.handle(IpcChannels.AudioForceRestart, async (_event, reason: unknown): Promise<AudioStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.AudioForceRestart, async (_event, reason: unknown): Promise<AudioStatus> => enqueueAudioStatusCommand(async () => {
     try {
       const resetReason = typeof reason === 'string' && reason.trim() ? reason : 'force-restart';
       return await getAudioSession().forceRestart(resetReason);
@@ -225,7 +244,7 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   }));
-  ipcMain.handle(IpcChannels.AudioRestartWindowsAudioService, async (): Promise<AudioStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.AudioRestartWindowsAudioService, async (): Promise<AudioStatus> => enqueueAudioStatusCommand(async () => {
     try {
       const session = getAudioSession();
       await session.stopForWindowsAudioServiceRestart();

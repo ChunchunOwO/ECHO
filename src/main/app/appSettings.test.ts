@@ -21,6 +21,8 @@ describe('app settings normalization', () => {
 
     expect(settings.coverCacheDir).toBeNull();
     expect(settings.appearanceTheme).toBe('dark');
+    expect(settings.appearanceThemePreset).toBe('classic');
+    expect(settings.appearanceThemePresetOverrides).toEqual({});
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
@@ -111,6 +113,81 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceTheme: 'dark' }).appearanceTheme).toBe('dark');
     expect(normalizeSettings({ appearanceTheme: 'system' }).appearanceTheme).toBe('system');
     expect(normalizeSettings({ appearanceTheme: 'midnight' as never }).appearanceTheme).toBe('dark');
+  });
+
+  it('normalizes appearance theme presets', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).appearanceThemePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceThemePreset: 'echoTwilight' }).appearanceThemePreset).toBe('echoTwilight');
+    expect(normalizeSettings({ appearanceThemePreset: 'sakuraMilk' }).appearanceThemePreset).toBe('sakuraMilk');
+    expect(normalizeSettings({ appearanceThemePreset: 'lemonMochi' }).appearanceThemePreset).toBe('lemonMochi');
+    expect(normalizeSettings({ appearanceThemePreset: 'seaSaltJelly' }).appearanceThemePreset).toBe('seaSaltJelly');
+    expect(normalizeSettings({ appearanceThemePreset: 'caramelPudding' }).appearanceThemePreset).toBe('caramelPudding');
+    expect(normalizeSettings({ appearanceThemePreset: 'neonCandy' }).appearanceThemePreset).toBe('neonCandy');
+    expect(normalizeSettings({ appearanceThemePreset: 'wisteriaBubble' }).appearanceThemePreset).toBe('wisteriaBubble');
+    expect(normalizeSettings({ appearanceThemePreset: 'strawberryCookie' }).appearanceThemePreset).toBe('strawberryCookie');
+    expect(normalizeSettings({ appearanceThemePreset: 'graphiteAurora' }).appearanceThemePreset).toBe('graphiteAurora');
+    expect(normalizeSettings({ appearanceThemePreset: 'amberNoir' }).appearanceThemePreset).toBe('amberNoir');
+    expect(normalizeSettings({ appearanceThemePreset: 'oceanStudio' }).appearanceThemePreset).toBe('oceanStudio');
+    expect(normalizeSettings({ appearanceThemePreset: 'rosewoodVinyl' }).appearanceThemePreset).toBe('rosewoodVinyl');
+    expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
+  });
+
+  it('normalizes appearance theme preset overrides', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    const normalized = normalizeSettings({
+      appearanceThemePresetOverrides: {
+        echoTwilight: {
+          light: {
+            appBg: '#FFF4EF',
+            accent: '#df6b5f',
+            panel: 'not-a-color',
+            panelOpacityPercent: 10,
+            glassPercent: 120,
+            shadowPercent: 44.4,
+          },
+          dark: {
+            text: '#F3E3DE',
+            onAccent: '#2b1513',
+          },
+        },
+        unknownPreset: {
+          light: {
+            appBg: '#000000',
+          },
+        },
+        lemonMochi: {
+          light: {
+            border: '#c99a26',
+            buttonText: '#332a10',
+          },
+        },
+      },
+    } as never);
+
+    expect(normalized.appearanceThemePresetOverrides).toEqual({
+      echoTwilight: {
+        light: {
+          appBg: '#fff4ef',
+          accent: '#df6b5f',
+          panelOpacityPercent: 40,
+          glassPercent: 80,
+          shadowPercent: 44,
+        },
+        dark: {
+          text: '#f3e3de',
+          onAccent: '#2b1513',
+        },
+      },
+      lemonMochi: {
+        light: {
+          border: '#c99a26',
+          buttonText: '#332a10',
+        },
+      },
+    });
   });
 
   it('resolves a custom coverCacheDir to an absolute path', async () => {

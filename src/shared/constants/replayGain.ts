@@ -1,0 +1,3 @@
+export const REPLAY_GAIN_ANALYSIS_VERSION = 1;
+export const DEFAULT_REPLAY_GAIN_TARGET_LUFS = -18;
+

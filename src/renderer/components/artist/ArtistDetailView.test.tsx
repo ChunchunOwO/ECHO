@@ -161,6 +161,7 @@ describe('ArtistDetailView', () => {
     const image = hero?.querySelector('img') as HTMLImageElement | null;
     expect(hero?.dataset.cover).toBe('true');
     expect(image?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit');
+    expect(image?.getAttribute('sizes')).toBe('240px');
     expect(image?.getAttribute('srcset')).toBe('echo-artist-image://thumb/echo-unit 192w, echo-artist-image://large/echo-unit 1024w');
     expect(screen.queryByText('EC')).toBeNull();
   });

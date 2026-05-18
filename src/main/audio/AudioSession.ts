@@ -13,6 +13,15 @@ import { PlaybackClock } from './PlaybackClock';
 import { isCueTrackPath } from './CueSheet';
 import { isDsdCodec, isDsdFilePath, isDsfFilePath, resolveDsdDopTransportSampleRate, resolveDsdPcmOutputSampleRate, shouldProbeDsdNativeSampleRate } from './DsdProbe';
 import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './DsdDopPipeline';
+import { AutomixAnalyzer } from './AutomixAnalyzer';
+import { getAppSettings } from '../app/appSettings';
+import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../../shared/utils/replayGain';
+import {
+  createEstimatedAutomixAnalysis,
+  planAutomixTransition,
+  type AutomixTransitionPlan,
+  type TrackTransitionAnalysis,
+} from './AutomixPlanner';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
@@ -25,6 +34,7 @@ import type {
   AudioSharedBackend,
   AudioSessionPlayPcmStreamRequest,
   AudioSessionPrepareLocalFileRequest,
+  AudioSessionAutomixNextTrack,
   AudioSessionPlayRequest,
   AudioStatus,
   DecoderRun,
@@ -41,9 +51,11 @@ import type { PlaybackMemory } from './PlaybackMemoryStore';
 import type { AudioCrashReportPayload } from '../diagnostics/CrashReportService';
 
 type DecoderPipelineLike = Pick<DecoderPipeline, 'probeLocalFile' | 'decodeLocalFile'> & {
+  decodeAutomixPair?: DecoderPipeline['decodeAutomixPair'];
   getToolchainInfo?: () => FfmpegToolchainDiagnostics;
 };
 type JuceDecodePipelineLike = Pick<JuceDecodePipeline, 'decodeLocalFile'>;
+type AutomixAnalyzerLike = Pick<AutomixAnalyzer, 'analyze'>;
 type DeviceServiceLike = Pick<DeviceService, 'listDevices'> &
   Partial<Pick<DeviceService, 'listDevicesAsync' | 'refresh' | 'invalidateCache' | 'openAsioControlPanel'>>;
 type OutputBridgeLike = {
@@ -56,6 +68,9 @@ type OutputBridgeLike = {
   createSessionWritable?: (sessionId?: number) => Writable;
   endSession?: (sessionId?: number) => void;
   setVolume?: (volume: number) => void;
+  prepareAutomixPlan?: (plan: AutomixTransitionPlan, options: { fadeStartSeconds: number; sampleRate?: number | null }) => void;
+  createAutomixNextWritable?: () => Writable;
+  cancelAutomix?: () => void;
   getPositionSeconds: () => number;
   getPositionStalenessMs?: () => number | null;
   resetOutputClock?: (startSeconds?: number, playbackRate?: number) => void;
@@ -117,11 +132,49 @@ type PreparedLocalProbeUse = {
   ageMs: number;
 };
 
+type ActiveAutomixState = {
+  enabled: boolean;
+  nextTransitionIndex: number;
+  fromTrackId: string | null;
+  nextTrackId: string;
+  nextFilePath: string;
+  nextInputHeaders: Record<string, string> | null;
+  nextProbe: AudioProbeResult;
+  nextReplayGain: ReplayGainTrackData | null;
+  transitionSeconds: number;
+  transitionStartSeconds: number;
+  compositeStartSeconds: number;
+  compositeDurationSeconds: number;
+  plan: AutomixTransitionPlan;
+  transitions: ActiveAutomixTransition[];
+};
+
+type ActiveAutomixTransition = {
+  fromTrackId: string | null;
+  nextTrackId: string;
+  nextFilePath: string;
+  nextInputHeaders: Record<string, string> | null;
+  nextProbe: AudioProbeResult;
+  nextReplayGain: ReplayGainTrackData | null;
+  transitionSeconds: number;
+  transitionStartSeconds: number;
+  trackStartOutputSeconds: number;
+  trackStartSourceSeconds: number;
+  plan: AutomixTransitionPlan;
+};
+
+type NativeAutomixPlayback = {
+  currentRun: DecoderRun;
+  nextRun: DecoderRun;
+  state: ActiveAutomixState;
+};
+
 export type AudioErrorRecoveryHandler = (error: Error, status: AudioStatus) => boolean;
 
 export type AudioSessionDependencies = {
   decoder?: DecoderPipelineLike;
   juceDecoder?: JuceDecodePipelineLike;
+  automixAnalyzer?: AutomixAnalyzerLike;
   deviceService?: DeviceServiceLike;
   createBridge?: () => OutputBridgeLike;
   isNativeHostAvailable?: () => boolean;
@@ -172,6 +225,8 @@ const isAudioSessionRunCancelledError = (error: unknown): boolean => {
 
   return message.includes('audio_session_run_cancelled');
 };
+const isLivePcmSourcePath = (filePath: string | null | undefined): boolean =>
+  typeof filePath === 'string' && filePath.startsWith('airplay-receiver:');
 const sharedReplacementGracefulStopTimeoutMs = 750;
 const releaseExclusiveOnPauseGracefulStopTimeoutMs = 1_500;
 const releaseExclusiveOnPausePlayWaitTimeoutMs = 900;
@@ -636,6 +691,17 @@ const isProbeHintCompleteEnough = (probe: AudioSessionPrepareLocalFileRequest['p
       probe.channels > 0,
   );
 
+const clampAutomixTransitionSeconds = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(2, Math.min(12, value))
+    : 8;
+
+const createAutomixAnalysisHint = (probe: AudioSessionPlayRequest['probe'] | undefined) => ({
+  bpm: probe?.bpm ?? null,
+  bpmConfidence: probe?.bpmConfidence ?? null,
+  beatOffsetMs: probe?.beatOffsetMs ?? null,
+});
+
 const mergeProbeHints = (
   primary: AudioSessionPrepareLocalFileRequest['probe'] | undefined,
   fallback: AudioSessionPrepareLocalFileRequest['probe'] | undefined,
@@ -702,6 +768,27 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   volume: 1,
   playbackRate: 1,
   playbackSpeedMode: 'nightcore',
+  replayGainEnabled: false,
+  replayGainMode: 'track',
+  replayGainAppliedDb: 0,
+  replayGainPreventedClipping: false,
+  automix: {
+    enabled: false,
+    mode: 'off',
+    active: false,
+    transitionSeconds: null,
+    transitionStartedAtSeconds: null,
+    nextTrackId: null,
+    transitionMode: null,
+    fallbackReason: null,
+    beatAligned: false,
+    skipIntroSilence: false,
+    nextStartSeconds: null,
+    overlapSeconds: null,
+    advanceAtSeconds: null,
+    plannedTrackCount: 0,
+    nextTransitionIndex: 0,
+  },
   currentFilePath: null,
   currentTrackId: null,
   durationSeconds: 0,
@@ -763,13 +850,13 @@ class PcmVolumeTransform extends Transform {
   private gain: number;
   private remainder = Buffer.alloc(0);
 
-  constructor(volume: number) {
+  constructor(volume: number, private readonly maxGain = 1) {
     super();
-    this.gain = Math.max(0, Math.min(1, volume));
+    this.gain = Math.max(0, Math.min(this.maxGain, volume));
   }
 
   setVolume(volume: number): void {
-    this.gain = Math.max(0, Math.min(1, volume));
+    this.gain = Math.max(0, Math.min(this.maxGain, volume));
   }
 
   override _transform(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null, data?: Buffer) => void): void {
@@ -862,9 +949,92 @@ class PcmPlaybackRateTransform extends Transform {
   }
 }
 
+class PcmLinearResamplerTransform extends Transform {
+  private readonly channels: number;
+  private readonly frameBytes: number;
+  private readonly step: number;
+  private remainder: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  private previousFrame: Float32Array | null = null;
+  private sourceCursor = 0;
+
+  constructor(channels: number, sourceSampleRate: number, targetSampleRate: number) {
+    super();
+    this.channels = Math.max(1, Math.min(8, Math.round(channels)));
+    this.frameBytes = this.channels * 4;
+    this.step = sourceSampleRate / targetSampleRate;
+  }
+
+  override _transform(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null, data?: Buffer) => void): void {
+    const input = this.remainder.length > 0 ? Buffer.concat([this.remainder, chunk]) : chunk;
+    const completeBytes = input.length - (input.length % this.frameBytes);
+    this.remainder = completeBytes < input.length ? Buffer.from(input.subarray(completeBytes)) : Buffer.alloc(0);
+
+    if (completeBytes <= 0) {
+      callback();
+      return;
+    }
+
+    const inputFrames = completeBytes / this.frameBytes;
+    const historyFrames = inputFrames + (this.previousFrame ? 1 : 0);
+    if (historyFrames < 2) {
+      this.previousFrame = this.readFrame(input, 0);
+      callback();
+      return;
+    }
+
+    const estimatedOutputFrames = Math.max(1, Math.ceil(historyFrames / this.step) + 2);
+    const output = Buffer.allocUnsafe(estimatedOutputFrames * this.frameBytes);
+    let outputFrames = 0;
+
+    while (this.sourceCursor + 1 < historyFrames) {
+      const leftFrame = Math.floor(this.sourceCursor);
+      const rightFrame = leftFrame + 1;
+      const fraction = this.sourceCursor - leftFrame;
+      for (let channel = 0; channel < this.channels; channel += 1) {
+        const left = this.readHistorySample(input, leftFrame, channel);
+        const right = this.readHistorySample(input, rightFrame, channel);
+        output.writeFloatLE(left + (right - left) * fraction, (outputFrames * this.channels + channel) * 4);
+      }
+      outputFrames += 1;
+      this.sourceCursor += this.step;
+    }
+
+    this.sourceCursor -= historyFrames - 1;
+    this.previousFrame = this.readFrame(input, inputFrames - 1);
+    callback(null, output.subarray(0, outputFrames * this.frameBytes));
+  }
+
+  override _flush(callback: (error?: Error | null, data?: Buffer) => void): void {
+    this.remainder = Buffer.alloc(0);
+    this.previousFrame = null;
+    this.sourceCursor = 0;
+    callback();
+  }
+
+  private readHistorySample(input: Buffer, frameIndex: number, channel: number): number {
+    if (this.previousFrame) {
+      if (frameIndex === 0) {
+        return this.previousFrame[channel] ?? 0;
+      }
+      return input.readFloatLE(((frameIndex - 1) * this.channels + channel) * 4);
+    }
+
+    return input.readFloatLE((frameIndex * this.channels + channel) * 4);
+  }
+
+  private readFrame(input: Buffer, frameIndex: number): Float32Array {
+    const frame = new Float32Array(this.channels);
+    for (let channel = 0; channel < this.channels; channel += 1) {
+      frame[channel] = input.readFloatLE((frameIndex * this.channels + channel) * 4);
+    }
+    return frame;
+  }
+}
+
 export class AudioSession extends EventEmitter {
   private readonly decoder: DecoderPipelineLike;
   private readonly juceDecoder: JuceDecodePipelineLike;
+  private readonly automixAnalyzer: AutomixAnalyzerLike;
   private readonly deviceService: DeviceServiceLike;
   private readonly createBridge: () => OutputBridgeLike;
   private readonly isNativeHostAvailable: () => boolean;
@@ -907,12 +1077,21 @@ export class AudioSession extends EventEmitter {
   private currentActiveDsdOutputMode: ActiveDsdOutputMode = null;
   private currentDsdNativeSampleRate: number | null = null;
   private currentDsdTransportSampleRate: number | null = null;
+  private currentReplayGain: ReplayGainTrackData | null = null;
+  private currentReplayGainCalculation: ReplayGainCalculation = {
+    appliedDb: 0,
+    selectedGainDb: null,
+    selectedPeak: null,
+    preventedClipping: false,
+    active: false,
+  };
   private currentReadyResult: NativeBridgeReadyResult | null = null;
   private currentBridgeOutputMode: AudioOutputMode | null = null;
   private currentBridgeSharedBackend: AudioSharedBackend | null = null;
   private currentResidentOutputSampleRate: number | null = null;
   private currentResamplerEngine: AudioResamplerEngine = 'default';
   private currentResamplerFallbackActive = false;
+  private activeAutomix: ActiveAutomixState | null = null;
   private bridge: OutputBridgeLike | null = null;
   private bridgeStopInProgress: Promise<void> | null = null;
   private attachedBridgeEvents: { bridge: OutputBridgeLike; listeners: BridgeEventListeners } | null = null;
@@ -985,6 +1164,7 @@ export class AudioSession extends EventEmitter {
     this.logger = dependencies.logger ?? defaultLogger;
     this.decoder = dependencies.decoder ?? new DecoderPipeline({ logger: this.logger });
     this.juceDecoder = dependencies.juceDecoder ?? new JuceDecodePipeline({ logger: this.logger });
+    this.automixAnalyzer = dependencies.automixAnalyzer ?? new AutomixAnalyzer({ logger: this.logger });
     this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger });
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge({ logger: this.logger }));
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
@@ -1224,6 +1404,22 @@ export class AudioSession extends EventEmitter {
     }
 
     if (this.state === 'playing' && this.currentFilePath && this.currentProbe && this.currentOutputSettings) {
+      if (this.isCurrentLivePcmStream()) {
+        this.currentOutputSettings = previousOutputSettings;
+        this.currentDevice = createDeviceFromOutputSettings(this.currentOutputSettings ?? this.outputSettings);
+        this.currentUseJuceOutputRequested = this.currentOutputSettings?.useJuceOutput === true;
+        this.currentUseJuceDecodeRequested = false;
+        this.currentDsdOutputModeRequested = 'pcm';
+        this.addOutputWarning('live_pcm_output_restart_skipped');
+        this.logger(
+          `[AudioSession] output change saved globally but live PCM stream cannot be restarted source="${redactUrlSecrets(
+            this.currentFilePath,
+          )}"`,
+        );
+        this.emitStatus();
+        return this.getStatus();
+      }
+
       const positionSeconds = this.clock.getPositionSeconds();
       try {
         return await this.playLocalFile({
@@ -1276,6 +1472,14 @@ export class AudioSession extends EventEmitter {
     this.currentFilePath = request.filePath;
     this.currentInputHeaders = request.inputHeaders ?? null;
     this.currentTrackId = request.trackId ?? null;
+    this.currentReplayGain = request.replayGain ?? null;
+    this.currentReplayGainCalculation = {
+      appliedDb: 0,
+      selectedGainDb: null,
+      selectedPeak: null,
+      preventedClipping: false,
+      active: false,
+    };
     this.pausedPositionSeconds = null;
     this.currentProbe = null;
     this.currentPlan = null;
@@ -1286,6 +1490,7 @@ export class AudioSession extends EventEmitter {
     this.currentOutputDeviceName = null;
     this.currentResamplerEngine = 'default';
     this.currentResamplerFallbackActive = false;
+    this.activeAutomix = null;
     this.currentDecodeBackendImpl = null;
     this.currentOutputSettings = this.createOutputSettingsForRequest(request.output);
     this.currentUseJuceOutputRequested = this.currentOutputSettings.useJuceOutput === true;
@@ -1484,28 +1689,58 @@ export class AudioSession extends EventEmitter {
         }
       }
       const pcmPlan = this.currentPlan ?? plan;
-      const run = await this.createDecoderRunForPlayback(
-        request.filePath,
-        request.inputHeaders,
-        request.startSeconds ?? 0,
+      const nativeAutomix = await this.createNativeAutomixPlayback(
+        request,
         probe,
         pcmPlan,
         this.currentOutputSettings,
+        bridge,
       );
+      const automixRun = nativeAutomix
+        ? null
+        : await this.createAutomixDecoderRunForPlayback(request, probe, pcmPlan, this.currentOutputSettings);
+      const run = nativeAutomix
+        ? null
+        : automixRun
+          ? automixRun.run
+          : await this.createDecoderRunForPlayback(
+              request.filePath,
+              request.inputHeaders,
+              request.startSeconds ?? 0,
+              probe,
+              pcmPlan,
+              this.currentOutputSettings,
+            );
+      this.activeAutomix = nativeAutomix?.state ?? automixRun?.state ?? null;
 
       await this.syncEqStateForPlayback();
       this.assertCurrentRun(token);
       const sessionId = bridge.beginSession?.({
-        startSeconds: request.startSeconds ?? 0,
+        startSeconds: nativeAutomix?.state.compositeStartSeconds ?? request.startSeconds ?? 0,
         playbackRate: this.currentOutputSettings.playbackRate,
-        durationSeconds: probe.durationSeconds,
+        durationSeconds: nativeAutomix?.state.compositeDurationSeconds ?? automixRun?.state.compositeDurationSeconds ?? probe.durationSeconds,
       });
       const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
       if (!writable) {
         throw new Error('native output bridge did not expose a writable PCM stream');
       }
 
-      this.startDecoderRun(run, writable, token);
+      if (nativeAutomix) {
+        const nextWritable = bridge.createAutomixNextWritable?.();
+        if (!nextWritable || !bridge.prepareAutomixPlan) {
+          throw new Error('native output bridge did not expose an Automix deck');
+        }
+
+        const transition = nativeAutomix.state.transitions[0];
+        bridge.prepareAutomixPlan(nativeAutomix.state.plan, {
+          fadeStartSeconds: Math.max(0, transition?.transitionStartSeconds ?? nativeAutomix.state.transitionStartSeconds),
+          sampleRate: pcmPlan.actualDeviceSampleRate ?? pcmPlan.requestedOutputSampleRate,
+        });
+        this.currentDecodeBackendImpl = 'native-automix-dual-deck';
+        this.startNativeAutomixRuns(nativeAutomix.currentRun, nativeAutomix.nextRun, writable, nextWritable, token);
+      } else if (run) {
+        this.startDecoderRun(run, writable, token);
+      }
 
       this.state = 'playing';
       this.hostStatus = 'ready';
@@ -1712,6 +1947,17 @@ export class AudioSession extends EventEmitter {
     await this.waitForExclusiveReleaseOnPause('play');
 
     if (this.state === 'paused' && this.currentFilePath && this.currentOutputSettings) {
+      if (this.isCurrentLivePcmStream()) {
+        this.addOutputWarning('live_pcm_resume_skipped');
+        this.logger(
+          `[AudioSession] play requested for live PCM stream; waiting for sender to resume source="${redactUrlSecrets(
+            this.currentFilePath,
+          )}"`,
+        );
+        this.emitStatus();
+        return this.getStatus();
+      }
+
       const bridge = this.bridge;
       const currentProbe = this.currentProbe;
       const currentPlan = this.currentPlan;
@@ -1910,6 +2156,7 @@ export class AudioSession extends EventEmitter {
         this.currentReadyResult,
       );
       this.runToken += 1;
+      this.activeAutomix = null;
       const token = this.runToken;
       if (shouldReleaseExclusiveOnPause && this.bridge) {
         await this.releaseExclusiveOutputOnPause(this.bridge, token, positionSeconds, sampleRate);
@@ -1970,8 +2217,16 @@ export class AudioSession extends EventEmitter {
     this.currentOutputDeviceName = null;
     this.currentResamplerEngine = 'default';
     this.currentResamplerFallbackActive = false;
+    this.currentDecodeBackendImpl = null;
+    this.activeAutomix = null;
     this.currentUseJuceOutputRequested = false;
+    this.currentUseJuceDecodeRequested = false;
+    this.currentDsdOutputModeRequested = 'pcm';
+    this.currentActiveDsdOutputMode = null;
+    this.currentDsdNativeSampleRate = null;
+    this.currentDsdTransportSampleRate = null;
     this.currentReadyResult = null;
+    this.currentBridgeOutputMode = null;
     this.currentBridgeSharedBackend = null;
     this.pausedPositionSeconds = null;
     this.errorMessage = null;
@@ -2048,6 +2303,18 @@ export class AudioSession extends EventEmitter {
 
   async seek(positionSeconds: number): Promise<AudioStatus> {
     if (!this.currentFilePath || !this.currentOutputSettings) {
+      return this.getStatus();
+    }
+
+    if (this.isCurrentLivePcmStream()) {
+      this.addOutputWarning('live_pcm_seek_skipped');
+      this.logger(
+        `[AudioSession] seek ignored for live PCM stream source="${redactUrlSecrets(this.currentFilePath)}" position=${Math.max(
+          0,
+          Number(positionSeconds) || 0,
+        ).toFixed(3)}`,
+      );
+      this.emitStatus();
       return this.getStatus();
     }
 
@@ -2173,8 +2440,20 @@ export class AudioSession extends EventEmitter {
     const audioLevels = createAudioLevelTelemetry(this.levelSnapshot, eqState, channelBalanceState);
     const realtimeLevelClippingRisk = audioLevels.estimatedOutputPeakDb !== null && audioLevels.estimatedOutputPeakDb >= 0;
     const realtimeLevelClipped = audioLevels.clipCount > 0;
-    const dspActive = eqState.enabled || channelBalanceState.enabled;
-    const bitPerfectDisabledReason = dspActive ? (eqState.enabled ? 'eq_enabled' : 'channel_balance_enabled') : null;
+    const automixActive = this.activeAutomix !== null;
+    const settings = getAppSettings();
+    const replayGainCalculation = this.currentReplayGainCalculation;
+    const replayGainActive = replayGainCalculation.active && Math.abs(replayGainCalculation.appliedDb) >= 0.001;
+    const dspActive = eqState.enabled || channelBalanceState.enabled || automixActive || replayGainActive;
+    const bitPerfectDisabledReason = eqState.enabled
+      ? 'eq_enabled'
+      : channelBalanceState.enabled
+        ? 'channel_balance_enabled'
+        : automixActive
+          ? 'automix_enabled'
+          : replayGainActive
+            ? 'replay_gain_enabled'
+            : null;
     const warnings = [...(plan?.warnings ?? [])];
     for (const warning of this.outputWarnings) {
       if (!warnings.includes(warning)) {
@@ -2182,8 +2461,18 @@ export class AudioSession extends EventEmitter {
       }
     }
 
-    if (dspActive) {
-      warnings.push(eqState.enabled ? 'eq_enabled_bit_perfect_disabled' : 'channel_balance_bit_perfect_disabled');
+    if (eqState.enabled) {
+      warnings.push('eq_enabled_bit_perfect_disabled');
+    } else if (channelBalanceState.enabled) {
+      warnings.push('channel_balance_bit_perfect_disabled');
+    } else if (automixActive) {
+      warnings.push('automix_enabled_bit_perfect_disabled');
+    } else if (replayGainActive) {
+      warnings.push('replay_gain_bit_perfect_disabled');
+    }
+
+    if (settings.replayGainEnabled === true && (this.currentActiveDsdOutputMode === 'dop' || this.currentActiveDsdOutputMode === 'native')) {
+      warnings.push('replay_gain_disabled_by_dsd_direct');
     }
 
     if (eqState.clippingRisk || channelBalanceState.clippingRisk) {
@@ -2209,6 +2498,20 @@ export class AudioSession extends EventEmitter {
     const nativePositionStalenessMs =
       this.bridge?.getPositionStalenessMs?.() ?? this.nativeTelemetry.nativePositionStalenessMs ?? null;
     const ffmpeg = this.decoder.getToolchainInfo?.() ?? null;
+    const rawPositionSeconds = this.clock.getPositionSeconds();
+    const currentAutomixTransition =
+      this.activeAutomix && this.activeAutomix.nextTransitionIndex > 0
+        ? this.activeAutomix.transitions[this.activeAutomix.nextTransitionIndex - 1]
+        : null;
+    const automixPositionSeconds =
+      currentAutomixTransition
+        ? Math.max(
+            0,
+            rawPositionSeconds - (this.activeAutomix?.compositeStartSeconds ?? 0) - currentAutomixTransition.trackStartOutputSeconds +
+              currentAutomixTransition.trackStartSourceSeconds,
+          )
+        : rawPositionSeconds;
+    const automixDurationSeconds = this.currentProbe?.durationSeconds ?? 0;
 
     return {
       ...status,
@@ -2234,10 +2537,43 @@ export class AudioSession extends EventEmitter {
       volume: this.outputSettings.volume,
       playbackRate: this.outputSettings.playbackRate,
       playbackSpeedMode: this.outputSettings.playbackSpeedMode,
+      replayGainEnabled: settings.replayGainEnabled === true,
+      replayGainMode: settings.replayGainMode ?? 'track',
+      replayGainAppliedDb: replayGainCalculation.appliedDb,
+      replayGainPreventedClipping: replayGainCalculation.preventedClipping,
+      automix: {
+        enabled: automixActive,
+        mode: this.activeAutomix
+          ? this.activeAutomix.nextTransitionIndex > 0
+            ? 'transitioning'
+            : 'armed'
+          : 'off',
+        active: automixActive,
+        transitionSeconds: this.activeAutomix?.transitionSeconds ?? null,
+        transitionStartedAtSeconds: this.activeAutomix?.transitionStartSeconds ?? null,
+        nextTrackId: this.activeAutomix?.nextTrackId ?? null,
+        transitionMode: this.activeAutomix?.plan.mode ?? null,
+        fallbackReason: this.activeAutomix?.plan.fallbackReason ?? null,
+        beatAligned: this.activeAutomix?.plan.beatAligned ?? false,
+        skipIntroSilence: this.activeAutomix?.plan.skipIntroSilence ?? false,
+        engine: this.currentDecodeBackendImpl === 'native-automix-dual-deck'
+          ? 'nativeDualDeck'
+          : this.currentDecodeBackendImpl === 'ffmpeg-automix'
+            ? 'ffmpegPremix'
+            : automixActive
+              ? 'fallback'
+              : null,
+        tempoRatio: this.activeAutomix?.plan.tempoRatio ?? null,
+        nextStartSeconds: this.activeAutomix?.plan.nextStartSeconds ?? null,
+        overlapSeconds: this.activeAutomix?.plan.overlapSeconds ?? null,
+        advanceAtSeconds: this.activeAutomix?.plan.advanceAtSeconds ?? null,
+        plannedTrackCount: this.activeAutomix ? this.activeAutomix.transitions.length + 1 : 0,
+        nextTransitionIndex: this.activeAutomix?.nextTransitionIndex ?? 0,
+      },
       currentFilePath: this.currentFilePath,
       currentTrackId: this.currentTrackId,
-      durationSeconds: this.currentProbe?.durationSeconds ?? 0,
-      positionSeconds: this.clock.getPositionSeconds(),
+      durationSeconds: automixDurationSeconds,
+      positionSeconds: automixPositionSeconds,
       channels: this.currentProbe?.channels ?? null,
       codec: this.currentProbe?.codec ?? null,
       bitDepth: this.currentProbe?.bitDepth ?? null,
@@ -2541,6 +2877,386 @@ export class AudioSession extends EventEmitter {
       });
       return this.createFfmpegDecoderRun(request);
     }
+  }
+
+  private async resolveAutomixNextProbe(next: AudioSessionAutomixNextTrack): Promise<AudioProbeResult> {
+    let nextProbe = createProbeFromHint(next.filePath, next.probe);
+    if (!nextProbe || shouldProbeDsdNativeSampleRate(nextProbe)) {
+      if (isHttpPlaybackUrl(next.filePath)) {
+        nextProbe = createStreamProbeFromHint(next.filePath, next.probe);
+      } else {
+        const probed = await this.decoder.probeLocalFile(next.filePath);
+        nextProbe = createProbeFromHint(next.filePath, mergeProbeHints(createProbeHint(probed), next.probe)) ?? probed;
+      }
+    }
+
+    return nextProbe;
+  }
+
+  private getAutomixCandidateTrackId(track: AudioSessionAutomixNextTrack | null | undefined): string | null {
+    if (!track) {
+      return null;
+    }
+
+    return track.trackId ?? track.filePath;
+  }
+
+  private async resolveAutomixAnalysis(
+    filePath: string,
+    inputHeaders: Record<string, string> | undefined,
+    probe: AudioProbeResult,
+    hint: AudioSessionPlayRequest['probe'] | undefined,
+    provided: TrackTransitionAnalysis | null | undefined,
+  ): Promise<TrackTransitionAnalysis> {
+    if (provided) {
+      return provided;
+    }
+
+    const analysisHint = createAutomixAnalysisHint(hint);
+    const estimated = createEstimatedAutomixAnalysis(probe, analysisHint);
+    try {
+      const analysisPromise = this.automixAnalyzer.analyze({
+        filePath,
+        probe,
+        headers: inputHeaders,
+        hint: analysisHint,
+      });
+      const timeoutPromise = new Promise<TrackTransitionAnalysis>((resolve) => {
+        const timer = setTimeout(() => resolve(estimated), 1800);
+        timer.unref?.();
+      });
+      return await Promise.race([analysisPromise, timeoutPromise]);
+    } catch (error) {
+      this.logger(`[AudioSession] Automix analysis fallback: ${error instanceof Error ? error.message : String(error)}`);
+      return estimated;
+    }
+  }
+
+  private async createNativeAutomixPlayback(
+    request: AudioSessionPlayRequest,
+    currentProbe: AudioProbeResult,
+    plan: SampleRatePlan,
+    outputSettings: AudioOutputSettings,
+    bridge: OutputBridgeLike,
+  ): Promise<NativeAutomixPlayback | null> {
+    const automix = request.automix;
+    const next = automix?.next ?? null;
+    if (
+      automix?.enabled !== true ||
+      !next ||
+      typeof bridge.prepareAutomixPlan !== 'function' ||
+      typeof bridge.createAutomixNextWritable !== 'function' ||
+      outputSettings.playbackRate !== 1 ||
+      plan.dsdOutputMode !== 'pcm' ||
+      isDsdCodec(currentProbe.codec) ||
+      isDsdFilePath(request.filePath)
+    ) {
+      return null;
+    }
+
+    const currentStartSeconds = Math.max(0, request.startSeconds ?? 0);
+    const currentRemainingSeconds = Math.max(0, currentProbe.durationSeconds - currentStartSeconds);
+    if (currentRemainingSeconds < 4) {
+      return null;
+    }
+
+    const nextProbe = await this.resolveAutomixNextProbe(next);
+    if (nextProbe.durationSeconds < 4 || isDsdCodec(nextProbe.codec) || isDsdFilePath(next.filePath)) {
+      return null;
+    }
+
+    const [currentAnalysis, nextAnalysis] = await Promise.all([
+      this.resolveAutomixAnalysis(
+        request.filePath,
+        request.inputHeaders,
+        currentProbe,
+        request.probe,
+        automix.currentAnalysis,
+      ),
+      this.resolveAutomixAnalysis(
+        next.filePath,
+        next.inputHeaders,
+        nextProbe,
+        next.probe,
+        automix.nextAnalysis,
+      ),
+    ]);
+    const transitionPlan = planAutomixTransition({
+      currentProbe,
+      nextProbe,
+      currentStartSeconds,
+      currentAnalysis,
+      nextAnalysis,
+      currentHint: createAutomixAnalysisHint(request.probe),
+      nextHint: createAutomixAnalysisHint(next.probe),
+      maxTransitionSeconds: clampAutomixTransitionSeconds(automix.maxTransitionSeconds),
+      beatAlignEnabled: automix.beatAlignEnabled !== false,
+    });
+    if (!transitionPlan) {
+      return null;
+    }
+
+    const currentDecodeRequest = this.createDecodeRequest(
+      request.filePath,
+      request.inputHeaders,
+      transitionPlan.currentStartSeconds,
+      currentProbe.channels,
+      plan,
+      outputSettings,
+    );
+    const nextDecodeRequest = this.createDecodeRequest(
+      next.filePath,
+      next.inputHeaders,
+      transitionPlan.nextStartSeconds,
+      currentProbe.channels,
+      plan,
+      outputSettings,
+    );
+    if (transitionPlan.beatAligned && Math.abs(transitionPlan.tempoRatio - 1) >= 0.001) {
+      nextDecodeRequest.tempoRatio = transitionPlan.tempoRatio;
+    }
+    const transitionStartSeconds = Math.max(0, transitionPlan.currentFadeStartSeconds - transitionPlan.currentStartSeconds);
+    const transition: ActiveAutomixTransition = {
+      fromTrackId: request.trackId ?? null,
+      nextTrackId: this.getAutomixCandidateTrackId(next) ?? next.filePath,
+      nextFilePath: next.filePath,
+      nextInputHeaders: next.inputHeaders ?? null,
+      nextProbe,
+      nextReplayGain: next.replayGain ?? null,
+      transitionSeconds: transitionPlan.overlapSeconds,
+      transitionStartSeconds,
+      trackStartOutputSeconds: transitionStartSeconds,
+      trackStartSourceSeconds: transitionPlan.nextStartSeconds,
+      plan: transitionPlan,
+    };
+    const compositeDurationSeconds = transitionStartSeconds + Math.max(0, nextProbe.durationSeconds - transitionPlan.nextStartSeconds);
+
+    return {
+      currentRun: this.decoder.decodeLocalFile(currentDecodeRequest),
+      nextRun: this.decoder.decodeLocalFile(nextDecodeRequest),
+      state: {
+        enabled: true,
+        nextTransitionIndex: 0,
+        fromTrackId: request.trackId ?? null,
+        nextTrackId: next.trackId ?? next.filePath,
+        nextFilePath: next.filePath,
+        nextInputHeaders: next.inputHeaders ?? null,
+        nextProbe,
+        nextReplayGain: next.replayGain ?? null,
+        transitionSeconds: transitionPlan.overlapSeconds,
+        transitionStartSeconds,
+        compositeStartSeconds: transitionPlan.currentStartSeconds,
+        compositeDurationSeconds,
+        plan: transitionPlan,
+        transitions: [transition],
+      },
+    };
+  }
+
+  private async createAutomixDecoderRunForPlayback(
+    request: AudioSessionPlayRequest,
+    currentProbe: AudioProbeResult,
+    plan: SampleRatePlan,
+    outputSettings: AudioOutputSettings,
+  ): Promise<{ run: DecoderRun; state: ActiveAutomixState } | null> {
+    const automix = request.automix;
+    const next = automix?.next ?? null;
+    if (
+      automix?.enabled !== true ||
+      !next ||
+      !this.decoder.decodeAutomixPair ||
+      outputSettings.playbackRate !== 1 ||
+      plan.dsdOutputMode !== 'pcm'
+    ) {
+      return null;
+    }
+
+    const currentStartSeconds = Math.max(0, request.startSeconds ?? 0);
+    const currentRemainingSeconds = Math.max(0, currentProbe.durationSeconds - currentStartSeconds);
+    if (currentRemainingSeconds < 4) {
+      return null;
+    }
+
+    const candidates = [next, ...(automix.following ?? [])].slice(0, 4);
+    const resolvedCandidates: Array<{
+      track: AudioSessionAutomixNextTrack;
+      probe: AudioProbeResult;
+      analysis: TrackTransitionAnalysis;
+    }> = [];
+    for (const candidate of candidates) {
+      const candidateProbe = await this.resolveAutomixNextProbe(candidate);
+      if (candidateProbe.durationSeconds < 4 || isDsdCodec(candidateProbe.codec) || isDsdFilePath(candidate.filePath)) {
+        break;
+      }
+
+      const candidateAnalysis = await this.resolveAutomixAnalysis(
+        candidate.filePath,
+        candidate.inputHeaders,
+        candidateProbe,
+        candidate.probe,
+        candidate === next ? automix.nextAnalysis : null,
+      );
+      resolvedCandidates.push({
+        track: candidate,
+        probe: candidateProbe,
+        analysis: candidateAnalysis,
+      });
+    }
+    const firstCandidate = resolvedCandidates[0];
+    if (!firstCandidate) {
+      return null;
+    }
+
+    const currentAnalysis = await this.resolveAutomixAnalysis(
+      request.filePath,
+      request.inputHeaders,
+      currentProbe,
+      request.probe,
+      automix.currentAnalysis,
+    );
+    const transitionPlans: AutomixTransitionPlan[] = [];
+    let previousProbe = currentProbe;
+    let previousAnalysis = currentAnalysis;
+    let previousHint = request.probe;
+    let previousStartSeconds = currentStartSeconds;
+    for (const candidate of resolvedCandidates) {
+      const transitionPlan = planAutomixTransition({
+        currentProbe: previousProbe,
+        nextProbe: candidate.probe,
+        currentStartSeconds: previousStartSeconds,
+        currentAnalysis: previousAnalysis,
+        nextAnalysis: candidate.analysis,
+        currentHint: createAutomixAnalysisHint(previousHint),
+        nextHint: createAutomixAnalysisHint(candidate.track.probe),
+        maxTransitionSeconds: clampAutomixTransitionSeconds(automix.maxTransitionSeconds),
+        beatAlignEnabled: automix.beatAlignEnabled !== false,
+      });
+      if (!transitionPlan) {
+        break;
+      }
+
+      transitionPlans.push(transitionPlan);
+      previousProbe = candidate.probe;
+      previousAnalysis = candidate.analysis;
+      previousHint = candidate.track.probe;
+      previousStartSeconds = transitionPlan.nextStartSeconds;
+    }
+    const transitionPlan = transitionPlans[0];
+    if (!transitionPlan) {
+      return null;
+    }
+
+    const currentDecodeRequest = this.createDecodeRequest(
+      request.filePath,
+      request.inputHeaders,
+      transitionPlan.currentStartSeconds,
+      currentProbe.channels,
+      plan,
+      outputSettings,
+    );
+    currentDecodeRequest.replayGainDb = this.calculateCurrentReplayGain().appliedDb;
+    const nextDecodeRequest = this.createDecodeRequest(
+      firstCandidate.track.filePath,
+      firstCandidate.track.inputHeaders,
+      transitionPlan.nextStartSeconds,
+      currentProbe.channels,
+      plan,
+      outputSettings,
+    );
+    {
+      const settings = getAppSettings();
+      nextDecodeRequest.replayGainDb = calculateReplayGain({
+        ...(firstCandidate.track.replayGain ?? {}),
+        enabled: settings.replayGainEnabled === true,
+        mode: settings.replayGainMode ?? 'track',
+        preampDb: settings.replayGainPreampDb ?? 0,
+        preventClipping: settings.replayGainPreventClipping !== false,
+      }).appliedDb;
+    }
+    const followingDecodeRequests = resolvedCandidates.slice(1, transitionPlans.length).map((candidate, index) => ({
+      track: {
+        ...this.createDecodeRequest(
+          candidate.track.filePath,
+          candidate.track.inputHeaders,
+          transitionPlans[index + 1].nextStartSeconds,
+          currentProbe.channels,
+          plan,
+          outputSettings,
+        ),
+        durationSeconds: candidate.probe.durationSeconds,
+        replayGainDb: calculateReplayGain({
+          ...(candidate.track.replayGain ?? {}),
+          enabled: getAppSettings().replayGainEnabled === true,
+          mode: getAppSettings().replayGainMode ?? 'track',
+          preampDb: getAppSettings().replayGainPreampDb ?? 0,
+          preventClipping: getAppSettings().replayGainPreventClipping !== false,
+        }).appliedDb,
+      },
+      plan: transitionPlans[index + 1],
+    }));
+    this.currentDecodeBackendImpl = 'ffmpeg-automix';
+    const run = this.decoder.decodeAutomixPair({
+      current: {
+        ...currentDecodeRequest,
+        durationSeconds: currentProbe.durationSeconds,
+      },
+      next: {
+        ...nextDecodeRequest,
+        durationSeconds: firstCandidate.probe.durationSeconds,
+      },
+      plan: transitionPlan,
+      following: followingDecodeRequests,
+    });
+    const trackStartOutputSeconds = [0];
+    const trackStartSourceSeconds = [transitionPlan.currentStartSeconds];
+    const transitions: ActiveAutomixTransition[] = [];
+    for (let index = 0; index < transitionPlans.length; index += 1) {
+      const activePlan = transitionPlans[index];
+      const candidate = resolvedCandidates[index];
+      const sourceStartSeconds = index === 0 ? transitionPlan.currentStartSeconds : transitionPlans[index - 1].nextStartSeconds;
+      const transitionStartSeconds = trackStartOutputSeconds[index] + Math.max(0, activePlan.currentFadeStartSeconds - sourceStartSeconds);
+      transitions.push({
+        fromTrackId: index === 0
+          ? request.trackId ?? null
+          : this.getAutomixCandidateTrackId(resolvedCandidates[index - 1]?.track),
+        nextTrackId: this.getAutomixCandidateTrackId(candidate.track) ?? candidate.track.filePath,
+        nextFilePath: candidate.track.filePath,
+        nextInputHeaders: candidate.track.inputHeaders ?? null,
+        nextProbe: candidate.probe,
+        nextReplayGain: candidate.track.replayGain ?? null,
+        transitionSeconds: activePlan.overlapSeconds,
+        transitionStartSeconds,
+        trackStartOutputSeconds: transitionStartSeconds,
+        trackStartSourceSeconds: activePlan.nextStartSeconds,
+        plan: activePlan,
+      });
+      trackStartOutputSeconds[index + 1] = transitionStartSeconds;
+      trackStartSourceSeconds[index + 1] = activePlan.nextStartSeconds;
+    }
+    const lastCandidate = resolvedCandidates[transitionPlans.length - 1];
+    const lastTrackOutputStartSeconds = trackStartOutputSeconds[transitionPlans.length] ?? 0;
+    const lastTrackSourceStartSeconds = trackStartSourceSeconds[transitionPlans.length] ?? 0;
+    const compositeDurationSeconds = lastTrackOutputStartSeconds + Math.max(0, lastCandidate.probe.durationSeconds - lastTrackSourceStartSeconds);
+
+    return {
+      run,
+      state: {
+        enabled: true,
+        nextTransitionIndex: 0,
+        fromTrackId: request.trackId ?? null,
+        nextTrackId: firstCandidate.track.trackId ?? firstCandidate.track.filePath,
+        nextFilePath: firstCandidate.track.filePath,
+        nextInputHeaders: firstCandidate.track.inputHeaders ?? null,
+        nextProbe: firstCandidate.probe,
+        nextReplayGain: firstCandidate.track.replayGain ?? null,
+        transitionSeconds: transitionPlan.overlapSeconds,
+        transitionStartSeconds: transitions[0]?.transitionStartSeconds ?? 0,
+        compositeStartSeconds: transitionPlan.currentStartSeconds,
+        compositeDurationSeconds,
+        plan: transitionPlan,
+        transitions,
+      },
+    };
   }
 
   private resolvePlanDeviceForSettings(outputSettings: AudioOutputSettings): AudioDeviceInfo | null {
@@ -3729,6 +4445,7 @@ export class AudioSession extends EventEmitter {
 
         this.clock.updateFrames(Number(frames));
         this.watchdogLastPositionSeconds = this.clock.getPositionSeconds();
+        this.maybeAdvanceAutomix(token);
         this.watchdogStalledChecks = 0;
         if (telemetry && typeof telemetry === 'object' && !Array.isArray(telemetry)) {
           this.handleNativeTelemetry(telemetry as NativeOutputTelemetry);
@@ -3799,6 +4516,9 @@ export class AudioSession extends EventEmitter {
     this.decoderPipelineCleanup?.();
     const volume = this.currentOutputSettings?.volume ?? this.outputSettings.volume;
     const nativeVolumeControl = typeof this.bridge?.setVolume === 'function';
+    const replayGainCalculation = this.calculateCurrentReplayGain();
+    const replayGainTransform = new PcmVolumeTransform(this.replayGainLinearGain(replayGainCalculation), 16);
+    const livePcmResampler = this.createLivePcmResamplerTransform();
     const gainTransform = new PcmVolumeTransform(nativeVolumeControl ? 1 : volume);
     const speedTransform = new PcmPlaybackRateTransform(
       this.currentProbe?.channels ?? 2,
@@ -3821,6 +4541,7 @@ export class AudioSession extends EventEmitter {
     };
 
     this.decoderRun = run;
+    this.currentReplayGainCalculation = replayGainCalculation;
     this.gainTransform = gainTransform;
     this.speedTransform = speedTransform;
     this.levelMeterTransform = levelMeterTransform;
@@ -3833,26 +4554,198 @@ export class AudioSession extends EventEmitter {
       this.handleError(new Error(`${stage}: ${message}`));
     };
     const streamErrorHandler = handlePipelineError('decoder_stream_error');
+    const resamplerErrorHandler = handlePipelineError('live_pcm_resampler_error');
     const gainErrorHandler = handlePipelineError('pcm_gain_error');
+    const replayGainErrorHandler = handlePipelineError('pcm_replay_gain_error');
     const speedErrorHandler = handlePipelineError('pcm_speed_error');
     const levelErrorHandler = handlePipelineError('pcm_level_meter_error');
     const writableErrorHandler = handlePipelineError('native_writable_error');
 
     run.stream.on('error', streamErrorHandler);
+    livePcmResampler?.on('error', resamplerErrorHandler);
     gainTransform.on('error', gainErrorHandler);
+    replayGainTransform.on('error', replayGainErrorHandler);
     speedTransform.on('error', speedErrorHandler);
     levelMeterTransform.on('error', levelErrorHandler);
     writable.on('error', writableErrorHandler);
     this.decoderPipelineCleanup = (): void => {
       run.stream.off('error', streamErrorHandler);
+      livePcmResampler?.off('error', resamplerErrorHandler);
+      livePcmResampler?.destroy();
       gainTransform.off('error', gainErrorHandler);
+      replayGainTransform.off('error', replayGainErrorHandler);
+      replayGainTransform.destroy();
       speedTransform.off('error', speedErrorHandler);
       levelMeterTransform.off('error', levelErrorHandler);
       writable.off('error', writableErrorHandler);
     };
-    run.stream.pipe(gainTransform).pipe(speedTransform).pipe(levelMeterTransform).pipe(writable, { end: false });
+    const pcmSource = livePcmResampler ? run.stream.pipe(livePcmResampler) : run.stream;
+    pcmSource.pipe(gainTransform).pipe(replayGainTransform).pipe(speedTransform).pipe(levelMeterTransform).pipe(writable, { end: false });
     levelMeterTransform.once('end', signalNativeInputEnded);
     run.done.then(signalNativeInputEnded).catch((error: unknown) => {
+      if (this.runToken === token) {
+        this.handleError(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private calculateCurrentReplayGain(): ReplayGainCalculation {
+    const settings = getAppSettings();
+    if (this.currentActiveDsdOutputMode === 'dop' || this.currentActiveDsdOutputMode === 'native') {
+      return {
+        appliedDb: 0,
+        selectedGainDb: null,
+        selectedPeak: null,
+        preventedClipping: false,
+        active: false,
+      };
+    }
+
+    return calculateReplayGain({
+      ...(this.currentReplayGain ?? {}),
+      enabled: settings.replayGainEnabled === true,
+      mode: settings.replayGainMode ?? 'track',
+      preampDb: settings.replayGainPreampDb ?? 0,
+      preventClipping: settings.replayGainPreventClipping !== false,
+    });
+  }
+
+  private replayGainLinearGain(calculation: ReplayGainCalculation): number {
+    if (!calculation.active || Math.abs(calculation.appliedDb) < 0.001) {
+      return 1;
+    }
+    return Math.max(0, Math.min(16, dbToLinearGain(calculation.appliedDb)));
+  }
+
+  private startNativeAutomixRuns(
+    currentRun: DecoderRun,
+    nextRun: DecoderRun,
+    currentWritable: Writable,
+    nextWritable: Writable,
+    token: number,
+  ): void {
+    this.decoderPipelineCleanup?.();
+    const volume = this.currentOutputSettings?.volume ?? this.outputSettings.volume;
+    const nativeVolumeControl = typeof this.bridge?.setVolume === 'function';
+    const currentReplayGainCalculation = this.calculateCurrentReplayGain();
+    const settings = getAppSettings();
+    const nextReplayGainCalculation = calculateReplayGain({
+      ...(this.activeAutomix?.nextReplayGain ?? {}),
+      enabled: settings.replayGainEnabled === true,
+      mode: settings.replayGainMode ?? 'track',
+      preampDb: settings.replayGainPreampDb ?? 0,
+      preventClipping: settings.replayGainPreventClipping !== false,
+    });
+    const currentGainTransform = new PcmVolumeTransform(nativeVolumeControl ? 1 : volume);
+    const nextGainTransform = new PcmVolumeTransform(nativeVolumeControl ? 1 : volume);
+    const currentReplayGainTransform = new PcmVolumeTransform(this.replayGainLinearGain(currentReplayGainCalculation), 16);
+    const nextReplayGainTransform = new PcmVolumeTransform(this.replayGainLinearGain(nextReplayGainCalculation), 16);
+    const levelMeterTransform = new PcmLevelMeterTransform((snapshot) => this.handleLevelSnapshot(snapshot));
+    levelMeterTransform.setGain(nativeVolumeControl ? volume : 1);
+    const combinedRun: DecoderRun = {
+      stream: currentRun.stream,
+      stop: () => {
+        currentRun.stop();
+        nextRun.stop();
+      },
+      done: Promise.allSettled([currentRun.done, nextRun.done]).then((results) => {
+        const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (rejected) {
+          throw rejected.reason instanceof Error ? rejected.reason : new Error(String(rejected.reason));
+        }
+      }),
+      decoderBackendImpl: 'native-automix-dual-deck',
+      resamplerEngine: currentRun.resamplerEngine,
+      resamplerFallbackActive: currentRun.resamplerFallbackActive || nextRun.resamplerFallbackActive,
+    };
+    let currentEnded = false;
+    let nextEnded = false;
+    const signalCurrentEnded = (): void => {
+      if (currentEnded || this.runToken !== token || this.decoderRun !== combinedRun) {
+        return;
+      }
+
+      currentEnded = true;
+      try {
+        currentWritable.end();
+      } catch {
+        // The native host may already have been stopped by pause/seek/stop.
+      }
+    };
+    const signalNextEnded = (): void => {
+      if (nextEnded || this.runToken !== token || this.decoderRun !== combinedRun) {
+        return;
+      }
+
+      nextEnded = true;
+      try {
+        nextWritable.end();
+      } catch {
+        // The native host may already have been stopped by pause/seek/stop.
+      }
+    };
+
+    this.decoderRun = combinedRun;
+    this.currentReplayGainCalculation = currentReplayGainCalculation;
+    this.gainTransform = currentGainTransform;
+    this.speedTransform = null;
+    this.levelMeterTransform = levelMeterTransform;
+    const handlePipelineError = (stage: string) => (error: unknown): void => {
+      if (this.runToken !== token || this.decoderRun !== combinedRun) {
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      this.handleError(new Error(`${stage}: ${message}`));
+    };
+    const currentStreamErrorHandler = handlePipelineError('native_automix_current_stream_error');
+    const nextStreamErrorHandler = handlePipelineError('native_automix_next_stream_error');
+    const currentGainErrorHandler = handlePipelineError('native_automix_current_gain_error');
+    const nextGainErrorHandler = handlePipelineError('native_automix_next_gain_error');
+    const currentReplayGainErrorHandler = handlePipelineError('native_automix_current_replay_gain_error');
+    const nextReplayGainErrorHandler = handlePipelineError('native_automix_next_replay_gain_error');
+    const levelErrorHandler = handlePipelineError('native_automix_level_meter_error');
+    const currentWritableErrorHandler = handlePipelineError('native_automix_current_writable_error');
+    const nextWritableErrorHandler = handlePipelineError('native_automix_next_writable_error');
+
+    currentRun.stream.on('error', currentStreamErrorHandler);
+    nextRun.stream.on('error', nextStreamErrorHandler);
+    currentGainTransform.on('error', currentGainErrorHandler);
+    nextGainTransform.on('error', nextGainErrorHandler);
+    currentReplayGainTransform.on('error', currentReplayGainErrorHandler);
+    nextReplayGainTransform.on('error', nextReplayGainErrorHandler);
+    levelMeterTransform.on('error', levelErrorHandler);
+    currentWritable.on('error', currentWritableErrorHandler);
+    nextWritable.on('error', nextWritableErrorHandler);
+    this.decoderPipelineCleanup = (): void => {
+      currentRun.stream.off('error', currentStreamErrorHandler);
+      nextRun.stream.off('error', nextStreamErrorHandler);
+      currentGainTransform.off('error', currentGainErrorHandler);
+      nextGainTransform.off('error', nextGainErrorHandler);
+      currentReplayGainTransform.off('error', currentReplayGainErrorHandler);
+      nextReplayGainTransform.off('error', nextReplayGainErrorHandler);
+      levelMeterTransform.off('error', levelErrorHandler);
+      currentWritable.off('error', currentWritableErrorHandler);
+      nextWritable.off('error', nextWritableErrorHandler);
+      currentRun.stream.unpipe(currentGainTransform);
+      currentGainTransform.unpipe(currentReplayGainTransform);
+      currentReplayGainTransform.unpipe(levelMeterTransform);
+      levelMeterTransform.unpipe(currentWritable);
+      nextRun.stream.unpipe(nextGainTransform);
+      nextGainTransform.unpipe(nextReplayGainTransform);
+      nextReplayGainTransform.unpipe(nextWritable);
+    };
+
+    currentRun.stream.pipe(currentGainTransform).pipe(currentReplayGainTransform).pipe(levelMeterTransform).pipe(currentWritable, { end: false });
+    nextRun.stream.pipe(nextGainTransform).pipe(nextReplayGainTransform).pipe(nextWritable, { end: false });
+    levelMeterTransform.once('end', signalCurrentEnded);
+    nextGainTransform.once('end', signalNextEnded);
+    currentRun.done.then(signalCurrentEnded).catch((error: unknown) => {
+      if (this.runToken === token) {
+        this.handleError(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    nextRun.done.then(signalNextEnded).catch((error: unknown) => {
       if (this.runToken === token) {
         this.handleError(error instanceof Error ? error : new Error(String(error)));
       }
@@ -3897,6 +4790,53 @@ export class AudioSession extends EventEmitter {
     stream.pipe(writable, { end: false });
     stream.once('end', signalNativeInputEnded);
     stream.once('close', signalNativeInputEnded);
+  }
+
+  private maybeAdvanceAutomix(token: number): void {
+    const automix = this.activeAutomix;
+    if (!automix || this.runToken !== token) {
+      return;
+    }
+
+    const compositePositionSeconds = Math.max(0, this.clock.getPositionSeconds() - automix.compositeStartSeconds);
+    let advanced = false;
+    while (automix.nextTransitionIndex < automix.transitions.length) {
+      const transition = automix.transitions[automix.nextTransitionIndex];
+      if (!transition || compositePositionSeconds < transition.transitionStartSeconds) {
+        break;
+      }
+
+      automix.nextTransitionIndex += 1;
+      automix.fromTrackId = transition.fromTrackId;
+      automix.nextTrackId = transition.nextTrackId;
+      automix.nextFilePath = transition.nextFilePath;
+      automix.nextInputHeaders = transition.nextInputHeaders;
+      automix.nextProbe = transition.nextProbe;
+      automix.nextReplayGain = transition.nextReplayGain;
+      automix.transitionSeconds = transition.transitionSeconds;
+      automix.transitionStartSeconds = transition.transitionStartSeconds;
+      automix.plan = transition.plan;
+      this.currentTrackId = transition.nextTrackId;
+      this.currentFilePath = transition.nextFilePath;
+      this.currentInputHeaders = transition.nextInputHeaders;
+      this.currentProbe = transition.nextProbe;
+      this.currentReplayGain = transition.nextReplayGain;
+      this.currentReplayGainCalculation = this.calculateCurrentReplayGain();
+      this.emit('automix-advance', {
+        fromTrackId: transition.fromTrackId,
+        toTrackId: transition.nextTrackId,
+        transitionSeconds: transition.transitionSeconds,
+        mode: transition.plan.mode,
+        fallbackReason: transition.plan.fallbackReason,
+        beatAligned: transition.plan.beatAligned,
+        skipIntroSilence: transition.plan.skipIntroSilence,
+        nextStartSeconds: transition.plan.nextStartSeconds,
+      });
+      advanced = true;
+    }
+    if (advanced) {
+      this.emitStatus();
+    }
   }
 
   private enqueueNativeHostNotification(event: unknown, token: number): void {
@@ -4523,6 +5463,44 @@ export class AudioSession extends EventEmitter {
     this.emit('status', this.getStatus());
   }
 
+  private isCurrentLivePcmStream(): boolean {
+    return isLivePcmSourcePath(this.currentFilePath) || (
+      this.currentFilePath !== null &&
+      this.currentDecodeBackendImpl === 'airplay-raop-pcm'
+    );
+  }
+
+  private skipLivePcmRestart(reason: string, positionSeconds: number): void {
+    this.addOutputWarning('live_pcm_restart_skipped');
+    this.logger(
+      `[AudioSession] ${reason}; live PCM stream cannot be restarted source="${redactUrlSecrets(
+        this.currentFilePath ?? 'unknown',
+      )}" position=${Math.max(0, positionSeconds).toFixed(3)}`,
+    );
+    this.resetWatchdogProgress();
+    this.emitStatus();
+  }
+
+  private createLivePcmResamplerTransform(): PcmLinearResamplerTransform | null {
+    if (!this.isCurrentLivePcmStream() || !this.currentProbe || !this.currentPlan) {
+      return null;
+    }
+
+    const sourceSampleRate = normalizePositiveInteger(this.currentProbe.fileSampleRate);
+    const targetSampleRate =
+      normalizePositiveInteger(this.currentPlan.actualDeviceSampleRate) ?? normalizePositiveInteger(this.currentPlan.decoderOutputSampleRate);
+    const channels = normalizePositiveInteger(this.currentProbe.channels) ?? 2;
+    if (!sourceSampleRate || !targetSampleRate || sourceSampleRate === targetSampleRate) {
+      return null;
+    }
+
+    this.addOutputWarning(`live_pcm_resampled:${sourceSampleRate}->${targetSampleRate}`);
+    this.logger(
+      `[AudioSession] live PCM resampler enabled source=${sourceSampleRate} target=${targetSampleRate} channels=${channels}`,
+    );
+    return new PcmLinearResamplerTransform(channels, sourceSampleRate, targetSampleRate);
+  }
+
   private emitNativeTelemetryStatus(): void {
     const now = Date.now();
     if (now - this.lastNativeTelemetryStatusEmittedAt < nativeTelemetryStatusIntervalMs) {
@@ -4726,6 +5704,11 @@ export class AudioSession extends EventEmitter {
         return;
       }
 
+      if (this.isCurrentLivePcmStream()) {
+        this.skipLivePcmRestart('exclusive_output_unstable', positionSeconds);
+        return;
+      }
+
       const outputMode = this.currentPlan?.outputMode ?? normalizeOutputMode(this.currentOutputSettings.outputMode);
       if (outputMode !== 'exclusive') {
         return;
@@ -4812,6 +5795,11 @@ export class AudioSession extends EventEmitter {
       }
 
       if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || this.state !== 'playing') {
+        return;
+      }
+
+      if (this.isCurrentLivePcmStream()) {
+        this.skipLivePcmRestart(reason, positionSeconds);
         return;
       }
 
@@ -4910,6 +5898,11 @@ export class AudioSession extends EventEmitter {
     try {
       if (!this.currentFilePath || !this.currentOutputSettings || !this.currentProbe || this.state !== 'playing') {
         this.resetWatchdogProgress();
+        return;
+      }
+
+      if (this.isCurrentLivePcmStream()) {
+        this.skipLivePcmRestart('audio_watchdog_recovered_native_output', positionSeconds);
         return;
       }
 

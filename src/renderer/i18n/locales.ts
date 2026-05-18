@@ -100,6 +100,9 @@ export type TranslationKey =
   | 'audioDrawer.option.releaseExclusiveOnPause'
   | 'audioDrawer.option.active'
   | 'audioDrawer.option.set'
+  | 'audioDrawer.option.automix'
+  | 'audioDrawer.option.automixActive'
+  | 'audioDrawer.option.automixDescription'
   | 'audioDrawer.option.rememberOutput'
   | 'audioDrawer.option.rememberOutputDescription'
   | 'audioDrawer.option.showAsioPanelSettings'
@@ -112,6 +115,7 @@ export type TranslationKey =
   | 'audioDrawer.option.wasapiExclusive'
   | 'audioDrawer.option.wasapiExclusiveDescription'
   | 'audioDrawer.section.advancedOutput'
+  | 'audioDrawer.section.automix'
   | 'audioDrawer.section.asioDevices'
   | 'audioDrawer.section.currentOutput'
   | 'audioDrawer.section.hiddenDevices'
@@ -506,6 +510,119 @@ export type TranslationKey =
   | 'settings.appearance.theme.followSystem'
   | 'settings.appearance.theme.light'
   | 'settings.appearance.theme.title'
+  | 'settings.appearance.themePreset.berryDream'
+  | 'settings.appearance.themePreset.berryDream.description'
+  | 'settings.appearance.themePreset.classic'
+  | 'settings.appearance.themePreset.classic.description'
+  | 'settings.appearance.themePreset.amberNoir'
+  | 'settings.appearance.themePreset.amberNoir.description'
+  | 'settings.appearance.themePreset.caramelPudding'
+  | 'settings.appearance.themePreset.caramelPudding.description'
+  | 'settings.appearance.themePreset.cottonCloud'
+  | 'settings.appearance.themePreset.cottonCloud.description'
+  | 'settings.appearance.themePreset.description'
+  | 'settings.appearance.themePreset.echoTwilight'
+  | 'settings.appearance.themePreset.echoTwilight.description'
+  | 'settings.appearance.themePreset.graphiteAurora'
+  | 'settings.appearance.themePreset.graphiteAurora.description'
+  | 'settings.appearance.themePreset.lemonMochi'
+  | 'settings.appearance.themePreset.lemonMochi.description'
+  | 'settings.appearance.themePreset.matchaCream'
+  | 'settings.appearance.themePreset.matchaCream.description'
+  | 'settings.appearance.themePreset.melonCream'
+  | 'settings.appearance.themePreset.melonCream.description'
+  | 'settings.appearance.themePreset.mintCandy'
+  | 'settings.appearance.themePreset.mintCandy.description'
+  | 'settings.appearance.themePreset.neonCandy'
+  | 'settings.appearance.themePreset.neonCandy.description'
+  | 'settings.appearance.themePreset.oceanStudio'
+  | 'settings.appearance.themePreset.oceanStudio.description'
+  | 'settings.appearance.themePreset.peachSoda'
+  | 'settings.appearance.themePreset.peachSoda.description'
+  | 'settings.appearance.themePreset.seaSaltJelly'
+  | 'settings.appearance.themePreset.seaSaltJelly.description'
+  | 'settings.appearance.themePreset.sakuraMilk'
+  | 'settings.appearance.themePreset.sakuraMilk.description'
+  | 'settings.appearance.themePreset.strawberryCookie'
+  | 'settings.appearance.themePreset.strawberryCookie.description'
+  | 'settings.appearance.themePreset.rosewoodVinyl'
+  | 'settings.appearance.themePreset.rosewoodVinyl.description'
+  | 'settings.appearance.themePreset.shibuyaNight'
+  | 'settings.appearance.themePreset.shibuyaNight.description'
+  | 'settings.appearance.themePreset.kyotoKurenai'
+  | 'settings.appearance.themePreset.kyotoKurenai.description'
+  | 'settings.appearance.themePreset.ukiyoIndigo'
+  | 'settings.appearance.themePreset.ukiyoIndigo.description'
+  | 'settings.appearance.themePreset.fujiSnow'
+  | 'settings.appearance.themePreset.fujiSnow.description'
+  | 'settings.appearance.themePreset.matsuriLantern'
+  | 'settings.appearance.themePreset.matsuriLantern.description'
+  | 'settings.appearance.themePreset.ginzaNoir'
+  | 'settings.appearance.themePreset.ginzaNoir.description'
+  | 'settings.appearance.themePreset.frostJazz'
+  | 'settings.appearance.themePreset.frostJazz.description'
+  | 'settings.appearance.themePreset.title'
+  | 'settings.appearance.themePreset.wisteriaBubble'
+  | 'settings.appearance.themePreset.wisteriaBubble.description'
+  | 'settings.appearance.themeCustom.action.autoFix'
+  | 'settings.appearance.themeCustom.action.export'
+  | 'settings.appearance.themeCustom.action.import'
+  | 'settings.appearance.themeCustom.action.reset'
+  | 'settings.appearance.themeCustom.action.save'
+  | 'settings.appearance.themeCustom.advanced.hide'
+  | 'settings.appearance.themeCustom.advanced.show'
+  | 'settings.appearance.themeCustom.description'
+  | 'settings.appearance.themeCustom.field.accent'
+  | 'settings.appearance.themeCustom.field.accent.description'
+  | 'settings.appearance.themeCustom.field.accentStrong'
+  | 'settings.appearance.themeCustom.field.accentStrong.description'
+  | 'settings.appearance.themeCustom.field.appBg'
+  | 'settings.appearance.themeCustom.field.appBg.description'
+  | 'settings.appearance.themeCustom.field.appBg2'
+  | 'settings.appearance.themeCustom.field.appBg2.description'
+  | 'settings.appearance.themeCustom.field.appBg3'
+  | 'settings.appearance.themeCustom.field.appBg3.description'
+  | 'settings.appearance.themeCustom.field.border'
+  | 'settings.appearance.themeCustom.field.border.description'
+  | 'settings.appearance.themeCustom.field.buttonText'
+  | 'settings.appearance.themeCustom.field.buttonText.description'
+  | 'settings.appearance.themeCustom.field.glass'
+  | 'settings.appearance.themeCustom.field.glass.description'
+  | 'settings.appearance.themeCustom.field.heading'
+  | 'settings.appearance.themeCustom.field.heading.description'
+  | 'settings.appearance.themeCustom.field.muted'
+  | 'settings.appearance.themeCustom.field.muted.description'
+  | 'settings.appearance.themeCustom.field.onAccent'
+  | 'settings.appearance.themeCustom.field.onAccent.description'
+  | 'settings.appearance.themeCustom.field.panel'
+  | 'settings.appearance.themeCustom.field.panel.description'
+  | 'settings.appearance.themeCustom.field.panelOpacity'
+  | 'settings.appearance.themeCustom.field.panelOpacity.description'
+  | 'settings.appearance.themeCustom.field.panelSoft'
+  | 'settings.appearance.themeCustom.field.panelSoft.description'
+  | 'settings.appearance.themeCustom.field.secondary'
+  | 'settings.appearance.themeCustom.field.secondary.description'
+  | 'settings.appearance.themeCustom.field.shadow'
+  | 'settings.appearance.themeCustom.field.shadow.description'
+  | 'settings.appearance.themeCustom.field.text'
+  | 'settings.appearance.themeCustom.field.text.description'
+  | 'settings.appearance.themeCustom.group.advanced'
+  | 'settings.appearance.themeCustom.group.advanced.description'
+  | 'settings.appearance.themeCustom.group.core'
+  | 'settings.appearance.themeCustom.group.core.description'
+  | 'settings.appearance.themeCustom.group.gradient'
+  | 'settings.appearance.themeCustom.group.gradient.description'
+  | 'settings.appearance.themeCustom.message.fixed'
+  | 'settings.appearance.themeCustom.message.exported'
+  | 'settings.appearance.themeCustom.message.imported'
+  | 'settings.appearance.themeCustom.message.importFailed'
+  | 'settings.appearance.themeCustom.message.invalidColor'
+  | 'settings.appearance.themeCustom.message.lowContrast'
+  | 'settings.appearance.themeCustom.message.reset'
+  | 'settings.appearance.themeCustom.message.saved'
+  | 'settings.appearance.themeCustom.preview.description'
+  | 'settings.appearance.themeCustom.preview.title'
+  | 'settings.appearance.themeCustom.title'
   | 'settings.danger.clearCache.description'
   | 'settings.danger.clearCache.title'
   | 'settings.devices.empty'
@@ -772,6 +889,8 @@ export type TranslationKey =
   | 'settings.nav.shortcuts.label'
   | 'settings.playback.audioStatus.description'
   | 'settings.playback.audioStatus.title'
+  | 'settings.playback.automix.description'
+  | 'settings.playback.automix.title'
   | 'settings.playback.followCurrent.description'
   | 'settings.playback.followCurrent.title'
   | 'settings.playback.outputDevice.description'
@@ -961,6 +1080,9 @@ const zhCN: TranslationMap = {
   'audioDrawer.option.releaseExclusiveOnPause': '暂停释放独占实验',
   'audioDrawer.option.active': '开启',
   'audioDrawer.option.set': '设置',
+  'audioDrawer.option.automix': '启用 Automix',
+  'audioDrawer.option.automixActive': '当前播放已进入 Automix 预混路径。',
+  'audioDrawer.option.automixDescription': '默认关闭。开启后会在队列连续播放时自动把当前歌曲尾段与下一首重叠淡入淡出。',
   'audioDrawer.option.rememberOutput': '保存输出设置',
   'audioDrawer.option.rememberOutputDescription': '下次启动时恢复所选输出设备、输出模式和缓冲等参数。',
   'audioDrawer.option.showAsioPanelSettings': '是否显示 ASIO 面板设置',
@@ -973,6 +1095,7 @@ const zhCN: TranslationMap = {
   'audioDrawer.option.wasapiExclusive': 'WASAPI 独占模式',
   'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 输出路径。独占会请求同一设备并绕过共享混音器，只建议在确认 DAC/声卡和驱动稳定时使用；Realtek 等板载驱动兼容性较差，可能导致无声、卡顿或切换失败。',
   'audioDrawer.section.advancedOutput': '高级输出',
+  'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 输出设备',
   'audioDrawer.section.currentOutput': '当前输出',
   'audioDrawer.section.hiddenDevices': '隐藏设备',
@@ -1325,7 +1448,7 @@ const zhCN: TranslationMap = {
   'route.settings.description': '应用设置。',
   'route.settings.label': '设置',
   'route.songs.description': '本地曲库歌曲列表。',
-  'route.songs.label': '曲目',
+  'route.songs.label': '歌曲',
   'settings.about.audioHost.description': 'echo-audio-host.exe 当前用于本地迁移验收，正式发布后走 extraResources。',
   'settings.about.audioHost.title': '音频宿主',
   'settings.about.devMode.description': '当前正在使用 ECHO Next Phase 1：Library Core + Audio Host 验收。',
@@ -1367,6 +1490,119 @@ const zhCN: TranslationMap = {
   'settings.appearance.theme.followSystem': '跟随系统',
   'settings.appearance.theme.light': '浅色',
   'settings.appearance.theme.title': '主题',
+  'settings.appearance.themePreset.title': '主题预设',
+  'settings.appearance.themePreset.description': '选择一套全局渐变色板；当前明暗模式仍会保留。',
+  'settings.appearance.themePreset.classic': '经典 ECHO Next',
+  'settings.appearance.themePreset.classic.description': '保持当前清爽蓝灰质感。',
+  'settings.appearance.themePreset.echoTwilight': '暮光桃雾',
+  'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉渐变感。',
+  'settings.appearance.themePreset.sakuraMilk': '樱粉奶霜',
+  'settings.appearance.themePreset.sakuraMilk.description': '奶白粉底配樱桃红强调。',
+  'settings.appearance.themePreset.peachSoda': '蜜桃苏打',
+  'settings.appearance.themePreset.peachSoda.description': '蜜桃橙和苏打青的轻快组合。',
+  'settings.appearance.themePreset.mintCandy': '薄荷软糖',
+  'settings.appearance.themePreset.mintCandy.description': '薄荷绿、奶油白和一点桃粉。',
+  'settings.appearance.themePreset.berryDream': '蓝莓星糖',
+  'settings.appearance.themePreset.berryDream.description': '莓紫云白，带一点梦幻粉光。',
+  'settings.appearance.themePreset.matchaCream': '抹茶奶油',
+  'settings.appearance.themePreset.matchaCream.description': '抹茶绿和奶油黄，更安静耐看。',
+  'settings.appearance.themePreset.lemonMochi': '柠檬麻薯',
+  'settings.appearance.themePreset.lemonMochi.description': '奶黄和天蓝，像软糯柠檬点心。',
+  'settings.appearance.themePreset.cottonCloud': '棉花云朵',
+  'settings.appearance.themePreset.cottonCloud.description': '云白蓝配柔粉，高亮但不刺眼。',
+  'settings.appearance.themePreset.melonCream': '哈密瓜奶霜',
+  'settings.appearance.themePreset.melonCream.description': '蜜瓜绿与奶油底，清甜可读。',
+  'settings.appearance.themePreset.seaSaltJelly': '海盐果冻',
+  'settings.appearance.themePreset.seaSaltJelly.description': '海盐青配蜜桃光，清透但压得住文字。',
+  'settings.appearance.themePreset.caramelPudding': '焦糖布丁',
+  'settings.appearance.themePreset.caramelPudding.description': '奶油焦糖配草莓光，甜但不发腻。',
+  'settings.appearance.themePreset.neonCandy': '霓虹糖果',
+  'settings.appearance.themePreset.neonCandy.description': '紫色霓虹、粉色高光和薄荷泡泡。',
+  'settings.appearance.themePreset.wisteriaBubble': '紫藤泡泡',
+  'settings.appearance.themePreset.wisteriaBubble.description': '紫藤花雾配薄荷泡泡，梦幻但清爽。',
+  'settings.appearance.themePreset.strawberryCookie': '草莓饼干',
+  'settings.appearance.themePreset.strawberryCookie.description': '奶油饼干底配草莓红和烘焙金。',
+  'settings.appearance.themePreset.graphiteAurora': '石墨极光',
+  'settings.appearance.themePreset.graphiteAurora.description': '石墨灰里带一点青绿极光，冷静但有层次。',
+  'settings.appearance.themePreset.amberNoir': '琥珀夜色',
+  'settings.appearance.themePreset.amberNoir.description': '黑金唱片厅感，适合暗色长听。',
+  'settings.appearance.themePreset.oceanStudio': '海岸录音室',
+  'settings.appearance.themePreset.oceanStudio.description': '冷蓝灰和海雾蓝，干净专业。',
+  'settings.appearance.themePreset.rosewoodVinyl': '玫瑰木黑胶',
+  'settings.appearance.themePreset.rosewoodVinyl.description': '木质暖红与黑胶暗调，更沉稳复古。',
+  'settings.appearance.themePreset.shibuyaNight': '涩谷夜色',
+  'settings.appearance.themePreset.shibuyaNight.description': '东京霓虹、夜紫街口和青色招牌光。',
+  'settings.appearance.themePreset.kyotoKurenai': '京都朱印',
+  'settings.appearance.themePreset.kyotoKurenai.description': '鸟居朱红、和纸暖底和御守金色。',
+  'settings.appearance.themePreset.ukiyoIndigo': '浮世靛蓝',
+  'settings.appearance.themePreset.ukiyoIndigo.description': '浮世绘海浪的靛蓝、纸色和古金。',
+  'settings.appearance.themePreset.fujiSnow': '富士初雪',
+  'settings.appearance.themePreset.fujiSnow.description': '雪白、富士蓝与淡樱高光，清澈冷甜。',
+  'settings.appearance.themePreset.matsuriLantern': '祭灯金鱼',
+  'settings.appearance.themePreset.matsuriLantern.description': '夏祭灯笼红、夜市金光和温暖纸色。',
+  'settings.appearance.themePreset.ginzaNoir': '银座黑曜',
+  'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香槟金和橱窗蓝，成熟一点。',
+  'settings.appearance.themePreset.frostJazz': '霜林爵士',
+  'settings.appearance.themePreset.frostJazz.description': '冷蓝爵士底色，带一抹梅紫舞台光。',
+  'settings.appearance.themeCustom.title': '自定义当前主题',
+  'settings.appearance.themeCustom.description': '先选一个主题，再微调颜色；每个主题都会记住自己的自定义。',
+  'settings.appearance.themeCustom.action.autoFix': '自动修正文字',
+  'settings.appearance.themeCustom.action.export': '导出参数',
+  'settings.appearance.themeCustom.action.import': '导入参数',
+  'settings.appearance.themeCustom.action.reset': '重置当前自定义',
+  'settings.appearance.themeCustom.action.save': '保存自定义',
+  'settings.appearance.themeCustom.advanced.show': '展开高级颜色',
+  'settings.appearance.themeCustom.advanced.hide': '收起高级颜色',
+  'settings.appearance.themeCustom.field.appBg': '底色',
+  'settings.appearance.themeCustom.field.appBg2': '渐变中段',
+  'settings.appearance.themeCustom.field.appBg3': '渐变尾色',
+  'settings.appearance.themeCustom.field.panel': '玻璃色调',
+  'settings.appearance.themeCustom.field.panelSoft': '柔面板',
+  'settings.appearance.themeCustom.field.accent': '主强调色',
+  'settings.appearance.themeCustom.field.accentStrong': '次强调色',
+  'settings.appearance.themeCustom.field.secondary': '第三强调色',
+  'settings.appearance.themeCustom.field.heading': '主文字',
+  'settings.appearance.themeCustom.field.text': '正文文字',
+  'settings.appearance.themeCustom.field.muted': '次要文字',
+  'settings.appearance.themeCustom.field.border': '边界色',
+  'settings.appearance.themeCustom.field.onAccent': '强调按钮文字',
+  'settings.appearance.themeCustom.field.buttonText': '普通按钮文字',
+  'settings.appearance.themeCustom.field.panelOpacity': '面板透明度',
+  'settings.appearance.themeCustom.field.glass': '玻璃感',
+  'settings.appearance.themeCustom.field.shadow': '阴影强度',
+  'settings.appearance.themeCustom.field.appBg.description': '主窗口底色',
+  'settings.appearance.themeCustom.field.appBg2.description': '背景渐变的柔光中段',
+  'settings.appearance.themeCustom.field.appBg3.description': '背景渐变的末端停靠色',
+  'settings.appearance.themeCustom.field.panel.description': '面板磨砂着色',
+  'settings.appearance.themeCustom.field.panelSoft.description': '侧栏和弱层级面板',
+  'settings.appearance.themeCustom.field.accent.description': '主要交互',
+  'settings.appearance.themeCustom.field.accentStrong.description': '渐变与层次',
+  'settings.appearance.themeCustom.field.secondary.description': '高光点缀',
+  'settings.appearance.themeCustom.field.heading.description': '标题与主文案',
+  'settings.appearance.themeCustom.field.text.description': '正文、歌手和设置文案',
+  'settings.appearance.themeCustom.field.muted.description': '辅助说明',
+  'settings.appearance.themeCustom.field.border.description': '卡片边框和分割线',
+  'settings.appearance.themeCustom.field.onAccent.description': '强调按钮上的文字',
+  'settings.appearance.themeCustom.field.buttonText.description': '普通按钮和芯片文字',
+  'settings.appearance.themeCustom.field.panelOpacity.description': '面板露出背景的程度',
+  'settings.appearance.themeCustom.field.glass.description': '背景模糊和玻璃层次',
+  'settings.appearance.themeCustom.field.shadow.description': '卡片、弹窗和播放器投影',
+  'settings.appearance.themeCustom.preview.title': '正在编辑',
+  'settings.appearance.themeCustom.preview.description': '改动会先实时预览，保存后才写入设置。',
+  'settings.appearance.themeCustom.group.core': '常用颜色',
+  'settings.appearance.themeCustom.group.core.description': '老 ECHO 式主色板，改这里最直观。',
+  'settings.appearance.themeCustom.group.gradient': '背景渐变',
+  'settings.appearance.themeCustom.group.gradient.description': '控制老 ECHO 那种窗口底色渐变氛围。',
+  'settings.appearance.themeCustom.group.advanced': '高级细节',
+  'settings.appearance.themeCustom.group.advanced.description': '更细的文字、边界和按钮文字颜色。',
+  'settings.appearance.themeCustom.message.exported': '已导出当前主题参数。',
+  'settings.appearance.themeCustom.message.imported': '已导入主题参数并应用。',
+  'settings.appearance.themeCustom.message.importFailed': '导入失败，请选择 ECHO 主题参数 JSON。',
+  'settings.appearance.themeCustom.message.fixed': '已自动调整文字与按钮颜色。',
+  'settings.appearance.themeCustom.message.invalidColor': '请输入 #RRGGBB 格式的安全颜色。',
+  'settings.appearance.themeCustom.message.lowContrast': '当前文字对比度不足，先自动修正或调深文字后再保存。',
+  'settings.appearance.themeCustom.message.reset': '已重置当前主题的自定义。',
+  'settings.appearance.themeCustom.message.saved': '已保存当前主题自定义。',
   'settings.danger.clearCache.description': '移除曲库索引、扫描记录和封面缓存，不会删除你的音乐文件或曲库文件夹。',
   'settings.danger.clearCache.title': '清空曲库缓存',
   'settings.devices.empty': 'echo-audio-host 暂未返回输出设备。',
@@ -1633,6 +1869,8 @@ const zhCN: TranslationMap = {
   'settings.nav.shortcuts.label': '快捷键',
   'settings.playback.audioStatus.description': '采样率字段必须分开显示，避免旧 ECHO 独占模式 48k 锁死回归。',
   'settings.playback.audioStatus.title': '音频状态',
+  'settings.playback.automix.description': '默认关闭。开启后，连续队列会提前准备下一首，并用原生双 Deck 引擎避开尾部空白、智能衔接切歌。',
+  'settings.playback.automix.title': 'Automix 智能过渡',
   'settings.playback.followCurrent.description': '开启后，切歌时会自动把左侧当前列表滚动到正在播放的歌曲位置。',
   'settings.playback.followCurrent.title': '定位当前播放歌曲',
   'settings.playback.outputDevice.description': '来自 echo-audio-host 的设备列表；没有设备时保持默认输出。',
@@ -1849,6 +2087,9 @@ const zhTW: TranslationMap = {
   'audioDrawer.option.releaseExclusiveOnPause': '暫停釋放獨占實驗',
   'audioDrawer.option.active': '開啟',
   'audioDrawer.option.set': '設定',
+  'audioDrawer.option.automix': '啟用 Automix',
+  'audioDrawer.option.automixActive': '目前播放已進入 Automix 預混路徑。',
+  'audioDrawer.option.automixDescription': '預設關閉。開啟後會在佇列連續播放時自動把目前歌曲尾段與下一首重疊淡入淡出。',
   'audioDrawer.option.rememberOutput': '儲存輸出設定',
   'audioDrawer.option.rememberOutputDescription': '下次啟動時復原所選輸出裝置、輸出模式與緩衝等參數。',
   'audioDrawer.option.showAsioPanelSettings': '是否顯示 ASIO 面板設定',
@@ -1861,6 +2102,7 @@ const zhTW: TranslationMap = {
   'audioDrawer.option.wasapiExclusive': 'WASAPI 獨佔模式',
   'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 輸出路徑。獨佔會要求同一裝置並略過共享混音器，只建議在確認 DAC/音效卡與驅動穩定時使用；Realtek 等板載驅動相容性較差，可能導致無聲、卡頓或切換失敗。',
   'audioDrawer.section.advancedOutput': '進階輸出',
+  'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 輸出裝置',
   'audioDrawer.section.currentOutput': '目前輸出',
   'audioDrawer.section.hiddenDevices': '隱藏裝置',
@@ -2225,6 +2467,8 @@ const zhTW: TranslationMap = {
   'settings.playback.wireless.title': '無線播放',
   'settings.playback.audioStatus.title': '音訊狀態',
   'settings.playback.audioStatus.description': '取樣率欄位必須分開顯示，避免舊 ECHO 獨占模式 48k 鎖死回歸。',
+  'settings.playback.automix.description': '預設關閉。開啟後，連續佇列會提前準備下一首，並用原生雙 Deck 引擎避開尾端空白、智慧銜接切歌。',
+  'settings.playback.automix.title': 'Automix 智慧過渡',
   'settings.playback.stability.action.copied': '已複製',
   'settings.playback.stability.action.copy': '複製診斷資訊',
   'settings.playback.stability.action.refresh': '重新整理播放穩定性診斷',
@@ -2287,6 +2531,119 @@ const zhTW: TranslationMap = {
   'settings.appearance.theme.light': '淺色',
   'settings.appearance.theme.dark': '深色',
   'settings.appearance.theme.followSystem': '跟隨系統',
+  'settings.appearance.themePreset.title': '主題預設',
+  'settings.appearance.themePreset.description': '選擇一套全域漸層色板；目前的明暗模式仍會保留。',
+  'settings.appearance.themePreset.classic': '經典 ECHO Next',
+  'settings.appearance.themePreset.classic.description': '保持目前清爽的藍灰質感。',
+  'settings.appearance.themePreset.echoTwilight': '暮光桃霧',
+  'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉漸層感。',
+  'settings.appearance.themePreset.sakuraMilk': '櫻粉奶霜',
+  'settings.appearance.themePreset.sakuraMilk.description': '奶白粉底配櫻桃紅強調。',
+  'settings.appearance.themePreset.peachSoda': '蜜桃蘇打',
+  'settings.appearance.themePreset.peachSoda.description': '蜜桃橙和蘇打青的輕快組合。',
+  'settings.appearance.themePreset.mintCandy': '薄荷軟糖',
+  'settings.appearance.themePreset.mintCandy.description': '薄荷綠、奶油白和一點桃粉。',
+  'settings.appearance.themePreset.berryDream': '藍莓星糖',
+  'settings.appearance.themePreset.berryDream.description': '莓紫雲白，帶一點夢幻粉光。',
+  'settings.appearance.themePreset.matchaCream': '抹茶奶油',
+  'settings.appearance.themePreset.matchaCream.description': '抹茶綠和奶油黃，更安靜耐看。',
+  'settings.appearance.themePreset.lemonMochi': '檸檬麻糬',
+  'settings.appearance.themePreset.lemonMochi.description': '奶黃和天藍，像柔軟的檸檬點心。',
+  'settings.appearance.themePreset.cottonCloud': '棉花雲朵',
+  'settings.appearance.themePreset.cottonCloud.description': '雲白藍配柔粉，明亮但不刺眼。',
+  'settings.appearance.themePreset.melonCream': '哈密瓜奶霜',
+  'settings.appearance.themePreset.melonCream.description': '蜜瓜綠與奶油底，清甜且易讀。',
+  'settings.appearance.themePreset.seaSaltJelly': '海鹽果凍',
+  'settings.appearance.themePreset.seaSaltJelly.description': '海鹽青配蜜桃光，清透但壓得住文字。',
+  'settings.appearance.themePreset.caramelPudding': '焦糖布丁',
+  'settings.appearance.themePreset.caramelPudding.description': '奶油焦糖配草莓光，甜但不膩。',
+  'settings.appearance.themePreset.neonCandy': '霓虹糖果',
+  'settings.appearance.themePreset.neonCandy.description': '紫色霓虹、粉色高光和薄荷泡泡。',
+  'settings.appearance.themePreset.wisteriaBubble': '紫藤泡泡',
+  'settings.appearance.themePreset.wisteriaBubble.description': '紫藤花霧配薄荷泡泡，夢幻但清爽。',
+  'settings.appearance.themePreset.strawberryCookie': '草莓餅乾',
+  'settings.appearance.themePreset.strawberryCookie.description': '奶油餅乾底配草莓紅和烘焙金。',
+  'settings.appearance.themePreset.graphiteAurora': '石墨極光',
+  'settings.appearance.themePreset.graphiteAurora.description': '石墨灰裡帶一點青綠極光，冷靜但有層次。',
+  'settings.appearance.themePreset.amberNoir': '琥珀夜色',
+  'settings.appearance.themePreset.amberNoir.description': '黑金唱片廳感，適合暗色長聽。',
+  'settings.appearance.themePreset.oceanStudio': '海岸錄音室',
+  'settings.appearance.themePreset.oceanStudio.description': '冷藍灰和海霧藍，乾淨專業。',
+  'settings.appearance.themePreset.rosewoodVinyl': '玫瑰木黑膠',
+  'settings.appearance.themePreset.rosewoodVinyl.description': '木質暖紅與黑膠暗調，更沉穩復古。',
+  'settings.appearance.themePreset.shibuyaNight': '澀谷夜色',
+  'settings.appearance.themePreset.shibuyaNight.description': '東京霓虹、夜紫街口和青色招牌光。',
+  'settings.appearance.themePreset.kyotoKurenai': '京都朱印',
+  'settings.appearance.themePreset.kyotoKurenai.description': '鳥居朱紅、和紙暖底和御守金色。',
+  'settings.appearance.themePreset.ukiyoIndigo': '浮世靛藍',
+  'settings.appearance.themePreset.ukiyoIndigo.description': '浮世繪海浪的靛藍、紙色和古金。',
+  'settings.appearance.themePreset.fujiSnow': '富士初雪',
+  'settings.appearance.themePreset.fujiSnow.description': '雪白、富士藍與淡櫻高光，清澈冷甜。',
+  'settings.appearance.themePreset.matsuriLantern': '祭燈金魚',
+  'settings.appearance.themePreset.matsuriLantern.description': '夏祭燈籠紅、夜市金光和溫暖紙色。',
+  'settings.appearance.themePreset.ginzaNoir': '銀座黑曜',
+  'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香檳金和櫥窗藍，成熟一點。',
+  'settings.appearance.themePreset.frostJazz': '霜林爵士',
+  'settings.appearance.themePreset.frostJazz.description': '冷藍爵士底色，帶一抹梅紫舞台光。',
+  'settings.appearance.themeCustom.title': '自訂目前主題',
+  'settings.appearance.themeCustom.description': '先選一個主題，再微調顏色；每個主題都會記住自己的自訂。',
+  'settings.appearance.themeCustom.action.autoFix': '自動修正文字',
+  'settings.appearance.themeCustom.action.export': '匯出參數',
+  'settings.appearance.themeCustom.action.import': '匯入參數',
+  'settings.appearance.themeCustom.action.reset': '重置目前自訂',
+  'settings.appearance.themeCustom.action.save': '儲存自訂',
+  'settings.appearance.themeCustom.advanced.show': '展開進階顏色',
+  'settings.appearance.themeCustom.advanced.hide': '收起進階顏色',
+  'settings.appearance.themeCustom.field.appBg': '底色',
+  'settings.appearance.themeCustom.field.appBg2': '漸層中段',
+  'settings.appearance.themeCustom.field.appBg3': '漸層尾色',
+  'settings.appearance.themeCustom.field.panel': '玻璃色調',
+  'settings.appearance.themeCustom.field.panelSoft': '柔面板',
+  'settings.appearance.themeCustom.field.accent': '主強調色',
+  'settings.appearance.themeCustom.field.accentStrong': '次強調色',
+  'settings.appearance.themeCustom.field.secondary': '第三強調色',
+  'settings.appearance.themeCustom.field.heading': '主文字',
+  'settings.appearance.themeCustom.field.text': '正文文字',
+  'settings.appearance.themeCustom.field.muted': '次要文字',
+  'settings.appearance.themeCustom.field.border': '邊界色',
+  'settings.appearance.themeCustom.field.onAccent': '強調按鈕文字',
+  'settings.appearance.themeCustom.field.buttonText': '一般按鈕文字',
+  'settings.appearance.themeCustom.field.panelOpacity': '面板透明度',
+  'settings.appearance.themeCustom.field.glass': '玻璃感',
+  'settings.appearance.themeCustom.field.shadow': '陰影強度',
+  'settings.appearance.themeCustom.field.appBg.description': '主視窗底色',
+  'settings.appearance.themeCustom.field.appBg2.description': '背景漸層的柔光中段',
+  'settings.appearance.themeCustom.field.appBg3.description': '背景漸層的末端停靠色',
+  'settings.appearance.themeCustom.field.panel.description': '面板磨砂著色',
+  'settings.appearance.themeCustom.field.panelSoft.description': '側欄和弱層級面板',
+  'settings.appearance.themeCustom.field.accent.description': '主要互動',
+  'settings.appearance.themeCustom.field.accentStrong.description': '漸層與層次',
+  'settings.appearance.themeCustom.field.secondary.description': '高光點綴',
+  'settings.appearance.themeCustom.field.heading.description': '標題與主文案',
+  'settings.appearance.themeCustom.field.text.description': '正文、歌手和設定文案',
+  'settings.appearance.themeCustom.field.muted.description': '輔助說明',
+  'settings.appearance.themeCustom.field.border.description': '卡片邊框和分隔線',
+  'settings.appearance.themeCustom.field.onAccent.description': '強調按鈕上的文字',
+  'settings.appearance.themeCustom.field.buttonText.description': '一般按鈕和晶片文字',
+  'settings.appearance.themeCustom.field.panelOpacity.description': '面板露出背景的程度',
+  'settings.appearance.themeCustom.field.glass.description': '背景模糊和玻璃層次',
+  'settings.appearance.themeCustom.field.shadow.description': '卡片、彈窗和播放器投影',
+  'settings.appearance.themeCustom.preview.title': '正在編輯',
+  'settings.appearance.themeCustom.preview.description': '改動會先即時預覽，儲存後才寫入設定。',
+  'settings.appearance.themeCustom.group.core': '常用顏色',
+  'settings.appearance.themeCustom.group.core.description': '老 ECHO 式主色板，改這裡最直觀。',
+  'settings.appearance.themeCustom.group.gradient': '背景漸層',
+  'settings.appearance.themeCustom.group.gradient.description': '控制老 ECHO 那種視窗底色漸層氛圍。',
+  'settings.appearance.themeCustom.group.advanced': '進階細節',
+  'settings.appearance.themeCustom.group.advanced.description': '更細的文字、邊界和按鈕文字顏色。',
+  'settings.appearance.themeCustom.message.exported': '已匯出目前主題參數。',
+  'settings.appearance.themeCustom.message.imported': '已匯入主題參數並套用。',
+  'settings.appearance.themeCustom.message.importFailed': '匯入失敗，請選擇 ECHO 主題參數 JSON。',
+  'settings.appearance.themeCustom.message.fixed': '已自動調整文字與按鈕顏色。',
+  'settings.appearance.themeCustom.message.invalidColor': '請輸入 #RRGGBB 格式的安全顏色。',
+  'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，請先自動修正或調深文字後再儲存。',
+  'settings.appearance.themeCustom.message.reset': '已重置目前主題的自訂。',
+  'settings.appearance.themeCustom.message.saved': '已儲存目前主題自訂。',
   'settings.appearance.density.title': '介面密度',
   'settings.appearance.density.compact': '緊湊',
   'settings.appearance.density.standard': '標準',
@@ -2440,6 +2797,9 @@ const jaJP: TranslationMap = {
   'audioDrawer.option.releaseExclusiveOnPause': '一時停止で排他を解放',
   'audioDrawer.option.active': 'オン',
   'audioDrawer.option.set': '設定',
+  'audioDrawer.option.automix': 'Automix を有効化',
+  'audioDrawer.option.automixActive': '現在の再生は Automix のプリミックス経路を使用しています。',
+  'audioDrawer.option.automixDescription': '既定ではオフです。オンにすると、キュー再生中に現在の曲の終端と次の曲を自動で重ねてクロスフェードします。',
   'audioDrawer.option.rememberOutput': '出力設定を保存',
   'audioDrawer.option.rememberOutputDescription': '次回起動時に選択した出力デバイス、出力モード、バッファーなどの設定を復元します。',
   'audioDrawer.option.showAsioPanelSettings': 'ASIO パネル設定を表示する',
@@ -2452,6 +2812,7 @@ const jaJP: TranslationMap = {
   'audioDrawer.option.wasapiExclusive': 'WASAPI 排他モード',
   'audioDrawer.option.wasapiExclusiveDescription': '共有は通常の Windows 出力経路です。排他は同じデバイスを共有ミキサーなしで開きます。DAC/オーディオデバイスとドライバーが安定している場合だけ推奨します。Realtek などのオンボードドライバーは相性が弱く、無音・途切れ・切り替え失敗の原因になることがあります。',
   'audioDrawer.section.advancedOutput': '詳細出力',
+  'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 出力デバイス',
   'audioDrawer.section.currentOutput': '現在の出力',
   'audioDrawer.section.hiddenDevices': '非表示デバイス',
@@ -2897,6 +3258,8 @@ const jaJP: TranslationMap = {
   'settings.playback.followCurrent.description': '有効にすると、曲変更時に左側の現在リストを再生中の曲へ自動スクロールします。',
   'settings.playback.audioStatus.title': '音声状態',
   'settings.playback.audioStatus.description': 'サンプルレート欄を分けて表示し、旧 ECHO の排他モード 48k 固定の再発を避けます。',
+  'settings.playback.automix.description': '既定ではオフです。有効にすると、連続キューで次の曲を先に準備し、ネイティブのデュアル Deck エンジンで終端の無音を避けながら自然につなぎます。',
+  'settings.playback.automix.title': 'Automix スマート遷移',
   'settings.playback.stability.action.copied': 'コピーしました',
   'settings.playback.stability.action.copy': '診断情報をコピー',
   'settings.playback.stability.action.refresh': '再生安定性診断を更新',
@@ -2952,6 +3315,119 @@ const jaJP: TranslationMap = {
   'settings.appearance.theme.light': 'ライト',
   'settings.appearance.theme.dark': 'ダーク',
   'settings.appearance.theme.followSystem': 'システムに合わせる',
+  'settings.appearance.themePreset.title': 'テーマプリセット',
+  'settings.appearance.themePreset.description': 'アプリ全体のグラデーション色板を選びます。ライト/ダーク設定はそのまま使われます。',
+  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
+  'settings.appearance.themePreset.classic.description': '現在のすっきりしたブルーグレーの質感を保ちます。',
+  'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
+  'settings.appearance.themePreset.echoTwilight.description': '旧 ECHO らしい暖かいピンクのグラデーション。',
+  'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
+  'settings.appearance.themePreset.sakuraMilk.description': 'ミルキーなピンクにチェリーレッドのアクセント。',
+  'settings.appearance.themePreset.peachSoda': 'Peach Soda',
+  'settings.appearance.themePreset.peachSoda.description': 'ピーチオレンジとソーダミントの軽い組み合わせ。',
+  'settings.appearance.themePreset.mintCandy': 'Mint Candy',
+  'settings.appearance.themePreset.mintCandy.description': 'ミント、クリーム、少しのピーチピンク。',
+  'settings.appearance.themePreset.berryDream': 'Berry Dream',
+  'settings.appearance.themePreset.berryDream.description': 'ベリーパープルと雲の白、夢っぽいピンクの光。',
+  'settings.appearance.themePreset.matchaCream': 'Matcha Cream',
+  'settings.appearance.themePreset.matchaCream.description': '抹茶グリーンとクリームイエローの落ち着いた配色。',
+  'settings.appearance.themePreset.lemonMochi': 'Lemon Mochi',
+  'settings.appearance.themePreset.lemonMochi.description': 'Milky lemon yellow with a soft sky-blue lift.',
+  'settings.appearance.themePreset.cottonCloud': 'Cotton Cloud',
+  'settings.appearance.themePreset.cottonCloud.description': 'Cloud white, gentle blue, and a soft pink accent.',
+  'settings.appearance.themePreset.melonCream': 'Melon Cream',
+  'settings.appearance.themePreset.melonCream.description': 'Melon green over cream, cute and readable.',
+  'settings.appearance.themePreset.seaSaltJelly': 'Sea Salt Jelly',
+  'settings.appearance.themePreset.seaSaltJelly.description': 'Sea-salt cyan with a peachy jelly glow.',
+  'settings.appearance.themePreset.caramelPudding': 'Caramel Pudding',
+  'settings.appearance.themePreset.caramelPudding.description': 'Creamy caramel with a strawberry glow, sweet but readable.',
+  'settings.appearance.themePreset.neonCandy': 'Neon Candy',
+  'settings.appearance.themePreset.neonCandy.description': 'Violet neon, pink highlights, and mint bubbles.',
+  'settings.appearance.themePreset.wisteriaBubble': 'Wisteria Bubble',
+  'settings.appearance.themePreset.wisteriaBubble.description': 'Wisteria mist with mint bubbles, dreamy but fresh.',
+  'settings.appearance.themePreset.strawberryCookie': 'Strawberry Cookie',
+  'settings.appearance.themePreset.strawberryCookie.description': 'Cream-cookie warmth with strawberry red and baked gold.',
+  'settings.appearance.themePreset.graphiteAurora': 'Graphite Aurora',
+  'settings.appearance.themePreset.graphiteAurora.description': 'Graphite gray with a quiet green aurora edge.',
+  'settings.appearance.themePreset.amberNoir': 'Amber Noir',
+  'settings.appearance.themePreset.amberNoir.description': 'Black-gold listening room tones for long dark sessions.',
+  'settings.appearance.themePreset.oceanStudio': 'Ocean Studio',
+  'settings.appearance.themePreset.oceanStudio.description': 'Cool blue-gray and sea mist for a clean studio feel.',
+  'settings.appearance.themePreset.rosewoodVinyl': 'Rosewood Vinyl',
+  'settings.appearance.themePreset.rosewoodVinyl.description': 'Warm rosewood reds with a grounded vinyl mood.',
+  'settings.appearance.themePreset.shibuyaNight': 'Shibuya Night',
+  'settings.appearance.themePreset.shibuyaNight.description': 'Tokyo neon, night violet streets, and cyan signage glow.',
+  'settings.appearance.themePreset.kyotoKurenai': 'Kyoto Kurenai',
+  'settings.appearance.themePreset.kyotoKurenai.description': 'Torii red, warm washi paper, and omamori gold.',
+  'settings.appearance.themePreset.ukiyoIndigo': 'Ukiyo Indigo',
+  'settings.appearance.themePreset.ukiyoIndigo.description': 'Ukiyo-e wave indigo with paper warmth and antique gold.',
+  'settings.appearance.themePreset.fujiSnow': 'Fuji First Snow',
+  'settings.appearance.themePreset.fujiSnow.description': 'Snow white, Fuji blue, and a pale sakura highlight.',
+  'settings.appearance.themePreset.matsuriLantern': 'Matsuri Lantern',
+  'settings.appearance.themePreset.matsuriLantern.description': 'Summer festival lantern red, market gold, and warm paper.',
+  'settings.appearance.themePreset.ginzaNoir': 'Ginza Noir',
+  'settings.appearance.themePreset.ginzaNoir.description': 'Obsidian, champagne gold, and boutique-window blue.',
+  'settings.appearance.themePreset.frostJazz': 'Frost Jazz',
+  'settings.appearance.themePreset.frostJazz.description': 'Cool blue jazz tones with a plum stage-light accent.',
+  'settings.appearance.themeCustom.title': 'Customize Current Theme',
+  'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
+  'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
+  'settings.appearance.themeCustom.action.export': 'Export Parameters',
+  'settings.appearance.themeCustom.action.import': 'Import Parameters',
+  'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
+  'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Colors',
+  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Colors',
+  'settings.appearance.themeCustom.field.appBg': 'Base',
+  'settings.appearance.themeCustom.field.appBg2': 'Gradient Mid',
+  'settings.appearance.themeCustom.field.appBg3': 'Gradient End',
+  'settings.appearance.themeCustom.field.panel': 'Glass Tint',
+  'settings.appearance.themeCustom.field.panelSoft': 'Soft Panel',
+  'settings.appearance.themeCustom.field.accent': 'Primary Accent',
+  'settings.appearance.themeCustom.field.accentStrong': 'Secondary Accent',
+  'settings.appearance.themeCustom.field.secondary': 'Third Accent',
+  'settings.appearance.themeCustom.field.heading': 'Main Text',
+  'settings.appearance.themeCustom.field.text': 'Body Text',
+  'settings.appearance.themeCustom.field.muted': 'Secondary Text',
+  'settings.appearance.themeCustom.field.border': 'Border',
+  'settings.appearance.themeCustom.field.onAccent': 'Accent Button Text',
+  'settings.appearance.themeCustom.field.buttonText': 'Button Text',
+  'settings.appearance.themeCustom.field.panelOpacity': 'Panel Opacity',
+  'settings.appearance.themeCustom.field.glass': 'Glass',
+  'settings.appearance.themeCustom.field.shadow': 'Shadow',
+  'settings.appearance.themeCustom.field.appBg.description': 'Main window base color',
+  'settings.appearance.themeCustom.field.appBg2.description': 'Soft middle stop of the background gradient',
+  'settings.appearance.themeCustom.field.appBg3.description': 'End stop of the background gradient',
+  'settings.appearance.themeCustom.field.panel.description': 'Frosted panel tint',
+  'settings.appearance.themeCustom.field.panelSoft.description': 'Sidebar and softer panels',
+  'settings.appearance.themeCustom.field.accent.description': 'Main interactions',
+  'settings.appearance.themeCustom.field.accentStrong.description': 'Gradient and depth',
+  'settings.appearance.themeCustom.field.secondary.description': 'Highlight accents',
+  'settings.appearance.themeCustom.field.heading.description': 'Titles and primary copy',
+  'settings.appearance.themeCustom.field.text.description': 'Body text, artists, and settings copy',
+  'settings.appearance.themeCustom.field.muted.description': 'Supporting copy',
+  'settings.appearance.themeCustom.field.border.description': 'Card borders and dividers',
+  'settings.appearance.themeCustom.field.onAccent.description': 'Text on accent buttons',
+  'settings.appearance.themeCustom.field.buttonText.description': 'Regular buttons and chips',
+  'settings.appearance.themeCustom.field.panelOpacity.description': 'How much background shows through panels',
+  'settings.appearance.themeCustom.field.glass.description': 'Blur and glass layering',
+  'settings.appearance.themeCustom.field.shadow.description': 'Cards, popups, and player shadows',
+  'settings.appearance.themeCustom.preview.title': 'Editing',
+  'settings.appearance.themeCustom.preview.description': 'Changes preview live and are saved only when you click save.',
+  'settings.appearance.themeCustom.group.core': 'Common Colors',
+  'settings.appearance.themeCustom.group.core.description': 'Old-ECHO-style palette controls for the most visible colors.',
+  'settings.appearance.themeCustom.group.gradient': 'Background Gradient',
+  'settings.appearance.themeCustom.group.gradient.description': 'Controls the old-ECHO-style window gradient mood.',
+  'settings.appearance.themeCustom.group.advanced': 'Advanced Details',
+  'settings.appearance.themeCustom.group.advanced.description': 'Fine tune text, borders, and button text colors.',
+  'settings.appearance.themeCustom.message.exported': 'Theme parameters were exported.',
+  'settings.appearance.themeCustom.message.imported': 'Theme parameters were imported and applied.',
+  'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',
+  'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
+  'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
+  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is too low. Auto-fix it or darken text before saving.',
+  'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
+  'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.density.title': '表示密度',
   'settings.appearance.density.description': 'ライブラリ一覧はよりコンパクトなデスクトップ密度を使い、大きすぎるカード行は使いません。',
   'settings.appearance.density.compact': 'コンパクト',
@@ -3108,6 +3584,9 @@ const enUS: TranslationMap = {
   'audioDrawer.option.releaseExclusiveOnPause': 'Release Exclusive on Pause',
   'audioDrawer.option.active': 'On',
   'audioDrawer.option.set': 'Set',
+  'audioDrawer.option.automix': 'Enable Automix',
+  'audioDrawer.option.automixActive': 'Current playback is running through the Automix premix path.',
+  'audioDrawer.option.automixDescription': 'Off by default. When enabled, continuous queue playback overlaps the current outro with the next intro using an automatic crossfade.',
   'audioDrawer.option.rememberOutput': 'Save Output Settings',
   'audioDrawer.option.rememberOutputDescription': 'Restores the selected output device, output mode, buffer, and related settings on the next launch.',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
@@ -3120,6 +3599,7 @@ const enUS: TranslationMap = {
   'audioDrawer.option.wasapiExclusive': 'WASAPI Exclusive Mode',
   'audioDrawer.option.wasapiExclusiveDescription': 'Shared is the everyday Windows path. Exclusive opens the same device without the shared mixer and is recommended only when your DAC or audio interface and driver are known to be stable; onboard Realtek-style drivers can be fragile and may cause silence, stutter, or switch failures.',
   'audioDrawer.section.advancedOutput': 'Advanced Output',
+  'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO Output Devices',
   'audioDrawer.section.currentOutput': 'Current Output',
   'audioDrawer.section.hiddenDevices': 'Hidden Devices',
@@ -3710,6 +4190,8 @@ const enUS: TranslationMap = {
   'settings.shortcuts.title': 'Global Shortcuts',
   'settings.playback.audioStatus.title': 'Audio Status',
   'settings.playback.audioStatus.description': 'Sample-rate fields stay separated to prevent the old ECHO exclusive-mode 48k lock regression.',
+  'settings.playback.automix.description': 'Off by default. When enabled, continuous queues prepare the next track early and use the native dual-deck engine to skip tail silence and blend transitions.',
+  'settings.playback.automix.title': 'Automix Smart Transitions',
   'settings.playback.stability.action.copied': 'Copied',
   'settings.playback.stability.action.copy': 'Copy Diagnostics',
   'settings.playback.stability.action.refresh': 'Refresh Playback Stability Diagnostics',
@@ -3799,6 +4281,105 @@ const enUS: TranslationMap = {
   'settings.appearance.theme.light': 'Light',
   'settings.appearance.theme.dark': 'Dark',
   'settings.appearance.theme.followSystem': 'Follow System',
+  'settings.appearance.themePreset.title': 'Theme Presets',
+  'settings.appearance.themePreset.description': 'Choose a global gradient palette; your light, dark, or system mode stays separate.',
+  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
+  'settings.appearance.themePreset.classic.description': 'Keep the current crisp blue-gray look.',
+  'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
+  'settings.appearance.themePreset.echoTwilight.description': 'Warm pink gradients inspired by classic ECHO.',
+  'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
+  'settings.appearance.themePreset.sakuraMilk.description': 'Milky pink with a cherry-red accent.',
+  'settings.appearance.themePreset.peachSoda': 'Peach Soda',
+  'settings.appearance.themePreset.peachSoda.description': 'Peach orange with a fresh soda-mint lift.',
+  'settings.appearance.themePreset.mintCandy': 'Mint Candy',
+  'settings.appearance.themePreset.mintCandy.description': 'Mint green, cream white, and a little peach pink.',
+  'settings.appearance.themePreset.berryDream': 'Berry Dream',
+  'settings.appearance.themePreset.berryDream.description': 'Soft berry purple, cloud white, and dreamy pink light.',
+  'settings.appearance.themePreset.matchaCream': 'Matcha Cream',
+  'settings.appearance.themePreset.matchaCream.description': 'Matcha green and cream yellow for a calmer cute look.',
+  'settings.appearance.themePreset.lemonMochi': 'Lemon Mochi',
+  'settings.appearance.themePreset.lemonMochi.description': 'Milky lemon yellow with a soft sky-blue lift.',
+  'settings.appearance.themePreset.cottonCloud': 'Cotton Cloud',
+  'settings.appearance.themePreset.cottonCloud.description': 'Cloud white, gentle blue, and a soft pink accent.',
+  'settings.appearance.themePreset.melonCream': 'Melon Cream',
+  'settings.appearance.themePreset.melonCream.description': 'Melon green over cream, cute and readable.',
+  'settings.appearance.themePreset.seaSaltJelly': 'Sea Salt Jelly',
+  'settings.appearance.themePreset.seaSaltJelly.description': 'Sea-salt cyan with a peachy jelly glow.',
+  'settings.appearance.themePreset.caramelPudding': 'Caramel Pudding',
+  'settings.appearance.themePreset.caramelPudding.description': 'Creamy caramel with a strawberry glow, sweet but readable.',
+  'settings.appearance.themePreset.neonCandy': 'Neon Candy',
+  'settings.appearance.themePreset.neonCandy.description': 'Violet neon, pink highlights, and mint bubbles.',
+  'settings.appearance.themePreset.wisteriaBubble': 'Wisteria Bubble',
+  'settings.appearance.themePreset.wisteriaBubble.description': 'Wisteria mist with mint bubbles, dreamy but fresh.',
+  'settings.appearance.themePreset.strawberryCookie': 'Strawberry Cookie',
+  'settings.appearance.themePreset.strawberryCookie.description': 'Cream-cookie warmth with strawberry red and baked gold.',
+  'settings.appearance.themePreset.graphiteAurora': 'Graphite Aurora',
+  'settings.appearance.themePreset.graphiteAurora.description': 'Graphite gray with a quiet green aurora edge.',
+  'settings.appearance.themePreset.amberNoir': 'Amber Noir',
+  'settings.appearance.themePreset.amberNoir.description': 'Black-gold listening room tones for long dark sessions.',
+  'settings.appearance.themePreset.oceanStudio': 'Ocean Studio',
+  'settings.appearance.themePreset.oceanStudio.description': 'Cool blue-gray and sea mist for a clean studio feel.',
+  'settings.appearance.themePreset.rosewoodVinyl': 'Rosewood Vinyl',
+  'settings.appearance.themePreset.rosewoodVinyl.description': 'Warm rosewood reds with a grounded vinyl mood.',
+  'settings.appearance.themeCustom.title': 'Customize Current Theme',
+  'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
+  'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
+  'settings.appearance.themeCustom.action.export': 'Export Parameters',
+  'settings.appearance.themeCustom.action.import': 'Import Parameters',
+  'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
+  'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Colors',
+  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Colors',
+  'settings.appearance.themeCustom.field.appBg': 'Base',
+  'settings.appearance.themeCustom.field.appBg2': 'Gradient Mid',
+  'settings.appearance.themeCustom.field.appBg3': 'Gradient End',
+  'settings.appearance.themeCustom.field.panel': 'Glass Tint',
+  'settings.appearance.themeCustom.field.panelSoft': 'Soft Panel',
+  'settings.appearance.themeCustom.field.accent': 'Primary Accent',
+  'settings.appearance.themeCustom.field.accentStrong': 'Secondary Accent',
+  'settings.appearance.themeCustom.field.secondary': 'Third Accent',
+  'settings.appearance.themeCustom.field.heading': 'Main Text',
+  'settings.appearance.themeCustom.field.text': 'Body Text',
+  'settings.appearance.themeCustom.field.muted': 'Secondary Text',
+  'settings.appearance.themeCustom.field.border': 'Border',
+  'settings.appearance.themeCustom.field.onAccent': 'Accent Button Text',
+  'settings.appearance.themeCustom.field.buttonText': 'Button Text',
+  'settings.appearance.themeCustom.field.panelOpacity': 'Panel Opacity',
+  'settings.appearance.themeCustom.field.glass': 'Glass',
+  'settings.appearance.themeCustom.field.shadow': 'Shadow',
+  'settings.appearance.themeCustom.field.appBg.description': 'Main window base color',
+  'settings.appearance.themeCustom.field.appBg2.description': 'Soft middle stop of the background gradient',
+  'settings.appearance.themeCustom.field.appBg3.description': 'End stop of the background gradient',
+  'settings.appearance.themeCustom.field.panel.description': 'Frosted panel tint',
+  'settings.appearance.themeCustom.field.panelSoft.description': 'Sidebar and softer panels',
+  'settings.appearance.themeCustom.field.accent.description': 'Main interactions',
+  'settings.appearance.themeCustom.field.accentStrong.description': 'Gradient and depth',
+  'settings.appearance.themeCustom.field.secondary.description': 'Highlight accents',
+  'settings.appearance.themeCustom.field.heading.description': 'Titles and primary copy',
+  'settings.appearance.themeCustom.field.text.description': 'Body text, artists, and settings copy',
+  'settings.appearance.themeCustom.field.muted.description': 'Supporting copy',
+  'settings.appearance.themeCustom.field.border.description': 'Card borders and dividers',
+  'settings.appearance.themeCustom.field.onAccent.description': 'Text on accent buttons',
+  'settings.appearance.themeCustom.field.buttonText.description': 'Regular buttons and chips',
+  'settings.appearance.themeCustom.field.panelOpacity.description': 'How much background shows through panels',
+  'settings.appearance.themeCustom.field.glass.description': 'Blur and glass layering',
+  'settings.appearance.themeCustom.field.shadow.description': 'Cards, popups, and player shadows',
+  'settings.appearance.themeCustom.preview.title': 'Editing',
+  'settings.appearance.themeCustom.preview.description': 'Changes preview live and are saved only when you click save.',
+  'settings.appearance.themeCustom.group.core': 'Common Colors',
+  'settings.appearance.themeCustom.group.core.description': 'Old-ECHO-style palette controls for the most visible colors.',
+  'settings.appearance.themeCustom.group.gradient': 'Background Gradient',
+  'settings.appearance.themeCustom.group.gradient.description': 'Controls the old-ECHO-style window gradient mood.',
+  'settings.appearance.themeCustom.group.advanced': 'Advanced Details',
+  'settings.appearance.themeCustom.group.advanced.description': 'Fine tune text, borders, and button text colors.',
+  'settings.appearance.themeCustom.message.exported': 'Theme parameters were exported.',
+  'settings.appearance.themeCustom.message.imported': 'Theme parameters were imported and applied.',
+  'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',
+  'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
+  'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
+  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is too low. Auto-fix it or darken text before saving.',
+  'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
+  'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.density.title': 'Interface Density',
   'settings.appearance.density.description': 'Library lists use a tighter desktop density instead of oversized card rows.',
   'settings.appearance.density.compact': 'Compact',

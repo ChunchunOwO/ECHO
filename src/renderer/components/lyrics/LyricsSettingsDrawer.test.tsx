@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/lyrics';
 import type { MvSettings } from '../../../shared/types/mv';
-import { LyricsSettingsDrawer } from './LyricsSettingsDrawer';
+import { LyricsSettingsDrawer, LyricsSettingsPanel } from './LyricsSettingsDrawer';
 
 const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   appearanceTheme: 'light',
@@ -204,6 +204,35 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsEnabledProviders: ['local', 'lrclib', 'qqmusic'] }));
   });
 
+  it('exposes persistent drawer controls in the Settings variant', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsEnabledProviders: ['local', 'lrclib', 'qqmusic'] }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsEnabledProviders: ['local', 'lrclib'] })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsPanel className="settings-lyrics-panel" variant="settings" />);
+
+    await waitFor(() => expect(container.querySelectorAll('.settings-lyrics-panel .lyrics-source-option input').length).toBe(3));
+    expect(screen.queryByText('Lyrics Engine')).toBeNull();
+    expect(container.querySelector('.settings-lyrics-panel .lyrics-match-threshold-control')).toBeTruthy();
+    expect(container.querySelector('.settings-lyrics-panel .lyrics-background-controls')).toBeTruthy();
+    expect(container.querySelector('.settings-lyrics-panel .lyrics-color-panel')).toBeTruthy();
+    expect(container.querySelector('.settings-lyrics-panel .lyrics-secondary-size-range')).toBeTruthy();
+
+    const qqMusicSource = Array.from(container.querySelectorAll<HTMLInputElement>('.settings-lyrics-panel .lyrics-source-option input')).find((input) =>
+      input.closest('label')?.textContent?.includes('QQ'),
+    );
+
+    expect(qqMusicSource).toBeTruthy();
+    fireEvent.click(qqMusicSource as HTMLInputElement);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsEnabledProviders: ['local', 'lrclib', 'qqmusic'] }));
+  });
+
   it('updates the lyrics match threshold from 30 to 100 percent with a 50 percent default', async () => {
     const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
     window.echo = {
@@ -234,6 +263,41 @@ describe('LyricsSettingsDrawer', () => {
     });
 
     expect(setSettings).toHaveBeenCalledWith({ lyricsAutoAcceptScore: 0.3 });
+  });
+
+  it('keeps lyrics display preferences editable when lyrics loading is disabled', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({
+          lyricsEnabled: false,
+          lyricsHeaderHidden: true,
+          lyricsPlayerBarDrawerEnabled: true,
+        })),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const enabledToggle = (await screen.findByRole('checkbox', { name: /启用歌词/ })) as HTMLInputElement;
+    expect(enabledToggle.checked).toBe(false);
+
+    const thresholdSlider = screen.getByRole('slider', { name: '歌词匹配度设置' }) as HTMLInputElement;
+    expect(thresholdSlider.disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /隐藏歌曲信息/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /关闭MV自动显示歌曲信息/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /迷你底栏/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /隐藏纯音乐提示/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /显示罗马音/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /显示中文翻译/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /逐字歌词高亮/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /智能可读颜色/ }) as HTMLInputElement).disabled).toBe(false);
+
+    const opacitySlider = screen.getByText('底栏透明度').closest('label')?.querySelector('input[type="range"]') as HTMLInputElement;
+    expect(opacitySlider.disabled).toBe(false);
+    const miniColorPanel = container.querySelector('.lyrics-mini-player-color-panel') as HTMLElement;
+    expect((within(miniColorPanel).getByRole('button', { name: '跟随封面' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('previews background tuning immediately but debounces persisted settings writes', async () => {

@@ -227,6 +227,143 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(prepareMediaItem).not.toHaveBeenCalled();
   });
 
+  it('keeps automix off by default and sends a next-track plan only after opt-in', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        void queue.playTrack(first).then(() => {
+          queue.setAutomixEnabled(true);
+          return queue.playTrack(first);
+        });
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
+    expect(playLocalFile.mock.calls[1]?.[0].automix).toMatchObject({
+      enabled: true,
+      maxTransitionSeconds: 12,
+      beatAlignEnabled: true,
+      nextItem: {
+        mediaType: 'local',
+        trackId: second.id,
+        path: second.path,
+      },
+    });
+  });
+
+  it('rearms the current native playback when automix is enabled mid-song', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: first.id,
+          positionMs: 42000,
+          durationMs: first.duration * 1000,
+          filePath: first.path,
+        }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: first.id,
+          currentFilePath: first.path,
+          positionSeconds: 42,
+          durationSeconds: first.duration,
+          error: null,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixToggleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return <button type="button" onClick={() => queue.setAutomixEnabled(true)}>enable</button>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixToggleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'enable' }));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 42,
+      automix: {
+        enabled: true,
+        maxTransitionSeconds: 12,
+        nextItem: {
+          mediaType: 'local',
+          trackId: second.id,
+          path: second.path,
+        },
+      },
+    });
+  });
+
   it('keeps remote prewarm on prepareMediaItem and skips local prepare for remote next items', async () => {
     const first = makeTrack(1);
     const second: LibraryTrack = {

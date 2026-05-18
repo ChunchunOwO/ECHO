@@ -38,6 +38,7 @@ const SharedStatusProbe = (): JSX.Element => {
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
   (window as unknown as { echo?: Window['echo'] }).echo = undefined;
@@ -247,6 +248,58 @@ describe('AppLayout standalone routes', () => {
     expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Shell page')).toBeTruthy());
+    expect(screen.getByRole('complementary', { name: 'Main navigation' })).toBeTruthy();
+  });
+
+  it('uses the lyrics transport button to switch from MV to pure lyrics before exiting', async () => {
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'mv' } }));
+    });
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
+
+    const playerBar = screen.getByRole('contentinfo');
+    fireEvent.click(within(playerBar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
+
+    fireEvent.click(within(playerBar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Shell page')).toBeTruthy());
+    expect(screen.getByRole('complementary', { name: 'Main navigation' })).toBeTruthy();
+  });
+
+  it('exits the MV page when the MV transport button is clicked again', async () => {
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'mv' } }));
+    });
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
+
+    fireEvent.click(within(screen.getByRole('contentinfo')).getByRole('button', { name: 'MV' }));
 
     await waitFor(() => expect(screen.getByText('Shell page')).toBeTruthy());
     expect(screen.getByRole('complementary', { name: 'Main navigation' })).toBeTruthy();

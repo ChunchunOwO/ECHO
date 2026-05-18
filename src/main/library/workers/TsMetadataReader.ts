@@ -328,6 +328,34 @@ const positiveFloatOrNull = (value: unknown): number | null => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
+const signedFloatOrNull = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const match = value.trim().match(/[+-]?\d+(?:\.\d+)?/u);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const replayGainPeakOrNull = (value: unknown): number | null => {
+  const parsed = signedFloatOrNull(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+};
+
+const r128GainToDb = (value: unknown): number | null => {
+  const parsed = signedFloatOrNull(value);
+  return parsed === null ? null : parsed / 256;
+};
+
 const yearFromMetadata = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return Math.round(value);
@@ -497,6 +525,15 @@ export const readTagLibFallbackMetadata = async (filePath: string): Promise<TagL
         bitDepth: numberOrNull(properties?.bitsPerSample),
         bitrate: normalizeTagLibBitrate(properties?.bitrate),
         bpm: positiveFloatOrNull(tagValue(tags, ['bpm'])),
+        replayGainTrackGainDb:
+          signedFloatOrNull(tagValue(tags, ['replaygain_track_gain', 'REPLAYGAIN_TRACK_GAIN'])) ??
+          r128GainToDb(tagValue(tags, ['r128_track_gain', 'R128_TRACK_GAIN'])),
+        replayGainAlbumGainDb:
+          signedFloatOrNull(tagValue(tags, ['replaygain_album_gain', 'REPLAYGAIN_ALBUM_GAIN'])) ??
+          r128GainToDb(tagValue(tags, ['r128_album_gain', 'R128_ALBUM_GAIN'])),
+        replayGainTrackPeak: replayGainPeakOrNull(tagValue(tags, ['replaygain_track_peak', 'REPLAYGAIN_TRACK_PEAK'])),
+        replayGainAlbumPeak: replayGainPeakOrNull(tagValue(tags, ['replaygain_album_peak', 'REPLAYGAIN_ALBUM_PEAK'])),
+        replayGainIntegratedLufs: signedFloatOrNull(tagValue(tags, ['integrated_lufs', 'replaygain_integrated_lufs', 'ebu_r128_integrated_lufs'])),
       },
       embeddedCover,
       warnings,
@@ -532,6 +569,11 @@ const fallbackFields = (filePath: string): MetadataResult => {
       bitDepth: null,
       bitrate: null,
       bpm: null,
+      replayGainTrackGainDb: null,
+      replayGainAlbumGainDb: null,
+      replayGainTrackPeak: null,
+      replayGainAlbumPeak: null,
+      replayGainIntegratedLufs: null,
     },
     fieldSources: {
       title: 'filename_fallback',
@@ -628,6 +670,11 @@ export class TsMetadataReader implements MetadataReader {
             bitDepth: null,
             bitrate: null,
             bpm: null,
+            replayGainTrackGainDb: null,
+            replayGainAlbumGainDb: null,
+            replayGainTrackPeak: null,
+            replayGainAlbumPeak: null,
+            replayGainIntegratedLufs: null,
           },
           fieldSources: {
             title: cueTrack.title ? 'sidecar' : 'filename_fallback',
@@ -746,6 +793,11 @@ export class TsMetadataReader implements MetadataReader {
     applyEmbedded('year', tagLibMetadata.fields.year);
     applyEmbedded('genre', tagLibMetadata.fields.genre);
     applyEmbedded('bpm', tagLibMetadata.fields.bpm);
+    applyEmbedded('replayGainTrackGainDb', tagLibMetadata.fields.replayGainTrackGainDb);
+    applyEmbedded('replayGainAlbumGainDb', tagLibMetadata.fields.replayGainAlbumGainDb);
+    applyEmbedded('replayGainTrackPeak', tagLibMetadata.fields.replayGainTrackPeak);
+    applyEmbedded('replayGainAlbumPeak', tagLibMetadata.fields.replayGainAlbumPeak);
+    applyEmbedded('replayGainIntegratedLufs', tagLibMetadata.fields.replayGainIntegratedLufs);
     applyTechnical('duration', tagLibMetadata.fields.duration);
     applyTechnical('codec', tagLibMetadata.fields.codec);
     applyTechnical('sampleRate', tagLibMetadata.fields.sampleRate);
@@ -820,6 +872,20 @@ export class TsMetadataReader implements MetadataReader {
     fieldSources.bitrate = bitrate ? 'technical' : 'unknown';
     const bpm = positiveFloatOrNull(common.bpm) ?? firstNativeNumber(metadata, ['BPM', 'TBPM']);
     fieldSources.bpm = bpm ? 'embedded' : 'unknown';
+    const replayGainTrackGainDb =
+      signedFloatOrNull(firstNativeText(metadata, ['REPLAYGAIN_TRACK_GAIN', 'REPLAYGAIN_TRACKGAIN', 'TXXX:REPLAYGAIN_TRACK_GAIN'])) ??
+      r128GainToDb(firstNativeText(metadata, ['R128_TRACK_GAIN']));
+    const replayGainAlbumGainDb =
+      signedFloatOrNull(firstNativeText(metadata, ['REPLAYGAIN_ALBUM_GAIN', 'REPLAYGAIN_ALBUMGAIN', 'TXXX:REPLAYGAIN_ALBUM_GAIN'])) ??
+      r128GainToDb(firstNativeText(metadata, ['R128_ALBUM_GAIN']));
+    const replayGainTrackPeak = replayGainPeakOrNull(firstNativeText(metadata, ['REPLAYGAIN_TRACK_PEAK', 'REPLAYGAIN_TRACKPEAK']));
+    const replayGainAlbumPeak = replayGainPeakOrNull(firstNativeText(metadata, ['REPLAYGAIN_ALBUM_PEAK', 'REPLAYGAIN_ALBUMPEAK']));
+    const replayGainIntegratedLufs = signedFloatOrNull(firstNativeText(metadata, ['REPLAYGAIN_INTEGRATED_LUFS', 'EBU_R128_INTEGRATED_LUFS', 'INTEGRATED_LUFS']));
+    fieldSources.replayGainTrackGainDb = replayGainTrackGainDb !== null ? 'embedded' : 'unknown';
+    fieldSources.replayGainAlbumGainDb = replayGainAlbumGainDb !== null ? 'embedded' : 'unknown';
+    fieldSources.replayGainTrackPeak = replayGainTrackPeak !== null ? 'embedded' : 'unknown';
+    fieldSources.replayGainAlbumPeak = replayGainAlbumPeak !== null ? 'embedded' : 'unknown';
+    fieldSources.replayGainIntegratedLufs = replayGainIntegratedLufs !== null ? 'embedded' : 'unknown';
     const picture = common.picture?.[0];
     const hasEmbeddedMetadata = [
       embeddedTitle,
@@ -847,6 +913,11 @@ export class TsMetadataReader implements MetadataReader {
       bitDepth,
       bitrate,
       bpm,
+      replayGainTrackGainDb,
+      replayGainAlbumGainDb,
+      replayGainTrackPeak,
+      replayGainAlbumPeak,
+      replayGainIntegratedLufs,
     };
 
     return {

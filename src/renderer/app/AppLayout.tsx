@@ -29,6 +29,34 @@ type AppLayoutProps = {
   routes: AppRoute[];
 };
 
+type LyricsNavigationDetail = {
+  mode?: 'lyrics' | 'mv';
+};
+
+type LyricsViewMode = 'lyrics' | 'mv';
+
+const lyricsViewModeMemoryKey = 'echo:lyrics:view-mode';
+
+const isLyricsViewMode = (value: unknown): value is LyricsViewMode =>
+  value === 'lyrics' || value === 'mv';
+
+const readRememberedLyricsViewMode = (): LyricsViewMode => {
+  try {
+    const value = window.sessionStorage.getItem(lyricsViewModeMemoryKey);
+    return isLyricsViewMode(value) ? value : 'lyrics';
+  } catch {
+    return 'lyrics';
+  }
+};
+
+const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
+  try {
+    window.sessionStorage.setItem(lyricsViewModeMemoryKey, mode);
+  } catch {
+    // Best-effort page mode only.
+  }
+};
+
 type AppWallpaperSettings = Pick<
   AppSettings,
   | 'appCustomWallpaperPath'
@@ -152,6 +180,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
+  const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const [appWallpaperSettings, setAppWallpaperSettings] = useState<AppWallpaperSettings>(defaultAppWallpaperSettings);
   const [loadedAppWallpaperUrl, setLoadedAppWallpaperUrl] = useState<string | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -301,6 +330,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     },
     [activeRouteId],
   );
+
+  const setLyricsViewMode = useCallback((mode: LyricsViewMode): void => {
+    rememberLyricsViewMode(mode);
+    setActiveLyricsViewMode(mode);
+  }, []);
 
   const dismissChromeNotice = useCallback((): void => {
     setIsChromeNoticeVisible(false);
@@ -616,7 +650,24 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
     };
-    const handleNavigateLyrics = (): void => {
+    const handleNavigateLyrics = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? (event.detail as LyricsNavigationDetail | null) : null;
+      if (isLyricsViewMode(detail?.mode)) {
+        if (activeRouteId === 'lyrics') {
+          if (activeLyricsViewMode === detail.mode) {
+            setActiveRouteId(previousRouteIdRef.current);
+            return;
+          }
+
+          setLyricsViewMode(detail.mode);
+          return;
+        }
+
+        setLyricsViewMode(detail.mode);
+        navigateRoute('lyrics');
+        return;
+      }
+
       if (activeRouteId === 'lyrics') {
         setActiveRouteId(previousRouteIdRef.current);
         return;
@@ -652,7 +703,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
       window.removeEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
     };
-  }, [activeRouteId, navigateRoute]);
+  }, [activeLyricsViewMode, activeRouteId, navigateRoute, setLyricsViewMode]);
 
   useEffect(() => {
     const handleOpenAudioSettings = (): void => setIsAudioDrawerOpen(true);
@@ -1039,7 +1090,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       <AudioSettingsDrawer
         isOpen={isAudioDrawerOpen}
         status={audioDrawerStatus}
+        automixEnabled={playbackQueue.automixEnabled}
         onClose={() => setIsAudioDrawerOpen(false)}
+        onAutomixEnabledChange={playbackQueue.setAutomixEnabled}
         onStatusChange={setAudioDrawerStatus}
       />
       <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />

@@ -14,6 +14,7 @@ import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, Conne
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type {
+  AddLocalAudioFilesToPlaylistResult,
   EmbeddedTrackTagsLoadResult,
   ImportPathClassification,
   LibraryAlbum,
@@ -52,6 +53,8 @@ import type {
   BpmAnalysisResult,
   BpmAnalysisJobStatus,
   BpmAnalysisStartOptions,
+  ReplayGainAnalysisJobStatus,
+  ReplayGainAnalysisStartOptions,
   LyricsBackgroundCoverResult,
   NetworkApplyOptions,
   NetworkApplyResult,
@@ -196,6 +199,7 @@ export type EchoApi = {
     addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<LibraryPlaylistItem>;
     addStreamingTrackToPlaylist: (playlistId: string, track: LibraryTrack) => Promise<LibraryPlaylistItem>;
     addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<LibraryPlaylistItem[]>;
+    addLocalAudioFilesToPlaylist: (playlistId: string, paths: string[]) => Promise<AddLocalAudioFilesToPlaylistResult>;
     removePlaylistItem: (itemId: string) => Promise<void>;
     movePlaylistItem: (playlistId: string, itemId: string, targetPosition: number) => Promise<void>;
     clearPlaylist: (playlistId: string) => Promise<void>;
@@ -247,7 +251,7 @@ export type EchoApi = {
     updateAlbumTags: (request: LibraryAlbumTagUpdateRequest) => Promise<LibraryAlbum>;
     recordTrackPlayback: (trackId: string) => Promise<void>;
     getPlaybackHistory: (query?: PlaybackHistoryQuery) => Promise<LibraryPage<PlaybackHistoryEntry>>;
-    getPlaybackHistorySummary: () => Promise<PlaybackHistorySummary>;
+    getPlaybackHistorySummary: (query?: PlaybackHistoryQuery) => Promise<PlaybackHistorySummary>;
     deletePlaybackHistoryEntry: (id: string) => Promise<void>;
     clearPlaybackHistory: () => Promise<void>;
     startPlaybackHistory: (request: StartPlaybackHistoryRequest) => Promise<StartPlaybackHistoryResult>;
@@ -283,6 +287,8 @@ export type EchoApi = {
     rejectNetworkCandidate: (candidateId: string) => Promise<NetworkApplyResult>;
     startBpmAnalysis: (options?: BpmAnalysisStartOptions) => Promise<BpmAnalysisJobStatus>;
     getBpmAnalysisStatus: (jobId: string) => Promise<BpmAnalysisJobStatus>;
+    startReplayGainAnalysis: (options?: ReplayGainAnalysisStartOptions) => Promise<ReplayGainAnalysisJobStatus>;
+    getReplayGainAnalysisStatus: (jobId: string) => Promise<ReplayGainAnalysisJobStatus>;
   };
   playback: {
     getStatus: () => Promise<PlaybackStatus>;
@@ -298,6 +304,16 @@ export type EchoApi = {
     openLocalAudioFiles: () => Promise<string[] | null>;
     resolveLocalAudioFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
     onLocalAudioFilesOpened: (handler: (paths: string[]) => void) => () => void;
+    onAutomixAdvance?: (handler: (event: {
+      fromTrackId: string | null;
+      toTrackId: string;
+      transitionSeconds: number;
+      mode?: 'smartCrossfade' | 'beatAligned' | 'energyFade' | 'gaplessFallback';
+      fallbackReason?: string | null;
+      beatAligned?: boolean;
+      skipIntroSilence?: boolean;
+      nextStartSeconds?: number;
+    }) => void) => () => void;
   };
   remoteSources: {
     list: () => Promise<RemoteSource[]>;

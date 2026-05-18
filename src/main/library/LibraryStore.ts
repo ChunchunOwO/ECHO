@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
 import { BPM_ANALYSIS_VERSION } from '../../shared/constants/audioAnalysis';
+import { REPLAY_GAIN_ANALYSIS_VERSION } from '../../shared/constants/replayGain';
 import { chineseSearchVariants } from './ChineseSearchVariants';
 import { buildTrackSearchTerms } from './SearchIndexTokens';
 import { normalizeAlbumTitleForLooseMerge, type AlbumKeyInput, type AlbumMergeStrategy, type AlbumService } from './AlbumService';
@@ -740,6 +741,9 @@ export class LibraryStore {
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
         tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db, tracks.replay_gain_album_gain_db, tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak, tracks.replay_gain_integrated_lufs, tracks.replay_gain_source,
+        tracks.replay_gain_status, tracks.replay_gain_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
        FROM tracks
@@ -1093,15 +1097,23 @@ export class LibraryStore {
       genre: track.genre,
       path: resolve(track.path),
     });
+    const hasReplayGainTag =
+      track.replayGainTrackGainDb !== null && track.replayGainTrackGainDb !== undefined ||
+      track.replayGainAlbumGainDb !== null && track.replayGainAlbumGainDb !== undefined;
+    const replayGainSource = hasReplayGainTag ? 'tag' : 'none';
+    const replayGainStatus = hasReplayGainTag ? 'tagged' : 'none';
+    const replayGainUpdatedAt = hasReplayGainTag ? track.updatedAt : null;
 
     this.run(
       `INSERT INTO tracks (
         id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
         track_no, disc_no, year, genre, duration, codec, sample_rate, bit_depth, bitrate,
         bpm, bpm_confidence, beat_offset_ms, analysis_status, analysis_version, analysis_error, analysis_updated_at,
+        replay_gain_track_gain_db, replay_gain_album_gain_db, replay_gain_track_peak, replay_gain_album_peak,
+        replay_gain_integrated_lufs, replay_gain_source, replay_gain_status, replay_gain_version, replay_gain_error, replay_gain_updated_at,
         search_terms, cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
         field_sources_json, missing, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         folder_id = excluded.folder_id,
         size_bytes = excluded.size_bytes,
@@ -1126,6 +1138,16 @@ export class LibraryStore {
         analysis_version = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_version ELSE tracks.analysis_version END,
         analysis_error = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_error ELSE tracks.analysis_error END,
         analysis_updated_at = CASE WHEN excluded.bpm IS NOT NULL THEN excluded.analysis_updated_at ELSE tracks.analysis_updated_at END,
+        replay_gain_track_gain_db = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_track_gain_db ELSE tracks.replay_gain_track_gain_db END,
+        replay_gain_album_gain_db = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_album_gain_db ELSE tracks.replay_gain_album_gain_db END,
+        replay_gain_track_peak = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_track_peak ELSE tracks.replay_gain_track_peak END,
+        replay_gain_album_peak = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_album_peak ELSE tracks.replay_gain_album_peak END,
+        replay_gain_integrated_lufs = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_integrated_lufs ELSE tracks.replay_gain_integrated_lufs END,
+        replay_gain_source = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_source ELSE tracks.replay_gain_source END,
+        replay_gain_status = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_status ELSE tracks.replay_gain_status END,
+        replay_gain_version = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_version ELSE tracks.replay_gain_version END,
+        replay_gain_error = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_error ELSE tracks.replay_gain_error END,
+        replay_gain_updated_at = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_updated_at ELSE tracks.replay_gain_updated_at END,
         search_terms = excluded.search_terms,
         cover_id = excluded.cover_id,
         metadata_status = excluded.metadata_status,
@@ -1160,6 +1182,16 @@ export class LibraryStore {
       track.bpm ? 1 : 0,
       null,
       track.bpm ? track.updatedAt : null,
+      track.replayGainTrackGainDb ?? null,
+      track.replayGainAlbumGainDb ?? null,
+      track.replayGainTrackPeak ?? null,
+      track.replayGainAlbumPeak ?? null,
+      track.replayGainIntegratedLufs ?? null,
+      replayGainSource,
+      replayGainStatus,
+      hasReplayGainTag ? REPLAY_GAIN_ANALYSIS_VERSION : 0,
+      null,
+      replayGainUpdatedAt,
       searchTerms,
       track.coverId,
       track.metadataStatus ?? 'ok',
@@ -1186,6 +1218,9 @@ export class LibraryStore {
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
         tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db, tracks.replay_gain_album_gain_db, tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak, tracks.replay_gain_integrated_lufs, tracks.replay_gain_source,
+        tracks.replay_gain_status, tracks.replay_gain_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks`;
@@ -1274,6 +1309,111 @@ export class LibraryStore {
       update.error ?? null,
       timestamp,
       JSON.stringify(fieldSources),
+      timestamp,
+      trackId,
+    );
+
+    return this.getTrack(trackId);
+  }
+
+  findReplayGainAnalysisTargets(limit: number, trackIds?: string[], force = false): LibraryTrack[] {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+    const baseColumns = `SELECT
+        tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
+        tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
+        tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db, tracks.replay_gain_album_gain_db, tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak, tracks.replay_gain_integrated_lufs, tracks.replay_gain_source,
+        tracks.replay_gain_status, tracks.replay_gain_updated_at,
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.network_metadata_status, tracks.field_sources_json
+      FROM tracks`;
+
+    if (trackIds?.length) {
+      const placeholders = trackIds.map(() => '?').join(', ');
+      const rows = this.allRows(
+        `${baseColumns}
+         WHERE tracks.missing = 0
+           AND tracks.id IN (${placeholders})
+           AND (? = 1 OR tracks.replay_gain_source != 'tag')
+         ORDER BY tracks.title COLLATE NOCASE
+         LIMIT ?`,
+        ...trackIds,
+        force ? 1 : 0,
+        safeLimit,
+      );
+      return rows.map((row) => this.mapTrack(row));
+    }
+
+    const rows = this.allRows(
+      `${baseColumns}
+       WHERE tracks.missing = 0
+         AND tracks.replay_gain_source != 'tag'
+         AND (
+           ? = 1
+           OR tracks.replay_gain_track_gain_db IS NULL
+           OR tracks.replay_gain_status IN ('none', 'missing', 'error')
+           OR (
+             tracks.replay_gain_status = 'complete'
+             AND tracks.replay_gain_version < ?
+           )
+         )
+       ORDER BY tracks.updated_at DESC, tracks.title COLLATE NOCASE
+       LIMIT ?`,
+      force ? 1 : 0,
+      REPLAY_GAIN_ANALYSIS_VERSION,
+      safeLimit,
+    );
+    return rows.map((row) => this.mapTrack(row));
+  }
+
+  markTrackReplayGainAnalyzing(trackId: string, timestamp = nowIso()): void {
+    this.run(
+      `UPDATE tracks SET replay_gain_status = 'analyzing', replay_gain_error = NULL, replay_gain_updated_at = ?, updated_at = ?
+       WHERE id = ? AND missing = 0 AND replay_gain_source != 'tag'`,
+      timestamp,
+      timestamp,
+      trackId,
+    );
+  }
+
+  updateTrackReplayGainAnalysis(
+    trackId: string,
+    update: {
+      trackGainDb: number | null;
+      trackPeak: number | null;
+      integratedLufs: number | null;
+      status: 'complete' | 'missing' | 'error';
+      error?: string | null;
+    },
+    timestamp = nowIso(),
+  ): LibraryTrack | null {
+    const current = this.getTrack(trackId);
+    if (current?.replayGainSource === 'tag') {
+      return current;
+    }
+
+    this.run(
+      `UPDATE tracks SET
+        replay_gain_track_gain_db = ?,
+        replay_gain_track_peak = ?,
+        replay_gain_integrated_lufs = ?,
+        replay_gain_source = ?,
+        replay_gain_status = ?,
+        replay_gain_version = ?,
+        replay_gain_error = ?,
+        replay_gain_updated_at = ?,
+        updated_at = ?
+      WHERE id = ? AND missing = 0 AND replay_gain_source != 'tag'`,
+      update.trackGainDb,
+      update.trackPeak,
+      update.integratedLufs,
+      update.status === 'complete' ? 'analysis' : 'none',
+      update.status,
+      REPLAY_GAIN_ANALYSIS_VERSION,
+      update.error ?? null,
+      timestamp,
       timestamp,
       trackId,
     );
@@ -1503,6 +1643,123 @@ export class LibraryStore {
     const { page, pageSize, search, from, to, completedOnly } = pageFromHistoryQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
+    const hasTimeRange = Boolean(from || to);
+
+    if (hasTimeRange) {
+      const searchFilter = buildSearchFilter(search, [
+        likePredicate('playback_history.title'),
+        likePredicate('playback_history.artist'),
+        likePredicate("COALESCE(playback_history.album, '')"),
+        likePredicate("COALESCE(playback_history.title_snapshot, '')"),
+        likePredicate("COALESCE(playback_history.artist_snapshot, '')"),
+        likePredicate('playback_history.track_path'),
+      ], searchOptions);
+      const clauses: string[] = [];
+      const params: unknown[] = [];
+
+      if (searchFilter.sql) {
+        clauses.push(searchFilter.sql);
+        params.push(...searchFilter.params);
+      }
+
+      if (from) {
+        clauses.push('playback_history.started_at >= ?');
+        params.push(from);
+      }
+
+      if (to) {
+        clauses.push('playback_history.started_at < ?');
+        params.push(to);
+      }
+
+      if (completedOnly) {
+        clauses.push('playback_history.completed > 0');
+      }
+
+      const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+      const totalRow = this.getRow(
+        `SELECT COUNT(DISTINCT COALESCE(stable_key, track_id, track_path)) AS total
+         FROM playback_history
+         ${whereSql}`,
+        ...params,
+      );
+      const rows = this.allRows(
+        `WITH filtered_history AS (
+           SELECT playback_history.*, COALESCE(stable_key, track_id, track_path) AS history_key
+           FROM playback_history
+           ${whereSql}
+         ),
+         grouped_history AS (
+           SELECT
+             history_key,
+             COUNT(*) AS history_play_count,
+             COALESCE(SUM(played_seconds), 0) AS history_played_seconds_total,
+             COALESCE(SUM(CASE WHEN completed > 0 THEN 1 ELSE 0 END), 0) AS completed_count,
+             MAX(started_at) AS last_started_at,
+             MAX(ended_at) AS last_ended_at
+           FROM filtered_history
+           GROUP BY history_key
+         ),
+         latest_history AS (
+           SELECT filtered_history.*
+           FROM filtered_history
+           INNER JOIN grouped_history
+             ON filtered_history.history_key = grouped_history.history_key
+           WHERE filtered_history.id = (
+             SELECT latest.id
+             FROM filtered_history AS latest
+             WHERE latest.history_key = grouped_history.history_key
+             ORDER BY latest.started_at DESC, latest.created_at DESC, latest.id DESC
+             LIMIT 1
+           )
+         )
+         SELECT
+           grouped_history.history_key AS id,
+           latest_history.track_id,
+           latest_history.track_path,
+           latest_history.media_type,
+           latest_history.provider,
+           latest_history.provider_track_id,
+           latest_history.stable_key,
+           latest_history.title_snapshot,
+           latest_history.artist_snapshot,
+           latest_history.album_snapshot,
+           latest_history.duration_snapshot,
+           latest_history.cover_snapshot,
+           latest_history.title,
+           latest_history.artist,
+           latest_history.album,
+           latest_history.album_artist,
+           latest_history.cover_id,
+           grouped_history.last_started_at AS started_at,
+           grouped_history.last_ended_at AS ended_at,
+           grouped_history.history_played_seconds_total,
+           latest_history.duration_seconds,
+           grouped_history.history_play_count,
+           grouped_history.completed_count,
+           latest_history.source_type,
+           latest_history.source_label,
+           latest_history.queue_id
+         FROM grouped_history
+         INNER JOIN latest_history
+           ON latest_history.history_key = grouped_history.history_key
+         ORDER BY grouped_history.history_play_count DESC, grouped_history.last_started_at DESC
+         LIMIT ? OFFSET ?`,
+        ...params,
+        pageSize,
+        offset,
+      );
+      const total = Number(totalRow?.total ?? 0);
+
+      return {
+        items: rows.map((row) => this.mapPlaybackHistoryEntry(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    }
+
     const searchFilter = buildSearchFilter(search, [
       likePredicate('playback_history_stats.title'),
       likePredicate('playback_history_stats.artist'),
@@ -1601,7 +1858,9 @@ export class LibraryStore {
     });
   }
 
-  getPlaybackHistorySummary(now = new Date()): PlaybackHistorySummary {
+  getPlaybackHistorySummary(query?: PlaybackHistoryQuery, now = new Date()): PlaybackHistorySummary {
+    const { search, from, to, completedOnly } = pageFromHistoryQuery(query);
+    const searchOptions = this.readSearchOptions();
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(startOfToday);
@@ -1614,12 +1873,52 @@ export class LibraryStore {
       endOfToday.toISOString(),
     );
     const totalRow = this.getRow('SELECT COUNT(*) AS total, MAX(started_at) AS latest FROM playback_history');
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('playback_history.title'),
+      likePredicate('playback_history.artist'),
+      likePredicate("COALESCE(playback_history.album, '')"),
+      likePredicate("COALESCE(playback_history.title_snapshot, '')"),
+      likePredicate("COALESCE(playback_history.artist_snapshot, '')"),
+      likePredicate('playback_history.track_path'),
+    ], searchOptions);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (searchFilter.sql) {
+      clauses.push(searchFilter.sql);
+      params.push(...searchFilter.params);
+    }
+
+    if (from) {
+      clauses.push('playback_history.started_at >= ?');
+      params.push(from);
+    }
+
+    if (to) {
+      clauses.push('playback_history.started_at < ?');
+      params.push(to);
+    }
+
+    if (completedOnly) {
+      clauses.push('playback_history.completed > 0');
+    }
+
+    const rangeWhereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rangeRow = this.getRow(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(played_seconds), 0) AS played_seconds, MAX(started_at) AS latest
+       FROM playback_history
+       ${rangeWhereSql}`,
+      ...params,
+    );
 
     return {
       todayCount: Number(todayRow?.count ?? 0),
       todayPlayedSeconds: Number(todayRow?.played_seconds ?? 0),
       totalCount: Number(totalRow?.total ?? 0),
       latestPlayedAt: textOrNull(totalRow?.latest),
+      rangeCount: Number(rangeRow?.count ?? 0),
+      rangePlayedSeconds: Number(rangeRow?.played_seconds ?? 0),
+      rangeLatestPlayedAt: textOrNull(rangeRow?.latest),
     };
   }
 
@@ -1630,6 +1929,9 @@ export class LibraryStore {
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
         tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db, tracks.replay_gain_album_gain_db, tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak, tracks.replay_gain_integrated_lufs, tracks.replay_gain_source,
+        tracks.replay_gain_status, tracks.replay_gain_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
@@ -1647,6 +1949,9 @@ export class LibraryStore {
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
         tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db, tracks.replay_gain_album_gain_db, tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak, tracks.replay_gain_integrated_lufs, tracks.replay_gain_source,
+        tracks.replay_gain_status, tracks.replay_gain_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
        FROM tracks
@@ -4961,6 +5266,14 @@ export class LibraryStore {
       beatOffsetMs: numberOrNull(row.beat_offset_ms),
       analysisStatus: this.mapAnalysisStatus(row.analysis_status),
       analysisUpdatedAt: textOrNull(row.analysis_updated_at),
+      replayGainTrackGainDb: numberOrNull(row.replay_gain_track_gain_db),
+      replayGainAlbumGainDb: numberOrNull(row.replay_gain_album_gain_db),
+      replayGainTrackPeak: numberOrNull(row.replay_gain_track_peak),
+      replayGainAlbumPeak: numberOrNull(row.replay_gain_album_peak),
+      replayGainIntegratedLufs: numberOrNull(row.replay_gain_integrated_lufs),
+      replayGainSource: this.mapReplayGainSource(row.replay_gain_source),
+      replayGainStatus: this.mapReplayGainStatus(row.replay_gain_status),
+      replayGainUpdatedAt: textOrNull(row.replay_gain_updated_at),
       coverId: textOrNull(row.cover_id),
       coverThumb: this.toCoverUrl(row.cover_id, 'thumb'),
       metadataStatus: textOrNull(row.metadata_status) ?? 'ok',
@@ -5034,6 +5347,28 @@ export class LibraryStore {
       value === 'analyzing' ||
       value === 'complete' ||
       value === 'low_confidence' ||
+      value === 'error'
+    ) {
+      return value;
+    }
+
+    return 'none';
+  }
+
+  private mapReplayGainSource(value: unknown): LibraryTrack['replayGainSource'] {
+    if (value === 'tag' || value === 'analysis') {
+      return value;
+    }
+
+    return 'none';
+  }
+
+  private mapReplayGainStatus(value: unknown): LibraryTrack['replayGainStatus'] {
+    if (
+      value === 'tagged' ||
+      value === 'analyzing' ||
+      value === 'complete' ||
+      value === 'missing' ||
       value === 'error'
     ) {
       return value;

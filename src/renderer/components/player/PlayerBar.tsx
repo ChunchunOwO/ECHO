@@ -32,6 +32,7 @@ type PlayerBarProps = {
 const progressRenderIntervalMs = 250;
 const bpmAnalysisStatusPollMs = 1500;
 const playbackSeekedEvent = 'playback:seeked';
+const lyricsViewModeMemoryKey = 'echo:lyrics:view-mode';
 const maxInterpolatedStatusGapSeconds = 1.6;
 const maxStaleStatusRegressionSeconds = 2.5;
 const seekAnchorMaxAgeSeconds = 3;
@@ -235,6 +236,14 @@ const isProviderLikedStreamingProvider = (provider: string | null | undefined): 
 
 const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
+};
+
+const rememberLyricsViewMode = (mode: 'lyrics' | 'mv'): void => {
+  try {
+    window.sessionStorage.setItem(lyricsViewModeMemoryKey, mode);
+  } catch {
+    // Best-effort navigation preference only.
+  }
 };
 
 const PlayerMarqueeText = ({ kind, text }: { kind: 'title' | 'subtitle'; text: string }): JSX.Element => {
@@ -1330,7 +1339,13 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, []);
 
   const handleOpenLyrics = useCallback((): void => {
-    window.dispatchEvent(new Event('app:navigate:lyrics'));
+    rememberLyricsViewMode('lyrics');
+    window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'lyrics' } }));
+  }, []);
+
+  const handleOpenMv = useCallback((): void => {
+    rememberLyricsViewMode('mv');
+    window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'mv' } }));
   }, []);
 
   const handleToggleCurrentTrackLiked = useCallback(async (): Promise<void> => {
@@ -1536,6 +1551,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onCycleRepeatMode={handleCycleRepeatMode}
           onOpenQueue={handleOpenQueue}
           onOpenLyrics={handleOpenLyrics}
+          onOpenMv={handleOpenMv}
           onToggleShuffle={queue.toggleShuffle}
           isCurrentTrackLiked={isCurrentTrackLiked}
           canLikeCurrentTrack={Boolean(trackId && (isLibraryCurrentTrack || isProviderLikedStreamingTrack))}

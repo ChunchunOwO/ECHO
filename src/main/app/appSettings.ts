@@ -4,12 +4,17 @@ import { app } from 'electron';
 import type {
   AppLocale,
   AppThemeMode,
+  AppThemePresetOverride,
+  AppThemePresetOverrides,
+  AppThemeToneOverride,
+  AppThemePreset,
   AppearancePreferences,
   AppSettings,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
   RememberedAudioOutput,
   RememberedWindowSize,
+  ReplayGainMode,
 } from '../../shared/types/appSettings';
 import type { LyricsProviderId } from '../../shared/types/lyrics';
 import type { LibrarySort } from '../../shared/types/library';
@@ -39,6 +44,38 @@ const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'nete
 const appMemoryVersion = 2;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
+const appThemePresets: AppThemePreset[] = [
+  'classic',
+  'echoTwilight',
+  'sakuraMilk',
+  'peachSoda',
+  'mintCandy',
+  'berryDream',
+  'matchaCream',
+  'lemonMochi',
+  'cottonCloud',
+  'melonCream',
+  'seaSaltJelly',
+  'caramelPudding',
+  'neonCandy',
+  'wisteriaBubble',
+  'strawberryCookie',
+  'graphiteAurora',
+  'amberNoir',
+  'oceanStudio',
+  'rosewoodVinyl',
+  'shibuyaNight',
+  'kyotoKurenai',
+  'ukiyoIndigo',
+  'fujiSnow',
+  'matsuriLantern',
+  'ginzaNoir',
+  'frostJazz',
+];
+const themeOverrideColorKeys: Array<keyof Pick<
+  AppThemeToneOverride,
+  'appBg' | 'appBg2' | 'appBg3' | 'panel' | 'panelSoft' | 'accent' | 'accentStrong' | 'secondary' | 'heading' | 'text' | 'muted' | 'border' | 'onAccent' | 'buttonText'
+>> = ['appBg', 'appBg2', 'appBg3', 'panel', 'panelSoft', 'accent', 'accentStrong', 'secondary', 'heading', 'text', 'muted', 'border', 'onAccent', 'buttonText'];
 const librarySorts: LibrarySort[] = [
   'default',
   'createdAsc',
@@ -135,6 +172,8 @@ export const defaultSettings: AppSettings = {
   appMemoryVersion,
   locale: 'zh-CN',
   appearanceTheme: 'dark',
+  appearanceThemePreset: 'classic',
+  appearanceThemePresetOverrides: {},
   appearancePreferences: { ...defaultAppearancePreferences },
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
@@ -228,6 +267,12 @@ export const defaultSettings: AppSettings = {
   mvAllow60fps: true,
   channelBalance: defaultChannelBalanceSettings,
   playerVolume: 1,
+  replayGainEnabled: false,
+  replayGainMode: 'track',
+  replayGainTargetLufs: -18,
+  replayGainPreampDb: 0,
+  replayGainPreventClipping: true,
+  replayGainAnalyzeMissingOnScan: true,
   backgroundSpacePauseEnabled: false,
   globalShortcuts: createDefaultGlobalShortcuts(),
   playbackFollowCurrentTrack: false,
@@ -298,8 +343,98 @@ const normalizeLocale = (value: unknown): AppLocale =>
 const normalizeAppearanceTheme = (value: unknown): AppThemeMode =>
   appThemeModes.includes(value as AppThemeMode) ? (value as AppThemeMode) : defaultSettings.appearanceTheme;
 
+const normalizeAppearanceThemePreset = (value: unknown): AppThemePreset =>
+  appThemePresets.includes(value as AppThemePreset) ? (value as AppThemePreset) : defaultSettings.appearanceThemePreset ?? 'classic';
+
+const normalizeThemeHexColorSetting = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toLowerCase() : undefined;
+};
+
+const normalizeThemeOverridePercent = (value: unknown, min: number, max: number): number | undefined => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.round(clamp(numeric, min, max)) : undefined;
+};
+
+const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Partial<AppThemeToneOverride>;
+  const output: AppThemeToneOverride = {};
+
+  for (const key of themeOverrideColorKeys) {
+    const color = normalizeThemeHexColorSetting(input[key]);
+    if (color) {
+      (output as Record<string, string>)[key] = color;
+    }
+  }
+
+  const panelOpacityPercent = normalizeThemeOverridePercent(input.panelOpacityPercent, 40, 100);
+  const glassPercent = normalizeThemeOverridePercent(input.glassPercent, 0, 80);
+  const shadowPercent = normalizeThemeOverridePercent(input.shadowPercent, 0, 100);
+
+  if (panelOpacityPercent !== undefined) {
+    output.panelOpacityPercent = panelOpacityPercent;
+  }
+  if (glassPercent !== undefined) {
+    output.glassPercent = glassPercent;
+  }
+  if (shadowPercent !== undefined) {
+    output.shadowPercent = shadowPercent;
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const normalizeThemePresetOverride = (value: unknown): AppThemePresetOverride | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Partial<AppThemePresetOverride>;
+  const light = normalizeThemeToneOverride(input.light);
+  const dark = normalizeThemeToneOverride(input.dark);
+  const output: AppThemePresetOverride = {};
+
+  if (light) {
+    output.light = light;
+  }
+  if (dark) {
+    output.dark = dark;
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const normalizeThemePresetOverrides = (value: unknown): AppThemePresetOverrides => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const input = value as Partial<Record<string, unknown>>;
+  const output: AppThemePresetOverrides = {};
+
+  for (const preset of appThemePresets) {
+    const override = normalizeThemePresetOverride(input[preset]);
+    if (override) {
+      output[preset] = override;
+    }
+  }
+
+  return output;
+};
+
 const normalizeSongsSort = (value: unknown): LibrarySort =>
   librarySorts.includes(value as LibrarySort) ? (value as LibrarySort) : 'default';
+
+const normalizeReplayGainMode = (value: unknown): ReplayGainMode =>
+  value === 'track' || value === 'album' || value === 'off' ? value : 'track';
 
 const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -572,11 +707,15 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     settings.lyricsProviderOrder,
     Array.isArray(settings.lyricsEnabledProviders) ? settings.lyricsEnabledProviders : defaultSettings.lyricsProviderOrder,
   );
+  const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
+  const replayGainPreampDb = Number(settings.replayGainPreampDb);
 
   return {
     appMemoryVersion,
     locale: normalizeLocale(settings.locale),
     appearanceTheme: normalizeAppearanceTheme(settings.appearanceTheme),
+    appearanceThemePreset: normalizeAppearanceThemePreset(settings.appearanceThemePreset),
+    appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -730,6 +869,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     mvAllow60fps: settings.mvAllow60fps !== false,
     channelBalance: normalizeChannelBalanceSettings(settings.channelBalance),
     playerVolume: Number.isFinite(playerVolume) ? Math.max(0, Math.min(1, playerVolume)) : defaultSettings.playerVolume,
+    replayGainEnabled: settings.replayGainEnabled === true,
+    replayGainMode: normalizeReplayGainMode(settings.replayGainMode),
+    replayGainTargetLufs: Number.isFinite(replayGainTargetLufs)
+      ? Math.round(clamp(replayGainTargetLufs, -24, -12) * 10) / 10
+      : defaultSettings.replayGainTargetLufs,
+    replayGainPreampDb: Number.isFinite(replayGainPreampDb)
+      ? Math.round(clamp(replayGainPreampDb, -12, 12) * 10) / 10
+      : defaultSettings.replayGainPreampDb,
+    replayGainPreventClipping: settings.replayGainPreventClipping !== false,
+    replayGainAnalyzeMissingOnScan: settings.replayGainAnalyzeMissingOnScan !== false,
     backgroundSpacePauseEnabled: false,
     globalShortcuts: normalizeGlobalShortcuts(settings.globalShortcuts),
     playbackFollowCurrentTrack: settings.playbackFollowCurrentTrack === true,

@@ -113,6 +113,7 @@ const ExternalPlaySeed = ({ track }: { track: LibraryTrack }): JSX.Element => {
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -171,6 +172,15 @@ describe('PlayerBar', () => {
       fireEvent.click(screen.getByRole('button', { name: '打开歌词' }));
 
       expect(onNavigateLyrics).toHaveBeenCalledTimes(1);
+      expect((onNavigateLyrics.mock.calls[0][0] as CustomEvent).detail).toEqual({ mode: 'lyrics' });
+      expect(window.sessionStorage.getItem('echo:lyrics:view-mode')).toBe('lyrics');
+      expect(onNavigateNowPlaying).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'MV' }));
+
+      expect(onNavigateLyrics).toHaveBeenCalledTimes(2);
+      expect((onNavigateLyrics.mock.calls[1][0] as CustomEvent).detail).toEqual({ mode: 'mv' });
+      expect(window.sessionStorage.getItem('echo:lyrics:view-mode')).toBe('mv');
       expect(onNavigateNowPlaying).not.toHaveBeenCalled();
     } finally {
       window.removeEventListener('app:navigate:lyrics', onNavigateLyrics);

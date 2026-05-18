@@ -15,6 +15,44 @@ const filterLabels: Record<HistoryFilter, string> = {
   completed: '只看完整播放',
 };
 
+const filterSummaryLabels: Record<HistoryFilter, { count: string; duration: string; tracks: string; latest: string; group: string }> = {
+  all: {
+    count: '总播放',
+    duration: '总时长',
+    tracks: '历史曲目',
+    latest: '最近播放时间',
+    group: '按播放次数排序',
+  },
+  today: {
+    count: '今日播放',
+    duration: '今日时长',
+    tracks: '今日曲目',
+    latest: '今日最近播放',
+    group: '今日按播放次数排序',
+  },
+  week: {
+    count: '本周播放',
+    duration: '本周时长',
+    tracks: '本周曲目',
+    latest: '本周最近播放',
+    group: '本周按播放次数排序',
+  },
+  month: {
+    count: '本月播放',
+    duration: '本月时长',
+    tracks: '本月曲目',
+    latest: '本月最近播放',
+    group: '本月按播放次数排序',
+  },
+  completed: {
+    count: '完整播放',
+    duration: '完整播放时长',
+    tracks: '完整播放曲目',
+    latest: '最近完整播放',
+    group: '按完整播放次数排序',
+  },
+};
+
 const startOfDay = (date: Date): Date => {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
@@ -27,6 +65,14 @@ const addDays = (date: Date, days: number): Date => {
   return next;
 };
 
+const startOfWeek = (date: Date): Date => {
+  const next = startOfDay(date);
+  const day = next.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + mondayOffset);
+  return next;
+};
+
 const historyFilterRange = (filter: HistoryFilter): Pick<PlaybackHistoryQuery, 'from' | 'to' | 'completedOnly'> => {
   const now = new Date();
   const today = startOfDay(now);
@@ -36,13 +82,16 @@ const historyFilterRange = (filter: HistoryFilter): Pick<PlaybackHistoryQuery, '
   }
 
   if (filter === 'week') {
-    return { from: addDays(today, -6).toISOString(), to: addDays(today, 1).toISOString() };
+    const week = startOfWeek(today);
+    return { from: week.toISOString(), to: addDays(week, 7).toISOString() };
   }
 
   if (filter === 'month') {
     const month = new Date(today);
     month.setDate(1);
-    return { from: month.toISOString(), to: addDays(today, 1).toISOString() };
+    const nextMonth = new Date(month);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    return { from: month.toISOString(), to: nextMonth.toISOString() };
   }
 
   if (filter === 'completed') {
@@ -154,14 +203,16 @@ export const HistoryPage = (): JSX.Element => {
       }
 
       try {
+        const rangeQuery = historyFilterRange(filter);
+        const historyQuery = {
+          page: nextPage,
+          pageSize,
+          search,
+          ...rangeQuery,
+        };
         const [historyResult, nextSummary] = await Promise.all([
-          library.getPlaybackHistory({
-            page: nextPage,
-            pageSize,
-            search,
-            ...historyFilterRange(filter),
-          }),
-          library.getPlaybackHistorySummary(),
+          library.getPlaybackHistory(historyQuery),
+          library.getPlaybackHistorySummary(historyQuery),
         ]);
 
         if (requestIdRef.current !== requestId) {
@@ -207,7 +258,8 @@ export const HistoryPage = (): JSX.Element => {
     return () => observer.disconnect();
   }, [hasMore, isLoading, loadHistory, page]);
 
-  const groupedItems = useMemo(() => (items.length > 0 ? [['按播放次数排序', items] as const] : []), [items]);
+  const summaryLabels = filterSummaryLabels[filter];
+  const groupedItems = useMemo(() => (items.length > 0 ? [[filterSummaryLabels[filter].group, items] as const] : []), [filter, items]);
 
   const handleDeleteEntry = useCallback(
     async (entry: PlaybackHistoryEntry): Promise<void> => {
@@ -215,12 +267,12 @@ export const HistoryPage = (): JSX.Element => {
         await window.echo?.library?.deletePlaybackHistoryEntry(entry.id);
         setItems((current) => current.filter((item) => item.id !== entry.id));
         setTotal((current) => Math.max(0, current - 1));
-        setSummary(await window.echo?.library?.getPlaybackHistorySummary?.() ?? null);
+        setSummary(await window.echo?.library?.getPlaybackHistorySummary?.({ search, ...historyFilterRange(filter) }) ?? null);
       } catch (deleteError) {
         setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
       }
     },
-    [],
+    [filter, search],
   );
 
   const handleClearHistory = useCallback(async (): Promise<void> => {
@@ -234,11 +286,11 @@ export const HistoryPage = (): JSX.Element => {
       setPage(1);
       setTotal(0);
       setHasMore(false);
-      setSummary(await window.echo?.library?.getPlaybackHistorySummary?.() ?? null);
+      setSummary(await window.echo?.library?.getPlaybackHistorySummary?.({ search, ...historyFilterRange(filter) }) ?? null);
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));
     }
-  }, []);
+  }, [filter, search]);
 
   const handlePlay = useCallback(
     async (entry: PlaybackHistoryEntry): Promise<void> => {
@@ -252,12 +304,12 @@ export const HistoryPage = (): JSX.Element => {
             .map((item) => (item.id === entry.id ? { ...item, playCount: item.playCount + 1, startedAt: new Date().toISOString() } : item))
             .sort((left, right) => right.playCount - left.playCount || Date.parse(right.startedAt) - Date.parse(left.startedAt)),
         );
-        setSummary(await window.echo?.library?.getPlaybackHistorySummary?.() ?? null);
+        setSummary(await window.echo?.library?.getPlaybackHistorySummary?.({ search, ...historyFilterRange(filter) }) ?? null);
       } catch (playError) {
         setError(playError instanceof Error ? playError.message : String(playError));
       }
     },
-    [queue],
+    [filter, queue, search],
   );
 
   const handleAddToQueue = useCallback(
@@ -295,10 +347,10 @@ export const HistoryPage = (): JSX.Element => {
       </section>
 
       <section className="history-summary-grid" aria-label="历史概览">
-        <HistoryMetric icon={<CalendarDays size={18} />} label="今日播放" value={`${summary?.todayCount ?? 0} 次`} />
-        <HistoryMetric icon={<Clock3 size={18} />} label="今日时长" value={formatLongDuration(summary?.todayPlayedSeconds ?? 0)} />
-        <HistoryMetric icon={<Music2 size={18} />} label="总历史数量" value={`${summary?.totalCount ?? 0} 条`} />
-        <HistoryMetric icon={<Clock3 size={18} />} label="最近播放时间" value={formatDate(summary?.latestPlayedAt ?? null)} />
+        <HistoryMetric icon={<CalendarDays size={18} />} label={summaryLabels.count} value={`${summary?.rangeCount ?? 0} 次`} />
+        <HistoryMetric icon={<Clock3 size={18} />} label={summaryLabels.duration} value={formatLongDuration(summary?.rangePlayedSeconds ?? 0)} />
+        <HistoryMetric icon={<Music2 size={18} />} label={summaryLabels.tracks} value={`${total.toLocaleString()} 首`} />
+        <HistoryMetric icon={<Clock3 size={18} />} label={summaryLabels.latest} value={formatDate(summary?.rangeLatestPlayedAt ?? null)} />
       </section>
 
       <section className="history-list-section" aria-label="播放历史列表">

@@ -15,6 +15,7 @@ import type {
   NativeOutputTelemetry,
   NativeOutputStartOptions,
 } from './audioTypes';
+import type { AutomixTransitionPlan } from './AutomixPlanner';
 
 type BridgeSpawnOptions = SpawnOptionsWithStdioTuple<'pipe', 'pipe', 'pipe'> & {
   windowsHide: boolean;
@@ -286,6 +287,10 @@ const frameTypeShutdown = 4;
 const frameTypeSetVolume = 5;
 const frameTypeDop24Le = 6;
 const frameTypeNativeDsdRaw = 7;
+const frameTypeAutomixPrepare = 8;
+const frameTypeAutomixNextPcmF32Le = 9;
+const frameTypeAutomixNextEnd = 10;
+const frameTypeAutomixCancel = 11;
 
 const createFrameHeader = (type: number, sessionId: number, payloadBytes: number): Buffer => {
   const header = Buffer.alloc(16);
@@ -396,6 +401,38 @@ class FramedSessionWritable extends Writable {
 
   override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
     this.sessionClosed = true;
+    callback(error);
+  }
+}
+
+class AutomixNextDeckWritable extends Writable {
+  private isClosed = false;
+
+  constructor(private readonly owner: NativeOutputBridge) {
+    super();
+  }
+
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    if (this.isClosed) {
+      callback(new Error('native automix next deck is already closed'));
+      return;
+    }
+
+    this.owner.writeAutomixNextPcmFrame(chunk, callback);
+  }
+
+  override _final(callback: (error?: Error | null) => void): void {
+    if (this.isClosed) {
+      callback();
+      return;
+    }
+
+    this.owner.endAutomixNextDeck(callback);
+    this.isClosed = true;
+  }
+
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.isClosed = true;
     callback(error);
   }
 }
@@ -746,6 +783,37 @@ export class NativeOutputBridge extends EventEmitter {
     return writable;
   }
 
+  prepareAutomixPlan(plan: AutomixTransitionPlan, options: { fadeStartSeconds: number; sampleRate?: number | null }): void {
+    if (!this.currentSessionId) {
+      return;
+    }
+
+    const payload = Buffer.from(JSON.stringify({
+      fadeStartSeconds: Math.max(0, Number(options.fadeStartSeconds) || 0),
+      overlapSeconds: Math.max(0.001, Number(plan.overlapSeconds) || 0.001),
+      currentGainDb: Number.isFinite(plan.currentGainDb) ? plan.currentGainDb : 0,
+      nextGainDb: Number.isFinite(plan.nextGainDb) ? plan.nextGainDb : 0,
+      tempoRatio: Number.isFinite((plan as { tempoRatio?: number }).tempoRatio)
+        ? (plan as { tempoRatio?: number }).tempoRatio
+        : 1,
+      mode: plan.mode,
+      sampleRate: Number.isFinite(options.sampleRate) ? options.sampleRate : null,
+    }), 'utf8');
+    this.writeFrame(frameTypeAutomixPrepare, this.currentSessionId, payload);
+  }
+
+  createAutomixNextWritable(): Writable {
+    if (!this.currentSessionId) {
+      throw new Error('native output bridge session has not begun');
+    }
+
+    return new AutomixNextDeckWritable(this);
+  }
+
+  cancelAutomix(): void {
+    this.writeFrame(frameTypeAutomixCancel, this.currentSessionId, Buffer.alloc(0));
+  }
+
   endSession(sessionId = this.currentSessionId, callback?: (error?: Error | null) => void): void {
     if (!sessionId || !this.proc || this.proc.stdin.destroyed || this.proc.stdin.writableEnded || !this.proc.stdin.writable) {
       callback?.();
@@ -799,6 +867,19 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     this.writeFrame(frameTypeNativeDsdRaw, sessionId, chunk, callback);
+  }
+
+  writeAutomixNextPcmFrame(chunk: Buffer, callback: (error?: Error | null) => void): void {
+    if (!chunk.length) {
+      callback();
+      return;
+    }
+
+    this.writeFrame(frameTypeAutomixNextPcmF32Le, this.currentSessionId, chunk, callback);
+  }
+
+  endAutomixNextDeck(callback?: (error?: Error | null) => void): void {
+    this.writeFrame(frameTypeAutomixNextEnd, this.currentSessionId, Buffer.alloc(0), callback);
   }
 
   stop(): void {

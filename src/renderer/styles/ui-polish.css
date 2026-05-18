@@ -10,10 +10,19 @@
 
 .app-titlebar-brand strong {
   color: var(--theme-heading-text);
+  font-size: 18px;
+  font-weight: 820;
+  line-height: 1;
 }
 
 .app-titlebar-brand span {
-  color: var(--theme-muted-text);
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  color: #66758a;
+  font-size: 11px;
+  font-weight: 640;
+  line-height: 1;
 }
 
 .titlebar-action,
@@ -48,68 +57,127 @@
 
 .sidebar {
   border-color: var(--echo-polish-border);
-  background: var(--echo-polish-sidebar-bg);
-  box-shadow: var(--echo-polish-shadow-panel);
+  padding: 18px 10px 18px;
+  background:
+    linear-gradient(180deg, rgba(252, 254, 255, 0.92), rgba(244, 248, 251, 0.9) 56%, rgba(236, 243, 249, 0.94)),
+    var(--echo-polish-sidebar-bg);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.78),
+    var(--echo-polish-shadow-panel);
 }
 
 .nav-list {
-  gap: 6px;
+  gap: 2px;
 }
 
 .nav-item {
-  min-height: 42px;
-  color: var(--theme-muted-text);
+  grid-template-columns: 31px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 39px;
+  padding: 0 11px 0 7px;
+  color: #526174;
   border-color: transparent;
   border-radius: var(--radius-md);
+  font-family: var(--font-main);
 }
 
 .nav-icon-shell {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   color: currentColor;
   border-radius: var(--radius-md);
 }
 
+.nav-icon-shell svg {
+  width: 21px;
+  height: 21px;
+}
+
 .nav-item-label {
-  font-weight: 780;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .nav-item[data-active="true"] {
   color: var(--theme-heading-text);
-  border-color: var(--echo-polish-active-border);
-  background: var(--echo-polish-active-bg);
-  box-shadow: var(--echo-polish-shadow-row);
+  border-color: rgba(94, 118, 146, 0.13);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7)),
+    rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 12px 24px rgba(35, 51, 70, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.84);
 }
 
 .nav-item[data-active="true"]::before {
-  background: var(--echo-polish-accent-text);
-  box-shadow: none;
+  display: none;
 }
 
 .nav-item[data-active="true"] .nav-icon-shell {
-  color: var(--echo-polish-accent-text);
-  background: var(--echo-polish-accent-bg);
+  color: #4f6277;
+  background: transparent;
 }
 
 .nav-item:not([data-active="true"]):hover,
 .sidebar-folder:hover {
   color: var(--theme-heading-text);
-  border-color: var(--echo-polish-border);
-  background: var(--echo-polish-button-bg);
+  border-color: rgba(94, 118, 146, 0.13);
+  background: rgba(255, 255, 255, 0.66);
   box-shadow: none;
 }
 
 .nav-item:not([data-active="true"]):hover .nav-icon-shell {
-  color: var(--echo-polish-accent-text);
-  background: var(--echo-polish-surface-muted);
+  color: #4f6277;
+  background: transparent;
 }
 
 .utility-nav {
+  padding-top: 12px;
   border-color: var(--echo-polish-border);
 }
 
 .utility-nav::before {
   background: var(--echo-polish-hairline);
+}
+
+.sidebar-spacer {
+  min-height: 14px;
+}
+
+html[data-theme="dark"] .sidebar {
+  background:
+    linear-gradient(180deg, rgba(19, 25, 33, 0.96), rgba(14, 19, 26, 0.94) 58%, rgba(10, 14, 20, 0.97)),
+    var(--echo-polish-sidebar-bg);
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.045),
+    var(--echo-polish-shadow-panel);
+}
+
+html[data-theme="dark"] .nav-item {
+  color: rgba(196, 207, 222, 0.76);
+}
+
+html[data-theme="dark"] .nav-item[data-active="true"] {
+  color: var(--theme-heading-text);
+  border-color: rgba(228, 237, 247, 0.11);
+  background:
+    linear-gradient(90deg, rgba(38, 48, 62, 0.88), rgba(28, 36, 48, 0.72)),
+    rgba(30, 38, 50, 0.76);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .nav-item[data-active="true"] .nav-icon-shell,
+html[data-theme="dark"] .nav-item:not([data-active="true"]):hover .nav-icon-shell {
+  color: #d7e3f2;
+}
+
+html[data-theme="dark"] .nav-item:not([data-active="true"]):hover,
+html[data-theme="dark"] .sidebar-folder:hover {
+  color: var(--theme-heading-text);
+  border-color: rgba(228, 237, 247, 0.1);
+  background: rgba(37, 47, 61, 0.72);
 }
 
 .page-surface:not(:has(.lyrics-page)) {
@@ -632,7 +700,6 @@ html[data-theme="dark"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-h
 }
 
 .player-track-copy > span,
-.player-tags .hifi-tag,
 .output-status > span,
 .progress-row {
   color: var(--theme-muted-text);

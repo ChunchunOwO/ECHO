@@ -84,6 +84,8 @@ type LyricsDisplaySettings = Pick<
 >;
 
 const playbackSeekedEvent = "playback:seeked";
+const lyricsNavigationEvent = "app:navigate:lyrics";
+const lyricsViewModeMemoryKey = "echo:lyrics:view-mode";
 const lyricsCandidateSourceMemoryKey = "echo:lyrics:candidate-source";
 const maxInterpolatedStatusGapSeconds = 1.6;
 const maxStaleStatusRegressionSeconds = 2.5;
@@ -168,8 +170,11 @@ const isStreamingTrack = (
   typeof track.providerTrackId === "string" &&
   track.providerTrackId.trim().length > 0;
 
+const isSnapshotTrackId = (trackId: string | null | undefined): boolean =>
+  Boolean(trackId?.startsWith("dlna-receiver:") || trackId?.startsWith("airplay-receiver:"));
+
 const isSnapshotLyricsTrack = (track: LibraryTrack | null, trackId: string | null): track is LibraryTrack =>
-  Boolean(track?.isTemporary || trackId?.startsWith("dlna-receiver:") || trackId?.startsWith("airplay-receiver:"));
+  Boolean(track?.isTemporary || isSnapshotTrackId(trackId) || isSnapshotTrackId(track?.id));
 
 const streamingLyricsToState = (
   result: StreamingLyricsResult,
@@ -224,6 +229,32 @@ const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null)
 type PlaybackSeekedDetail = {
   positionSeconds?: number;
   trackId?: string | null;
+};
+
+type LyricsViewMode = "lyrics" | "mv";
+
+type LyricsNavigationDetail = {
+  mode?: LyricsViewMode;
+};
+
+const isLyricsViewMode = (value: unknown): value is LyricsViewMode =>
+  value === "lyrics" || value === "mv";
+
+const readRememberedLyricsViewMode = (): LyricsViewMode => {
+  try {
+    const value = window.sessionStorage.getItem(lyricsViewModeMemoryKey);
+    return isLyricsViewMode(value) ? value : "lyrics";
+  } catch {
+    return "lyrics";
+  }
+};
+
+const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
+  try {
+    window.sessionStorage.setItem(lyricsViewModeMemoryKey, mode);
+  } catch {
+    // Best-effort page mode only.
+  }
 };
 
 const isWindowApproximatelyMaximized = (): boolean => {
@@ -383,16 +414,32 @@ const safeCoverUrl = (track: LibraryTrack | null): string | null => {
     (track?.coverId
       ? `echo-cover://large/${encodeURIComponent(track.coverId)}`
       : (track?.coverThumb ?? null));
+  const allowInlineCover = isSnapshotLyricsTrack(track, track?.id ?? null);
 
-  return coverUrl && !coverUrl.startsWith("data:") ? coverUrl : null;
+  return coverUrl && (allowInlineCover || !coverUrl.startsWith("data:")) ? coverUrl : null;
+};
+
+const originalCoverUrlFromCachedVariant = (coverUrl: string | null | undefined): string | null => {
+  const originalUrl = coverUrl?.replace(
+    /^echo-cover:\/\/(?:thumb|album|large)\//u,
+    "echo-cover://original/",
+  ) ?? null;
+
+  return originalUrl?.startsWith("echo-cover://original/") ? originalUrl : null;
 };
 
 const safeOriginalCoverUrl = (track: LibraryTrack | null): string | null => {
+  const allowInlineCover = isSnapshotLyricsTrack(track, track?.id ?? null);
+  const inlineCover = allowInlineCover
+    ? ((track as TrackWithLargeCover | null)?.coverLarge ?? track?.coverThumb ?? null)
+    : null;
   const coverUrl = track?.coverId
     ? `echo-cover://original/${encodeURIComponent(track.coverId)}`
-    : safeCoverUrl(track);
+    : originalCoverUrlFromCachedVariant((track as TrackWithLargeCover | null)?.coverLarge)
+      ?? originalCoverUrlFromCachedVariant(track?.coverThumb)
+      ?? inlineCover;
 
-  return coverUrl && !coverUrl.startsWith("data:") ? coverUrl : null;
+  return coverUrl && (allowInlineCover || !coverUrl.startsWith("data:")) ? coverUrl : null;
 };
 
 const readRememberedCandidateSource = (): CandidateSourceFilter => {
@@ -724,6 +771,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     useState<LyricsDisplaySettings>(fallbackLyricsDisplaySettings);
   const [isLyricsDisplaySettingsReady, setIsLyricsDisplaySettingsReady] =
     useState(false);
+  const [lyricsViewMode, setLyricsViewModeState] =
+    useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const [imageReadableSample, setImageReadableSample] = useState<ReadableColorSample | null>(null);
   const [mvReadableSample, setMvReadableSample] = useState<ReadableColorSample | null>(null);
   const [documentThemeMode, setDocumentThemeMode] = useState<"light" | "dark">(getCurrentDocumentThemeMode);
@@ -749,6 +798,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
   const albumNavigationTimeoutRef = useRef<number | null>(null);
+  const setLyricsViewMode = useCallback((mode: LyricsViewMode): void => {
+    rememberLyricsViewMode(mode);
+    setLyricsViewModeState(mode);
+  }, []);
   const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
   const statusTrackId =
     playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
@@ -807,11 +860,18 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     title,
     trackId,
   ]);
+  const shouldRequestNetworkBackgroundCover =
+    lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true &&
+    lyricsDisplaySettings.lyricsBackgroundMode === "cover" &&
+    Boolean(currentTrack?.id) &&
+    currentTrack?.isTemporary !== true &&
+    !isSnapshotTrackId(trackId) &&
+    !isSnapshotTrackId(currentTrack?.id);
   const effectiveLyricsBackgroundMode =
     lyricsDisplaySettings.lyricsBackgroundMode === "customWallpaper" &&
     !lyricsDisplaySettings.lyricsCustomWallpaperPath
       ? "theme"
-      : lyricsDisplaySettings.lyricsBackgroundMode === "cover" && !backgroundCoverUrl
+      : lyricsDisplaySettings.lyricsBackgroundMode === "cover" && !backgroundCoverUrl && !shouldRequestNetworkBackgroundCover
         ? "theme"
         : lyricsDisplaySettings.lyricsBackgroundMode;
   const effectiveLyricsBackgroundScalePercent =
@@ -899,6 +959,18 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   );
 
   useEffect(() => {
+    const handleLyricsNavigation = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? (event.detail as LyricsNavigationDetail | null) : null;
+      if (isLyricsViewMode(detail?.mode)) {
+        setLyricsViewMode(detail.mode);
+      }
+    };
+
+    window.addEventListener(lyricsNavigationEvent, handleLyricsNavigation);
+    return () => window.removeEventListener(lyricsNavigationEvent, handleLyricsNavigation);
+  }, [setLyricsViewMode]);
+
+  useEffect(() => {
     if (typeof document === "undefined" || typeof MutationObserver === "undefined") {
       return undefined;
     }
@@ -914,10 +986,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
   useEffect(() => {
     if (
-      !lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled ||
+      !shouldRequestNetworkBackgroundCover ||
       effectiveLyricsBackgroundMode !== "cover" ||
-      !currentTrack?.id ||
-      !backgroundCoverUrl
+      !currentTrack?.id
     ) {
       setNetworkBackgroundCoverUrl(null);
       return undefined;
@@ -951,7 +1022,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     backgroundCoverUrl,
     currentTrack?.id,
     effectiveLyricsBackgroundMode,
-    lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled,
+    shouldRequestNetworkBackgroundCover,
   ]);
 
   useEffect(() => {
@@ -1621,7 +1692,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       return;
     }
 
-    const lyricsApi = window.echo.lyrics;
     const requestId = lyricsRequestRef.current + 1;
     lyricsRequestRef.current = requestId;
     let collectedCandidates: LyricsSearchCandidate[] = [];
@@ -2210,6 +2280,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       data-smart-readable={lyricsSmartReadableEnabled ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}
       data-custom-lrc-dragging={isCustomLyricsDragging}
+      data-view-mode={lyricsViewMode}
       data-window-maximized={isWindowMaximized}
       style={lyricsPageStyle}
       onDragLeave={handleLyricsDragLeave}
@@ -2223,7 +2294,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           <strong>Drop LRC to apply</strong>
         </div>
       ) : null}
-
       <section className="lyrics-left-panel">
         <button
           className="lyrics-back-button"
@@ -2287,20 +2357,29 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         ) : null}
       </section>
 
-      <MvPanel
-        trackId={trackId ?? null}
-        streamingTarget={streamingTarget}
-        title={title}
-        artist={artist}
-        coverUrl={coverUrl}
-        hideFallbackTrackInfo={
-          lyricsDisplaySettings.lyricsHeaderHidden &&
-          lyricsDisplaySettings.lyricsMvAutoShowTrackInfoDisabled
-        }
-        smartReadableColorsEnabled={lyricsSmartReadableEnabled}
-        isAudioPlaying={state === "playing"}
-        audioClock={mvAudioClock}
-      />
+      {lyricsViewMode === "mv" ? (
+        <MvPanel
+          trackId={trackId ?? null}
+          streamingTarget={streamingTarget}
+          title={title}
+          artist={artist}
+          coverUrl={coverUrl}
+          hideFallbackTrackInfo={
+            lyricsDisplaySettings.lyricsHeaderHidden &&
+            lyricsDisplaySettings.lyricsMvAutoShowTrackInfoDisabled
+          }
+          smartReadableColorsEnabled={lyricsSmartReadableEnabled}
+          isAudioPlaying={state === "playing"}
+          audioClock={mvAudioClock}
+        />
+      ) : (
+        <section
+          className="lyrics-mv-panel"
+          aria-label="MV"
+          data-mv-enabled="false"
+          data-view-mode="lyrics"
+        />
+      )}
 
       {error ? (
         <div className="lyrics-error" role="status">

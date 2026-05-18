@@ -3783,6 +3783,52 @@ describe('AudioSession playback watchdog', () => {
     expect(session.getStatus().warnings).toContain('shared_stability_recovered:1');
   });
 
+  it('does not restart live AirPlay PCM streams through the file decoder during recovery or seek', async () => {
+    const decoder = new FakeDecoder(new Map());
+    const bridge = new FakeBridge();
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+      watchdogStallChecks: 10,
+    });
+    const stream = new PassThrough();
+
+    try {
+      await session.playPcmStream({
+        stream,
+        sourceId: 'airplay-receiver:test-session',
+        trackId: 'airplay-receiver:test-session',
+        sampleRate: 44100,
+        channels: 2,
+        output: { outputMode: 'shared' },
+      });
+      bridge.positionSeconds = 7.125;
+      bridge.emit('device-event', {
+        event: 'audio_session_disconnected',
+        reason: 'device_invalidated',
+        currentDevice: true,
+        followsDefaultDevice: false,
+      } satisfies NativeHostNotificationEvent);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(decoder.decodeRequests).toHaveLength(0);
+      expect(session.getStatus().state).toBe('playing');
+      expect(session.getStatus().error).toBeNull();
+      expect(session.getStatus().warnings).toContain('live_pcm_restart_skipped');
+
+      await session.seek(12);
+
+      expect(decoder.decodeRequests).toHaveLength(0);
+      expect(session.getStatus().warnings).toContain('live_pcm_seek_skipped');
+    } finally {
+      stream.destroy();
+      session.dispose();
+    }
+  });
+
   it('serializes burst native host notifications into a single recovery', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
       disableWatchdogTimer: true,
@@ -6022,6 +6068,151 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     expect(spawnedArgs).not.toContain('-rw_timeout');
   });
 
+  it('builds Automix ffmpeg filters that skip next-track leading silence and use smooth curves', async () => {
+    let spawnedArgs: string[] = [];
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
+      spawnedArgs = args;
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      spawn,
+      logger: noopLogger,
+    });
+    const run = decoder.decodeAutomixPair({
+      current: {
+        filePath: 'current.flac',
+        startSeconds: 12,
+        durationSeconds: 120,
+        channels: 2,
+        decoderOutputSampleRate: 44100,
+      },
+      next: {
+        filePath: 'next.flac',
+        startSeconds: 0,
+        durationSeconds: 180,
+        channels: 2,
+        decoderOutputSampleRate: 44100,
+      },
+      plan: {
+        mode: 'smartCrossfade',
+        currentStartSeconds: 12,
+        currentEndSeconds: 110,
+        currentFadeStartSeconds: 98,
+        nextStartSeconds: 2.5,
+        overlapSeconds: 12,
+        curve: 'hsin',
+        currentGainDb: -1,
+        nextGainDb: 2,
+        tempoRatio: 1,
+        advanceAtSeconds: 98,
+        skipIntroSilence: false,
+        beatAligned: false,
+        fallbackReason: null,
+      },
+    });
+
+    await expect(run.done).resolves.toBeUndefined();
+    const filter = spawnedArgs[spawnedArgs.indexOf('-filter_complex') + 1];
+    expect(filter).toContain('atrim=0:98.000');
+    expect(filter).toContain('areverse,silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB,areverse');
+    expect(filter).toContain('silenceremove=start_periods=1:start_duration=0.035:start_threshold=-48dB');
+    expect(filter).toContain('volume=-1.000dB');
+    expect(filter).toContain('volume=2.000dB');
+    expect(filter).toContain('acrossfade=d=12.000:c1=hsin:c2=hsin');
+    const secondSeekIndex = spawnedArgs.lastIndexOf('-ss');
+    expect(spawnedArgs[secondSeekIndex + 1]).toBe('2.5');
+  });
+
+  it('builds a chained Automix ffmpeg graph for multiple upcoming tracks', async () => {
+    let spawnedArgs: string[] = [];
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
+      spawnedArgs = args;
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      spawn,
+      logger: noopLogger,
+    });
+    const firstPlan = {
+      mode: 'beatAligned' as const,
+      currentStartSeconds: 0,
+      currentEndSeconds: 118,
+      currentFadeStartSeconds: 108,
+      nextStartSeconds: 1,
+      overlapSeconds: 10,
+      curve: 'hsin' as const,
+      currentGainDb: 0,
+      nextGainDb: 0,
+      tempoRatio: 1,
+      advanceAtSeconds: 108,
+      skipIntroSilence: true,
+      beatAligned: true,
+      fallbackReason: null,
+    };
+    const secondPlan = {
+      ...firstPlan,
+      mode: 'energyFade' as const,
+      currentEndSeconds: 150,
+      currentFadeStartSeconds: 141,
+      nextStartSeconds: 0.75,
+      overlapSeconds: 9,
+      beatAligned: false,
+    };
+    const run = decoder.decodeAutomixPair({
+      current: {
+        filePath: 'one.flac',
+        startSeconds: 0,
+        durationSeconds: 120,
+        channels: 2,
+        decoderOutputSampleRate: 44100,
+      },
+      next: {
+        filePath: 'two.flac',
+        startSeconds: 0,
+        durationSeconds: 160,
+        channels: 2,
+        decoderOutputSampleRate: 44100,
+      },
+      plan: firstPlan,
+      following: [
+        {
+          track: {
+            filePath: 'three.flac',
+            startSeconds: 0,
+            durationSeconds: 180,
+            channels: 2,
+            decoderOutputSampleRate: 44100,
+          },
+          plan: secondPlan,
+        },
+      ],
+    });
+
+    await expect(run.done).resolves.toBeUndefined();
+    const filter = spawnedArgs[spawnedArgs.indexOf('-filter_complex') + 1];
+    expect(spawnedArgs.filter((arg) => arg === '-i')).toHaveLength(3);
+    expect(filter).toContain('[s0][s1]acrossfade=d=10.000:c1=hsin:c2=hsin[m1]');
+    expect(filter).toContain('[m1][s2]acrossfade=d=9.000:c1=hsin:c2=hsin[aout]');
+    expect(filter).toContain('[1:a]atrim=0:149.000');
+    expect(filter).toContain('[1:a]atrim=0:149.000,areverse,silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB,areverse');
+  });
+
   it('adds conservative reconnect args before remote HTTP inputs', async () => {
     let spawnedArgs: string[] = [];
     const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
@@ -6099,6 +6290,36 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     await expect(run.done).rejects.not.toThrow('MUSIC_U=secret');
     expect(logs.join('\n')).toContain('Cookie: <redacted>');
     expect(logs.join('\n')).not.toContain('MUSIC_U=secret');
+  });
+
+  it('passes Automix tempo matching into the PCM decode filter chain', async () => {
+    let spawnedArgs: string[] = [];
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
+      spawnedArgs = args;
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      spawn,
+      logger: noopLogger,
+    });
+    const run = decoder.decodeLocalFile({
+      filePath: 'next.flac',
+      startSeconds: 1.25,
+      channels: 2,
+      decoderOutputSampleRate: 48000,
+      tempoRatio: 1.018,
+    });
+
+    await expect(run.done).resolves.toBeUndefined();
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['-af', 'atempo=1.018000']));
   });
 
   it('times out remote HTTP decodes that produce no PCM startup data', async () => {

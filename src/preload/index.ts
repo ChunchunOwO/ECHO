@@ -10,6 +10,17 @@ const sanitizePathList = (paths: unknown): string[] =>
 
 const localAudioFileOpenHandlers = new Set<(paths: string[]) => void>();
 const pendingLocalAudioFileOpenEvents: string[][] = [];
+type AutomixAdvancePayload = {
+  fromTrackId: string | null;
+  toTrackId: string;
+  transitionSeconds: number;
+  mode?: 'smartCrossfade' | 'beatAligned' | 'energyFade' | 'gaplessFallback';
+  fallbackReason?: string | null;
+  beatAligned?: boolean;
+  skipIntroSilence?: boolean;
+  nextStartSeconds?: number;
+};
+const automixAdvanceHandlers = new Set<(event: AutomixAdvancePayload) => void>();
 
 ipcRenderer.on(IpcChannels.PlaybackLocalAudioFilesOpened, (_event: Electron.IpcRendererEvent, paths: unknown): void => {
   const safePaths = sanitizePathList(paths);
@@ -24,6 +35,45 @@ ipcRenderer.on(IpcChannels.PlaybackLocalAudioFilesOpened, (_event: Electron.IpcR
 
   for (const handler of localAudioFileOpenHandlers) {
     handler(safePaths);
+  }
+});
+
+ipcRenderer.on(IpcChannels.PlaybackAutomixAdvance, (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  const event = payload as {
+    fromTrackId?: unknown;
+    toTrackId?: unknown;
+    transitionSeconds?: unknown;
+    mode?: unknown;
+    fallbackReason?: unknown;
+    beatAligned?: unknown;
+    skipIntroSilence?: unknown;
+    nextStartSeconds?: unknown;
+  };
+  if (typeof event.toTrackId !== 'string') {
+    return;
+  }
+
+  for (const handler of automixAdvanceHandlers) {
+    handler({
+      fromTrackId: typeof event.fromTrackId === 'string' ? event.fromTrackId : null,
+      toTrackId: event.toTrackId,
+      transitionSeconds: typeof event.transitionSeconds === 'number' && Number.isFinite(event.transitionSeconds)
+        ? event.transitionSeconds
+        : 0,
+      mode: event.mode === 'smartCrossfade' || event.mode === 'beatAligned' || event.mode === 'energyFade' || event.mode === 'gaplessFallback'
+        ? event.mode
+        : undefined,
+      fallbackReason: typeof event.fallbackReason === 'string' ? event.fallbackReason : null,
+      beatAligned: event.beatAligned === true,
+      skipIntroSilence: event.skipIntroSilence === true,
+      nextStartSeconds: typeof event.nextStartSeconds === 'number' && Number.isFinite(event.nextStartSeconds)
+        ? event.nextStartSeconds
+        : undefined,
+    });
   }
 });
 
@@ -105,6 +155,7 @@ const echoApi: EchoApi = {
     addTrackToPlaylist: (playlistId, trackId) => ipcRenderer.invoke(IpcChannels.LibraryAddTrackToPlaylist, playlistId, trackId),
     addStreamingTrackToPlaylist: (playlistId, track) => ipcRenderer.invoke(IpcChannels.LibraryAddStreamingTrackToPlaylist, playlistId, track),
     addTracksToPlaylist: (playlistId, trackIds) => ipcRenderer.invoke(IpcChannels.LibraryAddTracksToPlaylist, playlistId, trackIds),
+    addLocalAudioFilesToPlaylist: (playlistId, paths) => ipcRenderer.invoke(IpcChannels.LibraryAddLocalAudioFilesToPlaylist, playlistId, paths),
     removePlaylistItem: (itemId) => ipcRenderer.invoke(IpcChannels.LibraryRemovePlaylistItem, itemId),
     movePlaylistItem: (playlistId, itemId, targetPosition) =>
       ipcRenderer.invoke(IpcChannels.LibraryMovePlaylistItem, playlistId, itemId, targetPosition),
@@ -159,7 +210,7 @@ const echoApi: EchoApi = {
     updateAlbumTags: (request) => ipcRenderer.invoke(IpcChannels.LibraryUpdateAlbumTags, request),
     recordTrackPlayback: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryRecordTrackPlayback, trackId),
     getPlaybackHistory: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackHistory, query),
-    getPlaybackHistorySummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackHistorySummary),
+    getPlaybackHistorySummary: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackHistorySummary, query),
     deletePlaybackHistoryEntry: (id) => ipcRenderer.invoke(IpcChannels.LibraryDeletePlaybackHistoryEntry, id),
     clearPlaybackHistory: () => ipcRenderer.invoke(IpcChannels.LibraryClearPlaybackHistory),
     startPlaybackHistory: (request) => ipcRenderer.invoke(IpcChannels.LibraryStartPlaybackHistory, request),
@@ -195,6 +246,8 @@ const echoApi: EchoApi = {
     rejectNetworkCandidate: (candidateId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkRejectCandidate, candidateId),
     startBpmAnalysis: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartBpmAnalysis, options),
     getBpmAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetBpmAnalysisStatus, jobId),
+    startReplayGainAnalysis: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartReplayGainAnalysis, options),
+    getReplayGainAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetReplayGainAnalysisStatus, jobId),
   },
   playback: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
@@ -217,6 +270,12 @@ const echoApi: EchoApi = {
 
       return () => {
         localAudioFileOpenHandlers.delete(handler);
+      };
+    },
+    onAutomixAdvance: (handler) => {
+      automixAdvanceHandlers.add(handler);
+      return () => {
+        automixAdvanceHandlers.delete(handler);
       };
     },
   },

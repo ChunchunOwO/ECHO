@@ -29,6 +29,7 @@ import './styles/queue.css';
 import './styles/lyrics.css';
 import './styles/legacy-theme-bridge.css';
 import './styles/ui-polish.css';
+import './styles/theme-presets.css';
 
 const appearancePreferences = readAppearancePreferences();
 const themeMode = readThemeMode();

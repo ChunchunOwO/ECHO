@@ -17,6 +17,7 @@ type TrackRowProps = {
   duplicateHiddenCount?: number;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
+  onAddToPlaylist?: (track: LibraryTrack) => void;
   onDownload?: (track: LibraryTrack) => void;
   onOpenArtist?: (track: LibraryTrack) => void;
   onOpenAlbum?: (track: LibraryTrack) => void;
@@ -89,7 +90,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, duplicateHiddenCount = 0, onPlay, onAddToQueue, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, duplicateHiddenCount = 0, onPlay, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
@@ -144,6 +145,13 @@ export const TrackRow = memo(
         onAddToQueue?.(track);
       },
       [onAddToQueue, track],
+    );
+    const handleAddToPlaylist = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        onAddToPlaylist?.(track);
+      },
+      [onAddToPlaylist, track],
     );
     const handleDownload = useCallback(
       (event: MouseEvent<HTMLButtonElement>): void => {
@@ -249,7 +257,14 @@ export const TrackRow = memo(
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
         <div className="track-actions" aria-label={`${track.title} actions`} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
-          <button className="row-action" type="button" aria-label={`Add to queue ${track.title}`} title="Add to queue" disabled={isUnavailable} onClick={handleAddToQueue}>
+          <button
+            className="row-action"
+            type="button"
+            aria-label={onAddToPlaylist ? `添加到歌单 ${track.title}` : `Add to queue ${track.title}`}
+            title={onAddToPlaylist ? '添加到歌单' : 'Add to queue'}
+            disabled={isUnavailable}
+            onClick={onAddToPlaylist ? handleAddToPlaylist : handleAddToQueue}
+          >
             <ListPlus size={16} />
           </button>
           {canDownload ? (
@@ -283,6 +298,7 @@ export const TrackRow = memo(
     previous.duplicateHiddenCount === next.duplicateHiddenCount &&
     previous.onPlay === next.onPlay &&
     previous.onAddToQueue === next.onAddToQueue &&
+    previous.onAddToPlaylist === next.onAddToPlaylist &&
     previous.onDownload === next.onDownload &&
     previous.onOpenArtist === next.onOpenArtist &&
     previous.onOpenAlbum === next.onOpenAlbum &&

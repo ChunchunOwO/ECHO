@@ -2116,6 +2116,67 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('playback history range filters aggregate only plays inside the requested window', async () => {
+    const harness = createHarness();
+    const firstFile = writeAudioFile(harness.folder, 'Weekly Song.flac');
+    const secondFile = writeAudioFile(harness.folder, 'Monthly Song.flac');
+    harness.metadataService.overrides.set(firstFile, baseMetadata({ title: 'Weekly Title', artist: 'Blue Artist', album: 'Night Album', duration: 60 }));
+    harness.metadataService.overrides.set(secondFile, baseMetadata({ title: 'Monthly Title', artist: 'Red Artist', album: 'Day Album', duration: 60 }));
+    harness.addFolder();
+    await harness.scanFolder();
+    const tracks = harness.service.getTracks({ pageSize: 10 }).items;
+    const weekly = tracks.find((track) => track.title === 'Weekly Title')!;
+    const monthly = tracks.find((track) => track.title === 'Monthly Title')!;
+    const oldWeekly = harness.service.startPlaybackHistory({ trackId: weekly.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    const currentMonthly = harness.service.startPlaybackHistory({ trackId: monthly.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    const currentWeekly = harness.service.startPlaybackHistory({ trackId: weekly.id, sourceType: 'songs', sourceLabel: 'Songs' });
+
+    harness.service.finishPlaybackHistory({ historyId: oldWeekly.historyId, playedSeconds: 10 });
+    harness.service.finishPlaybackHistory({ historyId: currentMonthly.historyId, playedSeconds: 35 });
+    harness.service.finishPlaybackHistory({ historyId: currentWeekly.historyId, playedSeconds: 40 });
+
+    const now = new Date();
+    const startOfTomorrow = new Date(now);
+    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+    const startOfWeekWindow = new Date(now);
+    startOfWeekWindow.setDate(startOfWeekWindow.getDate() - 6);
+    const oldDate = new Date(now);
+    oldDate.setDate(oldDate.getDate() - 14);
+    const currentMonthlyDate = new Date(now);
+    currentMonthlyDate.setMinutes(currentMonthlyDate.getMinutes() - 5);
+    const currentWeeklyDate = new Date(now);
+    currentWeeklyDate.setMinutes(currentWeeklyDate.getMinutes() - 1);
+    const database = createDatabase(harness.databasePath);
+    const moveHistoryEntry = database.prepare('UPDATE playback_history SET started_at = ?, ended_at = ?, created_at = ? WHERE id = ?');
+    moveHistoryEntry.run(oldDate.toISOString(), oldDate.toISOString(), oldDate.toISOString(), oldWeekly.historyId);
+    moveHistoryEntry.run(currentMonthlyDate.toISOString(), currentMonthlyDate.toISOString(), currentMonthlyDate.toISOString(), currentMonthly.historyId);
+    moveHistoryEntry.run(currentWeeklyDate.toISOString(), currentWeeklyDate.toISOString(), currentWeeklyDate.toISOString(), currentWeekly.historyId);
+    database.close();
+
+    const weeklyHistory = harness.service.getPlaybackHistory({
+      from: startOfWeekWindow.toISOString(),
+      to: startOfTomorrow.toISOString(),
+      pageSize: 10,
+    });
+    const weeklySummary = harness.service.getPlaybackHistorySummary({
+      from: startOfWeekWindow.toISOString(),
+      to: startOfTomorrow.toISOString(),
+    });
+
+    expect(weeklyHistory.items).toHaveLength(2);
+    expect(weeklyHistory.items.find((item) => item.title === 'Weekly Title')).toMatchObject({
+      playCount: 1,
+      playedSeconds: 40,
+    });
+    expect(weeklySummary).toMatchObject({
+      rangeCount: 2,
+      rangePlayedSeconds: 75,
+      totalCount: 3,
+      rangeLatestPlayedAt: currentWeeklyDate.toISOString(),
+    });
+    harness.cleanup();
+  });
+
   it('getAlbums search matches tracks inside an album', async () => {
     const harness = createHarness();
     const first = writeAudioFile(harness.folder, 'A.flac');

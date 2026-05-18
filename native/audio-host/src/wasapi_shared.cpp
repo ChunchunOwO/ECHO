@@ -18,6 +18,8 @@
 #include <new>
 #include <vector>
 
+#include "wasapi_diag.h"
+
 #ifndef AUDCLNT_E_RESOURCES_INVALIDATED
 #define AUDCLNT_E_RESOURCES_INVALIDATED ((HRESULT)0x88890026)
 #endif
@@ -60,6 +62,8 @@ struct wasapi_shared_runtime {
     HANDLE renderEvent;
     HANDLE stopEvent;
     HANDLE thread;
+    HANDLE diagStopEvent;
+    HANDLE diagThread;
     uint32_t sampleRate;
     uint32_t channels;
     uint32_t bufferFrameCount;
@@ -653,12 +657,20 @@ static int describe_mix_format(const WAVEFORMATEX* mixFormat, wasapi_shared_form
     return 0;
 }
 
-static uint32_t shared_mix_rate(IMMDevice* device) {
+static uint32_t shared_mix_rate(IMMDevice* device, bool* activateTimedOut) {
     IAudioClient* audioClient = NULL;
     WAVEFORMATEX* mixFormat = NULL;
     uint32_t sampleRate = 0;
+    HRESULT hr;
 
-    if (FAILED(activate_audio_client(device, &audioClient))) return 0;
+    if (activateTimedOut != NULL) *activateTimedOut = false;
+
+    hr = activate_audio_client(device, &audioClient);
+    if (hr == E_PENDING) {
+        if (activateTimedOut != NULL) *activateTimedOut = true;
+        return 0;
+    }
+    if (FAILED(hr)) return 0;
     if (SUCCEEDED(audioClient->GetMixFormat(&mixFormat)) && mixFormat != NULL) {
         sampleRate = mixFormat->nSamplesPerSec;
     }
@@ -668,12 +680,20 @@ static uint32_t shared_mix_rate(IMMDevice* device) {
     return sampleRate;
 }
 
-static uint32_t shared_mix_channels(IMMDevice* device) {
+static uint32_t shared_mix_channels(IMMDevice* device, bool* activateTimedOut) {
     IAudioClient* audioClient = NULL;
     WAVEFORMATEX* mixFormat = NULL;
     uint32_t channels = 0;
+    HRESULT hr;
 
-    if (FAILED(activate_audio_client(device, &audioClient))) return 0;
+    if (activateTimedOut != NULL) *activateTimedOut = false;
+
+    hr = activate_audio_client(device, &audioClient);
+    if (hr == E_PENDING) {
+        if (activateTimedOut != NULL) *activateTimedOut = true;
+        return 0;
+    }
+    if (FAILED(hr)) return 0;
     if (SUCCEEDED(audioClient->GetMixFormat(&mixFormat)) && mixFormat != NULL) {
         channels = mixFormat->nChannels;
     }
@@ -737,8 +757,30 @@ static int enumerate_devices(std::vector<wasapi_shared_device_info>& devices, ch
         if (FAILED(get_device_name(device, info.name, sizeof(info.name))) || info.name[0] == '\0') {
             snprintf(info.name, sizeof(info.name), "WASAPI Device %u", (unsigned int)i);
         }
-        info.sharedSampleRate = shared_mix_rate(device);
-        info.channels = shared_mix_channels(device);
+        bool activateTimedOut = false;
+        info.sharedSampleRate = shared_mix_rate(device, &activateTimedOut);
+        if (activateTimedOut) {
+            set_error(error, errorLen, "WASAPI Activate timed out", S_OK);
+            CoTaskMemFree(id);
+            device->Release();
+            if (defaultId != NULL) CoTaskMemFree(defaultId);
+            if (defaultDevice != NULL) defaultDevice->Release();
+            collection->Release();
+            enumerator->Release();
+            return echo_audio_host::kExitDeviceInitializeTimeout;
+        }
+
+        info.channels = shared_mix_channels(device, &activateTimedOut);
+        if (activateTimedOut) {
+            set_error(error, errorLen, "WASAPI Activate timed out", S_OK);
+            CoTaskMemFree(id);
+            device->Release();
+            if (defaultId != NULL) CoTaskMemFree(defaultId);
+            if (defaultDevice != NULL) defaultDevice->Release();
+            collection->Release();
+            enumerator->Release();
+            return echo_audio_host::kExitDeviceInitializeTimeout;
+        }
         info.isDefault = (defaultId != NULL && wcscmp(defaultId, id) == 0) ? 1 : 0;
         devices.push_back(info);
 
@@ -1098,6 +1140,18 @@ static void convert_float_to_endpoint(
     }
 }
 
+static DWORD WINAPI diag_drain_thread_proc(void* param) {
+    wasapi_shared_runtime* runtime = (wasapi_shared_runtime*)param;
+    if (runtime == NULL || runtime->diagStopEvent == NULL) return 1;
+
+    while (WaitForSingleObject(runtime->diagStopEvent, 1000) == WAIT_TIMEOUT) {
+        diag_drain_to_stderr();
+    }
+
+    diag_drain_to_stderr();
+    return 0;
+}
+
 static DWORD WINAPI render_thread_proc(void* param) {
     wasapi_shared_runtime* runtime = (wasapi_shared_runtime*)param;
     DWORD taskIndex = 0;
@@ -1107,6 +1161,7 @@ static DWORD WINAPI render_thread_proc(void* param) {
     bool rebuildPending = false;
     uint32_t nextRebuildAttemptIndex = 0;
     ULONGLONG nextRebuildAttemptAtMs = 0;
+    ULONGLONG lastDiagDrainMs = GetTickCount64();
 
     if (FAILED(com.hr)) {
         InterlockedExchange(&runtime->renderFailed, 1);
@@ -1119,6 +1174,12 @@ static DWORD WINAPI render_thread_proc(void* param) {
     runtime->renderStartedAtMs = GetTickCount64();
 
     while (1) {
+        const ULONGLONG drainNowMs = GetTickCount64();
+        if (runtime->diagThread == NULL && drainNowMs - lastDiagDrainMs >= 1000) {
+            diag_drain_to_stderr();
+            lastDiagDrainMs = drainNowMs;
+        }
+
         DWORD waitTimeout = INFINITE;
         if (rebuildPending) {
             const ULONGLONG nowMs = GetTickCount64();
@@ -1197,7 +1258,7 @@ static DWORD WINAPI render_thread_proc(void* param) {
                     &nextRebuildAttemptAtMs);
                 continue;
             }
-            fprintf(stderr, "[echo-audio-host] WASAPI shared GetCurrentPadding failed hr=0x%08lx\n", (unsigned long)hr);
+            diag_push(DiagTag::GetCurrentPaddingFailed, hr, 0);
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
         }
@@ -1218,17 +1279,14 @@ static DWORD WINAPI render_thread_proc(void* param) {
                     &nextRebuildAttemptAtMs);
                 continue;
             }
-            fprintf(stderr, "[echo-audio-host] WASAPI shared GetBuffer failed hr=0x%08lx\n", (unsigned long)hr);
+            diag_push(DiagTag::GetBufferFailed, hr, framesAvailable);
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
         }
 
         const size_t scratchSamples = (size_t)framesAvailable * runtime->channels;
         if (runtime->scratch == NULL || runtime->scratchSampleCapacity < scratchSamples) {
-            fprintf(stderr, "[echo-audio-host] WASAPI shared scratch buffer too small frames=%u channels=%u capacity=%zu\n",
-                (unsigned int)framesAvailable,
-                (unsigned int)runtime->channels,
-                runtime->scratchSampleCapacity);
+            diag_push(DiagTag::ScratchTooSmall, HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER), framesAvailable);
             runtime->renderClient->ReleaseBuffer(framesAvailable, AUDCLNT_BUFFERFLAGS_SILENT);
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
@@ -1255,12 +1313,15 @@ static DWORD WINAPI render_thread_proc(void* param) {
                     &nextRebuildAttemptAtMs);
                 continue;
             }
-            fprintf(stderr, "[echo-audio-host] WASAPI shared ReleaseBuffer failed hr=0x%08lx\n", (unsigned long)hr);
+            diag_push(DiagTag::ReleaseBufferFailed, hr, framesAvailable);
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
         }
     }
 
+    if (runtime->diagThread == NULL) {
+        diag_drain_to_stderr();
+    }
     if (avrtHandle != NULL) AvRevertMmThreadCharacteristics(avrtHandle);
     com_scope_leave(&com);
     return InterlockedCompareExchange(&runtime->renderFailed, 0, 0) ? 1 : 0;
@@ -1306,9 +1367,17 @@ int wasapi_shared_start(
         return -1;
     }
 
-    if (enumerate_devices(devices, error, errorLen) != 0 || devices.empty()) {
-        com_scope_leave(&com);
-        return -1;
+    const bool useDefaultDevice = (targetDeviceName == NULL || targetDeviceName[0] == '\0') && targetDeviceIndex < 0;
+    if (! useDefaultDevice) {
+        const int enumerateResult = enumerate_devices(devices, error, errorLen);
+        if (enumerateResult != 0) {
+            com_scope_leave(&com);
+            return enumerateResult;
+        }
+        if (devices.empty()) {
+            com_scope_leave(&com);
+            return -1;
+        }
     }
 
     device = resolve_device(devices, targetDeviceName, targetDeviceIndex, error, errorLen);
@@ -1427,8 +1496,15 @@ int wasapi_shared_start(
 
     runtime->renderEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     runtime->stopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-    if (runtime->renderEvent == NULL || runtime->stopEvent == NULL) {
+    runtime->diagStopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (runtime->renderEvent == NULL || runtime->stopEvent == NULL || runtime->diagStopEvent == NULL) {
         set_error(error, errorLen, "Failed to create WASAPI shared events", HRESULT_FROM_WIN32(GetLastError()));
+        goto done;
+    }
+
+    runtime->diagThread = CreateThread(NULL, 0, diag_drain_thread_proc, runtime, 0, NULL);
+    if (runtime->diagThread == NULL) {
+        set_error(error, errorLen, "Failed to create WASAPI shared diagnostic drain thread", HRESULT_FROM_WIN32(GetLastError()));
         goto done;
     }
 
@@ -1507,15 +1583,27 @@ void wasapi_shared_stop(wasapi_shared_runtime* runtime) {
             fprintf(stderr,
                 "[echo-audio-host] WASAPI shared render thread did not stop in time; deferring resource release to process teardown\n");
             unregister_watchers(runtime);
+            if (runtime->diagStopEvent != NULL) SetEvent(runtime->diagStopEvent);
+            if (runtime->diagThread != NULL) {
+                WaitForSingleObject(runtime->diagThread, 1000);
+                CloseHandle(runtime->diagThread);
+            }
+            if (runtime->diagStopEvent != NULL) CloseHandle(runtime->diagStopEvent);
             CloseHandle(runtime->thread);
             return;
         }
         CloseHandle(runtime->thread);
     }
+    if (runtime->diagStopEvent != NULL) SetEvent(runtime->diagStopEvent);
+    if (runtime->diagThread != NULL) {
+        WaitForSingleObject(runtime->diagThread, 1000);
+        CloseHandle(runtime->diagThread);
+    }
     unregister_watchers(runtime);
     if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->audioClient->Stop();
     if (runtime->renderEvent != NULL) CloseHandle(runtime->renderEvent);
     if (runtime->stopEvent != NULL) CloseHandle(runtime->stopEvent);
+    if (runtime->diagStopEvent != NULL) CloseHandle(runtime->diagStopEvent);
     if (runtime->renderClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->renderClient->Release();
     if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->audioClient->Release();
     runtime->renderClient = NULL;

@@ -50,6 +50,28 @@ const codecClassName = (codec: string): string => {
   return 'tag-lossless';
 };
 
+const sourceCodecLabels = new Set(['AIRPLAY', 'DLNA']);
+
+const normalizeDisplayCodec = (codec: string | null): string | null => {
+  if (!codec) {
+    return null;
+  }
+
+  const normalized = codec.trim().toUpperCase();
+  return normalized && !sourceCodecLabels.has(normalized) ? normalized : null;
+};
+
+const uniqueChips = (chips: Chip[]): Chip[] => {
+  const seen = new Set<string>();
+  return chips.filter((chip) => {
+    if (seen.has(chip.label)) {
+      return false;
+    }
+    seen.add(chip.label);
+    return true;
+  });
+};
+
 const isHiResSource = ({
   bitrate,
   bitDepth,
@@ -83,7 +105,7 @@ const isAirPlayReceiverTrack = (track: LibraryTrack | null): boolean =>
   );
 
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
-  const codec = (track?.codec ?? status?.codec)?.toUpperCase() ?? null;
+  const codec = normalizeDisplayCodec(track?.codec ?? status?.codec ?? null);
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
   const sampleRate = track?.sampleRate ?? status?.fileSampleRate ?? null;
   const bitrate = track?.bitrate ?? status?.bitrate ?? null;
@@ -92,7 +114,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const playbackRate = status?.playbackRate ?? 1;
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
-  const chips: Chip[] = [
+  const chips: Chip[] = uniqueChips([
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
@@ -109,7 +131,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
         }
       : null,
     channels ? { label: channels, className: 'tag-channel' } : null,
-  ].filter((chip): chip is Chip => Boolean(chip));
+  ].filter((chip): chip is Chip => Boolean(chip)));
 
   if (chips.length === 0) {
     chips.push({ label: state === 'idle' ? 'Ready' : state, className: state === 'error' ? 'tag-warning' : 'tag-depth' });

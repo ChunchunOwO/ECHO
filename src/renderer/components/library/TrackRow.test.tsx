@@ -134,6 +134,28 @@ describe('TrackRow', () => {
     expect(onPlay).not.toHaveBeenCalled();
   });
 
+  it('uses the row list action for playlists when provided', () => {
+    const onPlay = vi.fn();
+    const onAddToQueue = vi.fn();
+    const onAddToPlaylist = vi.fn();
+    render(
+      <TrackRow
+        isPlaying={false}
+        track={track()}
+        onAddToQueue={onAddToQueue}
+        onAddToPlaylist={onAddToPlaylist}
+        onPlay={onPlay}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '添加到歌单 Afraid' }));
+
+    expect(onAddToPlaylist).toHaveBeenCalledTimes(1);
+    expect(onAddToPlaylist).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
+    expect(onAddToQueue).not.toHaveBeenCalled();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
   it('shows streaming download progress inside the download action', () => {
     render(<TrackRow isPlaying={false} track={track()} onDownload={vi.fn()} isDownloading downloadProgress={42} />);
 

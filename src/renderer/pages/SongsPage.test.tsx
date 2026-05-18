@@ -21,6 +21,7 @@ vi.mock('../components/library/TrackList', () => ({
     loadedCount,
     loadedStartIndex,
     onEndReached,
+    onAddToPlaylist,
     onOpenTrackMenu,
     onPlay,
     onShowVersions,
@@ -40,6 +41,7 @@ vi.mock('../components/library/TrackList', () => ({
     loadedCount?: number;
     loadedStartIndex?: number;
     onEndReached?: () => void;
+    onAddToPlaylist?: (track: LibraryTrack) => void;
     onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
     onPlay?: (track: LibraryTrack) => void;
     onShowVersions?: (track: LibraryTrack) => void;
@@ -90,6 +92,9 @@ vi.mock('../components/library/TrackList', () => ({
             onClick={() => onToggleLiked?.(track)}
           >
             {likedTrackIds?.[track.id] ? `Unlike ${track.title}` : `Like ${track.title}`}
+          </button>
+          <button type="button" onClick={() => onAddToPlaylist?.(track)}>
+            添加到歌单 {track.title}
           </button>
         </div>
       ))}
@@ -211,6 +216,24 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       }),
       getLikedTrackIds: vi.fn().mockResolvedValue({}),
       toggleTrackLiked: vi.fn().mockResolvedValue({ liked: true }),
+      getPlaylists: vi.fn().mockResolvedValue([
+        {
+          id: 'playlist-1',
+          name: 'Road Mix',
+          description: null,
+          kind: 'manual',
+          sourceProvider: 'local',
+          sourcePlaylistId: null,
+          coverId: null,
+          coverThumb: null,
+          sortMode: 'manual',
+          itemCount: 0,
+          createdAt: '2026-05-18T00:00:00.000Z',
+          updatedAt: '2026-05-18T00:00:00.000Z',
+        },
+      ]),
+      createPlaylist: vi.fn(),
+      addTrackToPlaylist: vi.fn().mockResolvedValue({ id: 'playlist-item-1' }),
       pruneInvalidTracks: vi.fn().mockResolvedValue({
         scannedCount: tracks.length,
         removedCount: 0,
@@ -426,6 +449,17 @@ describe('SongsPage', () => {
       }),
     );
     await waitFor(() => expect(screen.getByTestId('current-track-id').textContent).toBe('track-1'));
+  });
+
+  it('adds a song to a local playlist from the row list-plus action', async () => {
+    const track = makeTrack();
+    installEcho([track]);
+
+    await renderSongsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加到歌单 Song One' }));
+
+    await waitFor(() => expect(window.echo.library.addTrackToPlaylist).toHaveBeenCalledWith('playlist-1', 'track-1'));
   });
 
   it('opens osu timing from the song context menu and copies the timing line', async () => {

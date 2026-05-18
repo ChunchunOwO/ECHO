@@ -9,6 +9,8 @@ const ignoredDirectories = new Set(['.git', 'dist', 'node_modules', 'out']);
 const tokenFiles = new Set([
   'src\\renderer\\styles\\tokens.css',
   'src/renderer/styles/tokens.css',
+  'src\\renderer\\styles\\theme-presets.css',
+  'src/renderer/styles/theme-presets.css',
 ]);
 
 const colorLiteralPattern = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|\b(?:white|black)\b/i;

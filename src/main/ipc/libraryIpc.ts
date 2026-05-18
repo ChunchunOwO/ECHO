@@ -29,6 +29,8 @@ import type {
   PlaybackHistoryQuery,
   StartPlaybackHistoryRequest,
   BpmAnalysisStartOptions,
+  ReplayGainAnalysisStartOptions,
+  AddLocalAudioFilesToPlaylistResult,
   LibraryScanMode,
 } from '../../shared/types/library';
 import { getAppSettings } from '../app/appSettings';
@@ -636,6 +638,22 @@ const normalizeBpmAnalysisStartOptions = (value: unknown): BpmAnalysisStartOptio
   };
 };
 
+const normalizeReplayGainAnalysisStartOptions = (value: unknown): ReplayGainAnalysisStartOptions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { limit: optionalLimit(value, 100) };
+  }
+
+  const input = value as Record<string, unknown>;
+  const trackIds = Array.isArray(input.trackIds)
+    ? input.trackIds.filter((trackId): trackId is string => typeof trackId === 'string' && trackId.trim().length > 0)
+    : undefined;
+  return {
+    limit: optionalLimit(input.limit, 100),
+    trackIds: trackIds?.length ? [...new Set(trackIds)] : undefined,
+    force: input.force === true,
+  };
+};
+
 type DroppedFilePayload = {
   name: string;
   type: string;
@@ -728,6 +746,33 @@ const importDroppedFiles = async (value: unknown): Promise<{
     failedCount,
     importedTrackIds,
     outputDirectory,
+  };
+};
+
+const addLocalAudioFilesToPlaylist = async (playlistId: string, paths: string[]): Promise<AddLocalAudioFilesToPlaylistResult> => {
+  const service = getLibraryService();
+  const classification = classifyImportPaths(paths);
+  const trackIds: string[] = [];
+  let failedCount = 0;
+
+  for (const filePath of classification.audioFiles) {
+    try {
+      const track = await service.importAudioFile(filePath);
+      trackIds.push(track.id);
+    } catch {
+      failedCount += 1;
+    }
+  }
+
+  const items = trackIds.length > 0 ? service.addTracksToPlaylist(playlistId, trackIds) : [];
+
+  return {
+    importedCount: trackIds.length,
+    addedCount: items.length,
+    skippedCount: classification.folders.length + classification.unsupportedFiles.length + classification.missingPaths.length,
+    failedCount,
+    trackIds,
+    items,
   };
 };
 
@@ -1075,6 +1120,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryAddTracksToPlaylist, (_event, playlistId: unknown, trackIds: unknown) =>
     getLibraryService().addTracksToPlaylist(requireText(playlistId, 'playlistId'), normalizeTrackIds(trackIds)),
   );
+  ipcMain.handle(IpcChannels.LibraryAddLocalAudioFilesToPlaylist, (_event, playlistId: unknown, paths: unknown) =>
+    addLocalAudioFilesToPlaylist(requireText(playlistId, 'playlistId'), normalizePathList(paths)),
+  );
   ipcMain.handle(IpcChannels.LibraryRemovePlaylistItem, (_event, itemId: unknown) =>
     getLibraryService().removePlaylistItem(requireText(itemId, 'itemId')),
   );
@@ -1216,7 +1264,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetPlaybackHistory, (_event, query: unknown) =>
     getLibraryService().getPlaybackHistory(normalizePlaybackHistoryQuery(query)),
   );
-  ipcMain.handle(IpcChannels.LibraryGetPlaybackHistorySummary, () => getLibraryService().getPlaybackHistorySummary());
+  ipcMain.handle(IpcChannels.LibraryGetPlaybackHistorySummary, (_event, query: unknown) =>
+    getLibraryService().getPlaybackHistorySummary(normalizePlaybackHistoryQuery(query)),
+  );
   ipcMain.handle(IpcChannels.LibraryDeletePlaybackHistoryEntry, (_event, id: unknown) =>
     getLibraryService().deletePlaybackHistoryEntry(requireText(id, 'historyId')),
   );
@@ -1385,10 +1435,6 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryResolveLyricsBackgroundCover, (_event, trackId: unknown) =>
     {
       const settings = getAppSettings();
-      if (!settings.networkMetadataEnabled) {
-        return null;
-      }
-
       return getLibraryService().resolveLyricsBackgroundCover(
         requireText(trackId, 'trackId'),
         settings.networkMetadataProviders,
@@ -1415,5 +1461,11 @@ export const registerLibraryIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.LibraryGetBpmAnalysisStatus, (_event, jobId: unknown) =>
     getLibraryService().getBpmAnalysisStatus(requireText(jobId, 'jobId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryStartReplayGainAnalysis, (_event, request: unknown) => {
+    return getLibraryService().startReplayGainAnalysis(normalizeReplayGainAnalysisStartOptions(request));
+  });
+  ipcMain.handle(IpcChannels.LibraryGetReplayGainAnalysisStatus, (_event, jobId: unknown) =>
+    getLibraryService().getReplayGainAnalysisStatus(requireText(jobId, 'jobId')),
   );
 };

@@ -1,4 +1,5 @@
 .artist-detail-page {
+  --artist-hero-avatar-size: 240px;
   display: grid;
   width: 100%;
   min-height: 100%;
@@ -46,9 +47,9 @@
 
 .artist-hero {
   display: grid;
-  grid-template-columns: 182px minmax(0, 1fr);
+  grid-template-columns: var(--artist-hero-avatar-size) minmax(0, 1fr);
   align-items: center;
-  gap: 34px;
+  gap: 42px;
   width: 100%;
   padding: 32px 36px;
   border: 1px solid var(--theme-legacy-border-soft);
@@ -63,7 +64,10 @@
 
 .artist-hero-avatar {
   display: grid;
-  width: 160px;
+  width: var(--artist-hero-avatar-size);
+  min-width: var(--artist-hero-avatar-size);
+  height: var(--artist-hero-avatar-size);
+  min-height: var(--artist-hero-avatar-size);
   aspect-ratio: 1;
   overflow: hidden;
   place-items: center;
@@ -90,7 +94,7 @@
 .artist-hero-avatar span {
   max-width: 78%;
   overflow: hidden;
-  font-size: 54px;
+  font-size: 76px;
   font-weight: 850;
   line-height: 1;
   text-align: center;

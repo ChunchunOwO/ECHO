@@ -273,6 +273,42 @@ describe('PlaylistsPage actions menu', () => {
     expect(screen.queryByRole('button', { name: 'Streaming quality' })).toBeNull();
   });
 
+  it('adds selected local audio files to the current local playlist', async () => {
+    const emptyPage = page([]);
+    const addedItem = item({ id: 'item-added', mediaId: 'track-added', track: track({ id: 'track-added', title: 'Added Song' }) });
+    const openLocalAudioFiles = vi.fn().mockResolvedValue(['D:\\Music\\Added Song.flac']);
+    const addLocalAudioFilesToPlaylist = vi.fn().mockResolvedValue({
+      importedCount: 1,
+      addedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+      trackIds: ['track-added'],
+      items: [addedItem],
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ itemCount: 0 })]),
+        getPlaylistItems: vi.fn().mockResolvedValueOnce(emptyPage).mockResolvedValue(page([addedItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        addLocalAudioFilesToPlaylist,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+        openLocalAudioFiles,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加本地歌曲' }));
+
+    await waitFor(() => expect(openLocalAudioFiles).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(addLocalAudioFilesToPlaylist).toHaveBeenCalledWith('playlist-1', ['D:\\Music\\Added Song.flac']),
+    );
+    expect(await screen.findByText('已添加 1 首本地歌曲')).toBeTruthy();
+  });
+
   it('likes NetEase and QQ streaming playlist tracks through the provider bridge', async () => {
     const remoteTrackItem = item({
       mediaType: 'stream_track',

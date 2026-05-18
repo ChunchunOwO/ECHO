@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import {
   AudioLines,
+  Blend,
   Check,
   ChevronDown,
   Clipboard,
@@ -32,7 +33,9 @@ import { createOutputSettings, normalizeSharedBackend, readRememberedAudioOutput
 type AudioSettingsDrawerProps = {
   isOpen: boolean;
   status: AudioStatus | null;
+  automixEnabled?: boolean;
   onClose: () => void;
+  onAutomixEnabledChange?: (enabled: boolean) => void;
   onStatusChange: (status: AudioStatus) => void;
 };
 
@@ -694,7 +697,9 @@ const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
 export const AudioSettingsDrawer = ({
   isOpen,
   status,
+  automixEnabled = false,
   onClose,
+  onAutomixEnabledChange = () => undefined,
   onStatusChange,
 }: AudioSettingsDrawerProps): JSX.Element | null => {
   const { t } = useI18n();
@@ -1617,6 +1622,37 @@ export const AudioSettingsDrawer = ({
               </label>
               <p className="audio-section-note">{t('audioDrawer.option.wasapiExclusiveDescription')}</p>
             </>
+          ) : null}
+        </section>
+
+        <section className="audio-drawer-section">
+          <div className="audio-drawer-section-title">
+            <Blend size={17} />
+            <h3>{t('audioDrawer.section.automix')}</h3>
+          </div>
+          <label className="audio-toggle-row">
+            <span>
+              <Blend size={17} />
+              <strong>{t('audioDrawer.option.automix')}</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={automixEnabled}
+              onChange={(event) => onAutomixEnabledChange(event.currentTarget.checked)}
+            />
+          </label>
+          <p>{t('audioDrawer.option.automixDescription')}</p>
+          {status?.automix?.active ? (
+            <p className="audio-section-note">
+              {t('audioDrawer.option.automixActive')}
+              {status.automix.transitionMode
+                ? ` ${status.automix.engine ?? 'fallback'} / ${status.automix.transitionMode} / ${
+                    status.automix.overlapSeconds?.toFixed(1) ?? '?'
+                  }s / tempo ${status.automix.tempoRatio?.toFixed(3) ?? '1.000'} / ${
+                    status.automix.plannedTrackCount ?? 0
+                  } tracks`
+                : ''}
+            </p>
           ) : null}
         </section>
 

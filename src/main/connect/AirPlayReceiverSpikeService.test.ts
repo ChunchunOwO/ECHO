@@ -153,12 +153,80 @@ describe('AirPlayReceiverSpikeService', () => {
       sourceId: expect.stringMatching(/^airplay-receiver:/u),
       sampleRate: 44100,
       channels: 2,
+      output: expect.objectContaining({
+        requestedOutputSampleRate: 48000,
+        latencyProfile: 'stable',
+        bufferSizeFrames: 8192,
+      }),
     }));
     expect(status.state).toBe('playing');
     expect(status.currentClient?.address).toBe('192.168.1.50');
     expect(status.metadata?.title).toBe('Air Song');
     expect(status.metadata?.artist).toBe('Singer');
     expect(status.metadata?.coverHttpUrl).toMatch(/^data:image\/png;base64,/u);
+  });
+
+  it('uses album metadata when AirPlay sends a generic instrumental title', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 11;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({
+      type: 'metadata',
+      title: '纯音乐，请欣赏',
+      artist: 'lapix/Flamenco House',
+      album: 'Flamenco House',
+      durationMs: 144_000,
+    });
+
+    const status = service.getStatus();
+    expect(status.metadata?.title).toBe('Flamenco House');
+    expect(status.metadata?.artist).toBe('lapix');
+    expect(status.metadata?.album).toBe('Flamenco House');
+    expect(status.metadata?.durationSeconds).toBe(144);
+  });
+
+  it('uses album metadata when AirPlay sends a lyric line as title', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 12;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({
+      type: 'metadata',
+      title: "And I know, I'm not alone",
+      artist: 'Porter Robinson/Madeon/Shelter (シェルター)',
+      album: 'Shelter',
+      durationMs: 219_000,
+    });
+
+    const status = service.getStatus();
+    expect(status.metadata?.title).toBe('Shelter');
+    expect(status.metadata?.artist).toBe('Porter Robinson / Madeon');
+    expect(status.metadata?.album).toBe('Shelter');
   });
 
   it('releases the AirPlay session when local playback takes over', async () => {
@@ -192,5 +260,26 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(status.state).toBe('idle');
     expect(status.metadata).toBeNull();
     expect(status.currentSourceId).toBeNull();
+  });
+
+  it('does not stop local audio when disabling an idle AirPlay receiver', async () => {
+    const audio = new FakeAudioSession();
+    audio.status = audioStatus({ state: 'playing', currentFilePath: 'local.flac', currentTrackId: 'local-track' });
+    const stopReceiver = vi.fn();
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: () => 9,
+        stopReceiver,
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+    });
+
+    await service.setEnabled(true);
+    await service.setEnabled(false);
+
+    expect(stopReceiver).toHaveBeenCalledWith(9);
+    expect(audio.stop).not.toHaveBeenCalled();
+    expect(audio.status.currentFilePath).toBe('local.flac');
   });
 });

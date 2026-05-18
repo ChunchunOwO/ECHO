@@ -806,6 +806,44 @@ export const SongsPage = (): JSX.Element => {
     [appendToQueue, queueSource],
   );
 
+  const handleAddTrackToPlaylist = useCallback(async (track: LibraryTrack): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to use playlists.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const playlists = (await library.getPlaylists()).filter((playlist) => playlist.sourceProvider === 'local' && playlist.kind !== 'system');
+      let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
+      if (playlists.length > 1) {
+        const names = playlists.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+        const choice = window.prompt(`选择歌单编号：\n${names}`, '1');
+        const index = Number(choice) - 1;
+        playlist = Number.isInteger(index) ? playlists[index] ?? null : null;
+      }
+
+      if (!playlist) {
+        const name = window.prompt('还没有本地歌单，输入名称创建后添加：');
+        if (!name?.trim()) {
+          return;
+        }
+        playlist = await library.createPlaylist({ name });
+      }
+
+      if (!playlist) {
+        return;
+      }
+
+      await library.addTrackToPlaylist(playlist.id, track.id);
+      window.dispatchEvent(new Event('library:playlists-changed'));
+      setStatusMessage(`已加入歌单：${playlist.name}`);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    }
+  }, []);
+
   const resolveTrackLikedBeforeToggle = useCallback(async (trackId: string): Promise<boolean> => {
     const cached = likedTrackIdsRef.current[trackId];
     if (cached !== undefined) {
@@ -950,6 +988,9 @@ export const SongsPage = (): JSX.Element => {
             window.dispatchEvent(new Event('library:changed'));
             return;
           case 'add-to-playlist':
+            await handleAddTrackToPlaylist(track);
+            return;
+            /*
             {
               const playlists = await library!.getPlaylists();
               let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
@@ -977,6 +1018,7 @@ export const SongsPage = (): JSX.Element => {
               setStatusMessage(`已加入歌单：${playlist.name}`);
             }
             return;
+            */
           default:
             setError('歌单功能还在接入中。');
         }
@@ -984,7 +1026,7 @@ export const SongsPage = (): JSX.Element => {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [appendToQueue, editingTrack, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue],
+    [appendToQueue, editingTrack, handleAddTrackToPlaylist, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -1148,6 +1190,7 @@ export const SongsPage = (): JSX.Element => {
         onEndReached={handleLoadMore}
         onStartReached={handleLoadPrevious}
         onAddToQueue={handleAddTrackToQueue}
+        onAddToPlaylist={(track) => void handleAddTrackToPlaylist(track)}
         onOpenArtist={(track) => void handleOpenTrackArtist(track)}
         onOpenAlbum={(track) => void handleOpenTrackAlbum(track)}
         duplicateHiddenCounts={duplicateHiddenCounts}

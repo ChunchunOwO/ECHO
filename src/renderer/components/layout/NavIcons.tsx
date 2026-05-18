@@ -58,52 +58,47 @@ export const EchoDownloadsIcon = createNavIcon(
 export const EchoAlbumsIcon = createNavIcon(
   'EchoAlbumsIcon',
   <>
-    <rect x="5" y="5" width="14" height="14" rx="3" />
-    <circle cx="12" cy="12" r="3.3" />
-    <circle cx="12" cy="12" r="0.55" fill="currentColor" stroke="none" />
-    <path d="M15.4 8.1h0.1" />
+    <circle cx="12" cy="12" r="6.4" />
+    <circle cx="12" cy="12" r="1.1" />
+    <path d="M12 5.6v1.2" />
   </>,
 );
 
 export const EchoArtistsIcon = createNavIcon(
   'EchoArtistsIcon',
   <>
-    <path d="M12 4.6a3 3 0 0 1 3 3v3.1a3 3 0 0 1-6 0V7.6a3 3 0 0 1 3-3Z" />
-    <path d="M6.8 10.7a5.2 5.2 0 0 0 10.4 0" />
-    <path d="M12 16v3.5" />
-    <path d="M9.2 19.5h5.6" />
+    <circle cx="9" cy="9.2" r="2.4" />
+    <circle cx="16" cy="10.1" r="2" />
+    <path d="M4.8 18.4v-1.1c0-2 1.9-3.6 4.2-3.6s4.2 1.6 4.2 3.6v1.1" />
+    <path d="M13.9 14.5c2.1.2 3.7 1.7 3.7 3.4v.5" />
   </>,
 );
 
 export const EchoFoldersIcon = createNavIcon(
   'EchoFoldersIcon',
   <>
-    <path d="M4.6 8.1c0-1.2.9-2.1 2.1-2.1h3l1.8 2h5.8c1.2 0 2.1.9 2.1 2.1v6.2c0 1.2-.9 2.1-2.1 2.1H6.7c-1.2 0-2.1-.9-2.1-2.1V8.1Z" />
-    <path d="M10 14.7c-.4.6-1.4.7-2 .4-.7-.4-.7-1.2 0-1.6.6-.4 1.6-.3 2 .2" />
-    <path d="M10 9.9v4.3" />
-    <path d="M10 9.9l3.2.7" />
+    <path d="M4.7 8.2c0-1 .8-1.8 1.8-1.8h3.2l1.8 1.9h6c1 0 1.8.8 1.8 1.8v6.3c0 1-.8 1.8-1.8 1.8h-11c-1 0-1.8-.8-1.8-1.8V8.2Z" />
+    <path d="M4.9 10h14.2" />
   </>,
 );
 
 export const EchoRemoteIcon = createNavIcon(
   'EchoRemoteIcon',
   <>
-    <path d="M7.6 15.1h8.7a3.3 3.3 0 0 0 .4-6.6 5 5 0 0 0-9.3-1.3 3.9 3.9 0 0 0 .2 7.9Z" />
-    <path d="M8.4 17.1 12 19.1l3.6-2" />
-    <circle cx="8.4" cy="17.1" r="0.7" fill="currentColor" stroke="none" />
-    <circle cx="12" cy="19.1" r="0.7" fill="currentColor" stroke="none" />
-    <circle cx="15.6" cy="17.1" r="0.7" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="7" />
+    <path d="M5.4 12h13.2" />
+    <path d="M12 5c2 2 3.1 4.3 3.1 7S14 17 12 19" />
+    <path d="M12 5c-2 2-3.1 4.3-3.1 7S10 17 12 19" />
   </>,
 );
 
 export const EchoConnectIcon = createNavIcon(
   'EchoConnectIcon',
   <>
-    <path d="M6.1 17.9a8.2 8.2 0 0 1 11.8 0" />
-    <path d="M8.8 15.2a4.5 4.5 0 0 1 6.4 0" />
-    <path d="M11 12.9a1.5 1.5 0 0 1 2 0" />
-    <rect x="4.8" y="4.9" width="14.4" height="7.6" rx="2.2" />
-    <path d="M8.3 8.7h7.4" />
+    <rect x="5" y="6" width="14" height="8.6" rx="2" />
+    <path d="M8.5 18h7" />
+    <path d="M12 14.6V18" />
+    <path d="M9.1 10.2h5.8" />
   </>,
 );
 
@@ -121,10 +116,11 @@ export const EchoStreamingIcon = createNavIcon(
 export const EchoQueueIcon = createNavIcon(
   'EchoQueueIcon',
   <>
-    <path d="M6 8.1 8.6 6.5v3.2L6 8.1Z" />
-    <path d="M11 8.1h7" />
-    <path d="M6 13h12" />
-    <path d="M6 17.9h8.6" />
+    <path d="M5.2 7.2h8.8" />
+    <path d="M5.2 12h8.8" />
+    <path d="M5.2 16.8h6.2" />
+    <path d="M16.3 14.7v4.2" />
+    <path d="M14.2 16.8h4.2" />
   </>,
 );
 
@@ -140,13 +136,12 @@ export const EchoHistoryIcon = createNavIcon(
 export const EchoPlaylistsIcon = createNavIcon(
   'EchoPlaylistsIcon',
   <>
-    <path d="M7.3 5.2h8.3c1.1 0 2 .9 2 2v9.6c0 1.1-.9 2-2 2H7.3c-.5 0-.9-.4-.9-.9V6.1c0-.5.4-.9.9-.9Z" />
-    <path d="M9.4 9h5.9" />
-    <path d="M9.4 12.2h5.9" />
-    <path d="M9.4 15.4h3.5" />
-    <path d="M6.4 7.3h-1" />
-    <path d="M6.4 12h-1" />
-    <path d="M6.4 16.7h-1" />
+    <path d="M5.2 7.2h9.4" />
+    <path d="M5.2 12h8.2" />
+    <path d="M5.2 16.8h6.5" />
+    <path d="M17.4 6.8v7.7" />
+    <path d="M17.4 6.8l2.3.7" />
+    <path d="M17.4 14.5c0 .9-.8 1.6-1.8 1.6s-1.8-.7-1.8-1.6.8-1.6 1.8-1.6 1.8.7 1.8 1.6Z" />
   </>,
 );
 

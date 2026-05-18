@@ -5,6 +5,7 @@ import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import { createDefaultGlobalShortcuts, createRecommendedGlobalShortcuts } from '../../shared/types/globalShortcuts';
+import type { MvSettings } from '../../shared/types/mv';
 
 const settings: AppSettings = {
   appearanceTheme: 'light',
@@ -257,6 +258,13 @@ vi.mock('../components/settings/RemoteSourcesPanel', () => ({
   RemoteSourcesPanel: () => <div />,
 }));
 
+vi.mock('../stores/PlaybackQueueProvider', () => ({
+  usePlaybackQueue: () => ({
+    automixEnabled: false,
+    setAutomixEnabled: vi.fn(),
+  }),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   getDownloadSettingsMock.mockResolvedValue(downloadSettings);
@@ -414,7 +422,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    const darkButton = screen.getByRole('button', { name: /settings\.appearance\.theme\.dark/ });
+    const darkButton = screen.getAllByRole('button', { name: /settings\.appearance\.theme\.dark/ })[0];
     fireEvent.click(darkButton);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceTheme: 'dark' }));
@@ -550,6 +558,52 @@ describe('SettingsPage', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /迷你底栏/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
+  });
+
+  it('saves synced MV settings from Settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('route.mvSettings.label')[0]);
+
+    const autoSearchToggle = screen.getByText('mvSettings.network.autoApply').closest('.settings-inline-toggle') as HTMLElement;
+    fireEvent.click(within(autoSearchToggle).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ mvAutoSearch: false }));
+
+    fireEvent.click(screen.getByRole('button', { name: '4K' }));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ mvMaxQuality: '2160p' }));
+  });
+
+  it('maps MV drawer settings events into the Settings page state', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('route.mvSettings.label')[0]);
+    const autoSearchToggle = screen.getByText('mvSettings.network.autoApply').closest('.settings-inline-toggle') as HTMLElement;
+    expect(within(autoSearchToggle).getByRole('button').getAttribute('aria-pressed')).toBe('true');
+
+    window.dispatchEvent(
+      new CustomEvent('settings:changed', {
+        detail: { autoSearch: false, maxQuality: '2160p' } satisfies Partial<MvSettings>,
+      }),
+    );
+
+    await waitFor(() => expect(within(autoSearchToggle).getByRole('button').getAttribute('aria-pressed')).toBe('false'));
+    expect(screen.getByRole('button', { name: '4K' }).className).toContain('active');
   });
 
   it('saves the follow current playback setting from Settings', async () => {

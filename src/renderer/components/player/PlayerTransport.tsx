@@ -1,5 +1,6 @@
 import {
   Heart,
+  Film,
   ListMusic,
   Mic2,
   Pause,
@@ -25,6 +26,7 @@ type PlayerTransportProps = {
   onCycleRepeatMode: () => void;
   onOpenQueue: () => void;
   onOpenLyrics: () => void;
+  onOpenMv: () => void;
   isCurrentTrackLiked?: boolean;
   canLikeCurrentTrack?: boolean;
   onToggleCurrentTrackLiked?: () => void;
@@ -43,6 +45,7 @@ export const PlayerTransport = ({
   onCycleRepeatMode,
   onOpenQueue,
   onOpenLyrics,
+  onOpenMv,
   isCurrentTrackLiked = false,
   canLikeCurrentTrack = false,
   onToggleCurrentTrackLiked,
@@ -82,6 +85,9 @@ export const PlayerTransport = ({
     </button>
     <button className="icon-button" type="button" aria-label="Lyrics" title="Lyrics" onClick={onOpenLyrics}>
       <Mic2 size={17} />
+    </button>
+    <button className="icon-button" type="button" aria-label="MV" title="MV" onClick={onOpenMv}>
+      <Film size={17} />
     </button>
     <button
       className={`icon-button ${isCurrentTrackLiked ? 'is-soft-active' : ''}`}

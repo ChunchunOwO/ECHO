@@ -1,8 +1,17 @@
 import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { request as httpRequest, type ClientRequest } from 'node:http';
+import { createServer } from 'node:net';
+import { networkInterfaces } from 'node:os';
+import { join } from 'node:path';
+import readline from 'node:readline';
+import { PassThrough, Transform } from 'node:stream';
+import { app } from 'electron';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverClient, ConnectReceiverDebugEvent } from '../../shared/types/connect';
 import { getAudioSession } from '../audio/AudioSession';
+import { AirPlayMdnsAdvertiser } from './AirPlayMdnsAdvertiser';
 
 type RaopEvent = Record<string, unknown> & {
   type?: string;
@@ -25,16 +34,18 @@ type RaopEvent = Record<string, unknown> & {
 type RaopReceiverOptions = {
   name: string;
   model: string;
+  host?: string;
+  mac?: string;
   metadata: boolean;
   portBase: number;
   portRange: number;
 };
 
 type RaopModule = {
-  startReceiver: (options: RaopReceiverOptions, handler: (event: RaopEvent) => void) => number;
-  stopReceiver: (handle: number) => void;
-  sendRemoteCommand?: (handle: number, command: 'play' | 'pause' | 'stop' | 'next' | 'prev' | 'previous') => boolean;
-  setLogHandler?: (handler: ((event: unknown) => void) | null, level?: string) => void;
+  startReceiver: (options: RaopReceiverOptions, handler: (event: RaopEvent) => void) => number | Promise<number>;
+  stopReceiver: (handle: number) => void | Promise<void>;
+  sendRemoteCommand?: (handle: number, command: 'play' | 'pause' | 'stop' | 'next' | 'prev' | 'previous') => boolean | Promise<boolean>;
+  setLogHandler?: (handler: ((event: unknown) => void) | null, level?: string, raopLevel?: string, utilLevel?: string) => void;
 };
 
 type AirPlayAudioSession = {
@@ -46,6 +57,11 @@ type AirPlayAudioSession = {
     sampleRate: number;
     channels: number;
     durationSeconds?: number;
+    output?: {
+      requestedOutputSampleRate?: number;
+      latencyProfile?: 'balanced' | 'lowLatency' | 'stable';
+      bufferSizeFrames?: number;
+    };
   }) => Promise<AudioStatus>;
   pause: () => Promise<AudioStatus> | AudioStatus;
   stop: () => Promise<AudioStatus> | AudioStatus;
@@ -65,21 +81,88 @@ type AirPlayReceiverDependencies = {
   now?: () => number;
 };
 
-const defaultAdvertisedName = (): string => 'ECHO Next (AirPlay)';
+const defaultAdvertisedName = (): string =>
+  process.env.ELECTRON_RENDERER_URL ? 'ECHO Next Dev (AirPlay)' : 'ECHO Next (AirPlay)';
 const defaultTitle = 'AirPlay stream';
 const unknownArtist = 'Unknown Artist';
 const debugEventLimit = 24;
 const defaultSampleRate = 44_100;
 const defaultChannels = 2;
+const airPlayModel = 'ECHO-Next-AirPlay-Spike';
+const airPlayPcmHighWaterMark = 4 * 1024 * 1024;
+const airPlayOutputSampleRate = 48_000;
+const airPlayOutputBufferFrames = 8192;
+
+type AirPlayAdvertiseInterface = {
+  address: string;
+  mac: string;
+};
 
 const loadDefaultRaopModule = async (): Promise<RaopModule> => {
-  const specifier = '@lox-audioserver/node-libraop';
-  return (await import(specifier)) as RaopModule;
+  return new AirPlayRaopHelperModule();
 };
 
 const trimText = (value: unknown): string | null => {
   const text = typeof value === 'string' ? value.trim() : '';
   return text ? text : null;
+};
+
+const compactAirPlayText = (value: string | null): string =>
+  (value ?? '')
+    .replace(/[\s"'`.,!?，。！？、:：;；-]+/gu, '')
+    .toLocaleLowerCase();
+
+const comparableAirPlayText = (value: string | null): string =>
+  compactAirPlayText(value?.replace(/\s*[\(（][^()（）]*[\)）]\s*/gu, '') ?? null);
+
+const isGenericAirPlayTitle = (title: string | null): boolean => {
+  if (!title) {
+    return true;
+  }
+
+  const normalized = compactAirPlayText(title);
+  return normalized === '纯音乐' || normalized === '纯音乐请欣赏' || normalized === 'airplaystream';
+};
+
+const sameText = (left: string | null, right: string | null): boolean => {
+  if (!left || !right) {
+    return false;
+  }
+  return comparableAirPlayText(left) === comparableAirPlayText(right);
+};
+
+const isAlbumLikeArtistPart = (part: string | null, album: string | null): boolean => {
+  const normalizedPart = comparableAirPlayText(part);
+  const normalizedAlbum = comparableAirPlayText(album);
+  return Boolean(normalizedPart && normalizedAlbum && (normalizedPart === normalizedAlbum || normalizedPart.startsWith(normalizedAlbum)));
+};
+
+const looksLikeAirPlayLyricLine = (title: string | null): boolean =>
+  Boolean(title && title.length >= 16 && /\s/u.test(title) && /[,'"!?，。！？]/u.test(title));
+
+const normalizeAirPlayMetadataText = (
+  title: string | null,
+  artist: string | null,
+  album: string | null,
+): { title: string | null; artist: string | null; album: string | null } => {
+  if (!album) {
+    return { title, artist, album };
+  }
+
+  const artistParts = artist?.split(/[\/／]/u).map((part) => part.trim()).filter(Boolean) ?? [];
+  const albumPartIndex = artistParts.findIndex((part) => isAlbumLikeArtistPart(part, album));
+  const shouldPreferAlbumTitle =
+    isGenericAirPlayTitle(title) || (albumPartIndex >= 0 && !sameText(title, album) && looksLikeAirPlayLyricLine(title));
+
+  if (!shouldPreferAlbumTitle) {
+    return { title, artist, album };
+  }
+
+  return {
+    title: album,
+    artist: albumPartIndex > 0 ? artistParts.slice(0, albumPartIndex).join(' / ') : artist,
+    album,
+  };
 };
 
 const normalizeVolume = (value: unknown): number => {
@@ -98,6 +181,274 @@ const normalizeVolume = (value: unknown): number => {
 const eventAddress = (event: RaopEvent): string | null =>
   trimText(event.remoteAddress) ?? trimText(event.address) ?? trimText(event.host);
 
+const normalizeMac = (mac: string | null | undefined): string | null => {
+  const cleaned = (mac ?? '').replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
+  if (cleaned.length !== 12 || cleaned === '000000000000') {
+    return null;
+  }
+  return cleaned.match(/.{1,2}/gu)?.join(':') ?? null;
+};
+
+const getAdvertiseInterfaces = (): AirPlayAdvertiseInterface[] =>
+  Object.values(networkInterfaces())
+    .flatMap((items) => items ?? [])
+    .filter((item) => item.family === 'IPv4' && !item.internal)
+    .map((item) => ({
+      address: item.address,
+      mac: normalizeMac(item.mac) ?? '02:45:43:48:4F:00',
+    }))
+    .sort((left, right) => {
+      const score = (value: AirPlayAdvertiseInterface): number =>
+        value.address.startsWith('192.168.') ? 0 : value.address.startsWith('10.') ? 1 : value.address.startsWith('172.') ? 2 : 3;
+      return score(left) - score(right);
+    });
+
+const findAvailableTcpPort = async (host: string | null, basePort: number, portRange: number): Promise<number> => {
+  for (let offset = 0; offset < portRange; offset += 1) {
+    const port = basePort + offset;
+    const available = await new Promise<boolean>((resolve) => {
+      const server = createServer();
+      server.unref();
+      server.once('error', () => resolve(false));
+      server.listen(port, host ?? undefined, () => {
+        server.close(() => resolve(true));
+      });
+    });
+    if (available) {
+      return port;
+    }
+  }
+  throw new Error(`No available AirPlay port in ${basePort}-${basePort + portRange - 1}`);
+};
+
+type HelperRequest = {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+};
+
+class AirPlayRaopHelperModule implements RaopModule {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private handler: ((event: RaopEvent) => void) | null = null;
+  private logHandler: ((event: unknown) => void) | null = null;
+  private readyPromise: Promise<void> | null = null;
+  private nextRequestId = 1;
+  private pending = new Map<number, HelperRequest>();
+
+  setLogHandler(handler: ((event: unknown) => void) | null): void {
+    this.logHandler = handler;
+  }
+
+  async startReceiver(options: RaopReceiverOptions, handler: (event: RaopEvent) => void): Promise<number> {
+    this.handler = handler;
+    await this.ensureHelper();
+    const response = await this.sendRequest('start', { options });
+    const handle = Number((response as { handle?: unknown }).handle);
+    if (!Number.isInteger(handle)) {
+      throw new Error('AirPlay helper did not return a receiver handle.');
+    }
+    return handle;
+  }
+
+  async stopReceiver(): Promise<void> {
+    if (!this.child) {
+      return;
+    }
+    await this.sendRequest('stop', {}).catch(() => undefined);
+    await this.shutdownHelper();
+  }
+
+  async sendRemoteCommand(_handle: number, command: 'play' | 'pause' | 'stop' | 'next' | 'prev' | 'previous'): Promise<boolean> {
+    if (!this.child) {
+      return false;
+    }
+    const response = await this.sendRequest('remote', { command }).catch(() => ({ ok: false }));
+    return Boolean((response as { ok?: unknown }).ok);
+  }
+
+  private async ensureHelper(): Promise<void> {
+    if (this.readyPromise) {
+      await this.readyPromise;
+      return;
+    }
+
+    const nodePath = this.resolveNodePath();
+    const helperPath = this.resolveHelperPath();
+    if (!existsSync(helperPath)) {
+      throw new Error(`AirPlay helper script is missing: ${helperPath}`);
+    }
+
+    this.child = spawn(nodePath, [helperPath], {
+      cwd: app.getAppPath(),
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: undefined,
+      },
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+
+    const child = this.child;
+    this.readyPromise = new Promise<void>((resolve, reject) => {
+      const readyTimeout = setTimeout(() => reject(new Error('AirPlay helper did not become ready.')), 10_000);
+      child.once('error', (error) => {
+        clearTimeout(readyTimeout);
+        reject(error);
+      });
+      child.once('exit', (code, signal) => {
+        clearTimeout(readyTimeout);
+        this.rejectAll(new Error(`AirPlay helper exited (${code ?? signal ?? 'unknown'}).`));
+        this.child = null;
+        this.readyPromise = null;
+        if (code !== 0) {
+          this.logHandler?.({ source: 'helper', level: 'error', line: `helper exited (${code ?? signal ?? 'unknown'})` });
+        }
+      });
+
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on('line', (line) => {
+        const message = this.parseMessage(line);
+        if (!message) {
+          return;
+        }
+        if (message.type === 'ready') {
+          clearTimeout(readyTimeout);
+          resolve();
+          return;
+        }
+        this.handleHelperMessage(message);
+      });
+
+      child.stderr.on('data', (chunk: Buffer) => {
+        this.logHandler?.({ source: 'helper', level: 'warn', line: chunk.toString('utf8').trim() });
+      });
+    });
+
+    await this.readyPromise;
+  }
+
+  private parseMessage(line: string): Record<string, unknown> | null {
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+    } catch {
+      this.logHandler?.({ source: 'helper', level: 'warn', line });
+      return null;
+    }
+  }
+
+  private handleHelperMessage(message: Record<string, unknown>): void {
+    if (message.type === 'event') {
+      const event = message.event;
+      if (event && typeof event === 'object' && !Array.isArray(event)) {
+        const nextEvent = { ...(event as RaopEvent) };
+        if (nextEvent.data && !(nextEvent.data instanceof Buffer)) {
+          const data = nextEvent.data as { type?: unknown; data?: unknown };
+          if (data.type === 'Buffer' && Array.isArray(data.data)) {
+            nextEvent.data = Buffer.from(data.data as number[]);
+          }
+        }
+        this.handler?.(nextEvent);
+      }
+      return;
+    }
+
+    if (message.type === 'log') {
+      this.logHandler?.({ source: 'helper', level: message.level, line: message.message });
+      return;
+    }
+
+    if (message.type === 'fatal') {
+      const error = new Error(trimText(message.message) ?? 'AirPlay helper crashed.');
+      this.rejectAll(error);
+      this.logHandler?.({ source: 'helper', level: 'error', line: error.message });
+      return;
+    }
+
+    const requestId = Number(message.requestId);
+    if (!Number.isInteger(requestId)) {
+      return;
+    }
+
+    const pending = this.pending.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.pending.delete(requestId);
+    if (message.type === 'error') {
+      pending.reject(new Error(trimText(message.message) ?? 'AirPlay helper request failed.'));
+    } else {
+      pending.resolve(message);
+    }
+  }
+
+  private sendRequest(type: string, payload: Record<string, unknown>): Promise<unknown> {
+    const child = this.child;
+    if (!child || child.killed) {
+      return Promise.reject(new Error('AirPlay helper is not running.'));
+    }
+
+    const requestId = this.nextRequestId;
+    this.nextRequestId += 1;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`AirPlay helper request timed out: ${type}`));
+      }, 10_000);
+      this.pending.set(requestId, { resolve, reject, timer });
+      child.stdin.write(`${JSON.stringify({ ...payload, type, requestId })}\n`);
+    });
+  }
+
+  private rejectAll(error: Error): void {
+    for (const [requestId, pending] of this.pending) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+      this.pending.delete(requestId);
+    }
+  }
+
+  private async shutdownHelper(): Promise<void> {
+    const child = this.child;
+    this.child = null;
+    this.readyPromise = null;
+    if (!child || child.killed) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        child.kill();
+        resolve();
+      }, 1000);
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.stdin.end();
+    });
+  }
+
+  private resolveNodePath(): string {
+    const candidates = [
+      process.env.npm_node_execpath,
+      process.env.NODE,
+      'node',
+    ].filter((value): value is string => Boolean(value));
+    return candidates[0];
+  }
+
+  private resolveHelperPath(): string {
+    const appPath = app.getAppPath();
+    const candidates = [
+      join(appPath, 'src', 'main', 'connect', 'airplayRaopHelper.cjs'),
+      join(appPath, 'out', 'main', 'airplayRaopHelper.cjs'),
+      join(process.resourcesPath, 'airplayRaopHelper.cjs'),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  }
+}
+
 export const convertS16leToF32le = (input: Buffer): Buffer => {
   const sampleCount = Math.floor(input.length / 2);
   const output = Buffer.allocUnsafe(sampleCount * 4);
@@ -109,13 +460,23 @@ export const convertS16leToF32le = (input: Buffer): Buffer => {
   return output;
 };
 
+const createAirPlayOutputSettings = (): NonNullable<Parameters<AirPlayAudioSession['playPcmStream']>[0]['output']> => ({
+  requestedOutputSampleRate: airPlayOutputSampleRate,
+  latencyProfile: 'stable',
+  bufferSizeFrames: airPlayOutputBufferFrames,
+});
+
 const metadataFromEvent = (event: RaopEvent, current: ConnectMetadata | null, artworkUrl: string | null): ConnectMetadata => {
   const durationSeconds = Number(event.durationMs);
+  const title = trimText(event.title) ?? current?.title ?? null;
+  const artist = trimText(event.artist) ?? current?.artist ?? null;
+  const album = trimText(event.album) ?? current?.album ?? null;
+  const normalized = normalizeAirPlayMetadataText(title, artist, album);
   return {
-    title: trimText(event.title) ?? current?.title ?? defaultTitle,
-    artist: trimText(event.artist) ?? current?.artist ?? unknownArtist,
-    album: trimText(event.album) ?? current?.album ?? null,
-    albumArtist: current?.albumArtist ?? trimText(event.artist) ?? current?.artist ?? unknownArtist,
+    title: normalized.title ?? defaultTitle,
+    artist: normalized.artist ?? unknownArtist,
+    album: normalized.album,
+    albumArtist: current?.albumArtist ?? normalized.artist ?? unknownArtist,
     durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? Math.round(durationSeconds / 1000) : current?.durationSeconds ?? 0,
     coverHttpUrl: artworkUrl ?? current?.coverHttpUrl ?? '',
   };
@@ -128,7 +489,11 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private readonly now: () => number;
   private raopModule: RaopModule | null = null;
   private receiverHandle: number | null = null;
+  private advertisedInterface: AirPlayAdvertiseInterface | null = null;
+  private mdnsAdvertiser: AirPlayMdnsAdvertiser | null = null;
   private pcmStream: PassThrough | null = null;
+  private httpPcmRequest: ClientRequest | null = null;
+  private httpPcmTransform: Transform | null = null;
   private pcmPlaybackStarted = false;
   private currentSourceId: string | null = null;
   private ignorePcmUntilNextStream = false;
@@ -143,6 +508,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.now = dependencies.now ?? Date.now;
     this.status = this.createDisabledStatus();
     this.audioSession.on('status', this.handleAudioStatus);
+    if (!dependencies.loadRaopModule) {
+      void this.refreshNativeAvailability();
+    }
   }
 
   getStatus(): AirPlayReceiverStatus {
@@ -211,17 +579,43 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
     this.setStatus({ enabled: false, state: 'starting', error: null });
     try {
-      this.raopModule = await this.loadRaopModule();
-      this.raopModule.setLogHandler?.((event) => this.addDebugEvent('log', String(event ?? '')), 'warn');
-      this.receiverHandle = this.raopModule.startReceiver(
+      this.raopModule ??= await this.loadRaopModule();
+      this.raopModule.setLogHandler?.((event) => this.addDebugEvent('log', this.formatNativeLog(event)), 'info', 'info', 'warn');
+      const advertiseInterface = getAdvertiseInterfaces()[0] ?? null;
+      this.advertisedInterface = advertiseInterface;
+      const portBase = await findAvailableTcpPort(advertiseInterface?.address ?? null, 6000, 100);
+      this.receiverHandle = await this.raopModule.startReceiver(
         {
           name: this.advertisedName,
-          model: 'ECHO-Next-AirPlay-Spike',
+          model: airPlayModel,
+          ...(advertiseInterface ? { host: advertiseInterface.address, mac: advertiseInterface.mac } : {}),
           metadata: true,
-          portBase: 6000,
+          portBase,
           portRange: 100,
         },
         (event) => this.handleRaopEvent(event),
+      );
+      if (advertiseInterface) {
+        try {
+          this.mdnsAdvertiser = new AirPlayMdnsAdvertiser();
+          await this.mdnsAdvertiser.start({
+            name: this.advertisedName,
+            model: airPlayModel,
+            address: advertiseInterface.address,
+            mac: advertiseInterface.mac,
+            port: portBase,
+          });
+          this.addDebugEvent('mdns', `fallback advertiser on ${advertiseInterface.address}:${portBase}`);
+        } catch (error) {
+          this.mdnsAdvertiser = null;
+          this.addDebugEvent('mdns', error instanceof Error ? error.message : String(error));
+        }
+      }
+      this.addDebugEvent(
+        'start',
+        advertiseInterface
+          ? `RAOP receiver started on ${advertiseInterface.address}:${portBase} (${advertiseInterface.mac})`
+          : `RAOP receiver started on 0.0.0.0:${portBase}; no LAN IPv4 interface found`,
       );
       this.setStatus({
         enabled: true,
@@ -229,7 +623,6 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         nativeAvailable: true,
         error: null,
       });
-      this.addDebugEvent('start', 'RAOP receiver started');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.receiverHandle = null;
@@ -245,17 +638,53 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     }
   }
 
+  private async refreshNativeAvailability(): Promise<void> {
+    if (this.status.enabled || this.status.state === 'starting') {
+      return;
+    }
+
+    try {
+      this.raopModule ??= await this.loadRaopModule();
+      if (!this.status.enabled) {
+        this.setStatus({
+          nativeAvailable: true,
+          error: null,
+        });
+      }
+    } catch (error) {
+      if (!this.status.enabled) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.setStatus({
+          nativeAvailable: false,
+          error: `AirPlay native backend unavailable: ${message}`,
+        });
+      }
+    }
+  }
+
   private async stop(): Promise<void> {
-    await this.stopPlayback().catch(() => undefined);
+    const hadAirPlayPlayback = Boolean(this.currentSourceId);
+    if (hadAirPlayPlayback) {
+      await this.stopPlayback().catch(() => undefined);
+    } else {
+      this.clearCurrentSession('');
+    }
+    if (this.mdnsAdvertiser) {
+      await this.mdnsAdvertiser.stop().catch((error) => {
+        this.addDebugEvent('mdns', error instanceof Error ? error.message : String(error));
+      });
+    }
+    this.mdnsAdvertiser = null;
     if (this.receiverHandle !== null && this.raopModule) {
       try {
-        this.raopModule.stopReceiver(this.receiverHandle);
+        await this.raopModule.stopReceiver(this.receiverHandle);
       } catch (error) {
         this.addDebugEvent('error', error instanceof Error ? error.message : String(error));
       }
     }
     this.receiverHandle = null;
     this.raopModule = null;
+    this.advertisedInterface = null;
     this.setStatus({
       enabled: false,
       state: 'disabled',
@@ -276,6 +705,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     switch (type) {
       case 'stream':
         this.prepareIncomingStream(event);
+        this.startHttpPcmPlayback(event);
         break;
       case 'metadata':
         this.applyMetadataEvent(event);
@@ -311,7 +741,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.ignorePcmUntilNextStream = false;
     this.sessionCounter += 1;
     this.currentSourceId = `airplay-receiver:${this.now().toString(36)}-${this.sessionCounter.toString(36)}`;
-    this.pcmStream = new PassThrough({ highWaterMark: 1024 * 1024 });
+    this.pcmStream = new PassThrough({ highWaterMark: airPlayPcmHighWaterMark });
     this.pcmPlaybackStarted = false;
     const address = eventAddress(event);
     const client: ConnectReceiverClient | null = address
@@ -359,6 +789,10 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   }
 
   private handlePcmEvent(event: RaopEvent): void {
+    if (this.httpPcmRequest || this.httpPcmTransform) {
+      return;
+    }
+
     const data = Buffer.isBuffer(event.data) ? event.data : null;
     if (!data || data.length < 2) {
       return;
@@ -379,14 +813,17 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     if (!this.pcmPlaybackStarted) {
       this.pcmPlaybackStarted = true;
       const stream = this.pcmStream;
+      const sampleRate = Number(event.sampleRate) || defaultSampleRate;
+      const channels = Number(event.channels) || defaultChannels;
       void this.audioSession
         .playPcmStream({
           stream,
           sourceId: this.currentSourceId,
           trackId: this.currentSourceId,
-          sampleRate: Number(event.sampleRate) || defaultSampleRate,
-          channels: Number(event.channels) || defaultChannels,
+          sampleRate,
+          channels,
           durationSeconds: this.status.durationSeconds,
+          output: createAirPlayOutputSettings(),
         })
         .then(() => this.setStatus({ state: 'playing', error: null }))
         .catch((error) => {
@@ -403,7 +840,132 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     }
   }
 
+  private startHttpPcmPlayback(event: RaopEvent): void {
+    const port = Number(event.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      this.addDebugEvent('stream', `invalid PCM HTTP port: ${String(event.port)}`);
+      return;
+    }
+
+    if (!this.currentSourceId) {
+      this.prepareIncomingStream(event);
+    }
+
+    if (!this.currentSourceId) {
+      return;
+    }
+
+    this.destroyHttpPcmPlayback();
+    const sourceId = this.currentSourceId;
+    const stream = this.createHttpPcmTransform();
+    this.pcmStream = stream;
+    this.pcmPlaybackStarted = true;
+    const host = this.advertisedInterface?.address ?? '127.0.0.1';
+
+    this.setStatus({ state: 'ready', error: null });
+    this.addDebugEvent('stream', `pull PCM from http://${host}:${port}/`);
+
+    const request = httpRequest(
+      {
+        host,
+        port,
+        path: '/',
+        method: 'GET',
+        headers: {
+          Connection: 'close',
+        },
+      },
+      (response) => {
+        if (response.statusCode && response.statusCode >= 400) {
+          this.setStatus({ state: 'error', error: `AirPlay PCM HTTP ${response.statusCode}` });
+          response.resume();
+          return;
+        }
+        response.on('error', (error) => {
+          this.addDebugEvent('stream', error.message);
+          stream.destroy(error);
+        });
+        response.pipe(stream);
+      },
+    );
+
+    request.on('socket', (socket) => {
+      socket.setNoDelay(true);
+    });
+    request.once('error', (error) => {
+      if (this.currentSourceId === sourceId) {
+        this.setStatus({ state: 'error', error: `AirPlay PCM HTTP failed: ${error.message}` });
+      }
+      stream.destroy(error);
+    });
+    request.once('close', () => {
+      if (this.httpPcmRequest === request) {
+        this.httpPcmRequest = null;
+      }
+    });
+    this.httpPcmRequest = request;
+    request.end();
+
+    void this.audioSession
+      .playPcmStream({
+        stream,
+        sourceId,
+        trackId: sourceId,
+        sampleRate: defaultSampleRate,
+        channels: defaultChannels,
+        durationSeconds: this.status.durationSeconds,
+        output: createAirPlayOutputSettings(),
+      })
+      .then(() => {
+        if (this.currentSourceId === sourceId) {
+          this.setStatus({ state: 'playing', error: null });
+        }
+      })
+      .catch((error) => {
+        if (this.currentSourceId === sourceId) {
+          this.setStatus({
+            state: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+  }
+
+  private createHttpPcmTransform(): Transform {
+    let carry: Buffer | null = null;
+    const transform = new Transform({
+      highWaterMark: airPlayPcmHighWaterMark,
+      transform: (chunk: Buffer, _encoding, callback) => {
+        const input = carry ? Buffer.concat([carry, chunk]) : chunk;
+        const evenLength = input.length - (input.length % 2);
+        carry = evenLength === input.length ? null : input.subarray(evenLength);
+        if (evenLength > 0) {
+          transform.push(convertS16leToF32le(input.subarray(0, evenLength)));
+        }
+        callback();
+      },
+      flush: (callback) => {
+        carry = null;
+        callback();
+      },
+    });
+    this.httpPcmTransform = transform;
+    return transform;
+  }
+
+  private destroyHttpPcmPlayback(): void {
+    if (this.httpPcmRequest) {
+      this.httpPcmRequest.destroy();
+    }
+    this.httpPcmRequest = null;
+    if (this.httpPcmTransform) {
+      this.httpPcmTransform.destroy();
+    }
+    this.httpPcmTransform = null;
+  }
+
   private clearCurrentSession(reason: string): void {
+    this.destroyHttpPcmPlayback();
     if (this.pcmStream) {
       this.pcmStream.destroy();
     }
@@ -512,6 +1074,14 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       debugEvents: [event, ...this.status.debugEvents].slice(0, debugEventLimit),
       updatedAt: new Date(this.now()).toISOString(),
     };
+  }
+
+  private formatNativeLog(event: unknown): string {
+    if (event && typeof event === 'object') {
+      const entry = event as { line?: unknown; source?: unknown; level?: unknown };
+      return [entry.source, entry.level, entry.line].map((value) => trimText(value)).filter(Boolean).join(' ');
+    }
+    return String(event ?? '');
   }
 }
 

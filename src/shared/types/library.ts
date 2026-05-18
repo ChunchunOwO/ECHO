@@ -318,6 +318,15 @@ export type ImportPlaylistFileResult = {
   filePath: string;
 };
 
+export type AddLocalAudioFilesToPlaylistResult = {
+  importedCount: number;
+  addedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  trackIds: string[];
+  items: LibraryPlaylistItem[];
+};
+
 export type PlaybackHistoryEntry = {
   id: string;
   trackId: string | null;
@@ -392,6 +401,9 @@ export type PlaybackHistorySummary = {
   todayPlayedSeconds: number;
   totalCount: number;
   latestPlayedAt: string | null;
+  rangeCount: number;
+  rangePlayedSeconds: number;
+  rangeLatestPlayedAt: string | null;
 };
 
 export type LibraryTrack = {
@@ -423,6 +435,14 @@ export type LibraryTrack = {
   beatOffsetMs?: number | null;
   analysisStatus?: 'none' | 'pending' | 'analyzing' | 'complete' | 'low_confidence' | 'error';
   analysisUpdatedAt?: string | null;
+  replayGainTrackGainDb?: number | null;
+  replayGainAlbumGainDb?: number | null;
+  replayGainTrackPeak?: number | null;
+  replayGainAlbumPeak?: number | null;
+  replayGainIntegratedLufs?: number | null;
+  replayGainSource?: 'none' | 'tag' | 'analysis';
+  replayGainStatus?: 'none' | 'tagged' | 'analyzing' | 'complete' | 'missing' | 'error';
+  replayGainUpdatedAt?: string | null;
   coverId: string | null;
   // Small list thumbnail: echo-cover://thumb/* resolves to thumb.webp (96x96).
   coverThumb: string | null;
@@ -502,6 +522,35 @@ export type BpmAnalysisJobStatus = {
 };
 
 export type BpmAnalysisStartOptions = {
+  limit?: number;
+  trackIds?: string[];
+  force?: boolean;
+};
+
+export type ReplayGainAnalysisResult = {
+  trackId: string;
+  trackGainDb: number | null;
+  trackPeak: number | null;
+  integratedLufs: number | null;
+  status: 'complete' | 'missing' | 'error';
+  error: string | null;
+  updatedAt: string;
+};
+
+export type ReplayGainAnalysisJobStatus = {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  totalTracks: number;
+  processedTracks: number;
+  updatedTracks: number;
+  errorCount: number;
+  currentTrackTitle: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  errors: string[];
+};
+
+export type ReplayGainAnalysisStartOptions = {
   limit?: number;
   trackIds?: string[];
   force?: boolean;

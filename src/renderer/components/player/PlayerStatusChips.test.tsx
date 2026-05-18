@@ -71,4 +71,34 @@ describe('PlayerStatusChips', () => {
 
     expect(screen.getByText('AIRPLAY')).toBeTruthy();
   });
+
+  it('does not duplicate AirPlay source labels when codec still contains AirPlay', () => {
+    render(
+      <PlayerStatusChips
+        status={{ codec: 'AirPlay', sampleRateMismatch: false } as never}
+        state="playing"
+        track={track({
+          id: 'airplay-receiver:session-1',
+          mediaType: 'remote',
+          isTemporary: true,
+          codec: 'AirPlay',
+          fieldSources: { title: 'airplay' },
+        })}
+      />,
+    );
+
+    expect(screen.getAllByText('AIRPLAY')).toHaveLength(1);
+  });
+
+  it('does not show stale AirPlay codec labels on local tracks', () => {
+    render(
+      <PlayerStatusChips
+        status={{ codec: 'AirPlay', sampleRateMismatch: false } as never}
+        state="playing"
+        track={track({ codec: null })}
+      />,
+    );
+
+    expect(screen.queryByText('AIRPLAY')).toBeNull();
+  });
 });

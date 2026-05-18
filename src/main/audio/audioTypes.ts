@@ -11,7 +11,9 @@ import type {
   AudioStatus,
 } from '../../shared/types/audio';
 import type { PlaybackProbeHint } from '../../shared/types/playback';
+import type { ReplayGainTrackData } from '../../shared/utils/replayGain';
 import type { FfmpegToolchainInfo } from './FfmpegToolchain';
+import type { AutomixTransitionPlan, AutomixTransitionMode, TrackTransitionAnalysis } from './AutomixPlanner';
 
 export type {
   AudioDeviceInfo,
@@ -28,6 +30,7 @@ export type LocalAudioSource = {
   filePath: string;
   trackId?: string;
   inputHeaders?: Record<string, string>;
+  replayGain?: ReplayGainTrackData | null;
 };
 
 export type AudioProbeResult = {
@@ -67,6 +70,24 @@ export type PcmDecodeRequest = {
   allowResamplerFallback?: boolean;
   onResamplerFallback?: (reason: string) => void;
   inputHeaders?: Record<string, string>;
+  tempoRatio?: number;
+  replayGainDb?: number;
+};
+
+export type PcmAutomixDecodeRequest = {
+  current: PcmDecodeRequest & {
+    durationSeconds: number;
+  };
+  next: PcmDecodeRequest & {
+    durationSeconds: number;
+  };
+  plan: AutomixTransitionPlan;
+  following?: Array<{
+    track: PcmDecodeRequest & {
+      durationSeconds: number;
+    };
+    plan: AutomixTransitionPlan;
+  }>;
 };
 
 export type DecoderRun = {
@@ -172,6 +193,7 @@ export type AudioSessionPlayRequest = LocalAudioSource & {
   startSeconds?: number;
   output?: AudioOutputSettings;
   probe?: PlaybackProbeHint;
+  automix?: AudioSessionAutomixRequest;
 };
 
 export type AudioSessionPlayPcmStreamRequest = {
@@ -188,9 +210,35 @@ export type AudioSessionPrepareLocalFileRequest = LocalAudioSource & {
   probe?: PlaybackProbeHint;
 };
 
+export type AudioSessionAutomixNextTrack = LocalAudioSource & {
+  probe?: PlaybackProbeHint;
+};
+
+export type AudioSessionAutomixRequest = {
+  enabled?: boolean;
+  maxTransitionSeconds?: number;
+  beatAlignEnabled?: boolean;
+  currentAnalysis?: TrackTransitionAnalysis | null;
+  nextAnalysis?: TrackTransitionAnalysis | null;
+  next?: AudioSessionAutomixNextTrack | null;
+  following?: AudioSessionAutomixNextTrack[];
+};
+
+export type AudioAutomixAdvanceEvent = {
+  fromTrackId: string | null;
+  toTrackId: string;
+  transitionSeconds: number;
+  mode?: AutomixTransitionMode;
+  fallbackReason?: string | null;
+  beatAligned?: boolean;
+  skipIntroSilence?: boolean;
+  nextStartSeconds?: number;
+};
+
 export type AudioCoreEventMap = {
   status: [AudioStatus];
   ended: [AudioStatus];
+  'automix-advance': [AudioAutomixAdvanceEvent];
   error: [Error, AudioStatus];
   'session-reset': [{ reason: string; status: AudioStatus }];
 };

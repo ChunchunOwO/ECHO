@@ -404,6 +404,7 @@ const mockEcho = (
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  window.sessionStorage.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -419,7 +420,11 @@ describe("LyricsPage", () => {
     expect(css).toContain("--lyrics-readable-color: color-mix(in srgb, var(--theme-heading-text) 86%, var(--lyrics-color) 14%);");
     expect(css).toContain("--lyrics-word-accent-color: color-mix(in srgb, var(--color-accent-strong) 72%, var(--theme-heading-text) 28%);");
     expect(css).toMatch(/html\[data-theme="dark"\] \.lyrics-mv-background::after \{\s*opacity: max\(var\(--mv-immersive-overlay-opacity\), 0\.42\);/);
-    expect(css).toContain("var(--lyrics-word-accent-color) 0 calc(var(--lyrics-word-progress) * 100%)");
+    expect(css).toContain("--lyrics-word-fill-color: var(--lyrics-word-accent-color);");
+    expect(css).toContain("var(--lyrics-word-fill-color) 0 calc(var(--lyrics-word-progress) * 100%)");
+    expect(css).toContain("var(--lyrics-word-upcoming-color) calc(var(--lyrics-word-progress) * 100%) 100%");
+    expect(css).toContain('.lyrics-line[data-active="true"][data-word-highlight="true"] .lyrics-word[data-word-state="current"]');
+    expect(css).toContain('transform: translate3d(0, -0.03em, 0) scale(1.045);');
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line span');
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line[data-word-highlight="true"] .lyrics-word');
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: var\(--lyrics-color\);/);
@@ -429,10 +434,15 @@ describe("LyricsPage", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
     const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
 
-    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy h1');
-    expect(css).toContain("color: color-mix(in srgb, var(--theme-on-accent) 97%, transparent);");
-    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy p,');
-    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-album');
+    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) {");
+    expect(css).toContain("--lyrics-mv-heading-color:");
+    expect(css).toContain("--lyrics-mv-muted-color:");
+    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy h1");
+    expect(css).toContain("color: var(--lyrics-mv-heading-color);");
+    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy p,");
+    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) .lyrics-track-album,");
+    expect(css).toContain("color: var(--lyrics-mv-muted-color);");
+    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) .lyrics-back-button:hover");
     expect(polishCss).toContain('html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .hifi-tag');
     expect(polishCss).toContain("color: var(--theme-page-text);");
     expect(polishCss).toContain('html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-hires');
@@ -476,6 +486,8 @@ describe("LyricsPage", () => {
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: clamp\(54px, 8vh, 86px\) minmax\(0, 1fr\);/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-scroll \{[\s\S]*?padding-bottom: clamp\(76px, 10vh, 112px\);/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{[\s\S]*?position: absolute;[\s\S]*?top: clamp\(72px, 8\.2vh, 104px\);[\s\S]*?left: clamp\(28px, 4vw, 72px\);[\s\S]*?width: min\(660px, calc\(100% - 56px\)\);[\s\S]*?grid-template-columns: clamp\(82px, 6\.2vw, 112px\) minmax\(0, 1fr\);/);
+    expect(css).toMatch(/html\[data-theme="dark"\] \.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
+    expect(css).toMatch(/html\[data-theme="dark"\] \.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-backdrop::before \{\s*background: none;/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-cover \{[\s\S]*?width: clamp\(82px, 6\.2vw, 112px\);[\s\S]*?margin-top: 0;/);
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-copy h1 \{[\s\S]*?font-size: clamp\(26px, 2\.15vw, 36px\);/);
     expect(css).not.toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
@@ -880,9 +892,57 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("switches between pure lyrics and MV mode from bottom navigation events", async () => {
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "lyrics");
+    const track = makeTrack();
+    mockEcho(track, 9.2);
+    attachMvBridge(makeTrackVideo());
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    expect(container.querySelector('.lyrics-page[data-view-mode="lyrics"]')).toBeTruthy();
+    expect(container.querySelector('.lyrics-mv-panel[data-mv-enabled="false"][data-view-mode="lyrics"]')).toBeTruthy();
+    expect(container.querySelector("video")).toBeNull();
+    expect(window.echo.mv?.getSelected).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("app:navigate:lyrics", { detail: { mode: "mv" } }));
+    });
+
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(video.getAttribute("src")).toBe("echo-video://mv/video-1");
+    expect(container.querySelector('.lyrics-page[data-view-mode="mv"]')).toBeTruthy();
+
+    expect(screen.queryByRole("button", { name: "回到纯净歌词" })).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("app:navigate:lyrics", { detail: { mode: "lyrics" } }));
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('.lyrics-page[data-view-mode="lyrics"]')).toBeTruthy(),
+    );
+    expect(container.querySelector('.lyrics-mv-panel[data-mv-enabled="false"][data-view-mode="lyrics"]')).toBeTruthy();
+    expect(container.querySelector("video")).toBeNull();
+    expect(window.sessionStorage.getItem("echo:lyrics:view-mode")).toBe("lyrics");
+  });
+
   it("keeps MV progress following on raw audio time when global lyrics offset shifts lyrics", async () => {
     vi.spyOn(performance, "now").mockReturnValue(0);
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     const track = makeTrack();
     mockEcho(track, 9.2, { lyricsGlobalSyncOffsetMs: 1000 });
     attachMvBridge(makeTrackVideo());
@@ -914,6 +974,7 @@ describe("LyricsPage", () => {
   it("updates the MV audio clock anchor from audio status pushes", async () => {
     vi.spyOn(performance, "now").mockReturnValue(0);
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     const track = makeTrack();
     const { emitAudioStatus } = mockEcho(track, 8);
     attachMvBridge(makeTrackVideo());
@@ -944,6 +1005,7 @@ describe("LyricsPage", () => {
   it("does not feed lyrics RAF interpolation into the MV sync clock", async () => {
     const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     let rafCallback: FrameRequestCallback | null = null;
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       rafCallback = callback;
@@ -1006,6 +1068,7 @@ describe("LyricsPage", () => {
   });
 
   it("uses album artwork as the MV fallback and shows a default visual without cover art", async () => {
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     const track = makeTrack();
     mockEcho(track);
     const { container, rerender } = render(
@@ -1019,7 +1082,7 @@ describe("LyricsPage", () => {
     await screen.findByRole("heading", { name: "Test Song" });
     expect(
       container.querySelector(".lyrics-track-cover img")?.getAttribute("src"),
-    ).toBe("echo-cover://thumb/test");
+    ).toBe("echo-cover://original/test");
     expect(
       container
         .querySelector('.lyrics-mv-card[data-cover="true"] img')
@@ -1040,7 +1103,45 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-mv-placeholder")).toBeTruthy();
   });
 
+  it("shows inline artwork for AirPlay snapshot tracks on the lyrics page", async () => {
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
+    const inlineCover = "data:image/png;base64,QUlS";
+    const track = makeTrack({
+      id: "airplay-receiver:session-1",
+      path: "airplay-receiver:session-1",
+      mediaType: "remote",
+      isTemporary: true,
+      title: "Shelter",
+      artist: "Porter Robinson / Madeon",
+      album: "Shelter",
+      coverId: null,
+      coverThumb: inlineCover,
+      codec: null,
+      fieldSources: { title: "airplay", artist: "airplay", cover: "airplay" },
+    });
+    mockEcho(track);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Shelter" });
+    expect(
+      container.querySelector(".lyrics-track-cover img")?.getAttribute("src"),
+    ).toBe(inlineCover);
+    expect(
+      container
+        .querySelector('.lyrics-mv-card[data-cover="true"] img')
+        ?.getAttribute("src"),
+    ).toBe(inlineCover);
+  });
+
   it("uses the original cover for the lyrics header and cover-following background", async () => {
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     const track = makeTrack({ coverId: "cover 1" });
     mockEcho(track);
     const { container } = render(
@@ -1077,6 +1178,31 @@ describe("LyricsPage", () => {
     expect(window.echo.library.resolveLyricsBackgroundCover).not.toHaveBeenCalled();
   });
 
+  it("does not fall back to compressed artwork for cover-following lyrics background", async () => {
+    const track = makeTrack({
+      coverId: null,
+      coverThumb: "https://img.example/cover-160.jpg",
+    });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsHighResolutionNetworkCoverEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.background).toBe("theme");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
+  });
+
   it("uses a high resolution network cover for cover-following lyrics background when available", async () => {
     const track = makeTrack({ coverId: "cover 1" });
     mockEcho(track, 0, {
@@ -1109,13 +1235,45 @@ describe("LyricsPage", () => {
       'url("echo-cover://original/cover%201")',
     );
     resolveNetworkCover({
-      coverUrl: "echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg%3Fparam%3D2000y2000",
+      coverUrl: "https://p.music.126.net/cover.jpg",
       provider: "netease-cloud-music",
       confidence: 0.96,
     });
     await waitFor(() =>
       expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
-        'url("echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg%3Fparam%3D2000y2000")',
+        'url("https://p.music.126.net/cover.jpg")',
+      ),
+    );
+    expect(window.echo.library.resolveLyricsBackgroundCover).toHaveBeenCalledWith("track-1");
+  });
+
+  it("requests a network lyrics background cover even when the local track has no cover", async () => {
+    const track = makeTrack({ coverId: null, coverThumb: null });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsHighResolutionNetworkCoverEnabled: true,
+    });
+    window.echo.library.resolveLyricsBackgroundCover = vi.fn().mockResolvedValue({
+      coverUrl: "https://p.music.126.net/cover.jpg",
+      provider: "netease-cloud-music",
+      confidence: 0.96,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    await waitFor(() => expect(page.dataset.background).toBe("cover"));
+    await waitFor(() =>
+      expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
+        'url("https://p.music.126.net/cover.jpg")',
       ),
     );
     expect(window.echo.library.resolveLyricsBackgroundCover).toHaveBeenCalledWith("track-1");

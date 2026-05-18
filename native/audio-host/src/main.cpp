@@ -179,6 +179,10 @@ enum class StdinFrameType : uint8_t
     SetVolume = 5,
     Dop24Le = 6,
     NativeDsdRaw = 7,
+    AutomixPrepare = 8,
+    AutomixNextPcmF32Le = 9,
+    AutomixNextEnd = 10,
+    AutomixCancel = 11,
 };
 
 struct StdinFrameHeader
@@ -199,6 +203,15 @@ struct DeviceDescriptor
     bool isAsio = false;
     int asioOutputChannels = 0;
     juce::String asioOutputChannelNames;
+};
+
+struct AutomixNativePlan
+{
+    std::atomic<bool> enabled { false };
+    std::atomic<uint64_t> fadeStartFrame { 0 };
+    std::atomic<uint64_t> fadeEndFrame { 0 };
+    std::atomic<float> currentGain { 1.0f };
+    std::atomic<float> nextGain { 1.0f };
 };
 
 enum class DeviceListMode
@@ -1231,6 +1244,8 @@ public:
           startupPrebufferTimeoutMs(std::max(0, startupPrebufferTimeoutMsToUse)),
           fifo(capacityFrames),
           buffer(static_cast<size_t>(capacityFrames * channelCount), 0.0f),
+          automixFifo(capacityFrames),
+          automixBuffer(static_cast<size_t>(capacityFrames * channelCount), 0.0f),
           eqProcessor(eqProcessorToUse),
           channelBalanceProcessor(channelBalanceProcessorToUse)
     {
@@ -1238,6 +1253,7 @@ public:
 
     void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override
     {
+        configureDeclickRamp(sampleRate);
         eqProcessor.prepare(sampleRate, samplesPerBlockExpected, channels);
         channelBalanceProcessor.prepare(sampleRate, samplesPerBlockExpected, channels);
     }
@@ -1246,6 +1262,7 @@ public:
     {
         const int safeFrames = std::max(1, maxFramesPerCallback);
         nativeRenderBuffer.setSize(channels, safeFrames, false, true, true);
+        configureDeclickRamp(sampleRate);
         eqProcessor.prepare(sampleRate, safeFrames, channels);
         channelBalanceProcessor.prepare(sampleRate, safeFrames, channels);
     }
@@ -1308,6 +1325,7 @@ public:
         if (shouldHoldForStartupPrebuffer())
             return 0;
 
+        const uint64_t absoluteStartFrame = framesPlayed.load(std::memory_order_relaxed);
         int framesNeeded = frameCount;
         int outputOffset = 0;
         uint64_t framesReadTotal = 0;
@@ -1336,8 +1354,13 @@ public:
                     break;
                 }
 
-                copyToOutput(start1, size1, output, startSample + outputOffset);
-                copyToOutput(start2, size2, output, startSample + outputOffset + size1);
+                copyToOutput(start1, size1, output, startSample + outputOffset, absoluteStartFrame + static_cast<uint64_t>(outputOffset));
+                copyToOutput(
+                    start2,
+                    size2,
+                    output,
+                    startSample + outputOffset + size1,
+                    absoluteStartFrame + static_cast<uint64_t>(outputOffset + size1));
                 fifo.finishedRead(framesRead);
 
                 framesReadTotal += static_cast<uint64_t>(framesRead);
@@ -1346,13 +1369,19 @@ public:
             }
         }
 
-        if (framesReadTotal > 0)
-            framesPlayed.fetch_add(framesReadTotal, std::memory_order_relaxed);
+        const uint64_t automixFramesRead = mixAutomixNext(output, startSample, frameCount, absoluteStartFrame);
+        const uint64_t renderedFrames = automixPlan.enabled.load(std::memory_order_acquire)
+            ? std::max(framesReadTotal, automixFramesRead)
+            : framesReadTotal;
+
+        if (renderedFrames > 0)
+            framesPlayed.fetch_add(renderedFrames, std::memory_order_relaxed);
 
         eqProcessor.processBlock(output, startSample, frameCount);
         channelBalanceProcessor.processBlock(output, startSample, frameCount);
+        applyDeclickRamp(output, startSample, frameCount);
 
-        return framesReadTotal;
+        return renderedFrames;
     }
 
     bool push(const float* samples, int frameCount)
@@ -1389,6 +1418,77 @@ public:
         return written == frameCount;
     }
 
+    bool pushAutomixNext(const float* samples, int frameCount)
+    {
+        if (frameCount > 0)
+            automixNextHasAudio.store(true, std::memory_order_release);
+
+        int written = 0;
+
+        while (written < frameCount && ! stopRequested.load(std::memory_order_relaxed))
+        {
+            int start1 = 0;
+            int size1 = 0;
+            int start2 = 0;
+            int size2 = 0;
+            {
+                std::lock_guard<std::mutex> lock(automixMutex);
+                automixFifo.prepareToWrite(frameCount - written, start1, size1, start2, size2);
+
+                const int framesWritable = size1 + size2;
+                if (framesWritable > 0)
+                {
+                    copyToAutomixBuffer(samples + written * channels, start1, size1);
+                    copyToAutomixBuffer(samples + (written + size1) * channels, start2, size2);
+                    automixFifo.finishedWrite(framesWritable);
+                    written += framesWritable;
+                    continue;
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(4));
+        }
+
+        return written == frameCount;
+    }
+
+    void prepareAutomix(double sampleRate, double fadeStartSeconds, double overlapSeconds, double currentGainDb, double nextGainDb)
+    {
+        const double safeSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+        const auto fadeStart = static_cast<uint64_t>(std::max(0.0, fadeStartSeconds) * safeSampleRate);
+        const auto overlapFrames = static_cast<uint64_t>(std::max(0.001, overlapSeconds) * safeSampleRate);
+
+        {
+            std::lock_guard<std::mutex> lock(automixMutex);
+            automixFifo.reset();
+            std::fill(automixBuffer.begin(), automixBuffer.end(), 0.0f);
+        }
+
+        automixPlan.fadeStartFrame.store(fadeStart, std::memory_order_release);
+        automixPlan.fadeEndFrame.store(fadeStart + std::max<uint64_t>(1, overlapFrames), std::memory_order_release);
+        automixPlan.currentGain.store(dbToGain(currentGainDb), std::memory_order_release);
+        automixPlan.nextGain.store(dbToGain(nextGainDb), std::memory_order_release);
+        automixPlan.enabled.store(true, std::memory_order_release);
+        automixNextInputEnded.store(false, std::memory_order_release);
+        automixNextHasAudio.store(false, std::memory_order_release);
+    }
+
+    void markAutomixNextEnded()
+    {
+        automixNextInputEnded.store(true, std::memory_order_release);
+    }
+
+    void cancelAutomix()
+    {
+        automixPlan.enabled.store(false, std::memory_order_release);
+        automixNextInputEnded.store(false, std::memory_order_release);
+        automixNextHasAudio.store(false, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(automixMutex);
+            automixFifo.reset();
+        }
+    }
+
     void beginSession()
     {
         {
@@ -1402,7 +1502,11 @@ public:
         underrunFrames.store(0, std::memory_order_relaxed);
         inputEnded.store(false, std::memory_order_release);
         sessionHasAudio.store(false, std::memory_order_release);
+        stopRequested.store(false, std::memory_order_release);
+        stopFadeRequested.store(false, std::memory_order_release);
+        declickFadeGeneration.fetch_add(1, std::memory_order_acq_rel);
         prebuffering.store(startupPrebufferFrames > 0, std::memory_order_release);
+        cancelAutomix();
     }
 
     void markInputEnded()
@@ -1412,6 +1516,7 @@ public:
 
     void requestStop()
     {
+        stopFadeRequested.store(true, std::memory_order_release);
         stopRequested.store(true, std::memory_order_release);
     }
 
@@ -1426,7 +1531,15 @@ public:
     bool isDrained() const
     {
         std::lock_guard<std::mutex> lock(fifoMutex);
-        return inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
+        const bool mainDrained = inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
+        if (! mainDrained)
+            return false;
+
+        if (! automixPlan.enabled.load(std::memory_order_acquire))
+            return true;
+
+        std::lock_guard<std::mutex> automixLock(automixMutex);
+        return automixNextInputEnded.load(std::memory_order_acquire) && automixFifo.getNumReady() == 0;
     }
 
     bool hasInputEnded() const
@@ -1437,7 +1550,13 @@ public:
     int getReadyFrames() const
     {
         std::lock_guard<std::mutex> lock(fifoMutex);
-        return fifo.getNumReady();
+        int ready = fifo.getNumReady();
+        if (automixPlan.enabled.load(std::memory_order_acquire))
+        {
+            std::lock_guard<std::mutex> automixLock(automixMutex);
+            ready += automixFifo.getNumReady();
+        }
+        return ready;
     }
 
     uint64_t getFramesPlayed() const
@@ -1467,7 +1586,91 @@ private:
             static_cast<size_t>(frameCount * channels) * sizeof(float));
     }
 
-    void copyToOutput(int startFrame, int frameCount, juce::AudioBuffer<float>& output, int outputStart)
+    static float dbToGain(double db)
+    {
+        if (! std::isfinite(db))
+            return 1.0f;
+
+        return static_cast<float>(std::pow(10.0, std::max(-24.0, std::min(12.0, db)) / 20.0));
+    }
+
+    void configureDeclickRamp(double sampleRate)
+    {
+        const double safeSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+        declickRampFrames = std::max(1, static_cast<int>(std::ceil(safeSampleRate * 0.006)));
+    }
+
+    void applyDeclickRamp(juce::AudioBuffer<float>& output, int startSample, int frameCount)
+    {
+        const auto generation = declickFadeGeneration.load(std::memory_order_acquire);
+        if (generation != appliedDeclickFadeGeneration)
+        {
+            appliedDeclickFadeGeneration = generation;
+            declickGain = 0.0f;
+        }
+
+        const float targetGain = stopFadeRequested.load(std::memory_order_acquire) ? 0.0f : 1.0f;
+        if (declickGain == targetGain && targetGain == 1.0f)
+            return;
+
+        const float step = 1.0f / static_cast<float>(std::max(1, declickRampFrames));
+        const int outputChannels = output.getNumChannels();
+
+        for (int frame = 0; frame < frameCount; ++frame)
+        {
+            for (int channel = 0; channel < outputChannels; ++channel)
+            {
+                auto* samples = output.getWritePointer(channel, startSample);
+                samples[frame] *= declickGain;
+            }
+
+            if (declickGain < targetGain)
+                declickGain = std::min(targetGain, declickGain + step);
+            else if (declickGain > targetGain)
+                declickGain = std::max(targetGain, declickGain - step);
+        }
+    }
+
+    float currentAutomixEnvelope(uint64_t absoluteFrame) const
+    {
+        const bool enabled = automixPlan.enabled.load(std::memory_order_acquire);
+        const uint64_t fadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
+        const uint64_t fadeEndFrame = automixPlan.fadeEndFrame.load(std::memory_order_acquire);
+        const float currentGain = automixPlan.currentGain.load(std::memory_order_acquire);
+        if (! enabled || absoluteFrame < fadeStartFrame)
+            return enabled ? currentGain : 1.0f;
+
+        if (absoluteFrame >= fadeEndFrame)
+            return 0.0f;
+
+        const double progress = static_cast<double>(absoluteFrame - fadeStartFrame)
+            / static_cast<double>(std::max<uint64_t>(1, fadeEndFrame - fadeStartFrame));
+        return currentGain * static_cast<float>(std::cos(progress * juce::MathConstants<double>::halfPi));
+    }
+
+    float nextAutomixEnvelope(uint64_t absoluteFrame) const
+    {
+        const bool enabled = automixPlan.enabled.load(std::memory_order_acquire);
+        const uint64_t fadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
+        const uint64_t fadeEndFrame = automixPlan.fadeEndFrame.load(std::memory_order_acquire);
+        const float nextGain = automixPlan.nextGain.load(std::memory_order_acquire);
+        if (! enabled || absoluteFrame < fadeStartFrame)
+            return 0.0f;
+
+        if (absoluteFrame >= fadeEndFrame)
+            return nextGain;
+
+        const double progress = static_cast<double>(absoluteFrame - fadeStartFrame)
+            / static_cast<double>(std::max<uint64_t>(1, fadeEndFrame - fadeStartFrame));
+        return nextGain * static_cast<float>(std::sin(progress * juce::MathConstants<double>::halfPi));
+    }
+
+    void copyToOutput(
+        int startFrame,
+        int frameCount,
+        juce::AudioBuffer<float>& output,
+        int outputStart,
+        uint64_t absoluteStartFrame)
     {
         if (frameCount <= 0)
             return;
@@ -1482,8 +1685,110 @@ private:
             const int sourceChannel = std::min(channel, channels - 1);
 
             for (int frame = 0; frame < frameCount; ++frame)
-                destination[frame] = source[frame * channels + sourceChannel] * outputGain;
+                destination[frame] = source[frame * channels + sourceChannel]
+                    * outputGain
+                    * currentAutomixEnvelope(absoluteStartFrame + static_cast<uint64_t>(frame));
         }
+    }
+
+    void copyToAutomixBuffer(const float* source, int startFrame, int frameCount)
+    {
+        if (frameCount <= 0)
+            return;
+
+        std::memcpy(
+            automixBuffer.data() + static_cast<size_t>(startFrame * channels),
+            source,
+            static_cast<size_t>(frameCount * channels) * sizeof(float));
+    }
+
+    void addAutomixToOutput(
+        int startFrame,
+        int frameCount,
+        juce::AudioBuffer<float>& output,
+        int outputStart,
+        uint64_t absoluteStartFrame)
+    {
+        if (frameCount <= 0)
+            return;
+
+        const float* source = automixBuffer.data() + static_cast<size_t>(startFrame * channels);
+        const int outputChannels = output.getNumChannels();
+
+        for (int channel = 0; channel < outputChannels; ++channel)
+        {
+            float* destination = output.getWritePointer(channel, outputStart);
+            const int sourceChannel = std::min(channel, channels - 1);
+
+            for (int frame = 0; frame < frameCount; ++frame)
+            {
+                destination[frame] += source[frame * channels + sourceChannel]
+                    * nextAutomixEnvelope(absoluteStartFrame + static_cast<uint64_t>(frame));
+            }
+        }
+    }
+
+    uint64_t mixAutomixNext(juce::AudioBuffer<float>& output, int startSample, int frameCount, uint64_t absoluteStartFrame)
+    {
+        if (! automixPlan.enabled.load(std::memory_order_acquire) || frameCount <= 0)
+            return 0;
+
+        const uint64_t fadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
+        if (absoluteStartFrame + static_cast<uint64_t>(frameCount) <= fadeStartFrame)
+            return 0;
+
+        const int startOffset = absoluteStartFrame >= fadeStartFrame
+            ? 0
+            : static_cast<int>(fadeStartFrame - absoluteStartFrame);
+        int framesNeeded = frameCount - startOffset;
+        int outputOffset = startOffset;
+        uint64_t framesReadTotal = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(automixMutex);
+
+            while (framesNeeded > 0)
+            {
+                int start1 = 0;
+                int size1 = 0;
+                int start2 = 0;
+                int size2 = 0;
+                automixFifo.prepareToRead(framesNeeded, start1, size1, start2, size2);
+
+                const int framesRead = size1 + size2;
+                if (framesRead <= 0)
+                {
+                    if (
+                        ! automixNextInputEnded.load(std::memory_order_acquire)
+                        && automixNextHasAudio.load(std::memory_order_acquire))
+                    {
+                        underrunCallbacks.fetch_add(1, std::memory_order_relaxed);
+                        underrunFrames.fetch_add(static_cast<uint64_t>(framesNeeded), std::memory_order_relaxed);
+                    }
+                    break;
+                }
+
+                addAutomixToOutput(
+                    start1,
+                    size1,
+                    output,
+                    startSample + outputOffset,
+                    absoluteStartFrame + static_cast<uint64_t>(outputOffset));
+                addAutomixToOutput(
+                    start2,
+                    size2,
+                    output,
+                    startSample + outputOffset + size1,
+                    absoluteStartFrame + static_cast<uint64_t>(outputOffset + size1));
+                automixFifo.finishedRead(framesRead);
+
+                framesReadTotal += static_cast<uint64_t>(framesRead);
+                framesNeeded -= framesRead;
+                outputOffset += framesRead;
+            }
+        }
+
+        return framesReadTotal > 0 ? framesReadTotal + static_cast<uint64_t>(startOffset) : 0;
     }
 
     void copyPlanarToInterleaved(
@@ -1516,18 +1821,29 @@ private:
     const int startupPrebufferTimeoutMs;
     juce::AbstractFifo fifo;
     std::vector<float> buffer;
+    juce::AbstractFifo automixFifo;
+    std::vector<float> automixBuffer;
     juce::AudioBuffer<float> nativeRenderBuffer;
     echo::EqProcessor& eqProcessor;
     echo::ChannelBalanceProcessor& channelBalanceProcessor;
     mutable std::mutex fifoMutex;
+    mutable std::mutex automixMutex;
+    AutomixNativePlan automixPlan;
     std::atomic<bool> inputEnded { false };
+    std::atomic<bool> automixNextInputEnded { false };
     std::atomic<bool> sessionHasAudio { false };
+    std::atomic<bool> automixNextHasAudio { false };
     std::atomic<bool> prebuffering { false };
     std::atomic<bool> stopRequested { false };
+    std::atomic<bool> stopFadeRequested { false };
+    std::atomic<uint64_t> declickFadeGeneration { 0 };
     std::atomic<uint64_t> framesPlayed { 0 };
     std::atomic<uint64_t> underrunCallbacks { 0 };
     std::atomic<uint64_t> underrunFrames { 0 };
     std::chrono::steady_clock::time_point prebufferDeadline {};
+    uint64_t appliedDeclickFadeGeneration = 0;
+    float declickGain = 1.0f;
+    int declickRampFrames = 1;
 
     bool shouldHoldForStartupPrebuffer()
     {
@@ -2301,6 +2617,56 @@ void pushPcmPayload(PcmRingAudioSource& source, int channels, std::vector<char>&
     pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(sampleCount * sizeof(float)));
 }
 
+void pushAutomixNextPcmPayload(PcmRingAudioSource& source, int channels, std::vector<char>& pending, const std::vector<char>& payload)
+{
+    const size_t frameBytes = static_cast<size_t>(channels) * sizeof(float);
+    pending.insert(pending.end(), payload.begin(), payload.end());
+
+    const size_t frameCount = pending.size() / frameBytes;
+    if (frameCount == 0)
+        return;
+
+    const size_t sampleCount = frameCount * static_cast<size_t>(channels);
+    std::vector<float> samples(sampleCount);
+    std::memcpy(samples.data(), pending.data(), sampleCount * sizeof(float));
+
+    if (! source.pushAutomixNext(samples.data(), static_cast<int>(frameCount)))
+        return;
+
+    pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(sampleCount * sizeof(float)));
+}
+
+double getJsonDouble(const juce::DynamicObject* object, const char* key, double fallback)
+{
+    if (object == nullptr)
+        return fallback;
+
+    const auto value = object->getProperty(key);
+    if (value.isDouble() || value.isInt() || value.isInt64())
+        return static_cast<double>(value);
+
+    return fallback;
+}
+
+void prepareAutomixFromPayload(PcmRingAudioSource& source, double sampleRate, const std::vector<char>& payload)
+{
+    if (payload.empty())
+        return;
+
+    const juce::String json = juce::String::fromUTF8(payload.data(), static_cast<int>(payload.size()));
+    const auto parsed = juce::JSON::parse(json);
+    const auto* object = parsed.getDynamicObject();
+    if (object == nullptr)
+        return;
+
+    source.prepareAutomix(
+        sampleRate,
+        getJsonDouble(object, "fadeStartSeconds", 0.0),
+        getJsonDouble(object, "overlapSeconds", 0.001),
+        getJsonDouble(object, "currentGainDb", 0.0),
+        getJsonDouble(object, "nextGainDb", 0.0));
+}
+
 void handleFramedStdinPayload(
     PcmRingAudioSource& source,
     int channels,
@@ -2308,6 +2674,8 @@ void handleFramedStdinPayload(
     uint32_t& currentSessionId,
     bool& hasSession,
     std::vector<char>& pendingPcm,
+    std::vector<char>& pendingAutomixPcm,
+    double sampleRate,
     const StdinFrameHeader& header,
     const std::vector<char>& payload)
 {
@@ -2329,6 +2697,40 @@ void handleFramedStdinPayload(
         return;
     }
 
+    if (type == StdinFrameType::AutomixPrepare)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+        {
+            pendingAutomixPcm.clear();
+            prepareAutomixFromPayload(source, sampleRate, payload);
+        }
+        return;
+    }
+
+    if (type == StdinFrameType::AutomixNextPcmF32Le)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+            pushAutomixNextPcmPayload(source, channels, pendingAutomixPcm, payload);
+        return;
+    }
+
+    if (type == StdinFrameType::AutomixNextEnd)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+        {
+            pendingAutomixPcm.clear();
+            source.markAutomixNextEnded();
+        }
+        return;
+    }
+
+    if (type == StdinFrameType::AutomixCancel)
+    {
+        pendingAutomixPcm.clear();
+        source.cancelAutomix();
+        return;
+    }
+
     if (type == StdinFrameType::EndSession)
     {
         if (hasSession && header.sessionId == currentSessionId)
@@ -2343,6 +2745,7 @@ void handleFramedStdinPayload(
     {
         shutdownRequested.store(true, std::memory_order_release);
         source.markInputEnded();
+        source.markAutomixNextEnded();
         source.requestStop();
         return;
     }
@@ -2354,7 +2757,7 @@ void handleFramedStdinPayload(
     }
 }
 
-void framedStdinReader(PcmRingAudioSource& source, int channels, std::atomic<bool>& shutdownRequested)
+void framedStdinReader(PcmRingAudioSource& source, int channels, double sampleRate, std::atomic<bool>& shutdownRequested)
 {
     configurePcmReaderThread();
 
@@ -2365,6 +2768,7 @@ void framedStdinReader(PcmRingAudioSource& source, int channels, std::atomic<boo
     uint32_t currentSessionId = 0;
     bool hasSession = false;
     std::vector<char> pendingPcm;
+    std::vector<char> pendingAutomixPcm;
 
     try
     {
@@ -2385,6 +2789,8 @@ void framedStdinReader(PcmRingAudioSource& source, int channels, std::atomic<boo
                 currentSessionId,
                 hasSession,
                 pendingPcm,
+                pendingAutomixPcm,
+                sampleRate,
                 header,
                 payload);
         }
@@ -2400,6 +2806,7 @@ void framedStdinReader(PcmRingAudioSource& source, int channels, std::atomic<boo
 
     shutdownRequested.store(true, std::memory_order_release);
     source.markInputEnded();
+    source.markAutomixNextEnded();
 }
 
 void pushDopPayload(DopRingSource& source, int channels, std::vector<char>& pending, const std::vector<char>& payload)
@@ -2938,6 +3345,24 @@ void stopStdinReaderForEarlyReturn(Source& source, std::atomic<bool>& shutdownRe
     }
 }
 
+template <typename Source>
+bool stopAfterAsioRenderFailure(
+    asio_runtime* runtime,
+    Source& source,
+    std::atomic<bool>& shutdownRequested,
+    bool& renderFailureReported)
+{
+    if (renderFailureReported || ! asio_render_failed(runtime))
+        return false;
+
+    renderFailureReported = true;
+    logLine("ASIO render callback failed; requesting host rebuild");
+    writeJsonLine("{\"event\":\"error\",\"reason\":\"asio_render_failed\",\"message\":\"ASIO render callback failed\"}");
+    shutdownRequested.store(true, std::memory_order_release);
+    source.requestStop();
+    return true;
+}
+
 uint32_t legacyWasapiRenderCallback(void* userData, float* output, uint32_t frameCount, uint32_t channels)
 {
     auto* source = static_cast<PcmRingAudioSource*>(userData);
@@ -3394,7 +3819,7 @@ int runLegacyWasapiExclusiveHost(const Options& options)
     }
 
     if (options.framedStdin)
-        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, static_cast<double>(options.sampleRate), std::ref(shutdownRequested));
     else
         reader = std::thread(stdinReader, std::ref(source), options.channels);
 
@@ -3659,7 +4084,10 @@ int openAsioControlPanel(const Options& options)
 
 int runLegacyWasapiSharedHost(const Options& options)
 {
-    const auto descriptor = selectDevice(options);
+    const bool useDefaultWasapiDevice = options.deviceName.isEmpty() && options.deviceIndex < 0;
+    const DeviceDescriptor descriptor = useDefaultWasapiDevice
+        ? DeviceDescriptor { -1, "Windows Audio", "Default Windows Audio", options.sampleRate, options.sampleRate, true, false }
+        : selectDevice(options);
     logLine("Using legacy WASAPI shared device index " + std::to_string(descriptor.index) + ": " + descriptor.name.toStdString());
 
     const int requestedDeviceBufferFrames = getDeviceBufferSize(options);
@@ -3687,14 +4115,13 @@ int runLegacyWasapiSharedHost(const Options& options)
     std::thread reader;
 
     if (options.framedStdin)
-        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, static_cast<double>(options.sampleRate), std::ref(shutdownRequested));
     else
         reader = std::thread(stdinReader, std::ref(source), options.channels);
 
     wasapi_shared_runtime* runtime = nullptr;
     wasapi_shared_ready_info readyInfo {};
     char error[512] {};
-    const bool useDefaultWasapiDevice = options.deviceName.isEmpty() && options.deviceIndex < 0;
     const char* wasapiDeviceName = useDefaultWasapiDevice ? nullptr : descriptor.name.toRawUTF8();
     const int wasapiDeviceIndex = (! useDefaultWasapiDevice && options.deviceIndex >= 0 && descriptor.index == options.deviceIndex)
         ? descriptor.index
@@ -3876,7 +4303,7 @@ int runLegacyAsioHost(const Options& options)
     std::thread reader;
 
     if (options.framedStdin)
-        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, static_cast<double>(options.sampleRate), std::ref(shutdownRequested));
     else
         reader = std::thread(stdinReader, std::ref(source), options.channels);
 
@@ -3956,9 +4383,13 @@ int runLegacyAsioHost(const Options& options)
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
     bool endedReported = false;
     bool shutdownAckSent = false;
+    bool renderFailureReported = false;
 
     while (! shutdownRequested.load(std::memory_order_acquire) && (! source.isDrained() || options.framedStdin))
     {
+        if (stopAfterAsioRenderFailure(runtime, source, shutdownRequested, renderFailureReported))
+            break;
+
         const auto frames = source.getFramesPlayed();
 
         if (frames != lastReported)
@@ -3991,7 +4422,9 @@ int runLegacyAsioHost(const Options& options)
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
-    if (reader.joinable())
+    if (renderFailureReported)
+        stopStdinReaderForEarlyReturn(source, shutdownRequested, reader);
+    else if (reader.joinable())
         reader.join();
 
     const auto finalFrames = source.getFramesPlayed();
@@ -4010,7 +4443,7 @@ int runLegacyAsioHost(const Options& options)
             + " frames=" + std::to_string(source.getUnderrunFrames()));
     }
 
-    if (! options.framedStdin || ! endedReported)
+    if (! renderFailureReported && (! options.framedStdin || ! endedReported))
         writeJsonLine("{\"event\":\"ended\"}");
 
     cleanupLegacyAsioAndAck(source, runtime, eqControlServer, shutdownAckSent);
@@ -4108,9 +4541,13 @@ int runLegacyAsioDopHost(const Options& options)
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
     bool endedReported = false;
     bool shutdownAckSent = false;
+    bool renderFailureReported = false;
 
     while (! shutdownRequested.load(std::memory_order_acquire) && (! source.isDrained() || options.framedStdin))
     {
+        if (stopAfterAsioRenderFailure(runtime, source, shutdownRequested, renderFailureReported))
+            break;
+
         const auto frames = source.getFramesPlayed();
         if (frames != lastReported)
         {
@@ -4139,7 +4576,9 @@ int runLegacyAsioDopHost(const Options& options)
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
-    if (reader.joinable())
+    if (renderFailureReported)
+        stopStdinReaderForEarlyReturn(source, shutdownRequested, reader);
+    else if (reader.joinable())
         reader.join();
 
     const auto finalFrames = source.getFramesPlayed();
@@ -4151,7 +4590,7 @@ int runLegacyAsioDopHost(const Options& options)
             + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
             + "}");
 
-    if (! endedReported)
+    if (! renderFailureReported && ! endedReported)
         writeJsonLine("{\"event\":\"ended\"}");
 
     cleanupLegacyAsioDopAndAck(source, runtime, shutdownAckSent);
@@ -4254,9 +4693,13 @@ int runLegacyAsioNativeDsdHost(const Options& options)
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
     bool endedReported = false;
     bool shutdownAckSent = false;
+    bool renderFailureReported = false;
 
     while (! shutdownRequested.load(std::memory_order_acquire) && (! source.isDrained() || options.framedStdin))
     {
+        if (stopAfterAsioRenderFailure(runtime, source, shutdownRequested, renderFailureReported))
+            break;
+
         const auto frames = source.getFramesPlayed();
         if (frames != lastReported)
         {
@@ -4285,7 +4728,9 @@ int runLegacyAsioNativeDsdHost(const Options& options)
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
-    if (reader.joinable())
+    if (renderFailureReported)
+        stopStdinReaderForEarlyReturn(source, shutdownRequested, reader);
+    else if (reader.joinable())
         reader.join();
 
     const auto finalFrames = source.getFramesPlayed();
@@ -4297,7 +4742,7 @@ int runLegacyAsioNativeDsdHost(const Options& options)
             + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
             + "}");
 
-    if (! endedReported)
+    if (! renderFailureReported && ! endedReported)
         writeJsonLine("{\"event\":\"ended\"}");
 
     cleanupLegacyAsioNativeDsdAndAck(source, runtime, shutdownAckSent);
@@ -4505,7 +4950,7 @@ int runHost(const Options& options)
     std::thread reader;
 
     if (options.framedStdin)
-        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, static_cast<double>(options.sampleRate), std::ref(shutdownRequested));
     else
         reader = std::thread(stdinReader, std::ref(source), options.channels);
 

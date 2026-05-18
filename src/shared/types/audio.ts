@@ -11,6 +11,27 @@ export type AudioResamplerEngine = 'default' | 'soxr';
 export type FfmpegToolchainSource = 'explicit' | 'bundled' | 'dev-bundled' | 'system';
 export type AudioDsdOutputMode = 'pcm' | 'dop';
 export type ActiveDsdOutputMode = 'pcm' | 'dop' | 'native' | null;
+export type AudioAutomixMode = 'off' | 'armed' | 'transitioning';
+
+export type AudioAutomixStatus = {
+  enabled: boolean;
+  mode: AudioAutomixMode;
+  active: boolean;
+  transitionSeconds: number | null;
+  transitionStartedAtSeconds: number | null;
+  nextTrackId: string | null;
+  transitionMode?: 'smartCrossfade' | 'beatAligned' | 'energyFade' | 'gaplessFallback' | null;
+  fallbackReason?: string | null;
+  beatAligned?: boolean;
+  skipIntroSilence?: boolean;
+  engine?: 'nativeDualDeck' | 'ffmpegPremix' | 'fallback' | null;
+  tempoRatio?: number | null;
+  nextStartSeconds?: number | null;
+  overlapSeconds?: number | null;
+  advanceAtSeconds?: number | null;
+  plannedTrackCount?: number;
+  nextTransitionIndex?: number;
+};
 
 export type ChannelBalanceState = {
   enabled: boolean;
@@ -95,6 +116,11 @@ export type AudioStatus = {
   volume: number;
   playbackRate: number;
   playbackSpeedMode: PlaybackSpeedMode;
+  replayGainEnabled?: boolean;
+  replayGainMode?: 'off' | 'track' | 'album';
+  replayGainAppliedDb?: number;
+  replayGainPreventedClipping?: boolean;
+  automix?: AudioAutomixStatus;
   currentFilePath: string | null;
   currentTrackId: string | null;
   durationSeconds: number;

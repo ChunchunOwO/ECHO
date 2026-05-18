@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -129,17 +129,58 @@ const createPython3Shim = (pythonPath) => {
   return shimDir;
 };
 
-const patchNodeLibraopWindowsBuild = () => {
+const toGypPath = (path) => path.replaceAll('\\', '/');
+
+const patchNodeLibraopWindowsBuild = (openSslRoot) => {
   const packageRoot = dirname(require.resolve('@lox-audioserver/node-libraop/package.json'));
+  const queueStubPath = join(packageRoot, 'native', 'raop_client_queue_stub.c');
+  writeFileSync(queueStubPath, [
+    '#include <stdint.h>',
+    'struct raopcl_s;',
+    'uint32_t raopcl_queue_len(struct raopcl_s *p) { (void)p; return 0; }',
+    'uint32_t raopcl_queued_frames(struct raopcl_s *p) { (void)p; return 0; }',
+    '',
+  ].join('\n'), 'utf8');
+
   const bindingPath = join(packageRoot, 'binding.gyp');
   let binding = readFileSync(bindingPath, 'utf8');
-  if (!binding.includes('-lpthreadVC3')) {
+  if (!binding.includes('native/raop_client_queue_stub.c')) {
     binding = binding.replace(
-      '"-lbcrypt"',
-      '"-lbcrypt",\n            "-lpthreadVC3"',
+      '"native/log_stub.c",',
+      '"native/log_stub.c",\n        "native/raop_client_queue_stub.c",',
     );
-    writeFileSync(bindingPath, binding, 'utf8');
   }
+  const includeDir = toGypPath(join(openSslRoot, 'include'));
+  if (!binding.includes(includeDir)) {
+    binding = binding.replace(
+      '"native",',
+      `"${includeDir}",\n        "native",`,
+    );
+  }
+  const libPaths = [
+    toGypPath(join(openSslRoot, 'lib', 'libssl.lib')),
+    toGypPath(join(openSslRoot, 'lib', 'libcrypto.lib')),
+    toGypPath(join(openSslRoot, 'lib', 'pthreadVC3.lib')),
+  ];
+  for (const libPath of libPaths) {
+    if (!binding.includes(libPath)) {
+      binding = binding.replace(
+        '"-lbcrypt"',
+        `"${libPath}",\n            "-lbcrypt"`,
+      );
+    }
+  }
+  binding = binding
+    .replace(/\s*"-lssl",?\r?\n/g, '')
+    .replace(/\s*"-lcrypto",?\r?\n/g, '')
+    .replace(/\s*"-lpthreadVC3",?\r?\n/g, '');
+  if (!binding.includes('SSL_STATIC_LIB')) {
+    binding = binding.replace(
+      '"NAPI_DISABLE_CPP_EXCEPTIONS"',
+      '"SSL_STATIC_LIB", "NAPI_DISABLE_CPP_EXCEPTIONS"',
+    );
+  }
+  writeFileSync(bindingPath, binding, 'utf8');
 
   const platformPath = join(packageRoot, 'vendor', 'libraop', 'crosstools', 'src', 'platform.h');
   let platform = readFileSync(platformPath, 'utf8');
@@ -149,6 +190,55 @@ const patchNodeLibraopWindowsBuild = () => {
       '#include <sys/timeb.h>\n#include <pthread.h>',
     );
     writeFileSync(platformPath, platform, 'utf8');
+  }
+
+  const serverPath = join(packageRoot, 'vendor', 'libraop', 'src', 'raop_server.c');
+  let server = readFileSync(serverPath, 'utf8');
+  server = server.replace(
+    'port.offset = rand() % port_range;',
+    'port.offset = 0;',
+  );
+  server = server.replace(
+    [
+      '\t\tht = raopst_init(ctx->host, ctx->peer, ctx->streamer.codec, ctx->streamer.metadata, ctx->drift, true, ctx->latencies,',
+      '\t\t\t\t\t\t\tctx->rtsp.aeskey, ctx->rtsp.aesiv, ctx->rtsp.fmtp,',
+      '\t\t\t\t\t\t\tcport, tport, ctx, event_cb, http_cb, ctx->ports.base,',
+      '\t\t\t\t\t\t\tctx->ports.range, ctx->http_length);',
+    ].join('\n'),
+    [
+      '\t\tunsigned short stream_base = ctx->ports.base ? ctx->ports.base + 1 : 0;',
+      '\t\tunsigned short stream_range = ctx->ports.range > 1 ? ctx->ports.range - 1 : ctx->ports.range;',
+      '\t\tht = raopst_init(ctx->host, ctx->peer, ctx->streamer.codec, ctx->streamer.metadata, ctx->drift, true, ctx->latencies,',
+      '\t\t\t\t\t\t\tctx->rtsp.aeskey, ctx->rtsp.aesiv, ctx->rtsp.fmtp,',
+      '\t\t\t\t\t\t\tcport, tport, ctx, event_cb, http_cb, stream_base,',
+      '\t\t\t\t\t\t\tstream_range, ctx->http_length);',
+    ].join('\n'),
+  );
+  writeFileSync(serverPath, server, 'utf8');
+};
+
+const copyRuntimeDlls = (openSslRoot) => {
+  const packageRoot = dirname(require.resolve('@lox-audioserver/node-libraop/package.json'));
+  const releaseDir = join(packageRoot, 'build', 'Release');
+  const prebuildDir = join(packageRoot, 'prebuilds', 'win32-x64');
+  mkdirSync(prebuildDir, { recursive: true });
+  const releaseNode = join(releaseDir, 'raop_addon.node');
+  if (existsSync(releaseNode)) {
+    copyFileSync(releaseNode, join(prebuildDir, 'raop_addon.node.napi.node'));
+    console.log('[build:airplay-raop] Prebuild: win32-x64/raop_addon.node.napi.node');
+  }
+  const runtimeDlls = [
+    'libssl-3-x64.dll',
+    'libcrypto-3-x64.dll',
+    'pthreadVC3.dll',
+  ];
+  for (const dll of runtimeDlls) {
+    const source = join(openSslRoot, 'bin', dll);
+    if (existsSync(source)) {
+      copyFileSync(source, join(releaseDir, dll));
+      copyFileSync(source, join(prebuildDir, dll));
+      console.log(`[build:airplay-raop] Runtime DLL: ${dll}`);
+    }
   }
 };
 
@@ -190,7 +280,6 @@ try {
     process.exit();
   }
   const pythonShimDir = createPython3Shim(pythonPath);
-  patchNodeLibraopWindowsBuild();
 
   try {
     require.resolve('@lox-audioserver/node-libraop/package.json');
@@ -200,6 +289,7 @@ try {
     ]);
     process.exit();
   }
+  patchNodeLibraopWindowsBuild(openSslRoot);
 
   const env = {
     ...process.env,
@@ -237,6 +327,12 @@ try {
     run(npmCommand, ['rebuild', '@lox-audioserver/node-libraop', '--build-from-source'], { env });
   }
   console.log('[build:airplay-raop] RAOP native module rebuilt.');
+  copyRuntimeDlls(openSslRoot);
 } catch (error) {
-  fail('Failed to build AirPlay RAOP native module.', [error instanceof Error ? error.message : String(error)]);
+  const message = error instanceof Error ? error.message : String(error);
+  const details = [message];
+  if (message.includes('EPERM') && message.includes('node-libraop') && message.includes('.dll')) {
+    details.push('Close any running ECHO/Electron process that has loaded the AirPlay native DLLs, then rerun npm run build:airplay-raop.');
+  }
+  fail('Failed to build AirPlay RAOP native module.', details);
 }

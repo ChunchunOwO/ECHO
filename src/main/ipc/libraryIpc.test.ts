@@ -16,6 +16,12 @@ const openPathMock = vi.fn();
 const showItemInFolderMock = vi.fn();
 const trashItemMock = vi.fn();
 const getLibraryServiceMock = vi.fn();
+const appSettingsMock = vi.hoisted(() => ({
+  current: {
+    networkMetadataEnabled: false,
+    networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+  },
+}));
 
 vi.mock('electron', () => ({
   app: {
@@ -44,6 +50,10 @@ vi.mock('electron', () => ({
 
 vi.mock('../library/LibraryService', () => ({
   getLibraryService: getLibraryServiceMock,
+}));
+
+vi.mock('../app/appSettings', () => ({
+  getAppSettings: () => appSettingsMock.current,
 }));
 
 const resetHandlers = (): void => {
@@ -152,6 +162,27 @@ const installLibraryService = () => {
     getFolderTracks: vi.fn(() => ({ items: [], page: 1, pageSize: 100, total: 0, hasMore: false })),
     resolveLibraryFolderPath: vi.fn(() => 'D:\\Music'),
     importAudioFile: vi.fn(async (path: string) => ({ id: `track-${path}`, path })),
+    addTracksToPlaylist: vi.fn((_playlistId: string, trackIds: string[]) =>
+      trackIds.map((trackId, index) => ({
+        id: `item-${index + 1}`,
+        playlistId: 'playlist-1',
+        mediaType: 'track',
+        mediaId: trackId,
+        sourceProvider: 'local',
+        sourceItemId: null,
+        titleSnapshot: `Song ${index + 1}`,
+        artistSnapshot: 'Artist',
+        albumSnapshot: 'Album',
+        durationSnapshot: 120,
+        coverId: null,
+        coverThumb: null,
+        position: index,
+        addedAt: '2026-05-18T00:00:00.000Z',
+        addedFrom: 'library',
+        unavailable: false,
+        track: null,
+      })),
+    ),
     removeFolder: vi.fn(),
     scanFolder: vi.fn(),
     getScanStatus: vi.fn(),
@@ -204,6 +235,11 @@ const installLibraryService = () => {
     updateTrackTags: vi.fn(),
     recordTrackPlayback: vi.fn(),
     deleteTrack: vi.fn(),
+    resolveLyricsBackgroundCover: vi.fn(async () => ({
+      coverUrl: 'echo-image://remote/cover',
+      provider: 'netease-cloud-music',
+      confidence: 0.96,
+    })),
   };
 
   getLibraryServiceMock.mockReturnValue(service);
@@ -222,6 +258,10 @@ describe('library IPC', () => {
     showItemInFolderMock.mockReset();
     trashItemMock.mockReset();
     getLibraryServiceMock.mockReset();
+    appSettingsMock.current = {
+      networkMetadataEnabled: false,
+      networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+    };
     installLibraryService();
     const module = await import('./libraryIpc');
     module.registerLibraryIpc();
@@ -288,6 +328,36 @@ describe('library IPC', () => {
       audioFiles: [audioPath],
       unsupportedFiles: [cuePath, unsupportedPath],
       missingPaths: [missingPath],
+    });
+  });
+
+  it('imports selected local audio paths and adds them to a playlist', async () => {
+    const service = installLibraryService();
+    const root = makeTempRoot();
+    const firstPath = join(root, 'one.flac');
+    const secondPath = join(root, 'two.mp3');
+    const unsupportedPath = join(root, 'cover.jpg');
+    const missingPath = join(root, 'missing.flac');
+    writeFileSync(firstPath, 'audio');
+    writeFileSync(secondPath, 'audio');
+    writeFileSync(unsupportedPath, 'image');
+
+    const result = await handlers[IpcChannels.LibraryAddLocalAudioFilesToPlaylist]!(null, 'playlist-1', [
+      firstPath,
+      secondPath,
+      unsupportedPath,
+      missingPath,
+    ]);
+
+    expect(service.importAudioFile).toHaveBeenCalledWith(firstPath);
+    expect(service.importAudioFile).toHaveBeenCalledWith(secondPath);
+    expect(service.addTracksToPlaylist).toHaveBeenCalledWith('playlist-1', [`track-${firstPath}`, `track-${secondPath}`]);
+    expect(result).toMatchObject({
+      importedCount: 2,
+      addedCount: 2,
+      skippedCount: 2,
+      failedCount: 0,
+      trackIds: [`track-${firstPath}`, `track-${secondPath}`],
     });
   });
 
@@ -549,6 +619,18 @@ describe('library IPC', () => {
 
     expect(service.getAlbumForTrack).toHaveBeenCalledWith('track-1');
     expect(result).toMatchObject({ id: 'album-1' });
+  });
+
+  it('resolves lyrics background covers through the dedicated lyrics option when global network metadata is off', async () => {
+    const service = installLibraryService();
+
+    const result = await handlers[IpcChannels.LibraryResolveLyricsBackgroundCover]!(null, 'track-1');
+
+    expect(service.resolveLyricsBackgroundCover).toHaveBeenCalledWith('track-1', ['netease-cloud-music', 'qq-music']);
+    expect(result).toMatchObject({
+      coverUrl: 'echo-image://remote/cover',
+      provider: 'netease-cloud-music',
+    });
   });
 });
 

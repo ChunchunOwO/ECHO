@@ -63,6 +63,7 @@ struct asio_runtime
     bool nativeDsdMode = false;
     bool nativeDsdFormatApplied = false;
     bool nativeDsdForcePackedMsb = false;
+    volatile LONG renderFailed = 0;
     bool initialized = false;
     bool buffersCreated = false;
     bool started = false;
@@ -136,6 +137,12 @@ void append_error(char* error, size_t errorLen, const char* message)
 
     snprintf(error + used, errorLen - used, "%s", message);
     error[errorLen - 1] = '\0';
+}
+
+void writeJsonLine(const char* json)
+{
+    fprintf(stdout, "%s\n", json != nullptr ? json : "{}");
+    fflush(stdout);
 }
 
 void ansi_to_utf8(const char* input, char* output, int outputLen)
@@ -1015,10 +1022,61 @@ bool should_force_native_dsd_packed_msb(const char* selectedUtf8)
     return contains_icase(selectedUtf8, "TEAC");
 }
 
-void render_asio_output(long bufferIndex)
+uint32_t asio_dop_silence_sample(long frameIndex)
 {
-    asio_callback_guard callbackGuard;
-    asio_runtime* runtime = activeRuntime.load(std::memory_order_acquire);
+    return ((frameIndex & 1L) == 0L) ? 0x050000u : 0xfa0000u;
+}
+
+void write_asio_silence(asio_runtime* runtime, long bufferIndex) noexcept
+{
+    if (runtime == nullptr || ! runtime->buffersCreated || bufferIndex < 0 || bufferIndex > 1)
+        return;
+
+    const auto frames = static_cast<uint32_t>(std::max<long>(1, runtime->bufferSize));
+
+    for (long channel = 0; channel < runtime->outputChannelCount; ++channel)
+    {
+        const long asioIndex = runtime->outputChannelOffset + channel;
+        if (asioIndex < 0 || asioIndex >= maxAsioTotalChannels)
+            continue;
+
+        void* output = runtime->bufferInfos[asioIndex].buffers[bufferIndex];
+        if (output == nullptr)
+            continue;
+
+        const ASIOSampleType sampleType = runtime->channelInfos[asioIndex].type;
+
+        if (runtime->nativeDsdMode)
+        {
+            write_asio_native_dsd_samples(
+                output,
+                sampleType,
+                frames,
+                nullptr,
+                0,
+                0,
+                0,
+                runtime->nativeDsdForcePackedMsb);
+            continue;
+        }
+
+        if (runtime->dopMode)
+        {
+            for (long frame = 0; frame < runtime->bufferSize; ++frame)
+                write_asio_dop_sample(output, sampleType, frame, asio_dop_silence_sample(frame));
+            continue;
+        }
+
+        for (long frame = 0; frame < runtime->bufferSize; ++frame)
+            write_asio_sample(output, sampleType, frame, 0.0f);
+    }
+
+    if (runtime->postOutput)
+        ASIOOutputReady();
+}
+
+void render_asio_output(asio_runtime* runtime, long bufferIndex)
+{
     if (runtime == nullptr)
         return;
 
@@ -1123,16 +1181,34 @@ void render_asio_output(long bufferIndex)
         ASIOOutputReady();
 }
 
+void render_asio_output_safely(long bufferIndex) noexcept
+{
+    asio_callback_guard callbackGuard;
+    asio_runtime* runtime = activeRuntime.load(std::memory_order_acquire);
+    if (runtime == nullptr)
+        return;
+
+    try
+    {
+        render_asio_output(runtime, bufferIndex);
+    }
+    catch (...)
+    {
+        InterlockedExchange(&runtime->renderFailed, 1);
+        write_asio_silence(runtime, bufferIndex);
+    }
+}
+
 void asio_buffer_switch(long index, ASIOBool processNow)
 {
     (void)processNow;
-    render_asio_output(index);
+    render_asio_output_safely(index);
 }
 
 ASIOTime* asio_buffer_switch_time_info(ASIOTime* params, long index, ASIOBool processNow)
 {
     (void)processNow;
-    render_asio_output(index);
+    render_asio_output_safely(index);
     return params;
 }
 
@@ -1265,18 +1341,19 @@ bool create_buffers_with_candidates(
 
     for (bool includeInputs : includeInputAttempts)
     {
-        for (long candidate : candidates)
+        for (long candidateSize : candidates)
         {
+            fprintf(stderr, "[echo-audio-host] ASIO trying buffer size %lu frames\n", static_cast<unsigned long>(candidateSize));
             prepare_buffer_infos(runtime, includeInputs);
             const ASIOError result = ASIOCreateBuffers(
                 runtime->bufferInfos,
                 runtime->totalChannelCount,
-                candidate,
+                candidateSize,
                 &runtime->callbacks);
 
             if (result == ASE_OK)
             {
-                runtime->bufferSize = candidate;
+                runtime->bufferSize = candidateSize;
                 runtime->buffersCreated = true;
                 if (populate_channel_infos(runtime, error, errorLen))
                     return true;
@@ -1286,7 +1363,7 @@ bool create_buffers_with_candidates(
                 continue;
             }
 
-            attempts.push_back({ candidate, result });
+            attempts.push_back({ candidateSize, result });
             ASIODisposeBuffers();
         }
     }
@@ -1477,6 +1554,53 @@ bool enable_asio_native_dsd_format(char* error, size_t errorLen)
 
     return set_asio_io_format(kASIODSDFormat, "native DSD", error, errorLen);
 }
+
+void teardown_failed_asio_buffer_creation(asio_runtime* runtime, bool asioStarted, bool asioInitialised)
+{
+    if (runtime == nullptr)
+        return;
+
+    if (asioStarted || runtime->started)
+    {
+        const ASIOError stopResult = ASIOStop();
+        (void) stopResult;
+        runtime->started = false;
+    }
+
+    const ASIOError disposeResult = ASIODisposeBuffers();
+    (void) disposeResult;
+    runtime->buffersCreated = false;
+
+    if (asioInitialised || runtime->initialized)
+    {
+        if (runtime->nativeDsdFormatApplied)
+        {
+            set_asio_io_format(kASIOPCMFormat, "PCM", nullptr, 0);
+            runtime->nativeDsdFormatApplied = false;
+        }
+
+        const ASIOError exitResult = ASIOExit();
+        (void) exitResult;
+        runtime->initialized = false;
+    }
+
+    activeRuntime.store(nullptr, std::memory_order_release);
+    writeJsonLine("{\"type\":\"error\",\"code\":\"asio_buffer_create_failed\",\"message\":\"All ASIO buffer size candidates rejected by driver\"}");
+
+    if (runtime->sysRefWindow != nullptr)
+    {
+        DestroyWindow(runtime->sysRefWindow);
+        runtime->sysRefWindow = nullptr;
+    }
+
+    free(runtime->scratch);
+    runtime->scratch = nullptr;
+    free(runtime->dopScratch);
+    runtime->dopScratch = nullptr;
+    free(runtime->nativeDsdScratch);
+    runtime->nativeDsdScratch = nullptr;
+    free(runtime);
+}
 } // namespace
 
 int asio_list_devices(asio_device_info** outDevices, uint32_t* outCount)
@@ -1659,6 +1783,8 @@ static int asio_start_impl(
         set_error(error, errorLen, "failed to allocate ASIO runtime");
         return -1;
     }
+    bool asioInitialised = false;
+    bool asioStarted = false;
 
     snprintf(runtime->selectedName, sizeof(runtime->selectedName), "%s", selectedUtf8);
     runtime->sourceChannels = std::max<uint32_t>(1, std::min<uint32_t>(sourceChannels, maxAsioOutputChannels));
@@ -1702,6 +1828,7 @@ static int asio_start_impl(
         return -1;
     }
     runtime->initialized = true;
+    asioInitialised = true;
     fprintf(stderr, "[echo-audio-host] ASIOInit completed: %s\n", selectedUtf8);
 
     if (runtime->nativeDsdMode)
@@ -1817,8 +1944,8 @@ static int asio_start_impl(
 
         if (! retry_create_buffers_after_sample_rate_recovery(runtime, requestedRate, requestedBufferFrames, error, errorLen))
         {
-            activeRuntime.store(nullptr, std::memory_order_release);
-            asio_stop(runtime);
+            set_error(error, errorLen, "All ASIO buffer size candidates rejected by driver");
+            teardown_failed_asio_buffer_creation(runtime, asioStarted, asioInitialised);
             return -1;
         }
     }
@@ -1883,6 +2010,7 @@ static int asio_start_impl(
         return -1;
     }
     runtime->started = true;
+    asioStarted = true;
     fprintf(stderr, "[echo-audio-host] ASIOStart completed: %s\n", selectedUtf8);
 
     outInfo->sampleRate = asio_sample_rate_to_uint32(runtime->sampleRate);
@@ -2057,6 +2185,14 @@ void asio_stop(asio_runtime* runtime)
     free(runtime);
 }
 
+int asio_render_failed(asio_runtime* runtime)
+{
+    if (runtime == nullptr)
+        return 0;
+
+    return InterlockedCompareExchange(&runtime->renderFailed, 0, 0) != 0 ? 1 : 0;
+}
+
 #ifdef ECHO_AUDIO_ENGINE_TESTS
 uint32_t asio_build_buffer_candidates_for_tests(
     long minSize,
@@ -2152,6 +2288,53 @@ void asio_write_native_dsd_samples_for_tests(
         sourceChannels,
         sourceChannel,
         forcePackedMsb != 0);
+}
+
+unsigned int asio_throwing_render_callback_for_tests(
+    void* userData,
+    float* output,
+    unsigned int frameCount,
+    unsigned int channels)
+{
+    (void)userData;
+    (void)output;
+    (void)frameCount;
+    (void)channels;
+    throw 1;
+}
+
+int asio_render_guard_catches_exception_for_tests(void)
+{
+    float output[8] {};
+    float scratch[8] {};
+    for (float& sample : output)
+        sample = 1.0f;
+
+    asio_runtime runtime {};
+    runtime.outputChannelCount = 1;
+    runtime.outputChannelOffset = 0;
+    runtime.sourceChannels = 1;
+    runtime.bufferSize = 8;
+    runtime.scratch = scratch;
+    runtime.callback = asio_throwing_render_callback_for_tests;
+    runtime.buffersCreated = true;
+    runtime.bufferInfos[0].buffers[0] = output;
+    runtime.channelInfos[0].type = ASIOSTFloat32LSB;
+
+    activeRuntime.store(&runtime, std::memory_order_release);
+    render_asio_output_safely(0);
+    activeRuntime.store(nullptr, std::memory_order_release);
+
+    if (! asio_render_failed(&runtime))
+        return 0;
+
+    for (float sample : output)
+    {
+        if (sample != 0.0f)
+            return 0;
+    }
+
+    return 1;
 }
 #endif
 

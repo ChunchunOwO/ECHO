@@ -299,8 +299,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const pendingDebouncedSettingsRef = useRef<Partial<AppSettings>>({});
 
   const effectiveSettings = settings ?? fallbackSettings;
-  // Settings embeds only persistent toggles; drawer-only tools such as search, rematch, and visual tuning stay in the drawer.
-  const showFullControls = variant === 'drawer';
+  // Settings should expose every persistent lyrics preference; only current-track tools stay drawer-only.
+  const showCurrentTrackTools = variant === 'drawer';
+  const showPersistentControls = variant === 'drawer' || variant === 'settings';
   const lyricsContextOpacityPercent = effectiveSettings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent;
   const lyricsLineMaxChars = effectiveSettings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars ?? 0;
   const enabledProviderSet = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
@@ -337,9 +338,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const miniPlayerOpacityPercent = effectiveSettings.lyricsPlayerBarDrawerOpacityPercent ?? fallbackSettings.lyricsPlayerBarDrawerOpacityPercent;
   const miniPlayerColor = effectiveSettings.lyricsPlayerBarDrawerColor ?? fallbackSettings.lyricsPlayerBarDrawerColor ?? '#232120';
   const offsetSeconds = useMemo(() => (effectiveSettings.lyricsDefaultOffsetMs / 1000).toFixed(1), [effectiveSettings.lyricsDefaultOffsetMs]);
-  const isSecondaryLyricsSizeOpen =
-    effectiveSettings.lyricsEnabled &&
-    (effectiveSettings.lyricsRomanizationEnabled || effectiveSettings.lyricsTranslationEnabled);
+  const isSecondaryLyricsSizeOpen = effectiveSettings.lyricsRomanizationEnabled || effectiveSettings.lyricsTranslationEnabled;
   const globalSyncOffsetSeconds = useMemo(
     () => (effectiveSettings.lyricsGlobalSyncOffsetMs / 1000).toFixed(2),
     [effectiveSettings.lyricsGlobalSyncOffsetMs],
@@ -738,7 +737,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setIsLyricsCandidateLoading(false);
       }
     },
-    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
   );
 
   const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
@@ -790,7 +789,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsLyricsCandidateLoading(false);
     }
-  }, [effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
+  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
 
   const applyLyricsCandidate = useCallback(
     async (candidateId: string): Promise<void> => {
@@ -827,7 +826,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setApplyingLyricsCandidateId(null);
       }
     },
-    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {
@@ -863,7 +862,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsMarkingInstrumental(false);
     }
-  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
+  }, [effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
 
   useEffect(() => {
     void refreshDrawerSummary();
@@ -881,7 +880,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
   return (
     <div className={`lyrics-settings-panel ${className ?? ''}`.trim()}>
-      {showFullControls ? (
+      {showCurrentTrackTools ? (
         <button className="audio-engine-meter lyrics-engine-meter" type="button" disabled={isBusy} onClick={() => void refreshDrawerSummary()}>
           <div className="audio-engine-meter__top">
             <span className="audio-engine-meter__icon">
@@ -910,7 +909,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         </button>
       ) : null}
 
-      {showFullControls ? (
+      {showCurrentTrackTools ? (
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <Search size={17} />
@@ -1063,7 +1062,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>关闭后歌词页不会加载、搜索或匹配歌词。</p>
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <label className="mv-threshold-control lyrics-match-threshold-control">
             <span className="mv-threshold-copy">
               <strong>歌词匹配度设置</strong>
@@ -1077,7 +1076,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 step="1"
                 value={thresholdPercent}
                 aria-label="歌词匹配度设置"
-                disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                disabled={isBusy}
                 onChange={(event) => patchSettingsDebounced({ lyricsAutoAcceptScore: thresholdFromPercent(event.currentTarget.value) })}
               />
               <strong>{thresholdPercent}%</strong>
@@ -1093,7 +1092,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsHeaderHidden}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => toggleLyricsHeaderHidden(event.currentTarget.checked)}
             />
           </label>
@@ -1106,7 +1105,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <input
                 type="checkbox"
                 checked={effectiveSettings.lyricsMvAutoShowTrackInfoDisabled}
-                disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                disabled={isBusy}
                 onChange={toggleMvAutoShowTrackInfoDisabled}
               />
             </label>
@@ -1119,7 +1118,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsPlayerBarDrawerEnabled}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerEnabled: event.currentTarget.checked })}
             />
           </label>
@@ -1142,7 +1141,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   max={100}
                   step={1}
                   value={miniPlayerOpacityPercent}
-                  disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                  disabled={isBusy}
                   onChange={(event) =>
                     patchSettingsDebounced(
                       { lyricsPlayerBarDrawerOpacityPercent: Number(event.currentTarget.value) },
@@ -1176,7 +1175,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                       type="button"
                       key={mode}
                       aria-pressed={effectiveSettings.lyricsPlayerBarDrawerColorMode === mode}
-                      disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                      disabled={isBusy}
                       onClick={() => void patchSettings({ lyricsPlayerBarDrawerColorMode: mode as AppSettings['lyricsPlayerBarDrawerColorMode'] })}
                     >
                       {label}
@@ -1195,7 +1194,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                         <input
                           type="color"
                           value={miniPlayerColor}
-                          disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                          disabled={isBusy}
                           onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerColor: event.currentTarget.value })}
                         />
                         <em>{miniPlayerColor}</em>
@@ -1210,7 +1209,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                           style={{ backgroundColor: color }}
                           aria-label={`使用底栏颜色 ${color}`}
                           aria-pressed={miniPlayerColor.toUpperCase() === color}
-                          disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                          disabled={isBusy}
                           onClick={() => void patchSettings({ lyricsPlayerBarDrawerColor: color })}
                         >
                           {miniPlayerColor.toUpperCase() === color ? <Check size={13} /> : null}
@@ -1234,7 +1233,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsEmptyStateHidden}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsEmptyStateHidden: event.currentTarget.checked })}
             />
           </label>
@@ -1248,7 +1247,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsRomanizationEnabled}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsRomanizationEnabled: event.currentTarget.checked })}
             />
           </label>
@@ -1262,7 +1261,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsTranslationEnabled}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsTranslationEnabled: event.currentTarget.checked })}
             />
           </label>
@@ -1276,13 +1275,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsWordHighlightEnabled !== false}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsWordHighlightEnabled: event.currentTarget.checked })}
             />
           </label>
           <p>仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。</p>
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <>
           <label className="audio-toggle-row lyrics-style-toggle">
             <span>
@@ -1295,7 +1294,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </>
           ) : null}
 
-          {showFullControls && isSecondaryLyricsSizeOpen ? (
+          {showPersistentControls && isSecondaryLyricsSizeOpen ? (
             <label className="lyrics-drawer-range lyrics-secondary-size-range" hidden={!isLyricsStyleControlsOpen}>
               <span>
                 <strong>
@@ -1315,7 +1314,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
           ) : null}
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
@@ -1335,7 +1334,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
@@ -1355,7 +1354,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
@@ -1375,7 +1374,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
             <span>
               <strong>
@@ -1395,7 +1394,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <div className="lyrics-color-panel" hidden={!isLyricsStyleControlsOpen}>
             <div className="lyrics-color-panel__header">
               <span>
@@ -1441,7 +1440,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           ) : null}
         </section>
 
-        {showFullControls ? (
+        {showPersistentControls ? (
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <ImageIcon size={17} />
@@ -1456,7 +1455,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <input
               type="checkbox"
               checked={effectiveSettings.lyricsSmartReadableColorsEnabled === true}
-              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsSmartReadableColorsEnabled: event.currentTarget.checked })}
             />
           </label>
@@ -1648,7 +1647,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>开启后多个在线平台会并发搜索，并按下方优先级与匹配分数返回最快的最优解。</p>
 
-          {showFullControls ? (
+          {showPersistentControls ? (
           <div className="lyrics-source-panel">
             <span>
               <Globe2 size={15} />
@@ -1729,7 +1728,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <p>本地歌词始终优先；在线结果达到阈值才会自动应用。</p>
         </section>
 
-        {showFullControls ? (
+        {showPersistentControls ? (
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <TimerReset size={17} />

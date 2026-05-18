@@ -16,6 +16,7 @@ type TrackListProps = {
   onStartReached?: () => void;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
+  onAddToPlaylist?: (track: LibraryTrack) => void;
   onDownload?: (track: LibraryTrack) => void;
   onOpenArtist?: (track: LibraryTrack) => void;
   onOpenAlbum?: (track: LibraryTrack) => void;
@@ -34,7 +35,7 @@ type TrackListProps = {
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, onAddToQueue, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
@@ -208,6 +209,7 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
                       track={track}
                       onPlay={onPlay}
                       onAddToQueue={onAddToQueue}
+                      onAddToPlaylist={onAddToPlaylist}
                       onDownload={onDownload}
                       onOpenArtist={onOpenArtist}
                       onOpenAlbum={onOpenAlbum}

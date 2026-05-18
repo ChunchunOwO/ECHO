@@ -17,6 +17,7 @@ import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
+import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
 import type { ArtistImageLookupInput, ArtistImageProvider } from './artistImages/ArtistImageTypes';
 import type { MetadataService } from './MetadataService';
@@ -62,6 +63,8 @@ import type {
   DuplicateTrackMode,
   BpmAnalysisJobStatus,
   BpmAnalysisStartOptions,
+  ReplayGainAnalysisJobStatus,
+  ReplayGainAnalysisStartOptions,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -127,6 +130,7 @@ export class LibraryService {
     private readonly metadataReader: MetadataReader = new TsMetadataReader(),
     private readonly networkMetadataService: NetworkMetadataService | null = null,
     private readonly bpmAnalysisJobQueue: BpmAnalysisJobQueue | null = null,
+    private readonly replayGainAnalysisJobQueue: ReplayGainAnalysisJobQueue | null = null,
     private readonly artistImageCacheService: ArtistImageCacheService | null = null,
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
@@ -185,6 +189,13 @@ export class LibraryService {
       void this.scanJobQueue.waitForIdle(job.id).then(() => {
         if (this.readAppSettings().audioAnalysisEnabled) {
           this.startBpmAnalysis({ limit: 500 });
+        }
+      }).catch(() => undefined);
+    }
+    if (this.readAppSettings().replayGainAnalyzeMissingOnScan) {
+      void this.scanJobQueue.waitForIdle(job.id).then(() => {
+        if (this.readAppSettings().replayGainAnalyzeMissingOnScan) {
+          this.startReplayGainAnalysis({ limit: 500 });
         }
       }).catch(() => undefined);
     }
@@ -696,6 +707,9 @@ export class LibraryService {
       if (this.readAppSettings().audioAnalysisEnabled) {
         this.startBpmAnalysis({ trackIds: [track.id], force: true });
       }
+      if (this.readAppSettings().replayGainAnalyzeMissingOnScan) {
+        this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
+      }
 
       return track;
     });
@@ -796,8 +810,8 @@ export class LibraryService {
     return this.store.getPlaybackHistory(query);
   }
 
-  getPlaybackHistorySummary(): PlaybackHistorySummary {
-    return this.store.getPlaybackHistorySummary();
+  getPlaybackHistorySummary(query?: PlaybackHistoryQuery): PlaybackHistorySummary {
+    return this.store.getPlaybackHistorySummary(query);
   }
 
   deletePlaybackHistoryEntry(id: string): void {
@@ -1425,6 +1439,20 @@ export class LibraryService {
     return this.bpmAnalysisJobQueue.getStatus(jobId);
   }
 
+  startReplayGainAnalysis(options: ReplayGainAnalysisStartOptions = {}): ReplayGainAnalysisJobStatus {
+    if (!this.replayGainAnalysisJobQueue) {
+      throw new Error('ReplayGain analysis service is unavailable');
+    }
+    return this.replayGainAnalysisJobQueue.start(options);
+  }
+
+  getReplayGainAnalysisStatus(jobId: string): ReplayGainAnalysisJobStatus {
+    if (!this.replayGainAnalysisJobQueue) {
+      throw new Error('ReplayGain analysis service is unavailable');
+    }
+    return this.replayGainAnalysisJobQueue.getStatus(jobId);
+  }
+
   getDefaultCoverCacheDir(): string {
     return getDefaultCoverCacheDir(this.databasePath);
   }
@@ -1622,6 +1650,9 @@ export const createLibraryService = (
 
   const networkMetadataService = new NetworkMetadataService(database);
   const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
+  const replayGainAnalysisJobQueue = new ReplayGainAnalysisJobQueue(store, {
+    getTargetLufs: () => readSettings().replayGainTargetLufs ?? -18,
+  });
   const artistImageCacheDir = resolve(dependencies.artistImageCacheDir ?? join(dirname(databasePath), 'artist-images'));
   const artistImageCacheService = new ArtistImageCacheService(database, {
     cacheRoot: artistImageCacheDir,
@@ -1651,6 +1682,7 @@ export const createLibraryService = (
     metadataReader,
     networkMetadataService,
     bpmAnalysisJobQueue,
+    replayGainAnalysisJobQueue,
     artistImageCacheService,
     readSettings,
     scanConcurrency,

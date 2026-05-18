@@ -19,7 +19,7 @@
     "ensure:native:electron": "node scripts/ensure-native-abi.mjs electron",
     "ensure:native:node": "node scripts/ensure-native-abi.mjs node",
     "build:airplay-raop": "node scripts/build-airplay-raop.mjs",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:native": "electron-rebuild -f -o better-sqlite3",
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
@@ -86,6 +86,7 @@
     "appId": "app.echo.next",
     "productName": "ECHO NEXT",
     "executableName": "ECHO NEXT",
+    "npmRebuild": false,
     "icon": "software.ico",
     "directories": {
       "output": "dist"

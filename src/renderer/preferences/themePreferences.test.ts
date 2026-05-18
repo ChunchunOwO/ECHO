@@ -1,11 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyThemeMode, readThemeMode, updateThemeMode, watchSystemThemeMode } from './themePreferences';
+import {
+  applyThemeMode,
+  readThemeMode,
+  readThemePreset,
+  readThemePresetOverrides,
+  updateThemeMode,
+  updateThemePreset,
+  updateThemePresetOverrides,
+  updateThemePreferences,
+  watchSystemThemeMode,
+} from './themePreferences';
 
 afterEach(() => {
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeMode;
+  delete document.documentElement.dataset.themePreset;
+  delete document.documentElement.dataset.themeCustom;
+  delete document.documentElement.dataset.themeTransition;
+  document.documentElement.removeAttribute('style');
   document.documentElement.style.colorScheme = '';
   vi.restoreAllMocks();
 });
@@ -17,12 +31,123 @@ describe('theme preferences', () => {
     expect(readThemeMode()).toBe('dark');
     expect(document.documentElement.dataset.themeMode).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.themePreset).toBe('classic');
 
     updateThemeMode('light');
 
     expect(readThemeMode()).toBe('light');
     expect(document.documentElement.dataset.themeMode).toBe('light');
     expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.themePreset).toBe('classic');
+  });
+
+  it('applies and caches independent theme presets', () => {
+    updateThemeMode('light');
+    updateThemePreset('echoTwilight');
+
+    expect(readThemeMode()).toBe('light');
+    expect(readThemePreset()).toBe('echoTwilight');
+    expect(document.documentElement.dataset.themeMode).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.documentElement.dataset.themePreset).toBe('echoTwilight');
+
+    updateThemePreferences('dark', 'mintCandy');
+
+    expect(readThemeMode()).toBe('dark');
+    expect(readThemePreset()).toBe('mintCandy');
+    expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.themePreset).toBe('mintCandy');
+
+    updateThemePreset('neonCandy');
+
+    expect(readThemePreset()).toBe('neonCandy');
+    expect(document.documentElement.dataset.themePreset).toBe('neonCandy');
+
+    updateThemePreset('amberNoir');
+
+    expect(readThemePreset()).toBe('amberNoir');
+    expect(document.documentElement.dataset.themePreset).toBe('amberNoir');
+  });
+
+  it('applies and caches theme preset overrides', () => {
+    updateThemePreferences('light', 'echoTwilight', {
+      echoTwilight: {
+        light: {
+          appBg: '#fff0ee',
+          accent: '#df6b5f',
+          text: '#352321',
+          onAccent: '#ffffff',
+          panelOpacityPercent: 84,
+        },
+      },
+    });
+
+    expect(readThemePresetOverrides()).toEqual({
+      echoTwilight: {
+        light: {
+          appBg: '#fff0ee',
+          accent: '#df6b5f',
+          text: '#352321',
+          onAccent: '#ffffff',
+          panelOpacityPercent: 84,
+        },
+      },
+    });
+    expect(document.documentElement.dataset.themeCustom).toBe('true');
+    expect(document.documentElement.style.getPropertyValue('--preset-app-bg')).toBe('#fff0ee');
+    expect(document.documentElement.style.getPropertyValue('--theme-accent-solid-bg')).toBe('#df6b5f');
+
+    updateThemePresetOverrides({});
+    expect(document.documentElement.dataset.themeCustom).toBeUndefined();
+    expect(document.documentElement.style.getPropertyValue('--preset-app-bg')).toBe('');
+  });
+
+  it('runs animated theme transitions for interactive changes', () => {
+    const startViewTransition = vi.fn((callback: () => void) => {
+      callback();
+      return { finished: Promise.resolve() };
+    });
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: startViewTransition,
+    });
+
+    updateThemePreset('lemonMochi', { animate: true });
+
+    expect(startViewTransition).toHaveBeenCalledOnce();
+    expect(document.documentElement.dataset.themeTransition).toBe('true');
+    expect(document.documentElement.dataset.themePreset).toBe('lemonMochi');
+  });
+
+  it('skips animated transitions when reduced motion is requested', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === '(prefers-reduced-motion: reduce)',
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    const startViewTransition = vi.fn((callback: () => void) => {
+      callback();
+      return { finished: Promise.resolve() };
+    });
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: startViewTransition,
+    });
+
+    updateThemeMode('dark', { animate: true });
+
+    expect(startViewTransition).not.toHaveBeenCalled();
+    expect(document.documentElement.dataset.themeTransition).toBeUndefined();
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
   it('resolves system theme mode from matchMedia and updates on system changes', () => {
@@ -69,5 +194,13 @@ describe('theme preferences', () => {
 
     expect(document.documentElement.dataset.themeMode).toBe('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.themePreset).toBe('classic');
+  });
+
+  it('falls back to classic for invalid theme presets', () => {
+    updateThemePreset('neon' as never);
+
+    expect(readThemePreset()).toBe('classic');
+    expect(document.documentElement.dataset.themePreset).toBe('classic');
   });
 });

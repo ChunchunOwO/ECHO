@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { getAudioSession } from '../audio/AudioSession';
+import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getStreamingService } from '../streaming/StreamingService';
 
 const devApiPort = 5174;
@@ -77,6 +78,17 @@ export const startDevApiServer = (): void => {
 
       if (request.method === 'GET' && url.pathname === '/audio/diagnostics') {
         sendJson(response, 200, getAudioSession().getDiagnostics());
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/connect/airplay/status') {
+        sendJson(response, 200, getAirPlayReceiverSpikeService().getStatus());
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/connect/airplay/enabled') {
+        const body = await readJsonBody(request);
+        sendJson(response, 200, await getAirPlayReceiverSpikeService().setEnabled(body.enabled === true));
         return;
       }
 

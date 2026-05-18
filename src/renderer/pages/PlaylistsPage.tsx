@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, FilePlus2, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
 import type { StreamingAudioQuality, StreamingProviderName } from '../../shared/types/streaming';
@@ -176,6 +176,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [showNewPlaylistForm, setShowNewPlaylistForm] = useState(false);
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
   const [isImportingPlaylistFile, setIsImportingPlaylistFile] = useState(false);
+  const [isAddingLocalFiles, setIsAddingLocalFiles] = useState(false);
   const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
@@ -726,6 +727,57 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   };
 
+  const handleAddLocalFilesToPlaylist = async (): Promise<void> => {
+    const library = window.echo?.library;
+    const playback = window.echo?.playback;
+    if (!library?.addLocalAudioFilesToPlaylist || !playback || !selectedPlaylist) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to add local songs.');
+      setStatusMessage(null);
+      return;
+    }
+
+    if (isSelectedPlaylistProtected || isSelectedPlaylistRemote) {
+      setError('只能向本地手动歌单添加本地歌曲。');
+      setStatusMessage(null);
+      return;
+    }
+
+    setIsAddingLocalFiles(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const filePaths = playback.openLocalAudioFiles
+        ? await playback.openLocalAudioFiles()
+        : await playback.openLocalAudioFile().then((path) => (path ? [path] : null));
+
+      if (!filePaths?.length) {
+        return;
+      }
+
+      setStatusMessage('正在添加本地歌曲...');
+      const result = await library.addLocalAudioFilesToPlaylist(selectedPlaylist.id, filePaths);
+      await loadPlaylists();
+      setSelectedPlaylistId(selectedPlaylist.id);
+      setPlaylistSearchInput('');
+      setPlaylistSearch('');
+      await loadItems(selectedPlaylist.id, 1, 'replace', '');
+      window.dispatchEvent(new Event('library:changed'));
+      window.dispatchEvent(new Event('library:playlists-changed'));
+
+      if (result.addedCount > 0) {
+        const skippedSuffix = result.skippedCount || result.failedCount ? `，跳过 ${result.skippedCount + result.failedCount} 个文件` : '';
+        setStatusMessage(`已添加 ${result.addedCount} 首本地歌曲${skippedSuffix}`);
+      } else {
+        setStatusMessage('没有可添加的本地歌曲。');
+      }
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : String(addError));
+      setStatusMessage(null);
+    } finally {
+      setIsAddingLocalFiles(false);
+    }
+  };
+
   const handleChoosePlaylistCover = async (): Promise<void> => {
     const library = window.echo?.library;
     if (!library || !selectedPlaylist) {
@@ -1186,6 +1238,12 @@ export const PlaylistsPage = (): JSX.Element => {
                   <ListPlus size={16} />
                   <span>添加到队列</span>
                 </button>
+                {!isSelectedPlaylistProtected && !isSelectedPlaylistRemote ? (
+                  <button className="secondary-action" type="button" disabled={isAddingLocalFiles} onClick={() => void handleAddLocalFilesToPlaylist()}>
+                    {isAddingLocalFiles ? <Loader2 className="spinning-icon" size={16} /> : <FilePlus2 size={16} />}
+                    <span>{isAddingLocalFiles ? '添加中' : '添加本地歌曲'}</span>
+                  </button>
+                ) : null}
                 <button className="secondary-action" type="button" onClick={() => void handleChoosePlaylistCover()}>
                   <ImagePlus size={16} />
                   <span>更换封面</span>

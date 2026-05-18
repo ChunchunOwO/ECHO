@@ -13,6 +13,7 @@ import type {
 } from '../../shared/types/playback';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
 import { streamingProviderNames, type StreamingAudioQuality, type StreamingProviderName } from '../../shared/types/streaming';
+import type { AudioSessionAutomixRequest } from '../audio/audioTypes';
 import { getAudioSession, type AudioErrorRecoveryHandler } from '../audio/AudioSession';
 import { getPlaybackMemoryStore } from '../audio/PlaybackMemoryStore';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
@@ -20,7 +21,7 @@ import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
 import { getStreamingService } from '../streaming/StreamingService';
-import { enqueueAudioCommand } from './audioCommandQueue';
+import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 import { normalizePlaybackFilePath } from './playbackPath';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
@@ -253,6 +254,9 @@ const normalizeProbeHint = (value: unknown): PlaybackProbeHint | undefined => {
   const channels = optionalPositiveNumber(input.channels);
   const bitDepth = input.bitDepth === null ? null : optionalPositiveNumber(input.bitDepth);
   const bitrate = input.bitrate === null ? null : optionalPositiveNumber(input.bitrate);
+  const bpm = input.bpm === null ? null : optionalPositiveNumber(input.bpm);
+  const bpmConfidence = input.bpmConfidence === null ? null : optionalNonNegativeNumber(input.bpmConfidence);
+  const beatOffsetMs = input.beatOffsetMs === null ? null : optionalNonNegativeNumber(input.beatOffsetMs);
   const codec = optionalText(input.codec);
 
   if (durationSeconds !== undefined) {
@@ -279,6 +283,18 @@ const normalizeProbeHint = (value: unknown): PlaybackProbeHint | undefined => {
     output.bitrate = bitrate === null ? null : Math.round(bitrate);
   }
 
+  if (bpm !== undefined) {
+    output.bpm = bpm === null ? null : bpm;
+  }
+
+  if (bpmConfidence !== undefined) {
+    output.bpmConfidence = bpmConfidence === null ? null : Math.min(1, bpmConfidence);
+  }
+
+  if (beatOffsetMs !== undefined) {
+    output.beatOffsetMs = beatOffsetMs === null ? null : Math.round(beatOffsetMs);
+  }
+
   return Object.keys(output).length > 0 ? output : undefined;
 };
 
@@ -295,6 +311,7 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
     startSeconds: optionalNonNegativeNumber(input.startSeconds),
     output: normalizeOutputSettings(input.output),
     probe: normalizeProbeHint(input.probe),
+    automix: normalizeAutomixOptions(input.automix),
   };
 };
 
@@ -374,6 +391,31 @@ const normalizeMediaPlayRequest = (value: unknown): PlaybackMediaStartRequest =>
     item: normalizeMediaItem(input.item),
     startSeconds: optionalNonNegativeNumber(input.startSeconds),
     output: normalizeOutputSettings(input.output),
+    automix: normalizeAutomixOptions(input.automix),
+  };
+};
+
+const normalizeAutomixOptions = (value: unknown): PlaybackStartRequest['automix'] => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const enabled = input.enabled === true;
+  const maxTransitionSeconds = optionalPositiveNumber(input.maxTransitionSeconds);
+  return {
+    enabled,
+    maxTransitionSeconds: maxTransitionSeconds === undefined ? undefined : Math.max(2, Math.min(12, maxTransitionSeconds)),
+    beatAlignEnabled: input.beatAlignEnabled !== false,
+    nextItem: input.nextItem ? normalizeMediaItem(input.nextItem) : null,
+    nextProbe: normalizeProbeHint(input.nextProbe),
+    upcomingItems: Array.isArray(input.upcomingItems) ? input.upcomingItems.slice(0, 3).map(normalizeMediaItem) : [],
+    upcomingProbes: Array.isArray(input.upcomingProbes)
+      ? input.upcomingProbes
+          .slice(0, 3)
+          .map(normalizeProbeHint)
+          .filter((probe): probe is NonNullable<ReturnType<typeof normalizeProbeHint>> => Boolean(probe))
+      : [],
   };
 };
 
@@ -463,6 +505,86 @@ const prepareMediaItem = async (request: PlaybackMediaStartRequest): Promise<voi
   });
 };
 
+const createProbeHintForMediaItem = (item: PlayableTrack, hint?: PlaybackProbeHint): PlaybackProbeHint | undefined => {
+  const probe: PlaybackProbeHint = {
+    ...hint,
+  };
+
+  if (probe.durationSeconds === undefined && typeof item.duration === 'number' && Number.isFinite(item.duration)) {
+    probe.durationSeconds = item.duration;
+  }
+
+  return Object.keys(probe).length > 0 ? probe : undefined;
+};
+
+const createReplayGainHintForMediaItem = (item: PlayableTrack) => ({
+  trackGainDb: item.replayGainTrackGainDb ?? null,
+  albumGainDb: item.replayGainAlbumGainDb ?? null,
+  trackPeak: item.replayGainTrackPeak ?? null,
+  albumPeak: item.replayGainAlbumPeak ?? null,
+});
+
+const resolveAutomixRequest = async (
+  automix: PlaybackStartRequest['automix'] | undefined,
+): Promise<AudioSessionAutomixRequest | undefined> => {
+  if (automix?.enabled !== true || !automix.nextItem) {
+    return automix?.enabled === true
+      ? {
+          enabled: true,
+          maxTransitionSeconds: automix.maxTransitionSeconds,
+          beatAlignEnabled: automix.beatAlignEnabled,
+          next: null,
+        }
+      : undefined;
+  }
+
+  if (automix.nextItem.mediaType === 'streaming' && automix.nextItem.provider === 'spotify') {
+    return {
+      enabled: true,
+      maxTransitionSeconds: automix.maxTransitionSeconds,
+      beatAlignEnabled: automix.beatAlignEnabled,
+      next: null,
+    };
+  }
+
+  const prepared = await resolveMediaItemForPlayback({ item: automix.nextItem });
+  const nextProbe = createProbeHintForMediaItem(automix.nextItem, {
+    ...automix.nextProbe,
+    ...prepared.probe,
+  });
+  const following = await Promise.all(
+    (automix.upcomingItems ?? [])
+      .filter((item) => !(item.mediaType === 'streaming' && item.provider === 'spotify'))
+      .slice(0, 3)
+      .map(async (item, index) => {
+        const preparedItem = await resolveMediaItemForPlayback({ item });
+        return {
+          filePath: preparedItem.filePath,
+          inputHeaders: preparedItem.inputHeaders,
+          trackId: item.trackId,
+          replayGain: createReplayGainHintForMediaItem(item),
+          probe: createProbeHintForMediaItem(item, {
+            ...(automix.upcomingProbes?.[index] ?? {}),
+            ...preparedItem.probe,
+          }),
+        };
+      }),
+  );
+  return {
+    enabled: true,
+    maxTransitionSeconds: automix.maxTransitionSeconds,
+    beatAlignEnabled: automix.beatAlignEnabled,
+    next: {
+      filePath: prepared.filePath,
+      inputHeaders: prepared.inputHeaders,
+      trackId: automix.nextItem.trackId,
+      replayGain: createReplayGainHintForMediaItem(automix.nextItem),
+      probe: nextProbe,
+    },
+    following,
+  };
+};
+
 const normalizePathList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     throw new Error('paths must be an array');
@@ -498,6 +620,19 @@ const toPlaybackStatus = (): PlaybackStatus => {
     durationMs: Math.round(status.durationSeconds * 1000),
     filePath: status.currentFilePath,
   };
+};
+
+const enqueuePlaybackStatusCommand = async (fn: () => Promise<PlaybackStatus> | PlaybackStatus): Promise<PlaybackStatus> => {
+  try {
+    return await enqueueAudioCommand(fn);
+  } catch (error) {
+    if (isAudioCommandTimeoutError(error)) {
+      console.warn('[playback] audio command timed out; returning current playback status');
+      return toPlaybackStatus();
+    }
+
+    throw error;
+  }
 };
 
 const reportPlaybackAudioError = (error: unknown, phase: string, details?: unknown): void => {
@@ -560,6 +695,7 @@ const recoverActiveMediaPlaybackFromExpiredUrl = async (
       filePath: prepared.filePath,
       inputHeaders: prepared.inputHeaders,
       trackId: request.item.trackId,
+      replayGain: createReplayGainHintForMediaItem(request.item),
       startSeconds,
       output: request.output,
       probe: prepared.probe,
@@ -658,11 +794,15 @@ export const registerPlaybackIpc = (): void => {
   registerPlaybackMemoryPersistence();
   registerExpiredUrlRecovery();
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
-  ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     clearActiveMediaPlayback();
     const playbackRun = beginPlaybackStartRun();
     try {
-      await getAudioSession().playLocalFile(normalizePlayRequest(request));
+      const normalized = normalizePlayRequest(request);
+      await getAudioSession().playLocalFile({
+        ...normalized,
+        automix: await resolveAutomixRequest(normalized.automix),
+      });
       assertPlaybackStartRunCurrent(playbackRun);
       savePlaybackMemoryNow();
       void syncSmtcStatus();
@@ -708,15 +848,17 @@ export const registerPlaybackIpc = (): void => {
       const prepared = await resolveMediaItemForPlayback(request);
       assertPlaybackStartRunCurrent(playbackRun);
 
-      return await enqueueAudioCommand(async () => {
+      return await enqueuePlaybackStatusCommand(async () => {
         assertPlaybackStartRunCurrent(playbackRun);
         await getAudioSession().playLocalFile({
           filePath: prepared.filePath,
           inputHeaders: prepared.inputHeaders,
           trackId: item.trackId,
+          replayGain: createReplayGainHintForMediaItem(item),
           startSeconds: request.startSeconds,
           output: request.output,
           probe: prepared.probe,
+          automix: await resolveAutomixRequest(request.automix),
         });
         assertPlaybackStartRunCurrent(playbackRun);
         savePlaybackMemoryNow();
@@ -743,15 +885,17 @@ export const registerPlaybackIpc = (): void => {
       try {
         const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
         assertPlaybackStartRunCurrent(playbackRun);
-        return await enqueueAudioCommand(async () => {
+        return await enqueuePlaybackStatusCommand(async () => {
           assertPlaybackStartRunCurrent(playbackRun);
           await getAudioSession().playLocalFile({
             filePath: prepared.filePath,
             inputHeaders: prepared.inputHeaders,
             trackId: item.trackId,
+            replayGain: createReplayGainHintForMediaItem(item),
             startSeconds: request.startSeconds,
             output: request.output,
             probe: prepared.probe,
+            automix: await resolveAutomixRequest(request.automix),
           });
           assertPlaybackStartRunCurrent(playbackRun);
           savePlaybackMemoryNow();
@@ -774,7 +918,7 @@ export const registerPlaybackIpc = (): void => {
       }
     }
   });
-  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     try {
       await getAudioSession().play();
       savePlaybackMemoryNow();
@@ -789,13 +933,13 @@ export const registerPlaybackIpc = (): void => {
       throw error;
     }
   }));
-  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     await getAudioSession().pause();
     savePlaybackMemoryNow();
     void syncSmtcStatus();
     return toPlaybackStatus();
   }));
-  ipcMain.handle(IpcChannels.PlaybackStop, async (): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackStop, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     clearActiveMediaPlayback();
     beginPlaybackStartRun();
     getAudioSession().stop();
@@ -804,7 +948,7 @@ export const registerPlaybackIpc = (): void => {
     void syncSmtcStatus();
     return toPlaybackStatus();
   }));
-  ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => enqueueAudioCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     try {
       await getAudioSession().seek(optionalNonNegativeNumber(positionSeconds) ?? 0);
       savePlaybackMemoryNow();

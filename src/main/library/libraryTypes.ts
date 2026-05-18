@@ -47,6 +47,9 @@ import type {
   BpmAnalysisJobStatus,
   BpmAnalysisResult,
   BpmAnalysisStartOptions,
+  ReplayGainAnalysisJobStatus,
+  ReplayGainAnalysisResult,
+  ReplayGainAnalysisStartOptions,
 } from '../../shared/types/library';
 
 export type {
@@ -98,6 +101,9 @@ export type {
   BpmAnalysisJobStatus,
   BpmAnalysisResult,
   BpmAnalysisStartOptions,
+  ReplayGainAnalysisJobStatus,
+  ReplayGainAnalysisResult,
+  ReplayGainAnalysisStartOptions,
 };
 
 export type ScannedAudioFile = {
@@ -145,6 +151,11 @@ export type MetadataFields = {
   bitDepth: number | null;
   bitrate: number | null;
   bpm?: number | null;
+  replayGainTrackGainDb?: number | null;
+  replayGainAlbumGainDb?: number | null;
+  replayGainTrackPeak?: number | null;
+  replayGainAlbumPeak?: number | null;
+  replayGainIntegratedLufs?: number | null;
 };
 
 export type MetadataStatus = 'ok' | 'fallback' | 'error';

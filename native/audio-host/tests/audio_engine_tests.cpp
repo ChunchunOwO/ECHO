@@ -158,6 +158,33 @@ void testRapidChangesStayFinite()
     }
 }
 
+void testEqLimiterProtectsEnabledOutput()
+{
+    echo::EqProcessor processor;
+    processor.prepare(48000.0, 4096, 2);
+    processor.setEnabled(true);
+    processor.setPreampDb(12.0f);
+
+    juce::AudioBuffer<float> buffer(2, 4096);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* samples = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            samples[sample] = sample % 2 == 0 ? 0.9f : -0.9f;
+    }
+
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(processor.hasClippingRisk(), "enabled EQ limiter must keep clipping risk visible");
+    requireFinite(buffer, "enabled EQ limiter must keep output finite");
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const auto* samples = buffer.getReadPointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            require(std::abs(samples[sample]) <= 1.0f + nearTolerance, "enabled EQ limiter must cap output");
+    }
+}
+
 void testCoefficientUpdatesStopInSteadyState()
 {
     echo::EqProcessor processor;
@@ -289,6 +316,7 @@ void testFramedStdinSessionResetAndLatePcmDrop()
     uint32_t currentSessionId = 0;
     bool hasSession = false;
     std::vector<char> pending;
+    std::vector<char> pendingAutomix;
     const auto payload = makePcmPayload({ 0.1f, 0.2f, 0.3f, 0.4f });
 
     handleFramedStdinPayload(
@@ -298,6 +326,8 @@ void testFramedStdinSessionResetAndLatePcmDrop()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::BeginSession, 1),
         {});
     handleFramedStdinPayload(
@@ -307,6 +337,8 @@ void testFramedStdinSessionResetAndLatePcmDrop()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::PcmF32Le, 1, static_cast<uint32_t>(payload.size())),
         payload);
     require(source.getReadyFrames() == 2, "current session PCM must enter FIFO");
@@ -318,6 +350,8 @@ void testFramedStdinSessionResetAndLatePcmDrop()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::BeginSession, 2),
         {});
     require(source.getReadyFrames() == 0, "begin-session must clear FIFO");
@@ -330,6 +364,8 @@ void testFramedStdinSessionResetAndLatePcmDrop()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::PcmF32Le, 1, static_cast<uint32_t>(payload.size())),
         payload);
     require(source.getReadyFrames() == 0, "late PCM from old session must be ignored");
@@ -341,6 +377,8 @@ void testFramedStdinSessionResetAndLatePcmDrop()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::EndSession, 2),
         {});
     require(source.isDrained(), "end-session must mark empty FIFO drained");
@@ -394,7 +432,7 @@ void testNativeRenderAdapter()
     echo::EqProcessor eqProcessor;
     echo::ChannelBalanceProcessor channelBalanceProcessor;
     PcmRingAudioSource source(2, 64, 0, 0, 1.0f, eqProcessor, channelBalanceProcessor);
-    source.prepareForNativeRender(16, 48000.0);
+    source.prepareForNativeRender(16, 100.0);
     source.beginSession();
 
     std::vector<float> emptyOutput(8, 1.0f);
@@ -409,15 +447,82 @@ void testNativeRenderAdapter()
         0.20f, -0.20f,
         0.30f, -0.30f,
         0.40f, -0.40f,
+        0.50f, -0.50f,
+        0.60f, -0.60f,
     };
-    require(source.push(input.data(), 4), "native render adapter test PCM push");
+    require(source.push(input.data(), 6), "native render adapter test PCM push");
 
+    std::vector<float> rampWarmup(4, 0.0f);
+    require(source.renderInterleaved(rampWarmup.data(), 2, 2) == 2, "native render adapter must consume ramp warmup");
     std::vector<float> output(8, 0.0f);
     const auto frames = source.renderInterleaved(output.data(), 4, 2);
     require(frames == 4, "native render adapter must report consumed frame count");
 
-    for (size_t i = 0; i < input.size(); ++i)
-        require(std::abs(output[i] - input[i]) <= nearTolerance, "native render adapter must preserve interleaved PCM");
+    for (size_t i = 0; i < output.size(); ++i)
+        require(std::abs(output[i] - input[i + 4]) <= nearTolerance, "native render adapter must preserve interleaved PCM after declick ramp");
+}
+
+void testPcmDeclickRampOnSessionStartAndStop()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 64, 0, 0, 1.0f, eqProcessor, channelBalanceProcessor);
+    source.prepareForNativeRender(16, 1000.0);
+    source.beginSession();
+
+    std::vector<float> input(48, 1.0f);
+    require(source.push(input.data(), 24), "declick source must accept PCM");
+
+    auto fadeIn = makeBuffer(2, 8);
+    require(source.renderPlanar(fadeIn, 0, 8) == 8, "declick fade-in must render input");
+    require(std::abs(fadeIn.getSample(0, 0)) <= nearTolerance, "declick fade-in must start from silence");
+    for (int sample = 1; sample < 7; ++sample)
+        require(fadeIn.getSample(0, sample) >= fadeIn.getSample(0, sample - 1), "declick fade-in must be monotonic");
+    require(fadeIn.getSample(0, 7) > 0.99f, "declick fade-in must reach unity");
+
+    source.requestStop();
+    auto fadeOut = makeBuffer(2, 8);
+    require(source.renderPlanar(fadeOut, 0, 8) == 8, "declick fade-out must render remaining input");
+    require(fadeOut.getSample(0, 0) > 0.99f, "declick fade-out must begin at current level");
+    for (int sample = 1; sample < 8; ++sample)
+        require(fadeOut.getSample(0, sample) <= fadeOut.getSample(0, sample - 1) + nearTolerance, "declick fade-out must be monotonic");
+    require(std::abs(fadeOut.getSample(0, 7)) <= nearTolerance, "declick fade-out must reach silence");
+}
+
+void testNativeAutomixDeckMixesNextBeforeCurrentEnds()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 64, 0, 0, 1.0f, eqProcessor, channelBalanceProcessor);
+    source.beginSession();
+    source.prepareAutomix(4.0, 0.5, 0.5, 0.0, 0.0);
+
+    const std::vector<float> current {
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+    };
+    const std::vector<float> next {
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+    };
+    require(source.push(current.data(), 6), "native automix must accept current deck PCM");
+    require(source.pushAutomixNext(next.data(), 4), "native automix must accept next deck PCM");
+    source.markInputEnded();
+    source.markAutomixNextEnded();
+
+    auto output = makeBuffer(2, 6);
+    const auto frames = source.renderPlanar(output, 0, 6);
+    require(frames == 6, "native automix must advance output clock through current deck");
+    require(std::abs(output.getSample(0, 1) - 1.0f) <= nearTolerance, "automix must keep current deck before fade");
+    require(output.getSample(0, 3) > 1.0f, "automix must overlap current and next during fade");
+    require(std::abs(output.getSample(0, 4) - 0.5f) <= 0.02f, "automix must keep next deck after fade");
+    require(source.isDrained(), "native automix must drain only after next deck ends");
 }
 
 void testDopRenderKeepsValidMarkersDuringSilenceAndData()
@@ -642,6 +747,11 @@ void testAsioNativeDsdConversion()
         1);
     require(bytes[0] == 1 && bytes[1] == 0 && bytes[7] == 0, "ASIO native DSD NER8 expands MSB-first bits in compatibility mode");
 }
+
+void testAsioRenderGuardCatchesCallbackException()
+{
+    require(asio_render_guard_catches_exception_for_tests() != 0, "ASIO render guard must catch callback exceptions and write silence");
+}
 #endif
 
 void testFramedStdinShutdown()
@@ -653,6 +763,7 @@ void testFramedStdinShutdown()
     uint32_t currentSessionId = 0;
     bool hasSession = false;
     std::vector<char> pending;
+    std::vector<char> pendingAutomix;
 
     handleFramedStdinPayload(
         source,
@@ -661,6 +772,8 @@ void testFramedStdinShutdown()
         currentSessionId,
         hasSession,
         pending,
+        pendingAutomix,
+        48000.0,
         makeFrame(StdinFrameType::Shutdown, 0),
         {});
     require(shutdownRequested.load(), "shutdown frame must request host shutdown");
@@ -744,6 +857,7 @@ int main()
         { "flat enabled is transparent", testFlatEnabledIsTransparent },
         { "bypass returns to dry", testBypassReturnsToDry },
         { "rapid changes stay finite", testRapidChangesStayFinite },
+        { "EQ limiter protects enabled output", testEqLimiterProtectsEnabledOutput },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },
@@ -754,6 +868,8 @@ int main()
         { "framed stdin idle does not count underrun before PCM", testFramedStdinIdleDoesNotCountUnderrunBeforePcm },
         { "framed stdin prebuffer does not count underrun before target", testFramedStdinPrebufferDoesNotCountUnderrunBeforeTarget },
         { "native render adapter", testNativeRenderAdapter },
+        { "PCM declick ramp on session start and stop", testPcmDeclickRampOnSessionStartAndStop },
+        { "native automix deck mixes next before current ends", testNativeAutomixDeckMixesNextBeforeCurrentEnds },
         { "DoP render keeps valid markers during silence and data", testDopRenderKeepsValidMarkersDuringSilenceAndData },
 #if JUCE_WINDOWS
         { "ASIO buffer candidate generation", testAsioBufferCandidateGeneration },
@@ -761,6 +877,7 @@ int main()
         { "ASIO sample conversion", testAsioSampleConversion },
         { "ASIO DoP conversion matches reference host", testAsioDopConversionMatchesReferenceHost },
         { "ASIO native DSD conversion", testAsioNativeDsdConversion },
+        { "ASIO render guard catches callback exception", testAsioRenderGuardCatchesCallbackException },
 #endif
         { "framed stdin shutdown", testFramedStdinShutdown },
         { "cleanup emits shutdown ack once", testCleanupEmitsShutdownAckOnce },

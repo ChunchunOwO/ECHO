@@ -1424,8 +1424,9 @@ void wasapi_exclusive_stop(wasapi_exclusive_runtime* runtime) {
     if (runtime->thread != NULL) {
         DWORD waitResult = WaitForSingleObject(runtime->thread, 5000);
         if (waitResult != WAIT_OBJECT_0) {
+            InterlockedExchange(&runtime->renderFailed, 1);
             fprintf(stderr,
-                "[echo-audio-host] WASAPI exclusive render thread did not stop in time; deferring resource release to process teardown\n");
+                "[echo-audio-host] WASAPI exclusive render thread did not stop in time; marked render failed and deferred COM/event/thread resource release to process teardown\n");
             CloseHandle(runtime->thread);
             return;
         }

@@ -13,7 +13,7 @@ type SidebarProps = {
 
 const renderNavIcon = (Icon: AppRoute['icon'], size: number): JSX.Element => (
   <span className="nav-icon-shell" aria-hidden="true">
-    <Icon size={size} strokeWidth={1.7} aria-hidden="true" focusable="false" />
+    <Icon size={size} strokeWidth={1.35} aria-hidden="true" focusable="false" />
   </span>
 );
 
@@ -71,7 +71,7 @@ export const Sidebar = ({
               type="button"
               title={label}
             >
-              {renderNavIcon(Icon, 26)}
+              {renderNavIcon(Icon, 21)}
               <span className="nav-item-label">{label}</span>
             </button>
           );
@@ -101,7 +101,7 @@ export const Sidebar = ({
               title={label}
               aria-label={label}
             >
-              {renderNavIcon(Icon, 25)}
+              {renderNavIcon(Icon, 21)}
               <span className="nav-item-label">{label}</span>
             </button>
           );

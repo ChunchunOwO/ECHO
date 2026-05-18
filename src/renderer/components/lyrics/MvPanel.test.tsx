@@ -156,6 +156,8 @@ describe('MvPanel', () => {
       'echo-cover://thumb/test',
     );
     expect(screen.getByText('MV unavailable')).toBeTruthy();
+    expect(screen.getByText('MV 不可用')).toBeTruthy();
+    expect(screen.getByText('未找到可播放 MV')).toBeTruthy();
     expect(screen.queryByText('Find local')).toBeNull();
     expect(screen.queryByText('Choose file')).toBeNull();
   });
@@ -979,6 +981,123 @@ describe('MvPanel', () => {
     renderPanel(makeVideo({ playableInApp: false, mediaUrl: null, mimeType: 'video/x-matroska' }));
 
     expect(await screen.findByText('External player required')).toBeTruthy();
+    expect(screen.getByText('本地视频格式不支持')).toBeTruthy();
+  });
+
+  it('falls back to title and artist snapshot search when selected MV lookup hits a database error', async () => {
+    const recoveredVideo = makeVideo({
+      id: 'snapshot-video',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      sourceId: 'BVsnapshot',
+      mediaUrl: 'echo-mv://stream/snapshot-video/bilibili-qn-80',
+      title: 'Recovered MV',
+    });
+    const searchNetworkCandidatesForSnapshot = vi.fn().mockResolvedValue([
+      {
+        id: recoveredVideo.id,
+        provider: recoveredVideo.provider,
+        sourceType: recoveredVideo.sourceType,
+        sourceId: recoveredVideo.sourceId,
+        title: recoveredVideo.title,
+        artist: recoveredVideo.artist,
+        url: recoveredVideo.url,
+        providerUrl: recoveredVideo.providerUrl,
+        thumbnailUrl: recoveredVideo.thumbnailUrl,
+        durationSeconds: recoveredVideo.durationSeconds,
+        score: recoveredVideo.score,
+        playableInApp: true,
+      },
+    ]);
+    const selectVideo = vi.fn().mockResolvedValue(recoveredVideo);
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockRejectedValue(new Error('DatabaseHealthError: database disk image is malformed')),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot,
+        resolveStreams: vi.fn().mockResolvedValue({ video: recoveredVideo, variants: [] }),
+        setQuality: vi.fn(),
+        setOffset: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo,
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe(recoveredVideo.mediaUrl));
+    expect(searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: 'track-1',
+        title: 'Test Song',
+        artist: 'Test Artist',
+        mediaType: 'local',
+        query: 'Test Song Test Artist',
+      }),
+    );
+    expect(selectVideo).toHaveBeenCalledWith('track-1', recoveredVideo.id);
+    expect(screen.queryByText('MV 数据库不可读')).toBeNull();
+  });
+
+  it('shows the MV load failure reason in the top-left unavailable badge', async () => {
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockRejectedValue(new Error('DatabaseHealthError: database disk image is malformed')),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn(),
+        setQuality: vi.fn(),
+        setOffset: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn(),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    expect(await screen.findByText('MV 数据库不可读')).toBeTruthy();
+    expect(screen.queryByText('DatabaseHealthError: database disk image is malformed')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('关闭 MV 不可用提示'));
+
+    expect(screen.queryByText('MV 数据库不可读')).toBeNull();
   });
 
   it('does not surface auto-selected external network candidates in the lyrics MV panel', async () => {

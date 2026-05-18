@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { Film, Music2 } from 'lucide-react';
+import { Film, Music2, X } from 'lucide-react';
 import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { LibraryTrack } from '../../../shared/types/library';
-import type { MvMatchCandidate, MvSettings, TrackVideo } from '../../../shared/types/mv';
+import type { MvMatchCandidate, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../../../shared/types/mv';
 import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
 import { sampleVideoElement } from './lyricsReadableColor';
 
@@ -74,6 +74,60 @@ const isAdaptiveStream = (video: TrackVideo | null): boolean =>
 
 const isUnplayableSearchCandidate = (video: TrackVideo | null): boolean =>
   Boolean(video && video.sourceType === 'search_candidate' && (!video.playableInApp || !video.mediaUrl));
+
+const summarizeMvLoadError = (message: string): string => {
+  if (/database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message)) {
+    return 'MV 数据库不可读';
+  }
+  if (/network|fetch|timeout|ECONN|ENOTFOUND/i.test(message)) {
+    return '网络 MV 请求失败';
+  }
+
+  return message.trim() || 'MV 加载失败';
+};
+
+const isMvDatabaseLoadError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message);
+};
+
+const getUnavailableReason = ({
+  error,
+  isLoading,
+  selectedVideo,
+  shouldSurfaceSelectedFallback,
+  videoError,
+}: {
+  error: string | null;
+  isLoading: boolean;
+  selectedVideo: TrackVideo | null;
+  shouldSurfaceSelectedFallback: boolean;
+  videoError: boolean;
+}): string => {
+  if (error) {
+    return summarizeMvLoadError(error);
+  }
+  if (isLoading) {
+    return '正在加载 MV';
+  }
+  if (!selectedVideo) {
+    return '未找到可播放 MV';
+  }
+  if (videoError) {
+    return '视频加载失败';
+  }
+  if (!selectedVideo.playableInApp) {
+    return selectedVideo.provider === 'local' ? '本地视频格式不支持' : '当前 MV 需要外部播放';
+  }
+  if (!selectedVideo.mediaUrl) {
+    return '缺少可播放地址';
+  }
+  if (shouldSurfaceSelectedFallback) {
+    return '当前 MV 无法在应用内播放';
+  }
+
+  return 'MV 不可用';
+};
 
 const mvSyncDriftThresholdSeconds = 0.8;
 const mvSyncCorrectionCooldownMs = 1000;
@@ -212,6 +266,43 @@ const playVideo = (video: HTMLVideoElement): void => {
 const streamingTrackKey = (target: { provider: StreamingProviderName; providerTrackId: string }): string =>
   `streaming:${target.provider}:${target.providerTrackId}`;
 
+const snapshotSearchRequestForTrack = ({
+  artist,
+  audioClock,
+  coverUrl,
+  currentTrack,
+  fallbackMediaType = 'remote',
+  title,
+  trackId,
+}: {
+  artist: string;
+  audioClock: MvAudioClock;
+  coverUrl: string | null;
+  currentTrack: LibraryTrack | null | undefined;
+  fallbackMediaType?: MvTrackSnapshotSearchRequest['mediaType'];
+  title: string;
+  trackId: string;
+}): MvTrackSnapshotSearchRequest => {
+  const searchTitle = currentTrack?.title?.trim() || title?.trim() || 'DLNA stream';
+  const searchArtist =
+    currentTrack?.artist?.trim() ||
+    currentTrack?.albumArtist?.trim() ||
+    artist?.trim() ||
+    'Unknown Artist';
+
+  return {
+    trackId: currentTrack?.id ?? trackId,
+    title: searchTitle,
+    artist: searchArtist,
+    album: currentTrack?.album?.trim() || null,
+    albumArtist: currentTrack?.albumArtist?.trim() || null,
+    durationSeconds: currentTrack?.duration && currentTrack.duration > 0 ? currentTrack.duration : audioClock.durationSeconds,
+    coverThumb: currentTrack?.coverThumb ?? coverUrl,
+    mediaType: currentTrack?.mediaType ?? fallbackMediaType,
+    query: [searchTitle, searchArtist].filter(Boolean).join(' '),
+  };
+};
+
 const uniqueCoverUrls = (...urls: Array<string | null | undefined>): string[] =>
   Array.from(new Set(urls.map((url) => url?.trim()).filter((url): url is string => Boolean(url))));
 
@@ -300,6 +391,7 @@ export const MvPanel = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
+  const [isUnavailableNoticeDismissed, setUnavailableNoticeDismissed] = useState(false);
   const requestRef = useRef(0);
   const preloadAttemptRef = useRef<string | null>(null);
   const lastVideoSyncAtRef = useRef(0);
@@ -392,33 +484,25 @@ export const MvPanel = ({
     }
   }, []);
 
-  const searchCandidatesForActiveTrack = useCallback(async (): Promise<TrackVideo | null> => {
+  const searchCandidatesForActiveTrack = useCallback(async (options: { forceSnapshot?: boolean } = {}): Promise<TrackVideo | null> => {
     const mvApi = window.echo?.mv;
     if (!trackId || !mvApi) {
       return null;
     }
 
-    if (shouldUseSnapshotMvSearch(currentTrack, trackId) && mvApi.searchNetworkCandidatesForSnapshot) {
-      const effectiveTrackId = currentTrack?.id ?? trackId;
-      const searchTitle = currentTrack?.title?.trim() || title?.trim() || 'DLNA stream';
-      const searchArtist =
-        currentTrack?.artist?.trim() ||
-        currentTrack?.albumArtist?.trim() ||
-        artist?.trim() ||
-        'Unknown Artist';
-      const candidates = await mvApi.searchNetworkCandidatesForSnapshot({
-        trackId: effectiveTrackId,
-        title: searchTitle,
-        artist: searchArtist,
-        album: currentTrack?.album?.trim() || null,
-        albumArtist: currentTrack?.albumArtist?.trim() || null,
-        durationSeconds: currentTrack?.duration && currentTrack.duration > 0 ? currentTrack.duration : audioClockRef.current.durationSeconds,
-        coverThumb: currentTrack?.coverThumb ?? coverUrl,
-        mediaType: currentTrack?.mediaType ?? 'remote',
-        query: [searchTitle, searchArtist].filter(Boolean).join(' '),
+    if ((options.forceSnapshot || shouldUseSnapshotMvSearch(currentTrack, trackId)) && mvApi.searchNetworkCandidatesForSnapshot) {
+      const request = snapshotSearchRequestForTrack({
+        artist,
+        audioClock: audioClockRef.current,
+        coverUrl,
+        currentTrack,
+        fallbackMediaType: options.forceSnapshot ? 'local' : 'remote',
+        title,
+        trackId,
       });
+      const candidates = await mvApi.searchNetworkCandidatesForSnapshot(request);
       const candidate = bestMvCandidate(candidates);
-      return candidate && mvApi.selectVideo ? mvApi.selectVideo(effectiveTrackId, candidate.id) : null;
+      return candidate && mvApi.selectVideo ? mvApi.selectVideo(request.trackId, candidate.id) : null;
     }
 
     await mvApi.searchNetworkCandidates?.(trackId);
@@ -476,6 +560,20 @@ export const MvPanel = ({
       setSelectedVideo(resolvedVideo);
     } catch (loadError) {
       if (requestRef.current === requestId) {
+        if (isMvDatabaseLoadError(loadError)) {
+          try {
+            const fallbackVideo = await searchCandidatesForActiveTrack({ forceSnapshot: true });
+            const resolvedFallbackVideo = await resolveNetworkVideo(fallbackVideo);
+            if (requestRef.current === requestId && resolvedFallbackVideo?.playableInApp && resolvedFallbackVideo.mediaUrl) {
+              setSelectedVideo(resolvedFallbackVideo);
+              setError(null);
+              return;
+            }
+          } catch {
+            // Keep the original database error visible if snapshot fallback cannot recover playback.
+          }
+        }
+
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setSelectedVideo(null);
       }
@@ -631,6 +729,19 @@ export const MvPanel = ({
   const adaptiveStream = isAdaptiveStream(selectedVideo);
   const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
   const isLyricsReadabilityEnhanced = settings.lyricsReadabilityEnhanced === true || smartReadableColorsEnabled;
+  const unavailableReason = showVideo
+    ? null
+    : getUnavailableReason({
+        error,
+        isLoading,
+        selectedVideo,
+        shouldSurfaceSelectedFallback,
+        videoError,
+      });
+
+  useEffect(() => {
+    setUnavailableNoticeDismissed(false);
+  }, [trackId, unavailableReason]);
   const immersiveBackgroundStyle = useMemo(
     () =>
       ({
@@ -948,6 +1059,22 @@ export const MvPanel = ({
 
   return (
     <>
+      {unavailableReason && !isUnavailableNoticeDismissed ? (
+        <div className="lyrics-mv-unavailable-reason" aria-live="polite">
+          <span>MV 不可用</span>
+          <strong>{unavailableReason}</strong>
+          <button
+            type="button"
+            className="lyrics-mv-unavailable-close"
+            aria-label="关闭 MV 不可用提示"
+            title="关闭"
+            onClick={() => setUnavailableNoticeDismissed(true)}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+
       {showImmersiveBackground ? (
         <div
           className="lyrics-mv-background"
@@ -1064,8 +1191,6 @@ export const MvPanel = ({
           title={(shouldSurfaceSelectedFallback ? selectedVideo?.title : null) ?? title}
         />
       )}
-
-      {error ? <p className="lyrics-mv-error">{error}</p> : null}
       </section>
     </>
   );

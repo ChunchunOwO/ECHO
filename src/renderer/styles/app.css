@@ -6553,6 +6553,75 @@ html[data-theme="dark"] .settings-lyrics-panel .lyrics-source-filters button[dat
   justify-content: flex-end;
 }
 
+.settings-library-lab-panel {
+  margin-top: 14px;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.settings-library-lab-status {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.settings-library-lab-status-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(39, 59, 84, 0.08);
+  border-radius: 8px;
+  background: var(--theme-panel-bg-muted);
+}
+
+.settings-library-lab-status-item span {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.settings-library-lab-status-item strong {
+  color: var(--echo-heading-text);
+  font-size: 12px;
+  font-weight: 820;
+  overflow-wrap: anywhere;
+}
+
+.settings-library-lab-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.settings-library-lab-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.settings-library-lab-table th,
+.settings-library-lab-table td {
+  max-width: 260px;
+  padding: 8px;
+  border-bottom: 1px solid rgba(39, 59, 84, 0.08);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.settings-library-lab-table th {
+  color: var(--theme-muted-text);
+  font-weight: 800;
+}
+
+.settings-error-text {
+  margin: 0;
+  color: var(--theme-danger-text, #b42318);
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .settings-inline-toggle {
   display: inline-flex;
   min-height: 34px;

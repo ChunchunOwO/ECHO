@@ -27,6 +27,10 @@ import type {
   LibraryDatabaseRepairResult,
   LibraryMaintenanceCleanupResult,
   LibraryDiagnostics,
+  LibraryLabState,
+  LibraryMoveCandidate,
+  LibraryMoveCandidateOptions,
+  LibraryMoveRepairResult,
   LibraryTrackTagUpdateRequest,
   LibraryFolder,
   LibraryFolderChildrenQuery,
@@ -241,6 +245,7 @@ export type EchoApi = {
     kickoffArtistImageBackfill: (options?: { force?: boolean; limit?: number }) => Promise<ArtistImageJobStatus>;
     clearArtistImageCache: () => Promise<ArtistImageCacheClearResult>;
     onArtistImagesUpdated: (handler: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => () => void;
+    onLibraryChanged?: (handler: () => void) => () => void;
     getAlbumTracks: (
       albumId: string,
       query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>,
@@ -248,6 +253,7 @@ export type EchoApi = {
     getSummary: () => Promise<LibrarySummary>;
     refreshAlbumGrouping: () => Promise<LibrarySummary>;
     getDiagnostics: () => Promise<LibraryDiagnostics>;
+    getMoveCandidates: (options?: LibraryMoveCandidateOptions) => Promise<LibraryMoveCandidate[]>;
     chooseTrackCover: () => Promise<TrackCoverSelection | null>;
     loadEmbeddedTrackTags: (trackId: string) => Promise<EmbeddedTrackTagsLoadResult>;
     updateTrackTags: (request: LibraryTrackTagUpdateRequest) => Promise<LibraryTrack>;
@@ -294,6 +300,20 @@ export type EchoApi = {
     getBpmAnalysisStatus: (jobId: string) => Promise<BpmAnalysisJobStatus>;
     startReplayGainAnalysis: (options?: ReplayGainAnalysisStartOptions) => Promise<ReplayGainAnalysisJobStatus>;
     getReplayGainAnalysisStatus: (jobId: string) => Promise<ReplayGainAnalysisJobStatus>;
+  };
+  libraryLab: {
+    setWatcherEnabled: (enabled: boolean) => Promise<LibraryLabState>;
+    setAutoRescanEnabled: (enabled: boolean) => Promise<LibraryLabState>;
+    setMoveCandidateEnabled: (enabled: boolean) => Promise<LibraryLabState>;
+    setMoveRepairLabEnabled: (enabled: boolean) => Promise<LibraryLabState>;
+    getState: () => Promise<LibraryLabState>;
+    startWatcher: () => Promise<LibraryLabState>;
+    stopWatcher: () => Promise<LibraryLabState>;
+    refreshDiagnostics: () => Promise<LibraryLabState>;
+    backfillPlaceholderMetadata: () => Promise<LibraryLabState>;
+    getMoveCandidates: (options?: LibraryMoveCandidateOptions) => Promise<LibraryMoveCandidate[]>;
+    dryRunMoveRepair: (candidateId: string) => Promise<LibraryMoveRepairResult>;
+    applyMoveRepair: (candidateId: string) => Promise<LibraryMoveRepairResult>;
   };
   playback: {
     getStatus: () => Promise<PlaybackStatus>;

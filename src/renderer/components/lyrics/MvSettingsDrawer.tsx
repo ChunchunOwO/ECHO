@@ -224,9 +224,9 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   const [isMvOffsetSaving, setIsMvOffsetSaving] = useState(false);
   const mvRequestRef = useRef(0);
 
-  const activeTrackId = queue.currentTrackId ?? fallbackTrackId;
+  const activeTrackId = fallbackTrackId ?? queue.currentTrackId;
   const activeTrack =
-    queue.currentTrack ??
+    (queue.currentTrack?.id === activeTrackId ? queue.currentTrack : null) ??
     (activeTrackId ? queue.tracks.find((item) => item.id === activeTrackId) ?? null : null) ??
     (queue.lastPlayedTrack?.id === activeTrackId ? queue.lastPlayedTrack : null);
   const activeMvTrackId = mvTrackKey(activeTrack, activeTrackId);
@@ -278,6 +278,16 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   const replayAudioOnChange = settings.replayAudioOnChange !== false;
   const immersiveBackground = settings.immersiveBackground !== false;
   const selectedMvOffsetMs = clampOffset(Number(selectedVideo?.offsetMs ?? 0));
+
+  const findTrackForId = useCallback(
+    (trackId: string | null): LibraryTrack | null =>
+      trackId
+        ? (queue.currentTrack?.id === trackId ? queue.currentTrack : null) ??
+          queue.tracks.find((item) => item.id === trackId) ??
+          (queue.lastPlayedTrack?.id === trackId ? queue.lastPlayedTrack : null)
+        : null,
+    [queue.currentTrack, queue.lastPlayedTrack, queue.tracks],
+  );
 
   const notifyMvChanged = useCallback((trackId: string): void => {
     window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId } }));
@@ -347,20 +357,16 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   );
 
   const refreshActiveTrack = useCallback(async (): Promise<string | null> => {
-    if (queue.currentTrackId) {
-      return queue.currentTrackId;
-    }
-
     try {
       const [playbackStatus, audioStatus] = await Promise.all([
         window.echo?.playback?.getStatus?.().catch(() => null),
         window.echo?.audio?.getStatus?.().catch(() => null),
       ]);
-      const trackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
+      const trackId = audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
       setFallbackTrackId(trackId);
-      return trackId;
+      return trackId ?? queue.currentTrackId ?? null;
     } catch {
-      return null;
+      return queue.currentTrackId ?? null;
     }
   }, [queue.currentTrackId]);
 
@@ -373,11 +379,12 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
       const requestId = mvRequestRef.current + 1;
       mvRequestRef.current = requestId;
-      const effectiveTrackId = mvTrackKey(activeTrack, trackId) ?? trackId;
+      const targetTrack = findTrackForId(trackId);
+      const effectiveTrackId = mvTrackKey(targetTrack, trackId) ?? trackId;
       const nextCandidates =
-        activeTrack && shouldUseSnapshotMvSearch(activeTrack) && mvApi.searchNetworkCandidatesForSnapshot
-          ? await mvApi.searchNetworkCandidatesForSnapshot(buildSnapshotSearchRequest(activeTrack, effectiveTrackId, query))
-          : await mvApi.searchNetworkCandidates?.(trackId, query);
+        targetTrack && shouldUseSnapshotMvSearch(targetTrack) && mvApi.searchNetworkCandidatesForSnapshot
+          ? await mvApi.searchNetworkCandidatesForSnapshot(buildSnapshotSearchRequest(targetTrack, effectiveTrackId, query))
+          : await mvApi.searchNetworkCandidates?.(effectiveTrackId, query);
 
       if (!nextCandidates) {
         throw new Error(t('mvSettings.error.noActiveTrackNetworkSearch'));
@@ -400,7 +407,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         notifyMvChanged(effectiveTrackId);
       }
     },
-    [activeTrack, notifyMvChanged, resolveSelectedStreams, t],
+    [findTrackForId, notifyMvChanged, resolveSelectedStreams, t],
   );
 
   const patchSettings = useCallback(
@@ -622,7 +629,8 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         return;
       }
 
-      const targetTrackId = mvTrackKey(activeTrack, trackId) ?? trackId;
+      const targetTrack = findTrackForId(trackId);
+      const targetTrackId = mvTrackKey(targetTrack, trackId) ?? trackId;
       const requestId = mvRequestRef.current + 1;
       mvRequestRef.current = requestId;
       setBusyCandidateId(candidateId);
@@ -645,7 +653,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         setBusyCandidateId(null);
       }
     },
-    [activeTrack, notifyMvChanged, refreshActiveTrack, replayCurrentTrackAfterMvChange, resolveSelectedStreams, t],
+    [findTrackForId, notifyMvChanged, refreshActiveTrack, replayCurrentTrackAfterMvChange, resolveSelectedStreams, t],
   );
 
   const clearSelected = useCallback(async (): Promise<void> => {

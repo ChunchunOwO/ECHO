@@ -1421,8 +1421,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 <input
                   type="color"
                   value={effectiveSettings.lyricsColor}
-                  disabled={isBusy}
-                  onChange={(event) => void patchSettings({ lyricsColor: event.currentTarget.value })}
+                  onChange={(event) => patchSettingsDebounced({ lyricsColor: event.currentTarget.value })}
                 />
                 <em>{effectiveSettings.lyricsColor}</em>
               </label>

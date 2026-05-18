@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS tracks (
   replay_gain_version INTEGER NOT NULL DEFAULT 0,
   replay_gain_error TEXT,
   replay_gain_updated_at TEXT,
+  file_identity TEXT,
+  file_identity_source TEXT,
+  quick_hash TEXT,
+  quick_hash_version INTEGER,
+  identity_status TEXT,
+  identity_updated_at TEXT,
+  identity_error TEXT,
   search_terms TEXT NOT NULL DEFAULT '',
   cover_id TEXT,
   metadata_status TEXT NOT NULL DEFAULT 'ok',
@@ -622,6 +629,8 @@ CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS idx_tracks_analysis_status ON tracks(analysis_status);
+CREATE INDEX IF NOT EXISTS idx_tracks_file_identity ON tracks(file_identity) WHERE file_identity IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tracks_quick_hash ON tracks(quick_hash) WHERE quick_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_albums_album_key ON albums(album_key);
 CREATE INDEX IF NOT EXISTS idx_album_tracks_album_id ON album_tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_album_tracks_track_id ON album_tracks(track_id);

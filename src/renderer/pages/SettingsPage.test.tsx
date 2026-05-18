@@ -254,6 +254,10 @@ vi.mock('../components/library/LibraryFoldersPanel', () => ({
   LibraryFoldersPanel: () => <div />,
 }));
 
+vi.mock('../components/library/LibraryDiagnosticsPanel', () => ({
+  LibraryDiagnosticsPanel: () => <div />,
+}));
+
 vi.mock('../components/library/NetworkMetadataPanel', () => ({
   NetworkMetadataPanel: () => <div />,
 }));

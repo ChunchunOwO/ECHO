@@ -14,6 +14,10 @@ import { artistDetailNavigationEvent, consumePendingArtistDetailNavigation } fro
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 96;
+const maxPreservedRefreshPageSize = 500;
+const preserveScrollThresholdPx = 80;
+const isPreserveScrollLibraryEvent = (event: Event): boolean =>
+  event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
 const artistSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'default', labelKey: 'library.sort.default' },
   { value: 'titleAsc', labelKey: 'library.artists.sort.nameAsc' },
@@ -104,7 +108,11 @@ export const ArtistsPage = (): JSX.Element => {
   }, [isSortOpen]);
 
   const loadArtists = useCallback(
-    async (nextPage: number, mode: 'replace' | 'append') => {
+    async (
+      nextPage: number,
+      mode: 'replace' | 'append',
+      options: { pageSizeOverride?: number; restoreScrollTop?: number } = {},
+    ) => {
       if (mode === 'append' && isLoadingRef.current) {
         return;
       }
@@ -129,7 +137,7 @@ export const ArtistsPage = (): JSX.Element => {
 
         const result = await library.getArtists({
           page: nextPage,
-          pageSize,
+          pageSize: options.pageSizeOverride ?? pageSize,
           search,
           sort,
           sourceProvider: sourceMode,
@@ -144,9 +152,13 @@ export const ArtistsPage = (): JSX.Element => {
           const next = mode === 'append' ? [...current, ...result.items] : result.items;
           return prioritizeArtistAvatars ? prioritizeArtistsWithAvatars(next) : next;
         });
-        setPage(result.page);
+        setPage(options.pageSizeOverride && mode === 'replace' ? Math.max(1, Math.ceil(result.items.length / pageSize)) : result.page);
         setTotal(result.total);
         setHasMore(result.hasMore);
+        if (typeof options.restoreScrollTop === 'number') {
+          const restoreScrollTop = options.restoreScrollTop;
+          window.setTimeout(() => writePageScrollTop(pageRootRef.current, restoreScrollTop), 0);
+        }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
           setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -171,14 +183,23 @@ export const ArtistsPage = (): JSX.Element => {
   }, [loadArtists]);
 
   useEffect(() => {
-    const handleLibraryChanged = (): void => {
+    const handleLibraryChanged = (event: Event): void => {
+      const scrollTop = readPageScrollTop(pageRootRef.current);
+      if (isPreserveScrollLibraryEvent(event) && scrollTop > preserveScrollThresholdPx) {
+        void loadArtists(1, 'replace', {
+          pageSizeOverride: Math.min(maxPreservedRefreshPageSize, Math.max(pageSize, page * pageSize, artists.length)),
+          restoreScrollTop: scrollTop,
+        });
+        return;
+      }
+
       writePageScrollTop(pageRootRef.current, 0);
       void loadArtists(1, 'replace');
     };
 
     window.addEventListener('library:changed', handleLibraryChanged);
     return () => window.removeEventListener('library:changed', handleLibraryChanged);
-  }, [loadArtists]);
+  }, [artists.length, loadArtists, page]);
 
   useLayoutEffect(() => {
     writePageScrollTop(pageRootRef.current, 0);

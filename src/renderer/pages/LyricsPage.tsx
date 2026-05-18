@@ -359,6 +359,29 @@ const isAudioStatusForPlayback = (
   );
 };
 
+const shouldUseAudioStatusForCurrentPlayback = (
+  audioStatus: AudioStatus | null,
+  playbackStatus: PlaybackStatus | null,
+): audioStatus is AudioStatus => {
+  if (!audioStatus) {
+    return false;
+  }
+
+  if (isAudioStatusForPlayback(audioStatus, playbackStatus)) {
+    return true;
+  }
+
+  if (!audioStatus.currentTrackId && !audioStatus.currentFilePath) {
+    return false;
+  }
+
+  return (
+    audioStatus.state === "loading" ||
+    audioStatus.state === "playing" ||
+    audioStatus.state === "paused"
+  );
+};
+
 const firstLrcFile = (fileList: FileList | null): File | null => {
   if (!fileList) {
     return null;
@@ -611,15 +634,25 @@ const useLyricsDisplayPosition = (
   playbackStatus: PlaybackStatus | null,
 ): { audioClock: MvAudioClock } => {
   const sourcePositionSeconds =
-    audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
+    shouldUseAudioStatusForCurrentPlayback(audioStatus, playbackStatus)
+      ? audioStatus.positionSeconds
+      : (playbackStatus?.positionMs ?? 0) / 1000;
   const sourceDurationSeconds =
-    audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
-  const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
-  const playbackRate = audioStatus?.playbackRate ?? 1;
+    shouldUseAudioStatusForCurrentPlayback(audioStatus, playbackStatus)
+      ? audioStatus.durationSeconds
+      : (playbackStatus?.durationMs ?? 0) / 1000;
+  const activeAudioStatus = shouldUseAudioStatusForCurrentPlayback(
+    audioStatus,
+    playbackStatus,
+  )
+    ? audioStatus
+    : null;
+  const state = activeAudioStatus?.state ?? playbackStatus?.state ?? "idle";
+  const playbackRate = activeAudioStatus?.playbackRate ?? 1;
   const currentTrackId =
-    playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
+    activeAudioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
   const currentFilePath =
-    playbackStatus?.filePath ?? audioStatus?.currentFilePath ?? null;
+    activeAudioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
   const [audioClock, setAudioClock] = useState<MvAudioClock>(() => ({
     durationSeconds: sourceDurationSeconds,
     playbackRate,
@@ -836,12 +869,28 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     rememberLyricsViewMode(mode);
     setLyricsViewModeState(mode);
   }, []);
-  const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
+  const activeAudioStatus = shouldUseAudioStatusForCurrentPlayback(
+    audioStatus,
+    playbackStatus,
+  )
+    ? audioStatus
+    : null;
+  const state = activeAudioStatus?.state ?? playbackStatus?.state ?? "idle";
   const statusTrackId =
-    playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
-  const trackId = queue.currentTrackId ?? statusTrackId;
+    activeAudioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
+  const shouldPreferAudioTrackId =
+    Boolean(activeAudioStatus?.currentTrackId) &&
+    (!queue.currentTrackId ||
+      queue.currentTrackId === playbackStatus?.currentTrackId ||
+      queue.currentTrackId === activeAudioStatus?.currentTrackId);
+  const trackId =
+    shouldPreferAudioTrackId
+      ? statusTrackId
+      : queue.currentTrackId ?? statusTrackId;
+  const queuedCurrentTrack =
+    !trackId || queue.currentTrack?.id === trackId ? queue.currentTrack : null;
   const currentTrack =
-    queue.currentTrack ??
+    queuedCurrentTrack ??
     (trackId
       ? (queue.tracks.find((track) => track.id === trackId) ?? null)
       : null) ??
@@ -1249,15 +1298,23 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
       const snapshotAudioStatus = snapshot.audioStatus;
       const shouldApplyAudioStatus = snapshotAudioStatus
-        ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus)
+        ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
+          Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath)
         : false;
       if (shouldApplyAudioStatus) {
         setAudioStatus(snapshotAudioStatus);
+      } else if (snapshot.playbackStatus) {
+        const nextPlaybackStatus = snapshot.playbackStatus;
+        setAudioStatus((current) =>
+          current && !isAudioStatusForPlayback(current, nextPlaybackStatus)
+            ? null
+            : current,
+        );
       }
 
       const nextTrackId =
-        snapshot.playbackStatus?.currentTrackId ??
         (snapshotAudioStatus && shouldApplyAudioStatus ? snapshotAudioStatus.currentTrackId : null) ??
+        snapshot.playbackStatus?.currentTrackId ??
         null;
       if (nextTrackId) {
         queue.setCurrentTrackId(nextTrackId);

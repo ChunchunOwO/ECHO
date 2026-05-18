@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers';
 import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import electron from 'electron';
+import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { defaultSettings, getAppSettings, setAppSettings } from '../app/appSettings';
 import { recordLibraryDatabaseMaintenanceEvent } from '../app/dataProtection';
@@ -13,6 +14,14 @@ import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
 import { LibraryStore } from './LibraryStore';
+import { LibraryMoveCandidateService } from './LibraryMoveCandidateService';
+import { LibraryMoveRepairService } from './LibraryMoveRepairService';
+import {
+  LibraryWatcherService,
+  isLibraryWatcherAutoRescanEnabled,
+  isLibraryWatcherFeatureEnabled,
+  type LibraryWatcherDiagnostics,
+} from './LibraryWatcherService';
 import { inflateMetadataResult } from './MetadataService';
 import { getNcmConverter } from './NcmConverter';
 import { getRecommendedScanConcurrency } from './ScanConcurrency';
@@ -47,6 +56,10 @@ import type {
   LibraryTrackLocateResult,
   LibraryCleanupResult,
   LibraryMaintenanceCleanupResult,
+  LibraryMoveCandidate,
+  LibraryMoveCandidateOptions,
+  LibraryMoveRepairResult,
+  LibraryLabState,
   LibraryAlbumTagUpdateRequest,
   LibraryTrackTagUpdateRequest,
   CoverVariant,
@@ -73,6 +86,7 @@ import type {
   ArtistImageJobStatus,
   ArtistImageQueueResult,
   ArtistImageRefreshResult,
+  FieldSources,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -119,7 +133,24 @@ export class LibraryService {
   private artistsDirty = false;
   private groupingRefreshTimer: NodeJS.Timeout | null = null;
   private groupingRefreshQueued = false;
+  private groupingRefreshRetryCount = 0;
+  private lastGroupingRefreshDurationMs: number | null = null;
+  private lastGroupingRefreshAt: string | null = null;
+  private groupingRefreshDelayedForPlaybackCount = 0;
+  private lastGroupingRefreshError: string | null = null;
   private artistImageStartupTimer: NodeJS.Timeout | null = null;
+  private readonly moveCandidateService: LibraryMoveCandidateService;
+  private readonly moveRepairService: LibraryMoveRepairService;
+  private watcherService: LibraryWatcherService | null = null;
+  private moveCandidateEnabled = false;
+  private moveRepairLabEnabled = false;
+  private lastMoveRepairAt: string | null = null;
+  private lastMoveRepairError: string | null = null;
+  private lastWatcherRescanStartedAt: string | null = null;
+  private lastWatcherRescanFinishedAt: string | null = null;
+  private lastWatcherRescanPathCount = 0;
+  private lastMetadataBackfillCount = 0;
+  private lastSkippedByCacheCount = 0;
 
   constructor(
     private readonly store: LibraryStore,
@@ -138,6 +169,8 @@ export class LibraryService {
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
   ) {
+    this.moveCandidateService = new LibraryMoveCandidateService(this.database);
+    this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
     this.artistImageStartupTimer = setTimeout(() => {
       this.artistImageStartupTimer = null;
       this.syncArtistImageBackfillState();
@@ -197,6 +230,16 @@ export class LibraryService {
     }
 
     return job;
+  }
+
+  rescanPaths(folderId: string, paths: string[], options: LibraryScanOptions = {}): LibraryScanStatus {
+    const folder = this.store.getFolder(folderId);
+
+    if (!folder) {
+      throw new Error(`Unknown library folder ${folderId}`);
+    }
+
+    return this.scanJobQueue.scanPaths(folder, paths, options);
   }
 
   rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): LibraryScanStatus[] {
@@ -577,17 +620,179 @@ export class LibraryService {
   }
 
   getDiagnostics(): LibraryDiagnostics {
-    return this.store.getDiagnostics({
-      databasePath: this.databasePath,
-      databaseSizeBytes: pathSize(this.databasePath),
-      coverCachePath: this.coverCacheDir,
-      coverCacheSizeBytes: directorySize(this.coverCacheDir),
-      cpuCount: this.scanConcurrency.cpuCount,
-      scanPerformanceMode: this.scanConcurrency.mode === 'custom' ? 'balanced' : this.scanConcurrency.mode,
-      metadataConcurrency: this.scanConcurrency.metadataConcurrency,
-      coverConcurrency: this.scanConcurrency.coverConcurrency,
-      audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
-    });
+    return {
+      ...this.store.getDiagnostics({
+        databasePath: this.databasePath,
+        databaseSizeBytes: pathSize(this.databasePath),
+        coverCachePath: this.coverCacheDir,
+        coverCacheSizeBytes: directorySize(this.coverCacheDir),
+        cpuCount: this.scanConcurrency.cpuCount,
+        scanPerformanceMode: this.scanConcurrency.mode === 'custom' ? 'balanced' : this.scanConcurrency.mode,
+        metadataConcurrency: this.scanConcurrency.metadataConcurrency,
+        coverConcurrency: this.scanConcurrency.coverConcurrency,
+        audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
+      }),
+      groupingRefreshQueued: this.groupingRefreshQueued,
+      lastGroupingRefreshDurationMs: this.lastGroupingRefreshDurationMs,
+      lastGroupingRefreshAt: this.lastGroupingRefreshAt,
+      groupingRefreshDelayedForPlaybackCount: this.groupingRefreshDelayedForPlaybackCount,
+      lastGroupingRefreshError: this.lastGroupingRefreshError,
+      moveCandidates: this.getMoveCandidates(),
+    };
+  }
+
+  getMoveCandidates(options: LibraryMoveCandidateOptions = {}): LibraryMoveCandidate[] {
+    return this.moveCandidateService.getMoveCandidates(options);
+  }
+
+  syncLiveLibraryWatcherFromSettings(): LibraryLabState {
+    const settings = this.readAppSettings();
+    const watcher = this.getWatcherService();
+    const enabled = settings.liveLibraryUpdatesEnabled === true || isLibraryWatcherFeatureEnabled();
+    const autoRescanEnabled = settings.liveLibraryUpdatesEnabled === true || isLibraryWatcherAutoRescanEnabled();
+
+    watcher.setEnabled(enabled);
+    watcher.setAutoRescanEnabled(autoRescanEnabled);
+
+    if (enabled) {
+      watcher.start();
+    } else {
+      watcher.stop();
+    }
+
+    return this.getLibraryLabState();
+  }
+
+  setLibraryLabWatcherEnabled(enabled: boolean): LibraryLabState {
+    this.getWatcherService().setEnabled(enabled);
+    return this.getLibraryLabState();
+  }
+
+  setLibraryLabAutoRescanEnabled(enabled: boolean): LibraryLabState {
+    this.getWatcherService().setAutoRescanEnabled(enabled);
+    return this.getLibraryLabState();
+  }
+
+  setLibraryLabMoveCandidateEnabled(enabled: boolean): LibraryLabState {
+    this.moveCandidateEnabled = enabled;
+    return this.getLibraryLabState();
+  }
+
+  setLibraryLabMoveRepairLabEnabled(enabled: boolean): LibraryLabState {
+    this.moveRepairLabEnabled = enabled;
+    return this.getLibraryLabState();
+  }
+
+  getLibraryLabState(): LibraryLabState {
+    const watcher = this.getWatcherService();
+    const diagnostics = watcher.getDiagnostics();
+    const candidates = this.moveCandidateEnabled ? this.getMoveCandidates() : [];
+    return this.composeLibraryLabState(diagnostics, candidates);
+  }
+
+  startLibraryLabWatcher(): LibraryLabState {
+    this.getWatcherService().start();
+    return this.getLibraryLabState();
+  }
+
+  stopLibraryLabWatcher(): LibraryLabState {
+    this.getWatcherService().stop();
+    return this.getLibraryLabState();
+  }
+
+  refreshLibraryLabDiagnostics(): LibraryLabState {
+    return this.getLibraryLabState();
+  }
+
+  backfillLibraryLabPlaceholderMetadata(): LibraryLabState {
+    const targets = this.store.getPlaceholderMetadataTrackTargets(500);
+    this.lastMetadataBackfillCount = targets.length;
+    this.lastWatcherRescanPathCount = targets.length;
+    this.lastWatcherRescanStartedAt = targets.length > 0 ? new Date().toISOString() : this.lastWatcherRescanStartedAt;
+
+    if (targets.length === 0) {
+      return this.getLibraryLabState();
+    }
+
+    const pathsByFolder = new Map<string, string[]>();
+    for (const target of targets) {
+      const paths = pathsByFolder.get(target.folderId) ?? [];
+      paths.push(target.path);
+      pathsByFolder.set(target.folderId, paths);
+    }
+
+    const jobs = Array.from(pathsByFolder.entries()).map(([folderId, paths]) =>
+      this.rescanPaths(folderId, paths, { deferGroupingRefresh: true }),
+    );
+
+    void Promise.all(
+      jobs.map((job) =>
+        this.scanJobQueue.waitForIdle(job.id).then(() => this.store.getScanJob(job.id)),
+      ),
+    )
+      .then((statuses) => {
+        this.lastWatcherRescanFinishedAt = new Date().toISOString();
+        this.lastSkippedByCacheCount = statuses.reduce((total, status) => total + (status?.skippedFiles ?? 0), 0);
+        this.scheduleGroupingRefresh();
+        this.notifyLibraryChanged();
+      })
+      .catch((error) => {
+        this.lastWatcherRescanFinishedAt = new Date().toISOString();
+        this.lastGroupingRefreshError = error instanceof Error ? error.message : String(error);
+      });
+
+    return this.getLibraryLabState();
+  }
+
+  getLibraryLabMoveCandidates(options: LibraryMoveCandidateOptions = {}): LibraryMoveCandidate[] {
+    if (!this.moveCandidateEnabled) {
+      return [];
+    }
+
+    return this.getMoveCandidates(options);
+  }
+
+  dryRunLibraryLabMoveRepair(candidateId: string): LibraryMoveRepairResult {
+    if (!this.moveRepairLabEnabled) {
+      return {
+        candidateId,
+        ok: false,
+        blockers: ['move_repair_lab_disabled'],
+        warnings: [],
+        oldTrackId: null,
+        newTrackId: null,
+        playlistItemsToRelink: 0,
+        playbackHistoryEntriesToRelink: 0,
+        playbackHistoryStatsToRelink: 0,
+        deletedOldTrackRow: false,
+        appliedAt: null,
+      };
+    }
+
+    return this.moveRepairService.dryRun(candidateId);
+  }
+
+  applyLibraryLabMoveRepair(candidateId: string): LibraryMoveRepairResult {
+    if (!this.moveRepairLabEnabled) {
+      return this.dryRunLibraryLabMoveRepair(candidateId);
+    }
+
+    try {
+      const result = this.moveRepairService.apply(candidateId);
+      if (result.ok && result.appliedAt) {
+        this.lastMoveRepairAt = result.appliedAt;
+        this.lastMoveRepairError = null;
+        this.scheduleGroupingRefresh();
+        this.notifyLibraryChanged();
+      } else if (result.blockers.length > 0) {
+        this.lastMoveRepairError = result.blockers.join(', ');
+      }
+
+      return result;
+    } catch (error) {
+      this.lastMoveRepairError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   }
 
   resolveCoverAsset(coverId: string, variant: CoverVariant): { filePath: string; mimeType: string | null } | null {
@@ -675,7 +880,7 @@ export class LibraryService {
     const timestamp = new Date().toISOString();
     const trackId = randomUUID();
 
-    return this.store.transaction(() => {
+    const track = this.store.transaction(() => {
       this.store.upsertTrack({
         path: normalizedPath,
         folderId: folder.id,
@@ -692,9 +897,6 @@ export class LibraryService {
         errors: [...metadata.errors, ...embeddedWriteErrors, ...coverErrors],
         updatedAt: timestamp,
       });
-      this.store.refreshAlbums(this.albumService, timestamp, this.albumRefreshOptions());
-      this.store.refreshArtists();
-
       const track = this.store.getTrack(trackId) ?? this.store.getTrackByPath(normalizedPath);
       if (!track) {
         throw new Error(`Failed to import audio file: ${normalizedPath}`);
@@ -706,6 +908,8 @@ export class LibraryService {
 
       return track;
     });
+    this.scheduleGroupingRefresh();
+    return track;
   }
 
   recordTrackPlayback(trackId: string): void {
@@ -820,11 +1024,25 @@ export class LibraryService {
       throw new Error('Cannot refresh album grouping while a library scan is running.');
     }
 
-    return this.store.transaction(() => {
-      this.store.refreshAlbums(this.albumService, new Date().toISOString(), this.albumRefreshOptions());
-      this.store.refreshArtists();
-      return this.store.getSummary();
-    });
+    const startedAtMs = Date.now();
+    try {
+      const summary = this.store.transaction(() => {
+        this.store.refreshAlbums(this.albumService, new Date().toISOString(), this.albumRefreshOptions());
+        this.store.refreshArtists();
+        return this.store.getSummary();
+      });
+      this.groupingRefreshQueued = false;
+      this.groupingRefreshRetryCount = 0;
+      this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
+      this.lastGroupingRefreshAt = new Date().toISOString();
+      this.lastGroupingRefreshError = null;
+      return summary;
+    } catch (error) {
+      this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
+      this.lastGroupingRefreshAt = new Date().toISOString();
+      this.lastGroupingRefreshError = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   }
 
   async loadEmbeddedTrackTags(trackId: string): Promise<EmbeddedTrackTagsLoadResult> {
@@ -874,10 +1092,9 @@ export class LibraryService {
       if (coverId !== currentTrack.coverId) {
         this.store.updateTrackCover(trackId, coverId);
       }
-      this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-      this.store.refreshArtists();
       return this.store.getTrack(trackId) ?? updated;
     });
+    this.scheduleGroupingRefresh();
 
     return {
       tags: {
@@ -1272,9 +1489,9 @@ export class LibraryService {
     const coverId = this.store.transaction(() => {
       const nextCoverId = this.store.upsertCover({ ...coverResult, source: 'network' });
       this.store.updateTrackCover(row.id, nextCoverId);
-      this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
       return nextCoverId;
     });
+    this.scheduleGroupingRefresh();
     if (!coverId) {
       return result;
     }
@@ -1299,7 +1516,7 @@ export class LibraryService {
     this.store.transaction(() => {
       this.store.deleteTrackAndCompactAlbums(trackId);
     });
-    this.artistsDirty = true;
+    this.scheduleGroupingRefresh();
   }
 
   deleteAlbumTracks(albumId: string): number {
@@ -1313,8 +1530,7 @@ export class LibraryService {
     return this.store.transaction(() => {
       const changed = this.store.deleteTracks(trackIds);
       if (changed > 0) {
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        this.store.refreshArtists();
+        this.scheduleGroupingRefresh();
       }
       return changed;
     });
@@ -1327,8 +1543,7 @@ export class LibraryService {
     const removedCount = this.store.transaction(() => {
       const changed = this.store.deleteTracks(missingTrackIds);
       if (changed > 0) {
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        this.store.refreshArtists();
+        this.scheduleGroupingRefresh();
       }
       return changed;
     });
@@ -1363,8 +1578,7 @@ export class LibraryService {
     const removedCount = this.store.transaction(() => {
       const changed = this.store.deleteTracks(trackIds);
       if (changed > 0) {
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        this.store.refreshArtists();
+        this.scheduleGroupingRefresh();
       }
       return changed;
     });
@@ -1464,9 +1678,14 @@ export class LibraryService {
   }
 
   close(): void {
+    this.watcherService?.stop();
     if (this.artistImageStartupTimer) {
       clearTimeout(this.artistImageStartupTimer);
       this.artistImageStartupTimer = null;
+    }
+    if (this.groupingRefreshTimer) {
+      clearTimeout(this.groupingRefreshTimer);
+      this.groupingRefreshTimer = null;
     }
 
     this.closeDatabase();
@@ -1476,8 +1695,212 @@ export class LibraryService {
     return { albumMergeStrategy: this.readAppSettings().albumMergeStrategy };
   }
 
+  private notifyLibraryChanged(): void {
+    const windows = (electron as unknown as {
+      BrowserWindow?: {
+        getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
+      };
+    }).BrowserWindow?.getAllWindows() ?? [];
+
+    for (const window of windows) {
+      window.webContents.send(IpcChannels.LibraryChanged);
+    }
+  }
+
+  private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {
+    const folder = this.store.getFolder(folderId);
+    if (!folder) {
+      return 0;
+    }
+
+    const timestamp = new Date().toISOString();
+    let changed = 0;
+
+    this.store.transaction(() => {
+      for (const filePath of paths) {
+        const normalizedPath = resolve(filePath);
+        const extension = extname(normalizedPath).toLocaleLowerCase();
+        if (!SCANNABLE_AUDIO_EXTENSIONS.has(extension) || this.store.getTrackByPath(normalizedPath)) {
+          continue;
+        }
+
+        let fileStat;
+        try {
+          fileStat = statSync(normalizedPath);
+        } catch {
+          continue;
+        }
+
+        if (!fileStat.isFile()) {
+          continue;
+        }
+
+        const title = basename(normalizedPath, extension) || basename(normalizedPath);
+        const artist = 'Unknown Artist';
+        const fieldSources: FieldSources = {
+          title: 'filename_fallback',
+          artist: 'unknown',
+          album: 'unknown',
+          albumArtist: 'artist_fallback',
+          trackNo: 'unknown',
+          discNo: 'unknown',
+          year: 'unknown',
+          genre: 'unknown',
+          duration: 'unknown',
+          codec: 'unknown',
+          sampleRate: 'unknown',
+          bitDepth: 'unknown',
+          bitrate: 'unknown',
+        };
+
+        this.store.upsertTrack({
+          path: normalizedPath,
+          folderId: folder.id,
+          sizeBytes: fileStat.size,
+          mtimeMs: Math.round(fileStat.mtimeMs),
+          title,
+          artist,
+          album: 'Unknown Album',
+          albumArtist: artist,
+          trackNo: null,
+          discNo: null,
+          year: null,
+          genre: null,
+          duration: 0,
+          codec: null,
+          sampleRate: null,
+          bitDepth: null,
+          bitrate: null,
+          id: randomUUID(),
+          coverId: null,
+          fieldSources,
+          embeddedMetadataStatus: 'pending',
+          embeddedCoverStatus: 'pending',
+          metadataStatus: 'fallback',
+          warnings: [],
+          errors: [],
+          updatedAt: timestamp,
+        });
+        changed += 1;
+      }
+    });
+
+    if (changed > 0) {
+      this.notifyLibraryChanged();
+    }
+
+    return changed;
+  }
+
+  private markMissingPathsFromWatcher(folderId: string, paths: string[]): number {
+    if (this.readAppSettings().liveLibraryAutoHideDeletedEnabled !== true) {
+      return 0;
+    }
+
+    const changed = this.store.markTracksMissingByPaths(folderId, paths);
+    if (changed > 0) {
+      this.scheduleGroupingRefresh();
+      this.notifyLibraryChanged();
+    }
+
+    return changed;
+  }
+
+  private getWatcherService(): LibraryWatcherService {
+    if (!this.watcherService) {
+      this.watcherService = new LibraryWatcherService({
+        enabled: this.readAppSettings().liveLibraryUpdatesEnabled === true || isLibraryWatcherFeatureEnabled(),
+        autoRescanEnabled: this.readAppSettings().liveLibraryUpdatesEnabled === true || isLibraryWatcherAutoRescanEnabled(),
+        readFolders: () =>
+          this.getFolders().map((folder) => ({
+            id: folder.id,
+            path: folder.path,
+            enabled: folder.status === 'active',
+          })),
+        rescanCoordinator: {
+          rescanPaths: (folderId, paths) => {
+            const startedAt = new Date().toISOString();
+            const metadataBackfillCount = this.store.countPlaceholderMetadataTracksByPaths(paths);
+            this.lastWatcherRescanStartedAt = startedAt;
+            this.lastWatcherRescanFinishedAt = null;
+            this.lastWatcherRescanPathCount = paths.length;
+            this.lastMetadataBackfillCount = metadataBackfillCount;
+            const job = this.rescanPaths(folderId, paths, { deferGroupingRefresh: true });
+            void this.scanJobQueue.waitForIdle(job.id)
+              .then(() => {
+                const status = this.store.getScanJob(job.id);
+                this.lastWatcherRescanFinishedAt = new Date().toISOString();
+                this.lastSkippedByCacheCount = status?.skippedFiles ?? 0;
+                this.scheduleGroupingRefresh();
+                this.notifyLibraryChanged();
+              })
+              .catch((error) => {
+                this.lastWatcherRescanFinishedAt = new Date().toISOString();
+                console.warn(`Library watcher rescan did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`);
+              });
+            return job;
+          },
+          previewRescanPaths: (folderId, paths) => this.previewRescanPathsFromWatcher(folderId, paths),
+          markMissingPaths: (folderId, paths) => this.markMissingPathsFromWatcher(folderId, paths),
+          hasRunningJobs: () => this.scanJobQueue.hasRunningJobs(),
+        },
+      });
+    }
+
+    return this.watcherService;
+  }
+
+  private composeLibraryLabState(
+    watcherDiagnostics: LibraryWatcherDiagnostics,
+    candidates: LibraryMoveCandidate[],
+  ): LibraryLabState {
+    const lastWatcherEventAt = watcherDiagnostics.recentEvents.at(-1)?.timestamp ?? null;
+
+    return {
+      watcherEnabled: watcherDiagnostics.enabled,
+      watcherRunning: this.watcherService?.isRunning() ?? false,
+      autoRescanEnabled: watcherDiagnostics.autoRescanEnabled,
+      moveCandidateEnabled: this.moveCandidateEnabled,
+      moveRepairLabEnabled: this.moveRepairLabEnabled,
+      watchedFolderCount: watcherDiagnostics.watchedFolderCount,
+      totalEventCount: watcherDiagnostics.totalEventCount,
+      pendingPathCount: watcherDiagnostics.pendingPathCount,
+      triggeredRescanCount: watcherDiagnostics.triggeredRescanCount,
+      droppedPathCount: watcherDiagnostics.droppedPathCount,
+      skippedDeleteEventCount: watcherDiagnostics.skippedDeleteEventCount,
+      skippedRenameEventCount: watcherDiagnostics.skippedRenameEventCount,
+      lastTriggeredRescanAt: watcherDiagnostics.lastTriggeredRescanAt,
+      lastRescanError: watcherDiagnostics.lastRescanError,
+      watcherLastError: watcherDiagnostics.lastError,
+      lastWatcherEventAt,
+      lastRescanStartedAt: this.lastWatcherRescanStartedAt,
+      lastRescanFinishedAt: this.lastWatcherRescanFinishedAt,
+      lastRescanPathCount: this.lastWatcherRescanPathCount,
+      lastMetadataBackfillCount: this.lastMetadataBackfillCount,
+      placeholderTrackCount: this.store.getPlaceholderMetadataTrackCount(),
+      lastSkippedByCacheCount: this.lastSkippedByCacheCount,
+      moveCandidateCount: candidates.length,
+      highConfidenceCount: candidates.filter((candidate) => candidate.confidence === 'high').length,
+      mediumConfidenceCount: candidates.filter((candidate) => candidate.confidence === 'medium').length,
+      lowConfidenceCount: candidates.filter((candidate) => candidate.confidence === 'low').length,
+      ambiguousCount: candidates.filter((candidate) => candidate.ambiguous).length,
+      lastMoveRepairAt: this.lastMoveRepairAt,
+      lastMoveRepairError: this.lastMoveRepairError,
+      groupingRefreshQueued: this.groupingRefreshQueued,
+      lastGroupingRefreshDurationMs: this.lastGroupingRefreshDurationMs,
+      lastGroupingRefreshAt: this.lastGroupingRefreshAt,
+      groupingRefreshDelayedForPlaybackCount: this.groupingRefreshDelayedForPlaybackCount,
+      lastGroupingRefreshError: this.lastGroupingRefreshError,
+      recentWatcherEvents: watcherDiagnostics.recentEvents.slice(-20).reverse(),
+    };
+  }
+
   private refreshArtistsIfDirty(): void {
     if (!this.artistsDirty) {
+      return;
+    }
+
+    if (this.groupingRefreshQueued || this.groupingRefreshTimer) {
       return;
     }
 
@@ -1493,7 +1916,7 @@ export class LibraryService {
     backupPlaylistIfEnabled(this.database, playlistId, reason, this.readAppSettings);
   }
 
-  private scheduleGroupingRefresh(): void {
+  private scheduleGroupingRefresh(delayMs = 1000): void {
     this.groupingRefreshQueued = true;
     this.artistsDirty = true;
 
@@ -1502,22 +1925,42 @@ export class LibraryService {
     }
 
     this.groupingRefreshTimer = setTimeout(() => {
-      this.groupingRefreshTimer = null;
-      if (!this.groupingRefreshQueued) {
-        return;
-      }
+      void this.runScheduledGroupingRefresh();
+    }, delayMs);
+    this.groupingRefreshTimer.unref?.();
+  }
 
-      this.groupingRefreshQueued = false;
-      try {
-        this.store.transaction(() => {
-          this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-          this.store.refreshArtists();
-        });
-        this.artistsDirty = false;
-      } catch {
-        this.artistsDirty = true;
-      }
-    }, 1000);
+  private async runScheduledGroupingRefresh(): Promise<void> {
+    this.groupingRefreshTimer = null;
+    if (!this.groupingRefreshQueued) {
+      return;
+    }
+
+    if (await shouldDelayGroupingRefreshForAudio()) {
+      this.groupingRefreshRetryCount += 1;
+      this.groupingRefreshDelayedForPlaybackCount += 1;
+      this.scheduleGroupingRefresh(Math.min(15000, 3000 + this.groupingRefreshRetryCount * 1000));
+      return;
+    }
+
+    this.groupingRefreshQueued = false;
+    this.groupingRefreshRetryCount = 0;
+    const startedAtMs = Date.now();
+    try {
+      this.store.transaction(() => {
+        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+        this.store.refreshArtists();
+      });
+      this.artistsDirty = false;
+      this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
+      this.lastGroupingRefreshAt = new Date().toISOString();
+      this.lastGroupingRefreshError = null;
+    } catch (error) {
+      this.artistsDirty = true;
+      this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
+      this.lastGroupingRefreshAt = new Date().toISOString();
+      this.lastGroupingRefreshError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   private scheduleEmbeddedTagWrite(request: {
@@ -1590,6 +2033,16 @@ const shouldDelayEmbeddedTagWriteForAudio = async (filePath: string): Promise<bo
       status.state !== 'error';
 
     return audioPipelineBusy || currentFileHeld;
+  } catch {
+    return false;
+  }
+};
+
+const shouldDelayGroupingRefreshForAudio = async (): Promise<boolean> => {
+  try {
+    const { getAudioSession } = await import('../audio/AudioSession');
+    const status = getAudioSession().getStatus();
+    return status.state === 'loading' || status.state === 'playing';
   } catch {
     return false;
   }
@@ -1718,6 +2171,7 @@ export const getLibraryService = (): LibraryService => {
     }
 
     defaultLibraryService = createLibraryService(join(electronApp.getPath('userData'), 'echo-library.sqlite'));
+    defaultLibraryService.syncLiveLibraryWatcherFromSettings();
   }
 
   return defaultLibraryService;

@@ -515,10 +515,19 @@ describe('PlayerBar', () => {
     );
 
     await screen.findByRole('button', { name: 'Pause' });
+    act(() => {
+      audioStatusHandler?.({
+        ...audioStatus(firstTrack),
+        positionSeconds: 16,
+      });
+    });
+    await waitFor(() => expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(16));
+
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: secondTrack.id })));
     expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+    expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
 
     act(() => {
       audioStatusHandler?.({
@@ -528,6 +537,7 @@ describe('PlayerBar', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+    expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
 
     const finishSecondPlay = resolveSecondPlay ?? (() => undefined);
     act(() => {
@@ -535,6 +545,55 @@ describe('PlayerBar', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy());
+  });
+
+  it('uses current-track audio status when playback status is stale', async () => {
+    const staleTrack = makeTrack(1);
+    const currentTrack = makeTrack(2);
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: staleTrack.id,
+          positionMs: 0,
+          durationMs: staleTrack.duration * 1000,
+          filePath: staleTrack.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          ...audioStatus(currentTrack),
+          positionSeconds: 7,
+        }),
+        onStatus: vi.fn(),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [staleTrack.id]: false, [currentTrack.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[currentTrack, staleTrack]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 2');
+    const slider = screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement;
+    await waitFor(() => expect(Number(slider.value)).toBeGreaterThanOrEqual(7));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
   });
 
   it('keeps volume and playback speed popovers mutually exclusive', async () => {

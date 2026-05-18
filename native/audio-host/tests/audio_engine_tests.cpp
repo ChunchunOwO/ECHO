@@ -525,6 +525,36 @@ void testNativeAutomixDeckMixesNextBeforeCurrentEnds()
     require(source.isDrained(), "native automix must drain only after next deck ends");
 }
 
+void testNativeAutomixNextDeckCannotAdvancePastCurrentBuffer()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    PcmRingAudioSource source(2, 64, 0, 0, 1.0f, eqProcessor, channelBalanceProcessor);
+    source.beginSession();
+    source.prepareAutomix(4.0, 0.5, 0.5, 0.0, 0.0);
+
+    const std::vector<float> current {
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+    };
+    const std::vector<float> next {
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+        0.5f, 0.5f,
+    };
+    require(source.push(current.data(), 3), "native automix must accept partial current deck PCM");
+    require(source.pushAutomixNext(next.data(), 6), "native automix must accept prebuffered next deck PCM");
+
+    auto output = makeBuffer(2, 6);
+    const auto frames = source.renderPlanar(output, 0, 6);
+    require(frames == 3, "native automix next deck must not advance the clock beyond current deck PCM");
+    require(source.getFramesPlayed() == 3, "native automix clock must stay pinned to available current deck frames");
+}
+
 void testDopRenderKeepsValidMarkersDuringSilenceAndData()
 {
     DopRingSource source(2, 16, 0, 0);
@@ -870,6 +900,7 @@ int main()
         { "native render adapter", testNativeRenderAdapter },
         { "PCM declick ramp on session start and stop", testPcmDeclickRampOnSessionStartAndStop },
         { "native automix deck mixes next before current ends", testNativeAutomixDeckMixesNextBeforeCurrentEnds },
+        { "native automix next deck cannot advance past current buffer", testNativeAutomixNextDeckCannotAdvancePastCurrentBuffer },
         { "DoP render keeps valid markers during silence and data", testDopRenderKeepsValidMarkersDuringSilenceAndData },
 #if JUCE_WINDOWS
         { "ASIO buffer candidate generation", testAsioBufferCandidateGeneration },

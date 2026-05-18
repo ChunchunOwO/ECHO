@@ -26,6 +26,12 @@ import { resolvePlaylistForTrackAdd } from '../utils/appPrompt';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 100;
+const maxPreservedRefreshPageSize = 500;
+const preserveScrollThresholdPx = 80;
+const getSongsScrollElement = (): HTMLElement | null => document.querySelector('.track-list') as HTMLElement | null;
+const readSongsScrollTop = (): number => getSongsScrollElement()?.scrollTop ?? 0;
+const isPreserveScrollLibraryEvent = (event: Event): boolean =>
+  event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
 const sortOptions: Array<{ value: LibrarySort; label: string }> = [
   { value: 'default', label: '默认排序' },
   { value: 'createdAsc', label: '创建时间 (正序)' },
@@ -325,7 +331,11 @@ export const SongsPage = (): JSX.Element => {
   }, [isSortOpen]);
 
   const loadTracks = useCallback(
-    async (nextPage: number, mode: 'replace' | 'append' | 'prepend') => {
+    async (
+      nextPage: number,
+      mode: 'replace' | 'append' | 'prepend',
+      options: { pageSizeOverride?: number; preserveListInstance?: boolean; restoreScrollTop?: number } = {},
+    ) => {
       if (mode !== 'replace' && isLoadingRef.current) {
         return;
       }
@@ -336,7 +346,7 @@ export const SongsPage = (): JSX.Element => {
       setIsLoading(true);
       setError(null);
       setStatusMessage(null);
-      if (mode === 'replace') {
+      if (mode === 'replace' && !options.preserveListInstance) {
         setListVersion((current) => current + 1);
         setVisibleTrackIds([]);
         setSelectedTrackIds({});
@@ -360,7 +370,7 @@ export const SongsPage = (): JSX.Element => {
 
         const query = {
           page: nextPage,
-          pageSize,
+          pageSize: options.pageSizeOverride ?? pageSize,
           search,
           sort,
           sourceProvider: sourceMode,
@@ -403,6 +413,17 @@ export const SongsPage = (): JSX.Element => {
             total: result.total,
           });
           writeSongsFirstPageSnapshot(queryKey, result);
+        }
+
+        if (typeof options.restoreScrollTop === 'number') {
+          const restoreScrollTop = options.restoreScrollTop;
+          window.setTimeout(() => {
+            const scrollElement = getSongsScrollElement();
+
+            if (scrollElement) {
+              scrollElement.scrollTop = restoreScrollTop;
+            }
+          }, 0);
         }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
@@ -469,10 +490,22 @@ export const SongsPage = (): JSX.Element => {
   }, [loadDuplicateSettings]);
 
   useEffect(() => {
-    const handleLibraryChanged = (): void => {
+    const handleLibraryChanged = (event: Event): void => {
       if (ignoreNextLibraryChangedRef.current) {
         ignoreNextLibraryChangedRef.current = false;
         clearSongsFirstPageSnapshot();
+        return;
+      }
+
+      const scrollTop = readSongsScrollTop();
+      if (isPreserveScrollLibraryEvent(event) && scrollTop > preserveScrollThresholdPx) {
+        clearSongsFirstPageSnapshot();
+        clearListMetadataCache();
+        void loadTracks(1, 'replace', {
+          pageSizeOverride: Math.min(maxPreservedRefreshPageSize, Math.max(pageSize, tracks.length)),
+          preserveListInstance: true,
+          restoreScrollTop: scrollTop,
+        });
         return;
       }
 
@@ -483,7 +516,7 @@ export const SongsPage = (): JSX.Element => {
 
     window.addEventListener('library:changed', handleLibraryChanged);
     return () => window.removeEventListener('library:changed', handleLibraryChanged);
-  }, [clearListMetadataCache, loadTracks]);
+  }, [clearListMetadataCache, loadTracks, tracks.length]);
 
   useEffect(() => {
     const handleSettingsChanged = (): void => {

@@ -1,14 +1,16 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
 import { ScanJobQueue } from './ScanJobQueue';
+import type { FileIdentityObservation } from './FileIdentityService';
 import type {
   CoverExtractOptions,
   CoverResult,
   LibraryFolder,
+  LibraryScanOptions,
   LibraryScanStatus,
   MetadataResult,
   ScannedFile,
@@ -99,7 +101,12 @@ class FakeStore {
   status: LibraryScanStatus | null = null;
   readonly updates: ScanJobUpdate[] = [];
   readonly upsertedTracks: TrackWrite[] = [];
+  readonly identityUpdates: Array<{ trackId: string; identity: Partial<TrackWrite> }> = [];
   readonly missingPaths: string[] = [];
+  markMissingCalls = 0;
+  refreshAlbumsCalls = 0;
+  refreshArtistsCalls = 0;
+  finishFolderScanCalls = 0;
   getTrackCacheStatesByFolderCalls = 0;
   findTrackCoverStateCalls = 0;
   cancelled = false;
@@ -150,6 +157,7 @@ class FakeStore {
   }
 
   markTracksMissingFromFolder(_folderId: string, discoveredPaths: string[]): number {
+    this.markMissingCalls += 1;
     const discovered = new Set(discoveredPaths);
     const missing = Array.from(this.coverStatesByPath.keys()).filter((filePath) => !discovered.has(filePath));
     this.missingPaths.push(...missing);
@@ -162,22 +170,34 @@ class FakeStore {
 
   updateTrackCover(): void {}
 
+  updateTrackIdentity(trackId: string, identity: Partial<TrackWrite>): void {
+    this.identityUpdates.push({ trackId, identity });
+  }
+
   upsertTrack(track: TrackWrite): 'added' | 'updated' {
     this.upsertedTracks.push(track);
     return this.coverStatesByPath.has(track.path) ? 'updated' : 'added';
   }
 
-  refreshAlbums(): void {}
+  refreshAlbums(): void {
+    this.refreshAlbumsCalls += 1;
+  }
 
-  refreshArtists(): void {}
+  refreshArtists(): void {
+    this.refreshArtistsCalls += 1;
+  }
 
-  finishFolderScan(): void {}
+  finishFolderScan(): void {
+    this.finishFolderScanCalls += 1;
+  }
 }
 
 class FakeScanner implements FileScanner {
+  calls = 0;
   constructor(private readonly files: ScannedFile[]) {}
 
   async *scanFolder(): AsyncIterable<ScannedFile> {
+    this.calls += 1;
     for (const file of this.files) {
       yield file;
     }
@@ -301,6 +321,42 @@ const runQueue = async (
   await queue.waitForIdle(job.id);
   return store.getScanJob()!;
 };
+
+const statMtimeMs = (filePath: string): number => statSync(filePath).mtimeMs;
+
+const runPathsQueue = async (
+  store: FakeStore,
+  scanner: FileScanner,
+  metadataReader: MetadataReader,
+  coverExtractor: CoverExtractor,
+  cacheRoot: string,
+  folder: LibraryFolder,
+  paths: string[],
+  options: LibraryScanOptions = {},
+): Promise<LibraryScanStatus> => {
+  const queue = new ScanJobQueue(
+    store as unknown as LibraryStore,
+    scanner,
+    metadataReader,
+    coverExtractor,
+    {} as AlbumService,
+    { coverCacheDir: cacheRoot },
+  );
+  const job = queue.scanPaths(folder, paths, options);
+  await queue.waitForIdle(job.id);
+  return store.getScanJob()!;
+};
+
+const identityObservation = (overrides: Partial<FileIdentityObservation> = {}): FileIdentityObservation => ({
+  fileIdentity: 'dev:1:ino:2',
+  fileIdentitySource: 'posix-dev-ino',
+  quickHash: 'a'.repeat(64),
+  quickHashVersion: 1,
+  identityStatus: 'ok',
+  identityUpdatedAt: '2026-05-18T00:00:00.000Z',
+  identityError: null,
+  ...overrides,
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -613,5 +669,451 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(status.status).toBe('cancelled');
     expect(status.phase).toBe('cancelled');
     expect(status.finishedAt).toBeTruthy();
+  });
+});
+
+describe('ScanJobQueue local path rescans', () => {
+  it('only processes provided paths without scanning the whole folder', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const requestedPath = join(folder.path, 'requested.flac');
+    const otherPath = join(folder.path, 'other.flac');
+    writeFileSync(requestedPath, 'requested');
+    writeFileSync(otherPath, 'other');
+    const scanner = new FakeScanner([{ path: otherPath, sizeBytes: 5, mtimeMs: 1 }]);
+    const metadataReader = new FakeMetadataReader();
+    const store = new FakeStore();
+
+    const status = await runPathsQueue(
+      store,
+      scanner,
+      metadataReader,
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+      [requestedPath],
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.totalFiles).toBe(1);
+    expect(status.addedTracks).toBe(1);
+    expect(scanner.calls).toBe(0);
+    expect(metadataReader.paths).toEqual([requestedPath]);
+    expect(store.upsertedTracks.map((track) => track.path)).toEqual([requestedPath]);
+  });
+
+  it('does not mark missing tracks during a local path rescan', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const keptPath = join(folder.path, 'kept.flac');
+    const omittedPath = join(folder.path, 'omitted.flac');
+    writeFileSync(keptPath, 'kept');
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const keptFile = { path: keptPath, sizeBytes: 4, mtimeMs: Math.round(statMtimeMs(keptPath)) };
+    const omittedFile = { path: omittedPath, sizeBytes: 10, mtimeMs: 1 };
+    const store = new FakeStore(
+      coverStateMap([keptFile, omittedFile], (file) =>
+        coverState(file, {
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+      [keptPath],
+    );
+
+    expect(status.removedTracks).toBe(0);
+    expect(store.markMissingCalls).toBe(0);
+    expect(store.missingPaths).toEqual([]);
+    expect(store.finishFolderScanCalls).toBe(0);
+  });
+
+  it('can defer grouping refresh for live local path rescans', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'live.flac');
+    writeFileSync(filePath, 'live');
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const store = new FakeStore();
+
+    await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+      [filePath],
+      { deferGroupingRefresh: true },
+    );
+
+    expect(store.upsertedTracks.map((track) => track.path)).toEqual([filePath]);
+    expect(store.refreshAlbumsCalls).toBe(0);
+    expect(store.refreshArtistsCalls).toBe(0);
+  });
+
+  it('skips unchanged local files with complete cover cache', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'cached.flac');
+    writeFileSync(filePath, 'cached');
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const file = { path: filePath, sizeBytes: 6, mtimeMs: Math.round(statMtimeMs(filePath)) };
+    const metadataReader = new FakeMetadataReader();
+    const coverExtractor = new CapturingCoverExtractor();
+    const store = new FakeStore(
+      coverStateMap([file], (item) =>
+        coverState(item, {
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runPathsQueue(store, new FakeScanner([]), metadataReader, coverExtractor, cacheRoot, folder, [filePath]);
+
+    expect(status.skippedFiles).toBe(1);
+    expect(metadataReader.paths).toEqual([]);
+    expect(coverExtractor.cacheRoots).toEqual([]);
+    expect(store.upsertedTracks).toEqual([]);
+  });
+
+  it('rereads unchanged placeholder tracks created by watcher preview', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'previewed.flac');
+    writeFileSync(filePath, 'previewed');
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const file = { path: filePath, sizeBytes: 9, mtimeMs: Math.round(statMtimeMs(filePath)) };
+    const metadataReader = new FakeMetadataReader();
+    const coverExtractor = new CapturingCoverExtractor();
+    const store = new FakeStore(
+      coverStateMap([file], (item) =>
+        coverState(item, {
+          metadataStatus: 'fallback',
+          embeddedMetadataStatus: 'pending',
+          embeddedCoverStatus: 'pending',
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runPathsQueue(store, new FakeScanner([]), metadataReader, coverExtractor, cacheRoot, folder, [filePath]);
+
+    expect(status.updatedTracks).toBe(1);
+    expect(metadataReader.paths).toEqual([filePath]);
+    expect(store.upsertedTracks[0]).toMatchObject({
+      path: filePath,
+      title: 'Embedded Title',
+      metadataStatus: 'ok',
+      embeddedMetadataStatus: 'present',
+    });
+  });
+
+  it('adds new local files through metadata and cover workers', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'new-song.wav');
+    writeFileSync(filePath, 'new-song');
+    const metadataReader = new FakeMetadataReader();
+    const coverExtractor = new CapturingCoverExtractor();
+    const store = new FakeStore();
+
+    const status = await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      metadataReader,
+      coverExtractor,
+      join(root, 'custom-cache'),
+      folder,
+      [filePath],
+    );
+
+    expect(status.addedTracks).toBe(1);
+    expect(metadataReader.paths).toEqual([filePath]);
+    expect(coverExtractor.cacheRoots).toHaveLength(1);
+    expect(store.upsertedTracks[0]?.path).toBe(filePath);
+  });
+
+  it('refreshes changed local files when size or mtime differs', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'changed.flac');
+    writeFileSync(filePath, 'changed-now');
+    const currentFile = { path: filePath, sizeBytes: 11, mtimeMs: Math.round(statMtimeMs(filePath)) };
+    const previousFile = { ...currentFile, sizeBytes: 1 };
+    const metadataReader = new FakeMetadataReader();
+    const store = new FakeStore(coverStateMap([previousFile], (item) => coverState(item)));
+
+    const status = await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      metadataReader,
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+      [filePath],
+    );
+
+    expect(status.updatedTracks).toBe(1);
+    expect(metadataReader.paths).toEqual([filePath]);
+    expect(store.upsertedTracks[0]?.id).toBe(store.getTrackCacheStatesByFolder().get(filePath)?.id);
+  });
+
+  it('ignores non-audio, temporary, outside, and duplicate paths', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const outsideRoot = join(root, 'outside');
+    mkdirSync(outsideRoot, { recursive: true });
+    const validPath = join(folder.path, 'valid.mp3');
+    const duplicatePath = join(folder.path, '.', 'valid.mp3');
+    const textPath = join(folder.path, 'notes.txt');
+    const tempPath = join(folder.path, 'song.flac.tmp');
+    const hiddenPath = join(folder.path, '.hidden.flac');
+    const outsidePath = join(outsideRoot, 'outside.flac');
+    for (const filePath of [validPath, textPath, tempPath, hiddenPath, outsidePath]) {
+      writeFileSync(filePath, 'x');
+    }
+    const metadataReader = new FakeMetadataReader();
+    const store = new FakeStore();
+
+    const status = await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      metadataReader,
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+      [validPath, duplicatePath, textPath, tempPath, hiddenPath, outsidePath, join(folder.path, 'missing.flac')],
+    );
+
+    expect(status.totalFiles).toBe(1);
+    expect(status.addedTracks).toBe(1);
+    expect(metadataReader.paths).toEqual([validPath]);
+    expect(store.upsertedTracks.map((track) => track.path)).toEqual([validPath]);
+  });
+
+  it('rejects overly large local rescan batches before creating a job', () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: join(root, 'custom-cache') },
+    );
+
+    expect(() => queue.scanPaths(folder, Array.from({ length: 1001 }, (_, index) => join(folder.path, `track-${index}.flac`)))).toThrow(
+      /Too many local rescan paths/u,
+    );
+    expect(store.status).toBeNull();
+  });
+
+  it('keeps cancellation semantics for local path rescans', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'cancel.flac');
+    writeFileSync(filePath, 'cancel');
+    const store = new FakeStore();
+    store.cancelled = true;
+
+    const status = await runPathsQueue(
+      store,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+      [filePath],
+    );
+
+    expect(status.status).toBe('cancelled');
+    expect(status.phase).toBe('cancelled');
+    expect(store.upsertedTracks).toEqual([]);
+  });
+
+  it('writes identity observation for changed files without changing scan semantics', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'identity.flac');
+    writeFileSync(filePath, 'identity');
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        fileIdentityService: { observe: () => identityObservation({ quickHash: 'b'.repeat(64) }) } as never,
+      },
+    );
+
+    const job = queue.scanPaths(folder, [filePath]);
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()?.status).toBe('completed');
+    expect(store.upsertedTracks[0]).toMatchObject({
+      fileIdentity: 'dev:1:ino:2',
+      quickHash: 'b'.repeat(64),
+      identityStatus: 'ok',
+    });
+  });
+
+  it('backfills identity for unchanged files without reading metadata or cover', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'unchanged.flac');
+    writeFileSync(filePath, 'cached');
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const file = { path: filePath, sizeBytes: 6, mtimeMs: Math.round(statMtimeMs(filePath)) };
+    const metadataReader = new FakeMetadataReader();
+    const coverExtractor = new CapturingCoverExtractor();
+    const store = new FakeStore(
+      coverStateMap([file], (item) =>
+        coverState(item, {
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+          quickHash: null,
+          identityStatus: null,
+        }),
+      ),
+    );
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      metadataReader,
+      coverExtractor,
+      {} as AlbumService,
+      {
+        coverCacheDir: cacheRoot,
+        fileIdentityService: { observe: () => identityObservation({ quickHash: 'c'.repeat(64) }) } as never,
+      },
+    );
+
+    const job = queue.scanPaths(folder, [filePath]);
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()?.skippedFiles).toBe(1);
+    expect(metadataReader.paths).toEqual([]);
+    expect(coverExtractor.cacheRoots).toEqual([]);
+    expect(store.identityUpdates).toHaveLength(1);
+    expect(store.identityUpdates[0].identity.quickHash).toBe('c'.repeat(64));
+  });
+
+  it('identity observation errors do not fail scan jobs', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'identity-error.flac');
+    writeFileSync(filePath, 'identity-error');
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        fileIdentityService: {
+          observe: () => {
+            throw new Error('identity boom');
+          },
+        } as never,
+      },
+    );
+
+    const job = queue.scanPaths(folder, [filePath]);
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()?.status).toBe('completed');
+    expect(store.upsertedTracks[0]).toMatchObject({
+      identityStatus: 'error',
+      identityError: 'identity boom',
+    });
+  });
+
+  it('unsupported identity observations do not fail scans', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'identity-unsupported.flac');
+    writeFileSync(filePath, 'identity-unsupported');
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        fileIdentityService: {
+          observe: () =>
+            identityObservation({
+              fileIdentity: null,
+              fileIdentitySource: 'unsupported',
+              identityStatus: 'partial',
+              identityError: 'unsupported',
+            }),
+        } as never,
+      },
+    );
+
+    const job = queue.scanPaths(folder, [filePath]);
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()?.status).toBe('completed');
+    expect(store.upsertedTracks[0]).toMatchObject({
+      fileIdentity: null,
+      fileIdentitySource: 'unsupported',
+      identityStatus: 'partial',
+    });
   });
 });

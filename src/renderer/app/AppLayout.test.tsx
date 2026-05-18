@@ -217,6 +217,35 @@ describe('AppLayout standalone routes', () => {
     window.removeEventListener('library:changed', onLibraryChanged);
   });
 
+  it('marks main-process library updates as scroll-preserving', async () => {
+    let libraryChangedHandler: (() => void) | null = null;
+    const receivedEvents: Event[] = [];
+    window.echo = {
+      library: {
+        getSummary: vi.fn(async () => ({})),
+        onLibraryChanged: vi.fn((handler) => {
+          libraryChangedHandler = handler;
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+    window.addEventListener('library:changed', (event) => receivedEvents.push(event));
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(window.echo?.library.onLibraryChanged).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      libraryChangedHandler?.();
+    });
+
+    expect(receivedEvents).toHaveLength(1);
+    expect((receivedEvents[0] as CustomEvent).detail).toEqual({ preserveScroll: true });
+  });
+
   it('keeps the player bar on the standalone lyrics page', async () => {
     render(
       <AppProviders>

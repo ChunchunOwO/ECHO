@@ -302,8 +302,11 @@ describe('AlbumsPage', () => {
     expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
   });
 
-  it('library:changed does not pull a scrolled album wall back to the top', async () => {
-    const getAlbums = vi.fn().mockResolvedValue(page([album('1')], { page: 1, total: 120, hasMore: true }));
+  it('preserved library:changed refreshes a scrolled album wall without pulling it back to the top', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('1')], { page: 1, total: 120, hasMore: true }))
+      .mockResolvedValueOnce(page([album('fresh')], { page: 1, total: 120, hasMore: true }));
     installLibrary(getAlbums);
 
     const { container } = renderAlbumsPage();
@@ -313,15 +316,20 @@ describe('AlbumsPage', () => {
     setScrollablePageSurface(pageSurface);
     pageSurface.scrollTop = 640;
 
-    window.dispatchEvent(new Event('library:changed'));
+    window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
 
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+    expect(getAlbums).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 1, pageSize: 60, search: '', sort: 'default' }));
+    expect(screen.getByText('Album fresh')).toBeTruthy();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    expect(getAlbums).toHaveBeenCalledTimes(1);
     expect(pageSurface.scrollTop).toBe(640);
   });
 
-  it('library:changed does not reload when the outer page surface is the scrolled element', async () => {
-    const getAlbums = vi.fn().mockResolvedValue(page([album('1')], { page: 1, total: 120, hasMore: true }));
+  it('preserved library:changed refreshes when the outer page surface is the scrolled element', async () => {
+    const getAlbums = vi
+      .fn()
+      .mockResolvedValueOnce(page([album('1')], { page: 1, total: 120, hasMore: true }))
+      .mockResolvedValueOnce(page([album('fresh')], { page: 1, total: 120, hasMore: true }));
     installLibrary(getAlbums);
 
     const { container } = renderAlbumsPage();
@@ -334,10 +342,11 @@ describe('AlbumsPage', () => {
     outerPageSurface.scrollTop = 640;
     albumWall.scrollTop = 0;
 
-    window.dispatchEvent(new Event('library:changed'));
+    window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
 
+    await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Album fresh')).toBeTruthy();
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    expect(getAlbums).toHaveBeenCalledTimes(1);
     expect(outerPageSurface.scrollTop).toBe(640);
   });
 

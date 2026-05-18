@@ -1369,9 +1369,15 @@ public:
             }
         }
 
-        const uint64_t automixFramesRead = mixAutomixNext(output, startSample, frameCount, absoluteStartFrame);
+        const bool mainInputEnded = inputEnded.load(std::memory_order_acquire);
+        const int automixFrameBudget = mainInputEnded
+            ? frameCount
+            : static_cast<int>(std::min<uint64_t>(static_cast<uint64_t>(frameCount), framesReadTotal));
+        const uint64_t automixFramesRead = automixFrameBudget > 0
+            ? mixAutomixNext(output, startSample, automixFrameBudget, absoluteStartFrame)
+            : 0;
         const uint64_t renderedFrames = automixPlan.enabled.load(std::memory_order_acquire)
-            ? std::max(framesReadTotal, automixFramesRead)
+            ? (mainInputEnded ? std::max(framesReadTotal, automixFramesRead) : framesReadTotal)
             : framesReadTotal;
 
         if (renderedFrames > 0)

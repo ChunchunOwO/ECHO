@@ -388,9 +388,9 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, []);
 
   const applyAudioStatus = useCallback(
-    (nextAudioStatus: AudioStatus): void => {
+    (nextAudioStatus: AudioStatus): boolean => {
       if (shouldIgnoreAudioStatus(nextAudioStatus)) {
-        return;
+        return false;
       }
 
       setAudioStatus(nextAudioStatus);
@@ -410,6 +410,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           : current,
       );
       setError(formatAudioHostError(nextAudioStatus.error));
+      return true;
     },
     [setQueueCurrentTrackId, shouldIgnoreAudioStatus],
   );
@@ -425,15 +426,20 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
         setAudioStatus(null);
       }
       const shouldApplyAudioStatus = snapshotAudioStatus
-        ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus)
+        ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
+          Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath)
         : false;
+      let appliedAudioStatus = false;
       if (snapshotAudioStatus && shouldApplyAudioStatus) {
-        applyAudioStatus(snapshotAudioStatus);
+        appliedAudioStatus = applyAudioStatus(snapshotAudioStatus);
+      } else if (snapshot.playbackStatus) {
+        const nextPlaybackStatus = snapshot.playbackStatus;
+        setAudioStatus((current) => (current && !isAudioStatusForPlayback(current, nextPlaybackStatus) ? null : current));
       }
 
       const nextTrackId =
+        (snapshotAudioStatus && appliedAudioStatus ? snapshotAudioStatus.currentTrackId : null) ??
         snapshot.playbackStatus?.currentTrackId ??
-        (snapshotAudioStatus && shouldApplyAudioStatus ? snapshotAudioStatus.currentTrackId : null) ??
         null;
       if (nextTrackId) {
         setQueueCurrentTrackId(nextTrackId);
@@ -448,24 +454,38 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     applySharedPlaybackStatus(await refreshPlaybackStatus());
   }, [applySharedPlaybackStatus]);
 
-  const baseState = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
-  const baseVisualState = getVisualPlaybackState({
-    audioStatus,
-    playbackStatus,
-    playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
-  });
-  const statusTrackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
+  const audioStatusMatchesPlaybackStatus = audioStatus ? isAudioStatusForPlayback(audioStatus, playbackStatus) : false;
+  const statusTrackId = playbackStatus?.currentTrackId ?? (audioStatusMatchesPlaybackStatus ? audioStatus?.currentTrackId ?? null : null);
   const trackId = queue.currentTrackId ?? statusTrackId;
   const currentTrack = queue.currentTrack ?? queue.tracks.find((track) => track.id === trackId) ?? null;
-  const filePath = currentTrack?.path ?? audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
+  const playbackStatusMatchesCurrentTrack =
+    playbackStatus !== null &&
+    (!currentTrack ||
+      Boolean(currentTrack.id && playbackStatus.currentTrackId === currentTrack.id) ||
+      Boolean(currentTrack.path && playbackStatus.filePath === currentTrack.path));
+  const currentPlaybackStatus = playbackStatusMatchesCurrentTrack ? playbackStatus : null;
+  const audioStatusMatchesCurrentTrack =
+    audioStatus !== null &&
+    (!currentTrack ||
+      Boolean(currentTrack.id && audioStatus?.currentTrackId === currentTrack.id) ||
+      Boolean(currentTrack.path && audioStatus?.currentFilePath === currentTrack.path) ||
+      audioStatusMatchesPlaybackStatus);
+  const playbackAudioStatus = audioStatusMatchesCurrentTrack ? audioStatus : null;
+  const baseState = playbackAudioStatus?.state ?? currentPlaybackStatus?.state ?? 'idle';
+  const baseVisualState = getVisualPlaybackState({
+    audioStatus: playbackAudioStatus,
+    playbackStatus: currentPlaybackStatus,
+    playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
+  });
+  const filePath = currentTrack?.path ?? playbackAudioStatus?.currentFilePath ?? currentPlaybackStatus?.filePath ?? null;
   const receiverCurrentUri = receiverStatus?.currentUri ?? null;
   const receiverHasCurrentMedia = Boolean(
     receiverCurrentUri && receiverStatus && ['ready', 'loading', 'playing', 'paused', 'stopped'].includes(receiverStatus.state),
   );
   const isReceiverPlaybackActive = Boolean(
     receiverHasCurrentMedia &&
-      (audioStatus?.currentFilePath === receiverCurrentUri ||
-        playbackStatus?.filePath === receiverCurrentUri ||
+      (playbackAudioStatus?.currentFilePath === receiverCurrentUri ||
+        currentPlaybackStatus?.filePath === receiverCurrentUri ||
         !currentTrack),
   );
   const receiverPlaybackState = receiverStatus ? receiverStateToPlaybackState(receiverStatus) : 'idle';
@@ -473,25 +493,28 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const visualState = isReceiverPlaybackActive ? receiverPlaybackState : baseVisualState;
   const isPlaying = visualState === 'playing';
   const endedStatusTrackId =
-    audioStatus?.state === 'ended'
-      ? audioStatus.currentTrackId
-      : playbackStatus?.state === 'ended'
-        ? playbackStatus.currentTrackId
+    playbackAudioStatus?.state === 'ended'
+      ? playbackAudioStatus.currentTrackId
+      : currentPlaybackStatus?.state === 'ended'
+        ? currentPlaybackStatus.currentTrackId
         : null;
   const endedStatusFilePath =
-    audioStatus?.state === 'ended'
-      ? audioStatus.currentFilePath
-      : playbackStatus?.state === 'ended'
-        ? playbackStatus.filePath
+    playbackAudioStatus?.state === 'ended'
+      ? playbackAudioStatus.currentFilePath
+      : currentPlaybackStatus?.state === 'ended'
+        ? currentPlaybackStatus.filePath
         : null;
   const sourcePositionSeconds = isReceiverPlaybackActive
-    ? receiverStatus?.positionSeconds ?? audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000
-    : audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
+    ? receiverStatus?.positionSeconds ?? playbackAudioStatus?.positionSeconds ?? (currentPlaybackStatus?.positionMs ?? 0) / 1000
+    : playbackAudioStatus?.positionSeconds ?? (currentPlaybackStatus?.positionMs ?? 0) / 1000;
+  const currentTrackDurationMs = Math.round(Math.max(0, currentTrack?.duration ?? 0) * 1000);
   const durationSeconds = isReceiverPlaybackActive
-    ? Math.max(receiverStatus?.durationSeconds ?? 0, audioStatus?.durationSeconds ?? 0, (playbackStatus?.durationMs ?? 0) / 1000)
-    : audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
+    ? Math.max(receiverStatus?.durationSeconds ?? 0, playbackAudioStatus?.durationSeconds ?? 0, (currentPlaybackStatus?.durationMs ?? 0) / 1000)
+    : playbackAudioStatus?.durationSeconds ?? (currentPlaybackStatus?.durationMs ?? currentTrackDurationMs) / 1000;
   const [realtimePositionSeconds, setRealtimePositionSeconds] = useState(sourcePositionSeconds);
-  const positionSeconds = seekPreviewSeconds ?? realtimePositionSeconds;
+  const playbackProgressKey = trackId ?? filePath ?? null;
+  const realtimePositionMatchesPlayback = progressClockRef.current.trackKey === playbackProgressKey;
+  const positionSeconds = seekPreviewSeconds ?? (realtimePositionMatchesPlayback ? realtimePositionSeconds : sourcePositionSeconds);
   const receiverMetadata = isReceiverPlaybackActive ? receiverStatus?.metadata ?? null : null;
   const title = receiverMetadata?.title ?? currentTrack?.title ?? titleFromPath(filePath);
   const artist = receiverMetadata?.artist ?? currentTrack?.artist ?? currentTrack?.albumArtist ?? (filePath ? 'DLNA stream' : 'Ready');
@@ -768,10 +791,11 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   useEffect(() => {
     const now = performance.now();
     const trackKey = trackId ?? filePath ?? null;
+    const progressState = visualState === 'playing' ? 'playing' : state;
     const previous = progressClockRef.current;
     const samePlayback = previous.trackKey === trackKey;
-    const stateChanged = previous.state !== state;
-    const playbackRate = audioStatus?.playbackRate ?? 1;
+    const stateChanged = previous.state !== progressState;
+    const playbackRate = playbackAudioStatus?.playbackRate ?? 1;
     const durationLimit = durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
     const boundedSourcePosition = Math.min(Math.max(0, sourcePositionSeconds), durationLimit);
     let nextPositionSeconds = boundedSourcePosition;
@@ -783,7 +807,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       } else {
         const elapsedSeconds = Math.max(0, (now - seekAnchor.updatedAtMs) / 1000);
         const expectedSeekPosition = Math.min(
-          seekAnchor.positionSeconds + (state === 'playing' ? elapsedSeconds * playbackRate : 0),
+          seekAnchor.positionSeconds + (progressState === 'playing' ? elapsedSeconds * playbackRate : 0),
           durationLimit,
         );
         const isStaleStatusAfterSeek =
@@ -797,7 +821,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       }
     }
 
-    if (!seekAnchorRef.current && samePlayback && !stateChanged && state === 'playing') {
+    if (!seekAnchorRef.current && samePlayback && !stateChanged && progressState === 'playing') {
       const wallElapsedSeconds = Math.max(0, (now - previous.updatedAtMs) / 1000);
       const mediaElapsedSeconds = wallElapsedSeconds * previous.playbackRate;
       const estimatedPositionSeconds = Math.min(previous.positionSeconds + mediaElapsedSeconds, durationLimit);
@@ -829,15 +853,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       playbackRate,
       positionSeconds: nextPositionSeconds,
       sourcePositionSeconds: boundedSourcePosition,
-      state,
+      state: progressState,
       trackKey,
       updatedAtMs: now,
     };
     setRealtimePositionSeconds(nextPositionSeconds);
-  }, [audioStatus?.playbackRate, durationSeconds, filePath, sourcePositionSeconds, state, trackId]);
+  }, [durationSeconds, filePath, playbackAudioStatus?.playbackRate, sourcePositionSeconds, state, trackId, visualState]);
 
   useEffect(() => {
-    if (state !== 'playing' || seekPreviewSeconds !== null) {
+    if (visualState !== 'playing' || seekPreviewSeconds !== null) {
       return;
     }
 
@@ -853,7 +877,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     }, progressRenderIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [seekPreviewSeconds, state]);
+  }, [seekPreviewSeconds, visualState]);
 
   useEffect(() => {
     if (!currentTrack || currentTrack.mediaType !== 'streaming') {
@@ -862,10 +886,10 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
     const patch = {
       ...(currentTrack.duration <= 0 && durationSeconds > 0 ? { duration: durationSeconds } : {}),
-      ...(!currentTrack.codec && audioStatus?.codec ? { codec: audioStatus.codec } : {}),
-      ...(!currentTrack.sampleRate && audioStatus?.fileSampleRate ? { sampleRate: audioStatus.fileSampleRate } : {}),
-      ...(!currentTrack.bitDepth && audioStatus?.bitDepth ? { bitDepth: audioStatus.bitDepth } : {}),
-      ...(!currentTrack.bitrate && audioStatus?.bitrate ? { bitrate: audioStatus.bitrate } : {}),
+      ...(!currentTrack.codec && playbackAudioStatus?.codec ? { codec: playbackAudioStatus.codec } : {}),
+      ...(!currentTrack.sampleRate && playbackAudioStatus?.fileSampleRate ? { sampleRate: playbackAudioStatus.fileSampleRate } : {}),
+      ...(!currentTrack.bitDepth && playbackAudioStatus?.bitDepth ? { bitDepth: playbackAudioStatus.bitDepth } : {}),
+      ...(!currentTrack.bitrate && playbackAudioStatus?.bitrate ? { bitrate: playbackAudioStatus.bitrate } : {}),
     };
 
     if (Object.keys(patch).length === 0) {
@@ -874,12 +898,12 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
     queue.updateCurrentTrackSnapshot(patch);
   }, [
-    audioStatus?.bitDepth,
-    audioStatus?.bitrate,
-    audioStatus?.codec,
-    audioStatus?.fileSampleRate,
     currentTrack,
     durationSeconds,
+    playbackAudioStatus?.bitDepth,
+    playbackAudioStatus?.bitrate,
+    playbackAudioStatus?.codec,
+    playbackAudioStatus?.fileSampleRate,
     queue,
   ]);
 
@@ -1318,15 +1342,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       state: visualState,
       positionSeconds,
       durationSeconds,
-      playbackRate: audioStatus?.playbackRate ?? 1,
+      playbackRate: playbackAudioStatus?.playbackRate ?? 1,
     });
   }, [
     artist,
-    audioStatus?.playbackRate,
     currentTrack,
     durationSeconds,
     filePath,
     artworkUrl,
+    playbackAudioStatus?.playbackRate,
     positionSeconds,
     smtcEnabled,
     visualState,

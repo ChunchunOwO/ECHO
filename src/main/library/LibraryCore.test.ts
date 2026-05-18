@@ -2,8 +2,10 @@ import { existsSync, mkdirSync, rmSync, unlinkSync, utimesSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { createDatabase } from '../database/createDatabase';
 import { migrations } from '../database/migrations';
+import { schemaMigrationTableSql } from '../database/schema';
 import { MetadataService } from './MetadataService';
 import { createLibraryService } from './LibraryService';
 import { NetworkMetadataStore } from './network/NetworkMetadataStore';
@@ -428,6 +430,8 @@ describe('Library Core', () => {
         'idx_tracks_title',
         'idx_tracks_artist',
         'idx_tracks_album',
+        'idx_tracks_file_identity',
+        'idx_tracks_quick_hash',
         'idx_albums_album_key',
         'idx_album_tracks_album_id',
         'idx_album_tracks_track_id',
@@ -466,7 +470,75 @@ describe('Library Core', () => {
     const migrationRows = reopened.prepare<unknown[], { id: number }>('SELECT id FROM schema_migrations ORDER BY id').all();
 
     expect(migrationRows.map((row) => Number(row.id))).toEqual(migrations.map((migration) => migration.id));
+    const trackColumns = reopened.prepare<unknown[], { name: string }>('PRAGMA table_info(tracks)').all().map((row) => row.name);
+    expect(trackColumns).toEqual(
+      expect.arrayContaining([
+        'file_identity',
+        'file_identity_source',
+        'quick_hash',
+        'quick_hash_version',
+        'identity_status',
+        'identity_updated_at',
+        'identity_error',
+      ]),
+    );
     reopened.close();
+  });
+
+  it('migration adds identity observation fields to an existing tracks table without changing rows', () => {
+    const root = makeTempRoot();
+    const databasePath = join(root, 'legacy-library.sqlite');
+    const legacy = new Database(databasePath);
+
+    legacy.exec(schemaMigrationTableSql);
+    legacy.exec(`
+      CREATE TABLE tracks (
+        id TEXT PRIMARY KEY,
+        path TEXT NOT NULL UNIQUE,
+        folder_id TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        mtime_ms INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        album TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO tracks (
+        id, path, folder_id, size_bytes, mtime_ms, title, artist, album, created_at, updated_at
+      ) VALUES (
+        'legacy-track', 'D:\\Music\\Legacy.flac', 'folder-1', 12, 34,
+        'Legacy Title', 'Legacy Artist', 'Legacy Album',
+        '2026-05-18T00:00:00.000Z', '2026-05-18T00:00:00.000Z'
+      );
+    `);
+    const insertMigration = legacy.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
+    for (const migration of migrations.filter((item) => item.id < 31)) {
+      insertMigration.run(migration.id, '2026-05-18T00:00:00.000Z');
+    }
+    legacy.close();
+
+    const migrated = createDatabase(databasePath);
+    const row = migrated
+      .prepare<[], { id: string; title: string; quick_hash: string | null }>(
+        "SELECT id, title, quick_hash FROM tracks WHERE id = 'legacy-track'",
+      )
+      .get();
+    const columns = migrated.prepare<unknown[], { name: string }>('PRAGMA table_info(tracks)').all().map((item) => item.name);
+
+    expect(row).toEqual({ id: 'legacy-track', title: 'Legacy Title', quick_hash: null });
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        'file_identity',
+        'file_identity_source',
+        'quick_hash',
+        'quick_hash_version',
+        'identity_status',
+        'identity_updated_at',
+        'identity_error',
+      ]),
+    );
+    migrated.close();
   });
 
   it('migration backfills playback history stats from existing history rows', () => {
@@ -936,6 +1008,66 @@ describe('Library Core', () => {
 
     expect(harness.metadataService.calls).toHaveLength(1);
     expect(secondScan.skippedFiles).toBe(1);
+    harness.cleanup();
+  });
+
+  it('scan writes identity observation fields without changing path-centric track behavior', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'Artist - Identity.flac');
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const database = createDatabase(harness.databasePath);
+    const row = database
+      .prepare<
+        [string],
+        {
+          path: string;
+          quick_hash: string | null;
+          quick_hash_version: number | null;
+          identity_status: string | null;
+          identity_updated_at: string | null;
+        }
+      >(
+        `SELECT path, quick_hash, quick_hash_version, identity_status, identity_updated_at
+         FROM tracks
+         WHERE path = ?`,
+      )
+      .get(filePath);
+    database.close();
+    const diagnostics = harness.service.getDiagnostics();
+
+    expect(row?.path).toBe(filePath);
+    expect(row?.quick_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(row?.quick_hash_version).toBe(1);
+    expect(row?.identity_status).toMatch(/^(ok|partial)$/);
+    expect(row?.identity_updated_at).toBeTruthy();
+    expect(diagnostics.tracksWithQuickHash).toBeGreaterThanOrEqual(1);
+    harness.cleanup();
+  });
+
+  it('matching quick hashes do not merge tracks or update paths', async () => {
+    const harness = createHarness();
+    const firstPath = writeAudioFile(harness.folder, 'Same - One.flac');
+    const secondPath = writeAudioFile(harness.folder, 'Same - Two.flac');
+    writeFileSync(secondPath, 'fake audio Same - One.flac');
+    utimesSync(secondPath, new Date('2024-01-01T00:00:00.000Z'), new Date('2024-01-01T00:00:00.000Z'));
+    harness.metadataService.overrides.set(firstPath, baseMetadata({ title: 'Same One' }));
+    harness.metadataService.overrides.set(secondPath, baseMetadata({ title: 'Same Two' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const database = createDatabase(harness.databasePath);
+    const rows = database
+      .prepare<[], { path: string; quick_hash: string | null }>('SELECT path, quick_hash FROM tracks ORDER BY path ASC')
+      .all();
+    database.close();
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.path)).toEqual([firstPath, secondPath].sort());
+    expect(rows[0].quick_hash).toBeTruthy();
+    expect(rows[0].quick_hash).toBe(rows[1].quick_hash);
+    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(2);
     harness.cleanup();
   });
 

@@ -52,6 +52,7 @@ import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { ArtistImageCacheSummary, ArtistImageJobStatus, BpmAnalysisJobStatus, ReplayGainAnalysisJobStatus, DuplicateTrackIndexSummary } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { EqPanel } from '../components/audio/EqPanel';
+import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 import { NetworkMetadataPanel } from '../components/library/NetworkMetadataPanel';
 import { LyricsSettingsPanel } from '../components/lyrics/LyricsSettingsDrawer';
@@ -3008,6 +3009,38 @@ export const SettingsPage = (): JSX.Element => {
         terms: ['曲库文件夹', '管理本地音乐来源和扫描入口。', 'library folders', 'scan', 'folder', '曲库', '文件夹', '扫描'],
       },
       {
+        id: 'row-live-library-updates',
+        sectionKey: 'library',
+        targetId: 'settings-row-live-library-updates',
+        title: '\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93',
+        description: '\u76d1\u542c\u672c\u5730\u66f2\u5e93\u6587\u4ef6\u5939\uff0c\u65b0\u589e\u6216\u4fee\u6539\u97f3\u9891\u6587\u4ef6\u4f1a\u81ea\u52a8\u8fdb\u5165\u66f2\u5e93\u3002',
+        terms: [
+          '\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93',
+          'library watcher',
+          'live library',
+          'auto rescan',
+          'watcher',
+          '\u81ea\u52a8\u626b\u63cf',
+          '\u81ea\u52a8\u5237\u65b0',
+          '\u65b0\u589e\u6b4c\u66f2',
+        ],
+      },
+      {
+        id: 'row-live-library-auto-hide-deleted',
+        sectionKey: 'library',
+        targetId: 'settings-row-live-library-auto-hide-deleted',
+        title: '\u5220\u9664\u540e\u81ea\u52a8\u9690\u85cf\u66f2\u76ee',
+        description: '\u5220\u9664\u4e8b\u4ef6\u53ea\u628a\u7cbe\u786e\u8def\u5f84\u6807\u8bb0\u4e3a missing\uff0c\u4e0d\u5220\u9664\u78c1\u76d8\u6587\u4ef6\u3002',
+        terms: [
+          '\u5220\u9664\u540e\u81ea\u52a8\u9690\u85cf\u66f2\u76ee',
+          'auto hide deleted',
+          'missing',
+          'delete watcher',
+          '\u5220\u9664\u6b4c\u66f2',
+          '\u81ea\u52a8\u9690\u85cf',
+        ],
+      },
+      {
         id: 'row-artist-wall-artwork',
         sectionKey: 'library',
         targetId: 'settings-row-artist-wall-artwork',
@@ -4635,6 +4668,22 @@ export const SettingsPage = (): JSX.Element => {
   const handleCloseToTrayToggle = (): void => {
     const nextHideToTrayOnClose = !(appSettings?.hideToTrayOnClose ?? false);
     patchAppSettings({ hideToTrayOnClose: nextHideToTrayOnClose });
+  };
+
+  const handleLiveLibraryUpdatesToggle = (): void => {
+    const nextEnabled = !(appSettings?.liveLibraryUpdatesEnabled ?? false);
+    patchAppSettings({
+      liveLibraryUpdatesEnabled: nextEnabled,
+      liveLibraryAutoHideDeletedEnabled: nextEnabled ? appSettings?.liveLibraryAutoHideDeletedEnabled === true : false,
+    });
+  };
+
+  const handleLiveLibraryAutoHideDeletedToggle = (): void => {
+    if (!appSettings?.liveLibraryUpdatesEnabled) {
+      return;
+    }
+
+    patchAppSettings({ liveLibraryAutoHideDeletedEnabled: !(appSettings?.liveLibraryAutoHideDeletedEnabled ?? false) });
   };
 
   const handleArtistWallAlbumArtworkToggle = (): void => {
@@ -6680,6 +6729,33 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
                 <LibraryFoldersPanel />
+              </div>
+              <SettingRow
+                id="settings-row-live-library-updates"
+                highlighted={highlightedSettingId === 'settings-row-live-library-updates'}
+                title={'\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93'}
+                description={'\u5f00\u542f\u540e\u4f1a\u76d1\u542c\u5df2\u6dfb\u52a0\u7684\u672c\u5730\u66f2\u5e93\u6587\u4ef6\u5939\uff0c\u65b0\u589e\u6216\u4fee\u6539\u97f3\u9891\u6587\u4ef6\u4f1a\u81ea\u52a8\u8fdb\u5165\u66f2\u5e93\uff1b\u9ed8\u8ba4\u5173\u95ed\u3002'}
+              >
+                <ToggleButton
+                  active={appSettings?.liveLibraryUpdatesEnabled ?? false}
+                  disabled={!appSettings}
+                  onClick={handleLiveLibraryUpdatesToggle}
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-live-library-auto-hide-deleted"
+                highlighted={highlightedSettingId === 'settings-row-live-library-auto-hide-deleted'}
+                title={'\u5220\u9664\u540e\u81ea\u52a8\u9690\u85cf\u66f2\u76ee'}
+                description={'\u5371\u9669\u5f00\u5173\u3002\u4ec5\u5728\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93\u5f00\u542f\u65f6\u751f\u6548\uff0c\u53ea\u628a\u7cbe\u786e\u5220\u9664\u8def\u5f84\u6807\u8bb0\u4e3a missing\uff0c\u4e0d\u5220\u9664\u78c1\u76d8\u6587\u4ef6\u3002'}
+              >
+                <ToggleButton
+                  active={appSettings?.liveLibraryAutoHideDeletedEnabled ?? false}
+                  disabled={!appSettings || !appSettings.liveLibraryUpdatesEnabled}
+                  onClick={handleLiveLibraryAutoHideDeletedToggle}
+                />
+              </SettingRow>
+              <div id="settings-row-library-lab" data-search-highlight={highlightedSettingId === 'settings-row-library-lab' ? 'true' : undefined}>
+                <LibraryDiagnosticsPanel />
               </div>
               <SettingRow
                 id="settings-row-artist-wall-artwork"

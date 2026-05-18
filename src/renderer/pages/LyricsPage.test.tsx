@@ -334,6 +334,25 @@ const QueueSeed = ({
   return children;
 };
 
+const QueueSeedWithTracks = ({
+  children,
+  currentTrackId,
+  tracks,
+}: {
+  children: JSX.Element;
+  currentTrackId: string;
+  tracks: LibraryTrack[];
+}): JSX.Element => {
+  const { replaceQueue, setCurrentTrackId } = usePlaybackQueue();
+
+  useEffect(() => {
+    replaceQueue(tracks);
+    setCurrentTrackId(currentTrackId);
+  }, [currentTrackId, replaceQueue, setCurrentTrackId, tracks]);
+
+  return children;
+};
+
 const mockEcho = (
   track: LibraryTrack | null,
   positionSeconds = 0,
@@ -1043,6 +1062,73 @@ describe("LyricsPage", () => {
     video.dispatchEvent(new Event("loadedmetadata"));
 
     await waitFor(() => expect(video.currentTime).toBeCloseTo(9.2, 3));
+  });
+
+  it("uses current-track audio status for MV when playback status is stale", async () => {
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
+    const staleTrack = makeTrack({ id: "track-stale", path: "D:\\Music\\stale.flac", title: "Stale Song" });
+    const currentTrack = makeTrack({ id: "track-current", path: "D:\\Music\\current.flac", title: "Current Song" });
+    mockEcho(staleTrack, 0);
+    window.echo = {
+      ...window.echo,
+      audio: {
+        ...window.echo.audio,
+        getStatus: vi.fn().mockResolvedValue(makeAudioStatus(currentTrack, 5)),
+      },
+    } as unknown as Window["echo"];
+    attachMvBridge(makeTrackVideo({ trackId: currentTrack.id, mediaUrl: "echo-video://mv/current-video" }));
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={currentTrack}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo.mv?.getSelected).toHaveBeenCalledWith(currentTrack.id));
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(video.getAttribute("src")).toBe("echo-video://mv/current-video");
+    expect(screen.getByRole("heading", { name: "Current Song" })).toBeTruthy();
+  });
+
+  it("does not let a stale queue current track override the MV audio status track", async () => {
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
+    const staleTrack = makeTrack({ id: "track-stale", path: "D:\\Music\\stale.flac", title: "Stale Song" });
+    const currentTrack = makeTrack({ id: "track-current", path: "D:\\Music\\current.flac", title: "Current Song" });
+    mockEcho(staleTrack, 0);
+    window.echo = {
+      ...window.echo,
+      audio: {
+        ...window.echo.audio,
+        getStatus: vi.fn().mockResolvedValue(makeAudioStatus(currentTrack, 5)),
+      },
+    } as unknown as Window["echo"];
+    attachMvBridge(makeTrackVideo({ trackId: currentTrack.id, mediaUrl: "echo-video://mv/current-video" }));
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeedWithTracks currentTrackId={staleTrack.id} tracks={[staleTrack, currentTrack]}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeedWithTracks>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo.mv?.getSelected).toHaveBeenCalledWith(currentTrack.id));
+    expect(vi.mocked(window.echo.mv?.getSelected).mock.calls.at(-1)?.[0]).toBe(currentTrack.id);
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(video.getAttribute("src")).toBe("echo-video://mv/current-video");
+    expect(screen.getByRole("heading", { name: "Current Song" })).toBeTruthy();
   });
 
   it("updates the MV audio clock anchor from audio status pushes", async () => {
@@ -2348,6 +2434,7 @@ describe("LyricsPage", () => {
     );
     expect(page.dataset.background).toBe("cover");
     expect(page.dataset.smartReadable).toBe("true");
+    expect(page.dataset.lyricsColorMode).toBe("manual");
     expect(container.querySelector(".lyrics-mv-panel")?.getAttribute("data-lyrics-readability")).toBe("true");
     expect(page.style.getPropertyValue("--lyrics-color")).toBe("#FFFFFF");
     expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);

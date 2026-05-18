@@ -189,6 +189,13 @@ export const registerIpc = (): void => {
       getLibraryService().syncArtistImageBackfillState();
     }
 
+    if (
+      typeof settingsPatch.liveLibraryUpdatesEnabled === 'boolean' ||
+      typeof settingsPatch.liveLibraryAutoHideDeletedEnabled === 'boolean'
+    ) {
+      getLibraryService().syncLiveLibraryWatcherFromSettings();
+    }
+
     return settings;
   });
   ipcMain.handle(IpcChannels.AppValidateGlobalShortcut, (_event: IpcMainInvokeEvent, accelerator: unknown) =>
@@ -207,6 +214,7 @@ export const registerIpc = (): void => {
     destroyTray();
     const settings = setAppSettings({ ...defaultSettings });
     refreshBackgroundSpaceRegistration();
+    libraryService.syncLiveLibraryWatcherFromSettings();
     await setDiscordPresenceEnabled(settings.discordRichPresenceEnabled);
     getLastFmService().disconnect();
     return settings;

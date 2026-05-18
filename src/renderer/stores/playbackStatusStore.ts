@@ -156,6 +156,7 @@ export const beginPlaybackSwitchSnapshot = (playbackStatus: PlaybackStatus): Pla
   const wasPlaying = getAuthoritativeState() === 'playing';
 
   return setPlaybackStatusSnapshot({
+    audioStatus: null,
     playbackStatus,
     playbackVisualIntent: wasPlaying
       ? {

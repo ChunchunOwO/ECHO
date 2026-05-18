@@ -457,6 +457,45 @@ describe('LyricsSettingsDrawer', () => {
     window.removeEventListener('lyrics:display-settings-changed', previewListener);
   });
 
+  it('keeps custom color picker changes live while saving them after a short debounce', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    const previewListener = vi.fn();
+    window.addEventListener('lyrics:display-settings-changed', previewListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
+    fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
+    await waitFor(() => expect(container.querySelector('.lyrics-color-panel')).toBeTruthy());
+
+    vi.useFakeTimers();
+    const colorPanel = container.querySelector('.lyrics-color-panel') as HTMLElement;
+    const colorInput = colorPanel.querySelector<HTMLInputElement>('input[type="color"]') as HTMLInputElement;
+    const colorPreview = colorPanel.querySelector('.lyrics-color-preview') as HTMLElement;
+
+    fireEvent.change(colorInput, { target: { value: '#22CC88' } });
+
+    expect(colorPreview.style.getPropertyValue('--lyrics-preview-color')).toBe('#22cc88');
+    expect(previewListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsColor: '#22cc88' } }));
+    expect(setSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
+    expect(setSettings).toHaveBeenCalledWith({ lyricsColor: '#22cc88' });
+
+    window.removeEventListener('lyrics:display-settings-changed', previewListener);
+  });
+
   it('lets users toggle romanization display', async () => {
     const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsRomanizationEnabled: false }));
     window.echo = {

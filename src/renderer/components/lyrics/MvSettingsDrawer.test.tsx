@@ -8,7 +8,7 @@ import { I18nProvider } from '../../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { MvSettingsDrawer } from './MvSettingsDrawer';
 
-const makeTrack = (): LibraryTrack => ({
+const makeTrack = (overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
   id: 'track-1',
   path: 'D:\\Music\\song.flac',
   title: 'Test Song',
@@ -27,6 +27,7 @@ const makeTrack = (): LibraryTrack => ({
   coverId: null,
   coverThumb: null,
   fieldSources: {},
+  ...overrides,
 });
 
 const makeStreamingTrack = (): LibraryTrack => ({
@@ -45,7 +46,7 @@ const makeStreamingTrack = (): LibraryTrack => ({
   coverThumb: 'echo-cover://thumb/streaming',
 });
 
-const makeVideo = (): TrackVideo => ({
+const makeVideo = (overrides: Partial<TrackVideo> = {}): TrackVideo => ({
   id: 'video-1',
   trackId: 'track-1',
   provider: 'local',
@@ -72,6 +73,7 @@ const makeVideo = (): TrackVideo => ({
   rawProviderJson: null,
   createdAt: '2026-05-13T00:00:00.000Z',
   updatedAt: '2026-05-13T00:00:00.000Z',
+  ...overrides,
 });
 
 const makeCandidate = (): MvMatchCandidate => ({
@@ -102,19 +104,41 @@ const defaultMvSettings: MvSettings = {
   allow60fps: true,
 };
 
-const QueueSeed = ({ children, track }: { children: JSX.Element; track: LibraryTrack }): JSX.Element => {
+const QueueSeed = ({
+  children,
+  currentTrackId,
+  track,
+  tracks,
+}: {
+  children: JSX.Element;
+  currentTrackId?: string;
+  track: LibraryTrack;
+  tracks?: LibraryTrack[];
+}): JSX.Element => {
   const { replaceQueue, setCurrentTrackId } = usePlaybackQueue();
 
   useEffect(() => {
-    replaceQueue([track]);
-    setCurrentTrackId(track.id);
-  }, [replaceQueue, setCurrentTrackId, track]);
+    replaceQueue(tracks ?? [track]);
+    setCurrentTrackId(currentTrackId ?? track.id);
+  }, [currentTrackId, replaceQueue, setCurrentTrackId, track, tracks]);
 
   return children;
 };
 
-const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: TrackVideo | null = null, track: LibraryTrack = makeTrack()) => {
+const renderDrawer = (
+  settings: MvSettings = defaultMvSettings,
+  selectedVideo: TrackVideo | null = null,
+  track: LibraryTrack = makeTrack(),
+  options: {
+    audioTrackId?: string | null;
+    playbackTrackId?: string | null;
+    queueCurrentTrackId?: string;
+    queueTracks?: LibraryTrack[];
+  } = {},
+) => {
   window.localStorage.setItem('echo-next.locale', 'en-US');
+  const audioTrackId = options.audioTrackId ?? track.id;
+  const playbackTrackId = options.playbackTrackId ?? track.id;
   window.echo = {
     mv: {
       getSelected: vi.fn().mockResolvedValue(selectedVideo),
@@ -137,7 +161,7 @@ const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: T
     playback: {
       getStatus: vi.fn().mockResolvedValue({
         state: 'playing',
-        currentTrackId: 'track-1',
+        currentTrackId: playbackTrackId,
         positionMs: 0,
         durationMs: 180000,
         filePath: 'D:\\Music\\song.flac',
@@ -160,6 +184,22 @@ const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: T
       resolveLocalAudioFiles: vi.fn(),
       onLocalAudioFilesOpened: vi.fn(),
     },
+    audio: {
+      getStatus: vi.fn().mockResolvedValue({
+        state: 'playing',
+        currentTrackId: audioTrackId,
+        currentFilePath: 'D:\\Music\\song.flac',
+        positionSeconds: 0,
+        durationSeconds: 180,
+        sampleRate: 44100,
+        bitDepth: 16,
+        channels: 2,
+        bitrate: null,
+        codec: 'flac',
+        outputSampleRate: 44100,
+        playbackRate: 1,
+      }),
+    },
     app: {
       getSettings: vi.fn().mockResolvedValue({ lyricsMvAutoShowTrackInfoDisabled: true }),
       setSettings: vi.fn().mockResolvedValue({ lyricsHeaderHidden: false }),
@@ -169,7 +209,7 @@ const renderDrawer = (settings: MvSettings = defaultMvSettings, selectedVideo: T
   return render(
     <I18nProvider>
       <PlaybackQueueProvider>
-        <QueueSeed track={track}>
+        <QueueSeed currentTrackId={options.queueCurrentTrackId} track={track} tracks={options.queueTracks}>
           <MvSettingsDrawer isOpen onClose={vi.fn()} />
         </QueueSeed>
       </PlaybackQueueProvider>
@@ -442,6 +482,35 @@ describe('MvSettingsDrawer', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
 
     await waitFor(() => expect(window.echo.mv.searchNetworkCandidates).toHaveBeenCalledWith('track-1', 'Roselia HEROIC ADVENT'));
+  });
+
+  it('applies searched MV candidates to the audio status track when the queue is stale', async () => {
+    const staleTrack = makeTrack({ id: 'track-stale', title: 'Stale Song' });
+    const currentTrack = makeTrack({ id: 'track-current', title: 'Current Song' });
+    const currentCandidate = { ...makeCandidate(), id: 'candidate-current', title: 'Current Song MV' };
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    renderDrawer(defaultMvSettings, null, currentTrack, {
+      audioTrackId: currentTrack.id,
+      playbackTrackId: staleTrack.id,
+      queueCurrentTrackId: staleTrack.id,
+      queueTracks: [staleTrack, currentTrack],
+    });
+    vi.mocked(window.echo.mv.searchNetworkCandidates).mockResolvedValue([currentCandidate]);
+    vi.mocked(window.echo.mv.selectVideo).mockResolvedValue(makeVideo({ id: currentCandidate.id, trackId: currentTrack.id }));
+
+    const input = await screen.findByRole('textbox', { name: /MV search keywords/ });
+    fireEvent.change(input, { target: { value: 'Current Song MV' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
+    fireEvent.click(await screen.findByRole('button', { name: /Current Song MV/ }));
+
+    await waitFor(() => expect(window.echo.mv.searchNetworkCandidates).toHaveBeenCalledWith(currentTrack.id, 'Current Song MV'));
+    await waitFor(() => expect(window.echo.mv.selectVideo).toHaveBeenCalledWith(currentTrack.id, currentCandidate.id));
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { trackId: currentTrack.id },
+        type: 'mv:changed',
+      }),
+    );
   });
 
   it('shows an empty network search result as a neutral status', async () => {

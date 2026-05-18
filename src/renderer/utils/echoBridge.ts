@@ -419,6 +419,8 @@ export const getEqBridge = (): Window['echo']['eq'] | null => getEchoBridge()?.e
 
 export const getLibraryBridge = (): Window['echo']['library'] | null => getEchoBridge()?.library ?? null;
 
+export const getLibraryLabBridge = (): Window['echo']['libraryLab'] | null => getEchoBridge()?.libraryLab ?? null;
+
 export const getLastFmBridge = (): Window['echo']['lastfm'] | null => getEchoBridge()?.lastfm ?? null;
 
 export const getMvBridge = (): Window['echo']['mv'] | null => getEchoBridge()?.mv ?? null;

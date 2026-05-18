@@ -608,6 +608,44 @@ describe('MvService', () => {
     expect(resolved.video.mediaUrl).toContain('echo-mv://stream/');
   });
 
+  it('falls back to auto quality when the saved MV quality id is stale', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1stalequality',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1stalequality',
+      providerUrl: 'https://www.bilibili.com/video/BV1stalequality',
+      thumbnailUrl: null,
+      uploader: null,
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.95,
+      playableInApp: true,
+      reasons: ['test'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => [makeResolvedVariant({ id: 'bilibili-qn-80' })]),
+    };
+    const { database, service, track } = createHarness([provider]);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = service.selectVideo(track.id, resolvedCandidate.id);
+    database.prepare('UPDATE track_videos SET selected_quality_id = ? WHERE id = ?').run('old-expired-quality', selected.id);
+
+    const resolved = await service.resolveStreams(selected.id);
+
+    expect(resolved.video.playableInApp).toBe(true);
+    expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-80`);
+    expect(resolved.video.qualityLabel).toBe('1080p');
+    expect(resolved.video.selectedQualityId).toBe('auto');
+  });
+
   it('rebuilds MV cache and hides raw SQLite errors when resolveStreams cannot read video rows', async () => {
     const { database, service } = createHarness();
     const originalPrepare = database.prepare.bind(database);

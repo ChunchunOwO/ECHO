@@ -21,6 +21,11 @@ import type {
   LibraryTrackLocateResult,
   LibraryCleanupResult,
   LibraryMaintenanceCleanupResult,
+  LibraryMoveCandidate,
+  LibraryMoveCandidateConfidence,
+  LibraryMoveCandidateOptions,
+  LibraryMoveRepairResult,
+  LibraryLabState,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -75,6 +80,11 @@ export type {
   LibraryTrackLocateResult,
   LibraryCleanupResult,
   LibraryMaintenanceCleanupResult,
+  LibraryMoveCandidate,
+  LibraryMoveCandidateConfidence,
+  LibraryMoveCandidateOptions,
+  LibraryMoveRepairResult,
+  LibraryLabState,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -188,6 +198,13 @@ export type TrackWrite = Omit<ParsedTrackMetadata, 'embeddedCover'> &
     coverId: string | null;
     createdAt?: string;
     updatedAt: string;
+    fileIdentity?: string | null;
+    fileIdentitySource?: 'win32-file-id' | 'posix-dev-ino' | 'unsupported' | 'error' | null;
+    quickHash?: string | null;
+    quickHashVersion?: number | null;
+    identityStatus?: 'ok' | 'partial' | 'unsupported' | 'error' | null;
+    identityUpdatedAt?: string | null;
+    identityError?: string | null;
   };
 
 export type CoverSource = 'manual' | 'embedded' | 'folder' | 'network' | 'default';
@@ -227,6 +244,9 @@ export type CoverCacheRepairOptions = {
 
 export type StoredTrackCoverState = StoredTrackFingerprint & {
   coverId: string | null;
+  metadataStatus?: MetadataStatus | string | null;
+  embeddedMetadataStatus?: EmbeddedReadinessStatus | string | null;
+  embeddedCoverStatus?: EmbeddedReadinessStatus | string | null;
   coverSource: CoverSource | null;
   sourceHash: string | null;
   mimeType: string | null;
@@ -235,6 +255,13 @@ export type StoredTrackCoverState = StoredTrackFingerprint & {
   largePath: string | null;
   originalRef: string | null;
   cacheVersion: number | null;
+  fileIdentity?: string | null;
+  fileIdentitySource?: string | null;
+  quickHash?: string | null;
+  quickHashVersion?: number | null;
+  identityStatus?: string | null;
+  identityUpdatedAt?: string | null;
+  identityError?: string | null;
 };
 
 export type ScanOptions = {
@@ -273,6 +300,7 @@ export type LibraryScanMode = 'normal' | 'embedded-tags-all' | 'embedded-tags-mi
 
 export type LibraryScanOptions = {
   mode?: LibraryScanMode;
+  deferGroupingRefresh?: boolean;
 };
 
 export type ScanResultCounts = {

@@ -1324,6 +1324,43 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
   ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGrouping());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
+  ipcMain.handle(IpcChannels.LibraryGetMoveCandidates, (_event, options: unknown) =>
+    getLibraryService().getMoveCandidates(
+      options && typeof options === 'object' && !Array.isArray(options)
+        ? { limit: typeof (options as { limit?: unknown }).limit === 'number' ? (options as { limit: number }).limit : undefined }
+        : {},
+    ),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabGetState, () => getLibraryService().getLibraryLabState());
+  ipcMain.handle(IpcChannels.LibraryLabSetWatcherEnabled, (_event, enabled: unknown) =>
+    getLibraryService().setLibraryLabWatcherEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabSetAutoRescanEnabled, (_event, enabled: unknown) =>
+    getLibraryService().setLibraryLabAutoRescanEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabSetMoveCandidateEnabled, (_event, enabled: unknown) =>
+    getLibraryService().setLibraryLabMoveCandidateEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabSetMoveRepairLabEnabled, (_event, enabled: unknown) =>
+    getLibraryService().setLibraryLabMoveRepairLabEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabStartWatcher, () => getLibraryService().startLibraryLabWatcher());
+  ipcMain.handle(IpcChannels.LibraryLabStopWatcher, () => getLibraryService().stopLibraryLabWatcher());
+  ipcMain.handle(IpcChannels.LibraryLabRefreshDiagnostics, () => getLibraryService().refreshLibraryLabDiagnostics());
+  ipcMain.handle(IpcChannels.LibraryLabBackfillPlaceholderMetadata, () => getLibraryService().backfillLibraryLabPlaceholderMetadata());
+  ipcMain.handle(IpcChannels.LibraryLabGetMoveCandidates, (_event, options: unknown) =>
+    getLibraryService().getLibraryLabMoveCandidates(
+      options && typeof options === 'object' && !Array.isArray(options)
+        ? { limit: typeof (options as { limit?: unknown }).limit === 'number' ? (options as { limit: number }).limit : undefined }
+        : {},
+    ),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabDryRunMoveRepair, (_event, candidateId: unknown) =>
+    getLibraryService().dryRunLibraryLabMoveRepair(requireText(candidateId, 'candidateId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryLabApplyMoveRepair, (_event, candidateId: unknown) =>
+    getLibraryService().applyLibraryLabMoveRepair(requireText(candidateId, 'candidateId')),
+  );
   ipcMain.handle(IpcChannels.LibraryChooseTrackCover, async () => {
     const result = await dialog.showOpenDialog({
       title: '选择封面',

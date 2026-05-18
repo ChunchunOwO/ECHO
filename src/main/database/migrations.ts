@@ -1047,6 +1047,27 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 31,
+    apply: (database) => {
+      addColumnIfMissing(database, 'tracks', 'file_identity', 'file_identity TEXT');
+      addColumnIfMissing(database, 'tracks', 'file_identity_source', 'file_identity_source TEXT');
+      addColumnIfMissing(database, 'tracks', 'quick_hash', 'quick_hash TEXT');
+      addColumnIfMissing(database, 'tracks', 'quick_hash_version', 'quick_hash_version INTEGER');
+      addColumnIfMissing(database, 'tracks', 'identity_status', 'identity_status TEXT');
+      addColumnIfMissing(database, 'tracks', 'identity_updated_at', 'identity_updated_at TEXT');
+      addColumnIfMissing(database, 'tracks', 'identity_error', 'identity_error TEXT');
+
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS idx_tracks_file_identity
+          ON tracks(file_identity)
+          WHERE file_identity IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_tracks_quick_hash
+          ON tracks(quick_hash)
+          WHERE quick_hash IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

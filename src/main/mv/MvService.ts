@@ -1378,12 +1378,17 @@ export class MvService {
     const row = this.requireRow(videoId);
     const variants = this.getValidStreamRows(videoId);
     const selected = this.chooseStreamVariant(row, variants);
+    const requestedQualityId = row.selected_quality_id ?? 'auto';
+    const nextSelectedQualityId =
+      requestedQualityId !== 'auto' && !variants.some((variant) => variant.variant_id === requestedQualityId)
+        ? 'auto'
+        : requestedQualityId;
     const timestamp = nowIso();
 
     this.database
       .prepare(
         `UPDATE track_videos
-         SET width = ?, height = ?, fps = ?, mime_type = ?, quality_label = ?, selected_quality_id = COALESCE(selected_quality_id, 'auto'), updated_at = ?
+         SET width = ?, height = ?, fps = ?, mime_type = ?, quality_label = ?, selected_quality_id = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -1392,6 +1397,7 @@ export class MvService {
         selected?.fps ?? null,
         selected?.mime_type ?? null,
         selected?.label ?? null,
+        nextSelectedQualityId,
         timestamp,
         videoId,
       );
@@ -1400,7 +1406,10 @@ export class MvService {
   private chooseStreamVariant(row: TrackVideoRow, variants: TrackVideoStreamRow[]): TrackVideoStreamRow | null {
     const selectedQualityId = row.selected_quality_id ?? 'auto';
     if (selectedQualityId !== 'auto') {
-      return variants.find((variant) => variant.variant_id === selectedQualityId) ?? null;
+      const selected = variants.find((variant) => variant.variant_id === selectedQualityId);
+      if (selected) {
+        return selected;
+      }
     }
 
     const settings = this.getSettings();

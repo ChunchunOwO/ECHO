@@ -16,6 +16,10 @@ import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, type D
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 60;
+const maxPreservedRefreshPageSize = 500;
+const preserveScrollThresholdPx = 80;
+const isPreserveScrollLibraryEvent = (event: Event): boolean =>
+  event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
 const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'default', labelKey: 'library.sort.default' },
   { value: 'titleAsc', labelKey: 'library.albums.sort.titleAsc' },
@@ -96,7 +100,11 @@ export const AlbumsPage = (): JSX.Element => {
   }, [isSortOpen]);
 
   const loadAlbums = useCallback(
-    async (nextPage: number, mode: 'replace' | 'append') => {
+    async (
+      nextPage: number,
+      mode: 'replace' | 'append',
+      options: { pageSizeOverride?: number; restoreScrollTop?: number } = {},
+    ) => {
       if (mode === 'append' && isLoadingRef.current) {
         return;
       }
@@ -121,7 +129,7 @@ export const AlbumsPage = (): JSX.Element => {
 
         const result = await library.getAlbums({
           page: nextPage,
-          pageSize,
+          pageSize: options.pageSizeOverride ?? pageSize,
           search,
           sort,
           sourceProvider: sourceMode,
@@ -132,11 +140,15 @@ export const AlbumsPage = (): JSX.Element => {
         }
 
         setAlbums((current) => (mode === 'append' ? [...current, ...result.items] : result.items));
-        setPage(result.page);
+        setPage(options.pageSizeOverride && mode === 'replace' ? Math.max(1, Math.ceil(result.items.length / pageSize)) : result.page);
         setTotal(result.total);
         setHasMore(result.hasMore);
         if (mode === 'replace') {
           setFailedCoverUrls({});
+        }
+        if (typeof options.restoreScrollTop === 'number') {
+          const restoreScrollTop = options.restoreScrollTop;
+          window.setTimeout(() => writePageScrollTop(pageRootRef.current, restoreScrollTop), 0);
         }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
@@ -162,8 +174,13 @@ export const AlbumsPage = (): JSX.Element => {
   }, [loadAlbums]);
 
   useEffect(() => {
-    const handleLibraryChanged = (): void => {
-      if (readAlbumWallScrollTop(pageRootRef.current) > 80) {
+    const handleLibraryChanged = (event: Event): void => {
+      const scrollTop = readAlbumWallScrollTop(pageRootRef.current);
+      if (isPreserveScrollLibraryEvent(event) && scrollTop > preserveScrollThresholdPx) {
+        void loadAlbums(1, 'replace', {
+          pageSizeOverride: Math.min(maxPreservedRefreshPageSize, Math.max(pageSize, page * pageSize, albums.length)),
+          restoreScrollTop: scrollTop,
+        });
         return;
       }
 
@@ -173,7 +190,7 @@ export const AlbumsPage = (): JSX.Element => {
 
     window.addEventListener('library:changed', handleLibraryChanged);
     return () => window.removeEventListener('library:changed', handleLibraryChanged);
-  }, [loadAlbums]);
+  }, [albums.length, loadAlbums, page]);
 
   useEffect(() => {
     if (albums.length === 0) {

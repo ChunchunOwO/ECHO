@@ -117,6 +117,8 @@ export type AppSettings = {
   artistWallAlbumFallbackForMissingAvatars?: boolean;
   autoFetchArtistImages?: boolean;
   artistImageFetchPaused?: boolean;
+  liveLibraryUpdatesEnabled?: boolean;
+  liveLibraryAutoHideDeletedEnabled?: boolean;
   autoUpdateEnabled?: boolean;
   autoAccountCheckOnStartup?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;

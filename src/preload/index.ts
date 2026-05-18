@@ -200,10 +200,18 @@ const echoApi: EchoApi = {
       ipcRenderer.on(IpcChannels.LibraryArtistImagesUpdated, listener);
       return () => ipcRenderer.off(IpcChannels.LibraryArtistImagesUpdated, listener);
     },
+    onLibraryChanged: (handler) => {
+      const listener = (): void => {
+        handler();
+      };
+      ipcRenderer.on(IpcChannels.LibraryChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.LibraryChanged, listener);
+    },
     getAlbumTracks: (albumId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumTracks, albumId, query),
     getSummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetSummary),
     refreshAlbumGrouping: () => ipcRenderer.invoke(IpcChannels.LibraryRefreshAlbumGrouping),
     getDiagnostics: () => ipcRenderer.invoke(IpcChannels.LibraryGetDiagnostics),
+    getMoveCandidates: (options) => ipcRenderer.invoke(IpcChannels.LibraryGetMoveCandidates, options),
     chooseTrackCover: () => ipcRenderer.invoke(IpcChannels.LibraryChooseTrackCover),
     loadEmbeddedTrackTags: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryLoadEmbeddedTrackTags, trackId),
     updateTrackTags: (request) => ipcRenderer.invoke(IpcChannels.LibraryUpdateTrackTags, request),
@@ -250,6 +258,20 @@ const echoApi: EchoApi = {
     getBpmAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetBpmAnalysisStatus, jobId),
     startReplayGainAnalysis: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartReplayGainAnalysis, options),
     getReplayGainAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetReplayGainAnalysisStatus, jobId),
+  },
+  libraryLab: {
+    setWatcherEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LibraryLabSetWatcherEnabled, enabled),
+    setAutoRescanEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LibraryLabSetAutoRescanEnabled, enabled),
+    setMoveCandidateEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LibraryLabSetMoveCandidateEnabled, enabled),
+    setMoveRepairLabEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LibraryLabSetMoveRepairLabEnabled, enabled),
+    getState: () => ipcRenderer.invoke(IpcChannels.LibraryLabGetState),
+    startWatcher: () => ipcRenderer.invoke(IpcChannels.LibraryLabStartWatcher),
+    stopWatcher: () => ipcRenderer.invoke(IpcChannels.LibraryLabStopWatcher),
+    refreshDiagnostics: () => ipcRenderer.invoke(IpcChannels.LibraryLabRefreshDiagnostics),
+    backfillPlaceholderMetadata: () => ipcRenderer.invoke(IpcChannels.LibraryLabBackfillPlaceholderMetadata),
+    getMoveCandidates: (options) => ipcRenderer.invoke(IpcChannels.LibraryLabGetMoveCandidates, options),
+    dryRunMoveRepair: (candidateId) => ipcRenderer.invoke(IpcChannels.LibraryLabDryRunMoveRepair, candidateId),
+    applyMoveRepair: (candidateId) => ipcRenderer.invoke(IpcChannels.LibraryLabApplyMoveRepair, candidateId),
   },
   playback: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),

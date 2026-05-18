@@ -1000,6 +1000,32 @@ describe('Audio Core sample-rate regression guard', () => {
     }
   });
 
+  it('resets the reported loading position when switching to a new track', async () => {
+    const { bridges, decoder, session } = createSessionHarness([probe('first.flac', 44100), probe('second.flac', 44100)]);
+    const loadingPositions: number[] = [];
+
+    try {
+      await session.playLocalFile({ filePath: 'first.flac', trackId: 'first', startSeconds: 8, output: { outputMode: 'shared' } });
+      bridges[0].positionSeconds = 16;
+      session.on('status', (status) => {
+        if (status.currentTrackId === 'second' && status.state === 'loading') {
+          loadingPositions.push(status.positionSeconds);
+        }
+      });
+
+      const status = await session.playLocalFile({ filePath: 'second.flac', trackId: 'second', output: { outputMode: 'shared' } });
+
+      expect(loadingPositions[0]).toBe(0);
+      expect(status.positionSeconds).toBe(0);
+      expect(decoder.decodeRequests.at(-1)).toMatchObject({
+        filePath: 'second.flac',
+        startSeconds: 0,
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('keeps playback running when the EQ control socket disconnects during sync', async () => {
     const syncSpy = vi.spyOn(getEqBridge(), 'syncStateToNative').mockRejectedValueOnce(new Error('eq_control_disconnected'));
     const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
@@ -1322,6 +1348,34 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.sharedDeviceSampleRate).toBe(48000);
     expect(status.resampling).toBe(true);
     expect(status.warnings).toContain('shared_output_resampling_or_mixer_rate_difference');
+  });
+
+  it('ignores stale explicit sample-rate settings in shared mode and stays on the mixer rate', async () => {
+    const { bridges, decoder, session } = createSessionHarness([probe('96.flac', 96000)], [48000]);
+
+    const status = await session.playLocalFile({
+      filePath: '96.flac',
+      output: {
+        outputMode: 'shared',
+        deviceIndex: 6,
+        deviceName: 'TEAC USB AUDIO DEVICE',
+        requestedOutputSampleRate: 96000,
+        sharedBackend: 'windows',
+      },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+    });
+    expect(status.requestedOutputSampleRate).toBe(48000);
+    expect(status.actualDeviceSampleRate).toBe(48000);
+    expect(status.decoderOutputSampleRate).toBe(48000);
+    expect(decoder.decodeRequests[0]).toMatchObject({
+      filePath: '96.flac',
+      decoderOutputSampleRate: 48000,
+      resamplerEngine: 'soxr',
+    });
   });
 
   it('uses the system default shared mix rate without pinning the default device', async () => {
@@ -3501,6 +3555,35 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.playbackRate).toBe(1.2);
     expect(status.playbackSpeedMode).toBe('nightcore');
     expect(status.positionSeconds).toBe(21.75);
+    expect(bridges).toHaveLength(1);
+    expect(bridges[0].stop).not.toHaveBeenCalled();
+    expect(decoder.decodeRequests).toHaveLength(1);
+  });
+
+  it('restoring the same shared output while playing does not restart at the current position', async () => {
+    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 48000)]);
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: {
+        outputMode: 'shared',
+        deviceIndex: 6,
+        deviceName: 'TEAC USB AUDIO DEVICE',
+        sharedBackend: 'windows',
+        useJuceOutput: true,
+      },
+    });
+    bridges[0].positionSeconds = 4.25;
+    const status = await session.setOutput({
+      outputMode: 'shared',
+      deviceIndex: 6,
+      deviceName: 'TEAC USB AUDIO DEVICE',
+      sharedBackend: 'windows',
+      useJuceOutput: true,
+    });
+
+    expect(status.state).toBe('playing');
+    expect(status.positionSeconds).toBe(4.25);
     expect(bridges).toHaveLength(1);
     expect(bridges[0].stop).not.toHaveBeenCalled();
     expect(decoder.decodeRequests).toHaveLength(1);

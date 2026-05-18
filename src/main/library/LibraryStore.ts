@@ -79,6 +79,10 @@ type AlbumTrackIndexLink = {
   trackNo: number | null;
   position: number;
 };
+export type PlaceholderMetadataTrackTarget = {
+  folderId: string;
+  path: string;
+};
 type StandardAlbumTrackIndexLink = Omit<AlbumTrackIndexLink, 'albumId'>;
 type StandardAlbumGroup = AlbumIndexStats & {
   keyInput: AlbumKeyInput;
@@ -890,6 +894,64 @@ export class LibraryStore {
     return row ? this.mapScanJob(row) : null;
   }
 
+  getPlaceholderMetadataTrackCount(): number {
+    return Number(
+      this.getRow(
+        `SELECT COUNT(*) AS total
+         FROM tracks
+         WHERE missing = 0
+           AND (
+             metadata_status = 'fallback'
+             OR embedded_metadata_status IN ('pending', 'reading')
+           )`,
+      )?.total ?? 0,
+    );
+  }
+
+  getPlaceholderMetadataTrackTargets(limit = 500): PlaceholderMetadataTrackTarget[] {
+    const safeLimit = Math.max(1, Math.min(1000, Math.floor(limit)));
+    return this.allRows(
+      `SELECT folder_id, path
+       FROM tracks
+       WHERE missing = 0
+         AND (
+           metadata_status = 'fallback'
+           OR embedded_metadata_status IN ('pending', 'reading')
+         )
+       ORDER BY updated_at ASC, created_at ASC
+       LIMIT ?`,
+      safeLimit,
+    ).map((row) => ({
+      folderId: String(row.folder_id),
+      path: String(row.path),
+    }));
+  }
+
+  countPlaceholderMetadataTracksByPaths(paths: string[]): number {
+    if (paths.length === 0) {
+      return 0;
+    }
+
+    let count = 0;
+    for (const filePath of paths) {
+      count += Number(
+        this.getRow(
+          `SELECT COUNT(*) AS total
+           FROM tracks
+           WHERE missing = 0
+             AND path = ?
+             AND (
+               metadata_status = 'fallback'
+               OR embedded_metadata_status IN ('pending', 'reading')
+             )`,
+          resolve(filePath),
+        )?.total ?? 0,
+      );
+    }
+
+    return count;
+  }
+
   isScanCancelled(jobId: string): boolean {
     const row = this.getRow('SELECT cancel_requested FROM scan_jobs WHERE id = ?', jobId);
     return Number(row?.cancel_requested ?? 0) === 1;
@@ -934,7 +996,10 @@ export class LibraryStore {
   getTrackCacheStatesByFolder(folderId: string): Map<string, StoredTrackCoverState> {
     const rows = this.allRows(
       `SELECT
-        tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms, tracks.cover_id,
+        tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms,
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
+        tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
         covers.source_type, covers.source_hash, covers.mime_type,
         covers.thumb_path, covers.album_path, covers.large_path, covers.original_ref,
         covers.cache_version
@@ -951,6 +1016,9 @@ export class LibraryStore {
         sizeBytes: Number(row.size_bytes),
         mtimeMs: Number(row.mtime_ms),
         coverId: textOrNull(row.cover_id),
+        metadataStatus: textOrNull(row.metadata_status),
+        embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),
+        embeddedCoverStatus: textOrNull(row.embedded_cover_status),
         coverSource: coverSourceOrNull(row.source_type),
         sourceHash: textOrNull(row.source_hash),
         mimeType: textOrNull(row.mime_type),
@@ -959,6 +1027,13 @@ export class LibraryStore {
         largePath: textOrNull(row.large_path),
         originalRef: textOrNull(row.original_ref),
         cacheVersion: numberOrNull(row.cache_version),
+        fileIdentity: textOrNull(row.file_identity),
+        fileIdentitySource: textOrNull(row.file_identity_source),
+        quickHash: textOrNull(row.quick_hash),
+        quickHashVersion: numberOrNull(row.quick_hash_version),
+        identityStatus: textOrNull(row.identity_status),
+        identityUpdatedAt: textOrNull(row.identity_updated_at),
+        identityError: textOrNull(row.identity_error),
       });
     }
 
@@ -968,7 +1043,10 @@ export class LibraryStore {
   findTrackCoverState(filePath: string): StoredTrackCoverState | null {
     const row = this.getRow(
       `SELECT
-        tracks.id, tracks.size_bytes, tracks.mtime_ms, tracks.cover_id,
+        tracks.id, tracks.size_bytes, tracks.mtime_ms,
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
+        tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
         covers.source_type, covers.source_hash, covers.mime_type,
         covers.thumb_path, covers.album_path, covers.large_path, covers.original_ref,
         covers.cache_version
@@ -987,6 +1065,9 @@ export class LibraryStore {
       sizeBytes: Number(row.size_bytes),
       mtimeMs: Number(row.mtime_ms),
       coverId: textOrNull(row.cover_id),
+      metadataStatus: textOrNull(row.metadata_status),
+      embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),
+      embeddedCoverStatus: textOrNull(row.embedded_cover_status),
       coverSource: coverSourceOrNull(row.source_type),
       sourceHash: textOrNull(row.source_hash),
       mimeType: textOrNull(row.mime_type),
@@ -995,6 +1076,13 @@ export class LibraryStore {
       largePath: textOrNull(row.large_path),
       originalRef: textOrNull(row.original_ref),
       cacheVersion: numberOrNull(row.cache_version),
+      fileIdentity: textOrNull(row.file_identity),
+      fileIdentitySource: textOrNull(row.file_identity_source),
+      quickHash: textOrNull(row.quick_hash),
+      quickHashVersion: numberOrNull(row.quick_hash_version),
+      identityStatus: textOrNull(row.identity_status),
+      identityUpdatedAt: textOrNull(row.identity_updated_at),
+      identityError: textOrNull(row.identity_error),
     };
   }
 
@@ -1007,6 +1095,30 @@ export class LibraryStore {
 
     for (const id of missingIds) {
       const result = this.run('UPDATE tracks SET missing = 1, updated_at = ? WHERE id = ?', timestamp, id);
+      changed += Number(result.changes ?? 0);
+    }
+
+    return changed;
+  }
+
+  markTracksMissingByPaths(folderId: string, paths: string[], timestamp = nowIso()): number {
+    const normalizedPaths = Array.from(new Set(paths.map((filePath) => resolve(filePath)).filter(Boolean)));
+    if (normalizedPaths.length === 0) {
+      return 0;
+    }
+
+    let changed = 0;
+    for (let index = 0; index < normalizedPaths.length; index += 100) {
+      const batch = normalizedPaths.slice(index, index + 100);
+      const placeholders = batch.map(() => '?').join(', ');
+      const result = this.run(
+        `UPDATE tracks
+         SET missing = 1, updated_at = ?
+         WHERE folder_id = ? AND missing = 0 AND path IN (${placeholders})`,
+        timestamp,
+        folderId,
+        ...batch,
+      );
       changed += Number(result.changes ?? 0);
     }
 
@@ -1115,9 +1227,10 @@ export class LibraryStore {
         bpm, bpm_confidence, beat_offset_ms, analysis_status, analysis_version, analysis_error, analysis_updated_at,
         replay_gain_track_gain_db, replay_gain_album_gain_db, replay_gain_track_peak, replay_gain_album_peak,
         replay_gain_integrated_lufs, replay_gain_source, replay_gain_status, replay_gain_version, replay_gain_error, replay_gain_updated_at,
+        file_identity, file_identity_source, quick_hash, quick_hash_version, identity_status, identity_updated_at, identity_error,
         search_terms, cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
         field_sources_json, missing, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         folder_id = excluded.folder_id,
         size_bytes = excluded.size_bytes,
@@ -1152,6 +1265,13 @@ export class LibraryStore {
         replay_gain_version = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_version ELSE tracks.replay_gain_version END,
         replay_gain_error = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_error ELSE tracks.replay_gain_error END,
         replay_gain_updated_at = CASE WHEN excluded.replay_gain_source = 'tag' THEN excluded.replay_gain_updated_at ELSE tracks.replay_gain_updated_at END,
+        file_identity = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.file_identity ELSE tracks.file_identity END,
+        file_identity_source = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.file_identity_source ELSE tracks.file_identity_source END,
+        quick_hash = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.quick_hash ELSE tracks.quick_hash END,
+        quick_hash_version = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.quick_hash_version ELSE tracks.quick_hash_version END,
+        identity_status = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.identity_status ELSE tracks.identity_status END,
+        identity_updated_at = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.identity_updated_at ELSE tracks.identity_updated_at END,
+        identity_error = CASE WHEN excluded.identity_status IS NOT NULL THEN excluded.identity_error ELSE tracks.identity_error END,
         search_terms = excluded.search_terms,
         cover_id = excluded.cover_id,
         metadata_status = excluded.metadata_status,
@@ -1196,6 +1316,13 @@ export class LibraryStore {
       hasReplayGainTag ? REPLAY_GAIN_ANALYSIS_VERSION : 0,
       null,
       replayGainUpdatedAt,
+      track.fileIdentity ?? null,
+      track.fileIdentitySource ?? null,
+      track.quickHash ?? null,
+      track.quickHashVersion ?? null,
+      track.identityStatus ?? null,
+      track.identityUpdatedAt ?? null,
+      track.identityError ?? null,
       searchTerms,
       track.coverId,
       track.metadataStatus ?? 'ok',
@@ -1220,6 +1347,43 @@ export class LibraryStore {
     });
 
     return existing ? 'updated' : 'added';
+  }
+
+  updateTrackIdentity(
+    trackId: string,
+    identity: Pick<
+      TrackWrite,
+      | 'fileIdentity'
+      | 'fileIdentitySource'
+      | 'quickHash'
+      | 'quickHashVersion'
+      | 'identityStatus'
+      | 'identityUpdatedAt'
+      | 'identityError'
+    >,
+    timestamp = nowIso(),
+  ): void {
+    this.run(
+      `UPDATE tracks SET
+        file_identity = ?,
+        file_identity_source = ?,
+        quick_hash = ?,
+        quick_hash_version = ?,
+        identity_status = ?,
+        identity_updated_at = ?,
+        identity_error = ?,
+        updated_at = ?
+       WHERE id = ?`,
+      identity.fileIdentity ?? null,
+      identity.fileIdentitySource ?? null,
+      identity.quickHash ?? null,
+      identity.quickHashVersion ?? null,
+      identity.identityStatus ?? null,
+      identity.identityUpdatedAt ?? timestamp,
+      identity.identityError ?? null,
+      timestamp,
+      trackId,
+    );
   }
 
   private relinkLocalPlaylistItemsToTrack(track: {
@@ -4442,6 +4606,18 @@ export class LibraryStore {
       albumsCount: Number(this.getRow('SELECT COUNT(*) AS total FROM albums')?.total ?? 0),
       artistsCount: Number(this.getRow('SELECT COUNT(*) AS total FROM artists')?.total ?? 0),
       coversCount: Number(this.getRow('SELECT COUNT(*) AS total FROM covers')?.total ?? 0),
+      tracksWithFileIdentity: Number(
+        this.getRow("SELECT COUNT(*) AS total FROM tracks WHERE missing = 0 AND file_identity IS NOT NULL")?.total ?? 0,
+      ),
+      tracksWithQuickHash: Number(
+        this.getRow("SELECT COUNT(*) AS total FROM tracks WHERE missing = 0 AND quick_hash IS NOT NULL")?.total ?? 0,
+      ),
+      tracksIdentityUnsupported: Number(
+        this.getRow("SELECT COUNT(*) AS total FROM tracks WHERE missing = 0 AND identity_status IN ('unsupported', 'partial')")?.total ?? 0,
+      ),
+      tracksIdentityError: Number(
+        this.getRow("SELECT COUNT(*) AS total FROM tracks WHERE missing = 0 AND identity_status = 'error'")?.total ?? 0,
+      ),
       lastScan: lastScanRow
         ? {
             status: this.mapScanStatus(lastScanRow.status),

@@ -775,15 +775,27 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       });
   }, []);
 
-  const notifyLibraryChanged = useCallback(async (): Promise<void> => {
+  const notifyLibraryChanged = useCallback(async (options: { preserveScroll?: boolean } = {}): Promise<void> => {
     try {
       await window.echo?.library.getSummary();
     } catch {
       // Summary warmup is best-effort for direct chrome actions.
     }
 
-    window.dispatchEvent(new Event('library:changed'));
+    window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: options.preserveScroll === true } }));
   }, []);
+
+  useEffect(() => {
+    const library = window.echo?.library;
+
+    if (!library?.onLibraryChanged) {
+      return undefined;
+    }
+
+    return library.onLibraryChanged(() => {
+      void notifyLibraryChanged({ preserveScroll: true });
+    });
+  }, [notifyLibraryChanged]);
 
   useEffect(() => {
     const downloads = window.echo?.downloads;

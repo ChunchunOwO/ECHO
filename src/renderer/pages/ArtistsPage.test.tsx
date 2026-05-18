@@ -131,7 +131,7 @@ describe('ArtistsPage', () => {
     renderArtistsPage();
 
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
-    expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 96, search: '', sort: 'default' });
+    expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
     expect(screen.getByText('安田レイ')).toBeTruthy();
     expect(screen.getByText('4 tracks / 1 albums')).toBeTruthy();
     expect(screen.getByText('安田')).toBeTruthy();
@@ -186,7 +186,7 @@ describe('ArtistsPage', () => {
     fireEvent.scroll(pageSurface);
 
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
-    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 96, search: '', sort: 'default' });
+    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
     expect(screen.getByText('Artist 1')).toBeTruthy();
     expect(screen.getByText('Artist 2')).toBeTruthy();
   });
@@ -205,12 +205,12 @@ describe('ArtistsPage', () => {
     fireEvent.change(screen.getByPlaceholderText('Search artists'), { target: { value: '2hollis' } });
     await new Promise((resolve) => window.setTimeout(resolve, 275));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
-    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 96, search: '2hollis', sort: 'default' });
+    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 96, search: '2hollis', sort: 'default', sourceProvider: 'local' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Default' }));
     fireEvent.click(screen.getByRole('option', { name: 'Most Tracks' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
-    expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '2hollis', sort: 'frequent' });
+    expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '2hollis', sort: 'frequent', sourceProvider: 'local' });
   });
 
   it('can prioritize artists with avatars above the selected sort', async () => {
@@ -224,7 +224,7 @@ describe('ArtistsPage', () => {
     renderArtistsPage();
 
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
-    expect(getArtists).toHaveBeenNthCalledWith(1, { page: 1, pageSize: 96, search: '', sort: 'default' });
+    expect(getArtists).toHaveBeenNthCalledWith(1, { page: 1, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Avatar First' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
@@ -233,12 +233,13 @@ describe('ArtistsPage', () => {
       pageSize: 96,
       search: '',
       sort: 'default',
+      sourceProvider: 'local',
       prioritizeArtistAvatars: true,
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Avatar First' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
-    expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '', sort: 'default' });
+    expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
   });
 
   it('search and sort reset the artist wall scroll position', async () => {
@@ -266,6 +267,29 @@ describe('ArtistsPage', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Most Tracks' }));
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
     expect(pageSurface.scrollTop).toBe(0);
+  });
+
+  it('preserved library:changed refreshes a scrolled artist wall without pulling it back to the top', async () => {
+    const getArtists = vi
+      .fn()
+      .mockResolvedValueOnce(page([artist('1')], { total: 120, hasMore: true }))
+      .mockResolvedValueOnce(page([artist('fresh')], { total: 120, hasMore: true }));
+    installLibrary(getArtists);
+
+    const { container } = renderArtistsPage();
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
+
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
+    setScrollablePageSurface(pageSurface);
+    pageSurface.scrollTop = 640;
+
+    window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
+    expect(getArtists).toHaveBeenNthCalledWith(2, { page: 1, pageSize: 96, search: '', sort: 'default', sourceProvider: 'local' });
+    expect(screen.getByText('Artist fresh')).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(pageSurface.scrollTop).toBe(640);
   });
 
   it('opens artist detail on click and returns with Back', async () => {

@@ -100,6 +100,92 @@ export type ImportPathClassification = {
   missingPaths: string[];
 };
 
+export type LibraryMoveCandidateConfidence = 'high' | 'medium' | 'low';
+
+export type LibraryMoveCandidate = {
+  candidateId: string;
+  confidence: LibraryMoveCandidateConfidence;
+  ambiguous: boolean;
+  oldTrackId: string;
+  oldPath: string;
+  newTrackId: string;
+  newPath: string;
+  reasonCodes: string[];
+  fileIdentityMatched: boolean;
+  quickHashMatched: boolean;
+  sizeMatched: boolean;
+  durationDelta: number | null;
+  metadataMatched: boolean;
+  createdAt: string;
+};
+
+export type LibraryMoveCandidateOptions = {
+  limit?: number;
+};
+
+export type LibraryMoveRepairResult = {
+  candidateId: string;
+  ok: boolean;
+  blockers: string[];
+  warnings: string[];
+  oldTrackId: string | null;
+  newTrackId: string | null;
+  playlistItemsToRelink: number;
+  playbackHistoryEntriesToRelink: number;
+  playbackHistoryStatsToRelink: number;
+  deletedOldTrackRow: boolean;
+  appliedAt: string | null;
+};
+
+export type LibraryLabWatcherEvent = {
+  timestamp: string;
+  folderId: string;
+  eventType: 'add' | 'change' | 'unlink' | 'rename' | 'unknown';
+  path: string;
+  extension: string;
+  sizeBytes?: number;
+  mtimeMs?: number;
+  stableForMs?: number;
+};
+
+export type LibraryLabState = {
+  watcherEnabled: boolean;
+  watcherRunning: boolean;
+  autoRescanEnabled: boolean;
+  moveCandidateEnabled: boolean;
+  moveRepairLabEnabled: boolean;
+  watchedFolderCount: number;
+  totalEventCount: number;
+  pendingPathCount: number;
+  triggeredRescanCount: number;
+  droppedPathCount: number;
+  skippedDeleteEventCount: number;
+  skippedRenameEventCount: number;
+  lastTriggeredRescanAt: string | null;
+  lastRescanError: string | null;
+  watcherLastError: string | null;
+  lastWatcherEventAt: string | null;
+  lastRescanStartedAt: string | null;
+  lastRescanFinishedAt: string | null;
+  lastRescanPathCount: number;
+  lastMetadataBackfillCount: number;
+  placeholderTrackCount: number;
+  lastSkippedByCacheCount: number;
+  moveCandidateCount: number;
+  highConfidenceCount: number;
+  mediumConfidenceCount: number;
+  lowConfidenceCount: number;
+  ambiguousCount: number;
+  lastMoveRepairAt: string | null;
+  lastMoveRepairError: string | null;
+  groupingRefreshQueued: boolean;
+  lastGroupingRefreshDurationMs: number | null;
+  lastGroupingRefreshAt: string | null;
+  groupingRefreshDelayedForPlaybackCount: number;
+  lastGroupingRefreshError: string | null;
+  recentWatcherEvents: LibraryLabWatcherEvent[];
+};
+
 export type LibraryDiagnostics = {
   foldersCount: number;
   tracksCount: number;
@@ -132,6 +218,16 @@ export type LibraryDiagnostics = {
   metadataConcurrency: number;
   coverConcurrency: number;
   audioAnalysisEnabled?: boolean;
+  tracksWithFileIdentity?: number;
+  tracksWithQuickHash?: number;
+  tracksIdentityUnsupported?: number;
+  tracksIdentityError?: number;
+  groupingRefreshQueued?: boolean;
+  lastGroupingRefreshDurationMs?: number | null;
+  lastGroupingRefreshAt?: string | null;
+  groupingRefreshDelayedForPlaybackCount?: number;
+  lastGroupingRefreshError?: string | null;
+  moveCandidates?: LibraryMoveCandidate[];
 };
 
 export type LibraryFolder = {
@@ -224,6 +320,7 @@ export type LibraryScanMode = 'normal' | 'embedded-tags-all' | 'embedded-tags-mi
 
 export type LibraryScanOptions = {
   mode?: LibraryScanMode;
+  deferGroupingRefresh?: boolean;
 };
 
 export type LibrarySort =

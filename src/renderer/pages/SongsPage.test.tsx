@@ -51,6 +51,7 @@ vi.mock('../components/library/TrackList', () => ({
     totalCount?: number;
   }) => (
     <div
+      className="track-list"
       data-testid="track-list"
       data-total-count={totalCount ?? tracks.length}
       data-loaded-count={loadedCount ?? tracks.length}
@@ -786,6 +787,25 @@ describe('SongsPage', () => {
     expect(screen.getByTestId('track-list').getAttribute('data-total-count')).toBe('10000');
     expect(window.echo.library.getTracks).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
     expect(window.echo.library.getDuplicateTrackVersions).not.toHaveBeenCalled();
+  });
+
+  it('preserved library:changed refreshes the song list without losing scroll', async () => {
+    installEcho([makeTrack({ id: 'track-1', title: 'Song One' })]);
+    vi.mocked(window.echo.library.getTracks)
+      .mockResolvedValueOnce(makePagedResult([makeTrack({ id: 'track-1', title: 'Song One' })]))
+      .mockResolvedValueOnce(makePagedResult([makeTrack({ id: 'track-2', title: 'Song Two' })]));
+
+    await renderSongsPage();
+    await screen.findByText('Song One');
+    const trackList = screen.getByTestId('track-list');
+    trackList.scrollTop = 640;
+
+    window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+
+    await waitFor(() => expect(window.echo.library.getTracks).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Song Two')).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(trackList.scrollTop).toBe(640);
   });
 
   it('closes the duplicate version panel when clicking the overlay outside the panel', async () => {

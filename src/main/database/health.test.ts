@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from './createDatabase';
-import { checkDatabaseHealth, DatabaseHealthError, isSqliteCorruptionMessage } from './health';
+import { checkDatabaseHealth, isSqliteCorruptionMessage } from './health';
 
 describe('database health', () => {
   let root: string;
@@ -29,12 +29,21 @@ describe('database health', () => {
     opened.close();
   });
 
-  it('does not run migrations when the database is malformed', () => {
+  it('quarantines a malformed database before creating a clean replacement', () => {
     const databasePath = join(root, 'library.sqlite');
     writeFileSync(databasePath, 'not sqlite', 'utf8');
+    writeFileSync(`${databasePath}-wal`, 'stale wal', 'utf8');
+    writeFileSync(`${databasePath}-shm`, 'stale shm', 'utf8');
 
     expect(checkDatabaseHealth(databasePath).status).toBe('corrupt');
-    expect(() => createDatabase(databasePath)).toThrow(DatabaseHealthError);
+    const opened = createDatabase(databasePath);
+
+    expect(opened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tracks'").get()).toBeTruthy();
+    opened.close();
+    expect(checkDatabaseHealth(databasePath).status).toBe('ok');
+    expect(readdirSync(root).some((entry) => entry.startsWith('library.sqlite.corrupt-'))).toBe(true);
+    expect(readdirSync(root).some((entry) => entry.startsWith('library.sqlite-wal.corrupt-'))).toBe(true);
+    expect(readdirSync(root).some((entry) => entry.startsWith('library.sqlite-shm.corrupt-'))).toBe(true);
   });
 
   it('treats malformed database schema errors as corruption', () => {

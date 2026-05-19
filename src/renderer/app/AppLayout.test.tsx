@@ -1095,7 +1095,7 @@ describe('AppLayout standalone routes', () => {
       if (visibilityDescriptor) {
         Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
       } else {
-        delete (document as Document & { visibilityState?: DocumentVisibilityState }).visibilityState;
+        Reflect.deleteProperty(document, 'visibilityState');
       }
     }
   });

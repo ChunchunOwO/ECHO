@@ -92,6 +92,7 @@ const testSettings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...patch,
+  taskbarPlaybackControlsEnabled: patch.taskbarPlaybackControlsEnabled ?? false,
 });
 
 describe('getRecommendedScanConcurrency', () => {

@@ -321,6 +321,7 @@ const createHarness = (
       lastFmMinScrobbleSeconds: 30,
       lastFmAuthToken: null,
       smtcEnabled: true,
+      taskbarPlaybackControlsEnabled: false,
     }),
     ...overrides,
   });

@@ -145,7 +145,7 @@ describe('AirPlayReceiverSpikeService', () => {
 
   it('binds the RAOP receiver to all adapters and advertises each LAN interface', async () => {
     const audio = new FakeAudioSession();
-    const startReceiver = vi.fn(() => 23);
+    const startReceiver = vi.fn((_options: { portBase: number }) => 23);
     const stopReceiver = vi.fn();
     const mdnsStarts: Array<{ address: string; mac: string; port: number }> = [];
     const mdnsStops: Array<ReturnType<typeof vi.fn>> = [];
@@ -178,6 +178,7 @@ describe('AirPlayReceiverSpikeService', () => {
 
     const status = await service.setEnabled(true);
     const options = startReceiver.mock.calls[0]?.[0];
+    expect(options).toBeDefined();
 
     expect(status.enabled).toBe(true);
     expect(options).toEqual(expect.objectContaining({
@@ -189,8 +190,8 @@ describe('AirPlayReceiverSpikeService', () => {
     }));
     expect(options).not.toHaveProperty('host');
     expect(mdnsStarts).toEqual([
-      { address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1', port: options.portBase },
-      { address: '10.0.0.8', mac: '70:CF:84:CB:1E:D1', port: options.portBase },
+      { address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1', port: options!.portBase },
+      { address: '10.0.0.8', mac: '70:CF:84:CB:1E:D1', port: options!.portBase },
     ]);
 
     await service.setEnabled(false);

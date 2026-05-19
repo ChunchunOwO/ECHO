@@ -84,7 +84,7 @@ const createWindow = () => ({
   destroyed: false,
   sent: [] as Array<[string, unknown]>,
   setProgressBar: vi.fn(),
-  setThumbarButtons: vi.fn(() => true),
+  setThumbarButtons: vi.fn((_buttons: Array<{ click: () => void }>) => true),
   setTitle: vi.fn(),
   isDestroyed() {
     return this.destroyed;
@@ -204,7 +204,7 @@ describe('TaskbarPlaybackIntegration', () => {
     });
 
     integration.initialize();
-    const buttons = window.setThumbarButtons.mock.calls.at(-1)?.[0] as Array<{ click: () => void }>;
+    const buttons = window.setThumbarButtons.mock.calls.at(-1)?.[0] ?? [];
     buttons[0].click();
     buttons[1].click();
     buttons[2].click();

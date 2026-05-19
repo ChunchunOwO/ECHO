@@ -87,6 +87,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...overrides,
+  taskbarPlaybackControlsEnabled: overrides.taskbarPlaybackControlsEnabled ?? false,
 });
 
 const makeLyricsCandidate = (overrides: Partial<LyricsSearchCandidate> = {}): LyricsSearchCandidate => ({

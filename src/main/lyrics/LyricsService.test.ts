@@ -88,6 +88,7 @@ const settings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...patch,
+  taskbarPlaybackControlsEnabled: patch.taskbarPlaybackControlsEnabled ?? false,
 });
 
 const track = (path = 'D:\\Music\\Echo Song.flac'): LibraryTrack => ({

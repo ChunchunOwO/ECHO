@@ -188,6 +188,7 @@ const makeAppSettings = (
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...overrides,
+  taskbarPlaybackControlsEnabled: overrides.taskbarPlaybackControlsEnabled ?? false,
 });
 
 const lyrics: LyricLine[] = [

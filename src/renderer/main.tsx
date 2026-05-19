@@ -14,7 +14,7 @@ import {
   registerAppearanceFontFile,
 } from './preferences/appearancePreferences';
 import { applyThemeMode, loadPersistedThemeMode, readThemeMode, watchSystemThemeMode } from './preferences/themePreferences';
-import type { AppearancePreferences } from '../shared/types/appSettings';
+import type { AppearancePreferences, AppSettings } from '../shared/types/appSettings';
 import { getAppBridge } from './utils/echoBridge';
 import './styles/tokens.css';
 import './styles/theme.css';
@@ -46,6 +46,15 @@ const loadAppearanceFontFiles = (preferences: AppearancePreferences): void => {
     void appBridge
       .loadFontFile(preferences.chineseFontFilePath)
       .then((fontFile) => registerAppearanceFontFile('chinese', fontFile))
+      .catch(() => undefined);
+  }
+};
+
+const loadLyricsFontFile = (settings: Partial<AppSettings>): void => {
+  if (settings.lyricsFontFilePath && appBridge) {
+    void appBridge
+      .loadFontFile(settings.lyricsFontFilePath)
+      .then((fontFile) => registerAppearanceFontFile('lyrics', fontFile))
       .catch(() => undefined);
   }
 };
@@ -85,6 +94,7 @@ void loadPersistedAppearancePreferences()
     loadAppearanceFontFiles(preferences);
   })
   .catch(() => undefined);
+void appBridge?.getSettings().then(loadLyricsFontFile).catch(() => undefined);
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

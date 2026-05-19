@@ -1,16 +1,19 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { basename, extname, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { SettingsBackupPayload, SettingsImportResult } from '../../shared/types/settingsBackup';
+import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
 import type { UpdateStatus } from '../../shared/types/updates';
 import type { FontFileAsset } from '../../preload/apiTypes';
-import { defaultSettings, getAppSettings, getAppWallpaperDirectory, getLyricsWallpaperDirectory, setAppSettings } from '../app/appSettings';
+import { defaultSettings, getAppSettings, getAppWallpaperDirectory, getLyricsWallpaperDirectory, normalizeSettings, setAppSettings } from '../app/appSettings';
 import { checkForUpdates, getUpdateStatus, setAutoUpdateEnabled } from '../app/autoUpdater';
 import { refreshBackgroundSpaceRegistration, validateGlobalShortcut } from '../app/backgroundPlaybackShortcuts';
+import { getTaskbarPlaybackStatus, refreshTaskbarPlaybackIntegration } from '../app/taskbarPlaybackIntegration';
 import { destroyTray, ensureTray } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
@@ -27,6 +30,7 @@ import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
 import { registerMvIpc } from './mvIpc';
 import { registerPlaybackIpc } from './playbackIpc';
+import { registerPluginIpc } from './pluginIpc';
 import { registerRemoteSourcesIpc } from './remoteSourcesIpc';
 import { registerStreamingIpc } from './streamingIpc';
 
@@ -37,7 +41,12 @@ const fontMimeTypes: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-const wallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const imageWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const videoWallpaperExtensions = new Set(['.mp4', '.m4v', '.webm']);
+const appWallpaperExtensions = new Set([...imageWallpaperExtensions, ...videoWallpaperExtensions]);
+const settingsBackupFormat = 'echo-next-settings-backup';
+const settingsBackupVersion = 1;
+const settingsBackupFilters = [{ name: 'ECHO Next Settings', extensions: ['json'] }];
 
 const requireFontPath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -72,7 +81,7 @@ const loadFontFile = (fontPathInput: unknown): FontFileAsset => {
   };
 };
 
-const requireWallpaperPath = (value: unknown): string => {
+const requireWallpaperPath = (value: unknown, allowedExtensions: Set<string>, label: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error('wallpaper path must be a non-empty string');
   }
@@ -80,8 +89,8 @@ const requireWallpaperPath = (value: unknown): string => {
   const wallpaperPath = resolve(value.trim());
   const extension = extname(wallpaperPath).toLowerCase();
 
-  if (!wallpaperExtensions.has(extension)) {
-    throw new Error('selected file is not a supported image');
+  if (!allowedExtensions.has(extension)) {
+    throw new Error(`selected file is not a supported ${label}`);
   }
 
   if (!existsSync(wallpaperPath)) {
@@ -91,8 +100,13 @@ const requireWallpaperPath = (value: unknown): string => {
   return wallpaperPath;
 };
 
-const copyWallpaper = (wallpaperPathInput: unknown, wallpaperDirectory: string): string => {
-  const wallpaperPath = requireWallpaperPath(wallpaperPathInput);
+const copyWallpaper = (
+  wallpaperPathInput: unknown,
+  wallpaperDirectory: string,
+  allowedExtensions: Set<string>,
+  label: string,
+): string => {
+  const wallpaperPath = requireWallpaperPath(wallpaperPathInput, allowedExtensions, label);
   const extension = extname(wallpaperPath).toLowerCase();
   const targetPath = resolve(wallpaperDirectory, `${randomUUID()}${extension}`);
 
@@ -101,9 +115,11 @@ const copyWallpaper = (wallpaperPathInput: unknown, wallpaperDirectory: string):
   return targetPath;
 };
 
-const copyLyricsWallpaper = (wallpaperPathInput: unknown): string => copyWallpaper(wallpaperPathInput, getLyricsWallpaperDirectory());
+const copyLyricsWallpaper = (wallpaperPathInput: unknown): string =>
+  copyWallpaper(wallpaperPathInput, getLyricsWallpaperDirectory(), imageWallpaperExtensions, 'image');
 
-const copyAppWallpaper = (wallpaperPathInput: unknown): string => copyWallpaper(wallpaperPathInput, getAppWallpaperDirectory());
+const copyAppWallpaper = (wallpaperPathInput: unknown): string =>
+  copyWallpaper(wallpaperPathInput, getAppWallpaperDirectory(), appWallpaperExtensions, 'image or video');
 
 const requireExternalHttpUrl = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -134,6 +150,100 @@ const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryReque
   };
 };
 
+const formatBackupTimestamp = (): string => new Date().toISOString().replace(/[:.]/g, '-');
+
+const createSettingsBackupPayload = (settings: AppSettings): SettingsBackupPayload => ({
+  format: settingsBackupFormat,
+  version: settingsBackupVersion,
+  exportedAt: new Date().toISOString(),
+  appVersion: app.getVersion(),
+  settings,
+});
+
+const getSettingsBackupDirectory = (): string => join(app.getPath('userData'), 'settings-backups');
+
+const writeSettingsBackupFile = (filePath: string, settings: AppSettings): void => {
+  writeFileSync(filePath, `${JSON.stringify(createSettingsBackupPayload(settings), null, 2)}\n`, 'utf8');
+};
+
+const readSettingsBackupFile = (filePath: string): AppSettings => {
+  const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Selected file is not a valid ECHO Next settings backup.');
+  }
+
+  const payload = parsed as Partial<SettingsBackupPayload> & { settings?: unknown };
+  if (payload.format === settingsBackupFormat) {
+    if (payload.version !== settingsBackupVersion || !payload.settings || typeof payload.settings !== 'object') {
+      throw new Error('Selected settings backup uses an unsupported format.');
+    }
+
+    return normalizeSettings(payload.settings);
+  }
+
+  return normalizeSettings(parsed);
+};
+
+const applyAppSettingsPatch = async (
+  patch: Partial<AppSettings>,
+  options: { allowCoverCacheDir?: boolean } = {},
+): Promise<AppSettings> => {
+  const settingsPatch = { ...patch };
+  const canSetCoverCacheDir = options.allowCoverCacheDir === true && Object.prototype.hasOwnProperty.call(settingsPatch, 'coverCacheDir');
+  let libraryService: ReturnType<typeof getLibraryService> | null = null;
+
+  if (canSetCoverCacheDir) {
+    libraryService = getLibraryService();
+    if (libraryService.hasRunningJobs()) {
+      throw new Error('Cannot import settings while a library scan is running.');
+    }
+
+    const coverCacheDir = settingsPatch.coverCacheDir ?? libraryService.getDefaultCoverCacheDir();
+    await ensureCoverCacheDirectory(coverCacheDir);
+    libraryService.setCoverCacheDir(coverCacheDir);
+  } else {
+    delete settingsPatch.coverCacheDir;
+  }
+
+  let settings = setAppSettings(settingsPatch);
+
+  if (settings.hideToTrayOnClose) {
+    ensureTray();
+  } else {
+    destroyTray();
+  }
+
+  if (typeof settingsPatch.autoUpdateEnabled === 'boolean') {
+    const autoUpdateEnabled = settings.autoUpdateEnabled !== false;
+    setAutoUpdateEnabled(autoUpdateEnabled);
+    if (autoUpdateEnabled) {
+      void checkForUpdates();
+    }
+  }
+
+  if (typeof settingsPatch.backgroundSpacePauseEnabled === 'boolean' || settingsPatch.globalShortcuts) {
+    settings = refreshBackgroundSpaceRegistration() ?? settings;
+  }
+
+  if (typeof settingsPatch.taskbarPlaybackControlsEnabled === 'boolean') {
+    refreshTaskbarPlaybackIntegration();
+  }
+
+  if (typeof settingsPatch.autoFetchArtistImages === 'boolean' || typeof settingsPatch.artistImageFetchPaused === 'boolean') {
+    getLibraryService().syncArtistImageBackfillState();
+  }
+
+  if (
+    typeof settingsPatch.liveLibraryUpdatesEnabled === 'boolean' ||
+    typeof settingsPatch.liveLibraryAutoHideDeletedEnabled === 'boolean'
+  ) {
+    (libraryService ?? getLibraryService()).syncLiveLibraryWatcherFromSettings();
+  }
+
+  return settings;
+};
+
 export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
   ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {
@@ -162,41 +272,53 @@ export const registerIpc = (): void => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
   ipcMain.handle(IpcChannels.AppGetSettings, (): AppSettings => getAppSettings());
-  ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): AppSettings => {
-    const settingsPatch = { ...patch };
-    delete settingsPatch.coverCacheDir;
-    let settings = setAppSettings(settingsPatch);
+  ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): Promise<AppSettings> =>
+    applyAppSettingsPatch(patch),
+  );
+  ipcMain.handle(IpcChannels.AppGetTaskbarPlaybackStatus, (): TaskbarPlaybackStatus => {
+    refreshTaskbarPlaybackIntegration();
+    return getTaskbarPlaybackStatus();
+  });
+  ipcMain.handle(IpcChannels.AppExportSettings, async (): Promise<string | null> => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export ECHO Next settings',
+      defaultPath: join(app.getPath('downloads'), `echo-next-settings-${formatBackupTimestamp()}.json`),
+      filters: settingsBackupFilters,
+    });
 
-    if (settings.hideToTrayOnClose) {
-      ensureTray();
-    } else {
-      destroyTray();
+    if (result.canceled || !result.filePath) {
+      return null;
     }
 
-    if (typeof settingsPatch.autoUpdateEnabled === 'boolean') {
-      const autoUpdateEnabled = settings.autoUpdateEnabled !== false;
-      setAutoUpdateEnabled(autoUpdateEnabled);
-      if (autoUpdateEnabled) {
-        void checkForUpdates();
-      }
+    writeSettingsBackupFile(result.filePath, getAppSettings());
+    return result.filePath;
+  });
+  ipcMain.handle(IpcChannels.AppImportSettings, async (): Promise<SettingsImportResult | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import ECHO Next settings',
+      properties: ['openFile'],
+      filters: settingsBackupFilters,
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
     }
 
-    if (typeof settingsPatch.backgroundSpacePauseEnabled === 'boolean' || settingsPatch.globalShortcuts) {
-      settings = refreshBackgroundSpaceRegistration() ?? settings;
-    }
+    const importedPath = result.filePaths[0];
+    const importedSettings = readSettingsBackupFile(importedPath);
+    const backupDirectory = getSettingsBackupDirectory();
+    const backupPath = join(backupDirectory, `before-import-${formatBackupTimestamp()}.json`);
 
-    if (typeof settingsPatch.autoFetchArtistImages === 'boolean' || typeof settingsPatch.artistImageFetchPaused === 'boolean') {
-      getLibraryService().syncArtistImageBackfillState();
-    }
+    mkdirSync(backupDirectory, { recursive: true });
+    writeSettingsBackupFile(backupPath, getAppSettings());
 
-    if (
-      typeof settingsPatch.liveLibraryUpdatesEnabled === 'boolean' ||
-      typeof settingsPatch.liveLibraryAutoHideDeletedEnabled === 'boolean'
-    ) {
-      getLibraryService().syncLiveLibraryWatcherFromSettings();
-    }
-
-    return settings;
+    const settings = await applyAppSettingsPatch(importedSettings, { allowCoverCacheDir: true });
+    return {
+      settings,
+      backupPath,
+      importedPath,
+      warnings: [],
+    };
   });
   ipcMain.handle(IpcChannels.AppValidateGlobalShortcut, (_event: IpcMainInvokeEvent, accelerator: unknown) =>
     validateGlobalShortcut(accelerator),
@@ -214,6 +336,7 @@ export const registerIpc = (): void => {
     destroyTray();
     const settings = setAppSettings({ ...defaultSettings });
     refreshBackgroundSpaceRegistration();
+    refreshTaskbarPlaybackIntegration();
     libraryService.syncLiveLibraryWatcherFromSettings();
     await setDiscordPresenceEnabled(settings.discordRichPresenceEnabled);
     getLastFmService().disconnect();
@@ -241,7 +364,11 @@ export const registerIpc = (): void => {
     const result = await dialog.showOpenDialog({
       title: 'Choose app wallpaper',
       properties: ['openFile'],
-      filters: [{ name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+      filters: [
+        { name: 'Background files', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'm4v', 'webm'] },
+        { name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+        { name: 'Video files', extensions: ['mp4', 'm4v', 'webm'] },
+      ],
     });
 
     return result.canceled || !result.filePaths[0] ? null : copyAppWallpaper(result.filePaths[0]);
@@ -300,6 +427,7 @@ export const registerIpc = (): void => {
   registerConnectIpc();
   registerDiscordPresenceIpc();
   registerDownloadsIpc();
+  registerPluginIpc();
   registerLastFmIpc();
   registerLibraryIpc();
   registerLyricsIpc();

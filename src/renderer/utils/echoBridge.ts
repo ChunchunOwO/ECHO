@@ -32,6 +32,8 @@ export const getDiscordPresenceBridge = (): Window['echo']['discordPresence'] | 
 
 export const getDownloadsBridge = (): Window['echo']['downloads'] | null => getEchoBridge()?.downloads ?? null;
 
+export const getPluginsBridge = (): Window['echo']['plugins'] | null => getEchoBridge()?.plugins ?? null;
+
 const browserEqStorageKey = 'echo-next.browser-eq';
 
 type BrowserEqStorage = {

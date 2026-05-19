@@ -34,6 +34,7 @@ import { streamingProviderNames } from '../../../shared/types/streaming';
 import { useI18n } from '../../i18n/I18nProvider';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import type { AppSettings } from '../../../shared/types/appSettings';
+import { readMvDiagnosticsEnabled, writeMvDiagnosticsEnabled } from './mvDiagnostics';
 
 type MvSettingsDrawerProps = {
   isOpen: boolean;
@@ -160,6 +161,9 @@ const formatVideoQuality = (video: TrackVideo | null, emptyLabel: string): strin
     : `${baseLabel} / ${fpsLabel}`;
 };
 
+const isPlayableTrackVideo = (video: TrackVideo | null | undefined): video is TrackVideo =>
+  Boolean(video?.playableInApp && video.mediaUrl);
+
 const videoToCandidate = (video: TrackVideo): MvMatchCandidate => ({
   id: video.id,
   provider: video.provider,
@@ -246,6 +250,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   const [dragOverProvider, setDragOverProvider] = useState<NetworkMvProviderId | null>(null);
   const [isNetworkSectionOpen, setIsNetworkSectionOpen] = useState(true);
   const [isMvOffsetSaving, setIsMvOffsetSaving] = useState(false);
+  const [isDiagnosticsReportEnabled, setDiagnosticsReportEnabled] = useState(readMvDiagnosticsEnabled);
   const mvRequestRef = useRef(0);
 
   const activeTrackId = fallbackTrackId ?? queue.currentTrackId;
@@ -337,7 +342,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
 
     try {
       const resolved = await window.echo.mv.resolveStreams(video.id);
-      return resolved.video;
+      return isPlayableTrackVideo(video) && !isPlayableTrackVideo(resolved.video) ? video : resolved.video;
     } catch (resolveError) {
       if (isMvDatabaseError(resolveError)) {
         throw resolveError;
@@ -521,6 +526,12 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
       }
     }
   }, [patchSettings, refreshActiveTrack, searchNetworkForActiveTrack, searchQuery, settings.autoSearch]);
+
+  const toggleDiagnosticsReport = useCallback((): void => {
+    const nextEnabled = !isDiagnosticsReportEnabled;
+    setDiagnosticsReportEnabled(nextEnabled);
+    writeMvDiagnosticsEnabled(nextEnabled);
+  }, [isDiagnosticsReportEnabled]);
 
   const reorderProvider = useCallback(
     (provider: NetworkMvProviderId, targetProvider: NetworkMvProviderId): void => {
@@ -1164,6 +1175,15 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                 <span className="mv-toggle-copy">
                   <strong>{t('mvSettings.network.autoPreload')}</strong>
                   <em>{t('mvSettings.network.autoPreloadDescription')}</em>
+                </span>
+              </button>
+              <button type="button" className="mv-source-toggle mv-auto-apply-toggle" aria-pressed={isDiagnosticsReportEnabled} onClick={toggleDiagnosticsReport}>
+                <span className="mv-switch-track" aria-hidden="true">
+                  <span />
+                </span>
+                <span className="mv-toggle-copy">
+                  <strong>{t('mvSettings.network.diagnosticsReport')}</strong>
+                  <em>{t('mvSettings.network.diagnosticsReportDescription')}</em>
                 </span>
               </button>
               <button

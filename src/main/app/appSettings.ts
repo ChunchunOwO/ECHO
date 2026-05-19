@@ -9,6 +9,8 @@ import type {
   AppThemeToneOverride,
   AppThemePreset,
   AppearancePreferences,
+  AppVideoWallpaperPauseMode,
+  AppWallpaperMediaType,
   AppSettings,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
@@ -35,7 +37,9 @@ import {
 } from '../../shared/types/audio';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
-const wallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const imageWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const videoWallpaperExtensions = new Set(['.mp4', '.m4v', '.webm']);
+const appWallpaperExtensions = new Set([...imageWallpaperExtensions, ...videoWallpaperExtensions]);
 const defaultLyricsColor = '#314054';
 const defaultLyricsMiniPlayerColor = '#232120';
 const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
@@ -206,12 +210,14 @@ export const defaultSettings: AppSettings = {
   rememberWindowSizeEnabled: true,
   rememberedWindowSize: null,
   appCustomWallpaperPath: null,
+  appWallpaperMediaType: 'image',
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
   appWallpaperBrightnessPercent: 100,
   appWallpaperUiOpacityPercent: 100,
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
+  appVideoWallpaperPauseMode: 'smart',
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   audioAnalysisEnabled: true,
@@ -242,6 +248,8 @@ export const defaultSettings: AppSettings = {
   lyricsWordHighlightEnabled: true,
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
+  lyricsFontFamily: 'Microsoft YaHei',
+  lyricsFontFilePath: null,
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
@@ -301,6 +309,7 @@ export const defaultSettings: AppSettings = {
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  taskbarPlaybackControlsEnabled: false,
 };
 
 let cachedSettings: AppSettings | null = null;
@@ -605,13 +614,13 @@ const normalizeMvMaxQuality = (value: unknown): MvSettings['maxQuality'] =>
 const normalizeMvSyncMode = (value: unknown): MvSettings['syncMode'] =>
   value === 'stable' || value === 'precise' || value === 'balanced' ? value : defaultSettings.mvSyncMode;
 
-const normalizeWallpaperPath = (value: unknown, directory: string): string | null => {
+const normalizeWallpaperPath = (value: unknown, directory: string, allowedExtensions: Set<string>): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
 
   const normalized = resolve(value.trim());
-  if (!normalized || !wallpaperExtensions.has(extname(normalized).toLowerCase())) {
+  if (!normalized || !allowedExtensions.has(extname(normalized).toLowerCase())) {
     return null;
   }
 
@@ -622,9 +631,20 @@ const normalizeWallpaperPath = (value: unknown, directory: string): string | nul
   return normalized;
 };
 
-const normalizeLyricsWallpaperPath = (value: unknown): string | null => normalizeWallpaperPath(value, getLyricsWallpaperDirectory());
+const inferAppWallpaperMediaType = (filePath: string | null): AppWallpaperMediaType =>
+  filePath && videoWallpaperExtensions.has(extname(filePath).toLowerCase()) ? 'video' : 'image';
 
-const normalizeAppWallpaperPath = (value: unknown): string | null => normalizeWallpaperPath(value, getAppWallpaperDirectory());
+const normalizeAppWallpaperMediaType = (filePath: string | null): AppWallpaperMediaType =>
+  filePath ? inferAppWallpaperMediaType(filePath) : 'image';
+
+const normalizeAppVideoWallpaperPauseMode = (value: unknown): AppVideoWallpaperPauseMode =>
+  value === 'minimized' || value === 'never' || value === 'smart' ? value : defaultSettings.appVideoWallpaperPauseMode ?? 'smart';
+
+const normalizeLyricsWallpaperPath = (value: unknown): string | null =>
+  normalizeWallpaperPath(value, getLyricsWallpaperDirectory(), imageWallpaperExtensions);
+
+const normalizeAppWallpaperPath = (value: unknown): string | null =>
+  normalizeWallpaperPath(value, getAppWallpaperDirectory(), appWallpaperExtensions);
 
 export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceState => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -684,6 +704,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const appWallpaperBlurPx = Number(settings.appWallpaperBlurPx);
   const appWallpaperBrightnessPercent = Number(settings.appWallpaperBrightnessPercent);
   const appWallpaperUiOpacityPercent = Number(settings.appWallpaperUiOpacityPercent);
+  const appCustomWallpaperPath = normalizeAppWallpaperPath(settings.appCustomWallpaperPath);
+  const appWallpaperMediaType = normalizeAppWallpaperMediaType(appCustomWallpaperPath);
   const providers = Array.isArray(settings.networkMetadataProviders)
     ? settings.networkMetadataProviders.filter(
         (provider): provider is AppSettings['networkMetadataProviders'][number] =>
@@ -761,7 +783,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
     rememberWindowSizeEnabled: settings.rememberWindowSizeEnabled !== false,
     rememberedWindowSize: normalizeRememberedWindowSize(settings.rememberedWindowSize),
-    appCustomWallpaperPath: normalizeAppWallpaperPath(settings.appCustomWallpaperPath),
+    appCustomWallpaperPath,
+    appWallpaperMediaType,
     appWallpaperScalePercent: Number.isFinite(appWallpaperScalePercent)
       ? Math.round(clamp(appWallpaperScalePercent, 100, 220))
       : defaultSettings.appWallpaperScalePercent,
@@ -776,6 +799,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.appWallpaperUiOpacityPercent,
     appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
     appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled === true,
+    appVideoWallpaperPauseMode: normalizeAppVideoWallpaperPauseMode(settings.appVideoWallpaperPauseMode),
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
     audioAnalysisEnabled: settings.audioAnalysisEnabled !== false,
@@ -827,6 +851,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsSecondaryFontSizePx: Number.isFinite(lyricsSecondaryFontSizePx)
       ? Math.round(clamp(lyricsSecondaryFontSizePx, 12, 32))
       : defaultSettings.lyricsSecondaryFontSizePx,
+    lyricsFontFamily: normalizeRequiredText(settings.lyricsFontFamily, defaultSettings.lyricsFontFamily ?? 'Microsoft YaHei'),
+    lyricsFontFilePath: normalizeFontPath(settings.lyricsFontFilePath),
     lyricsLineSpacingPercent: Number.isFinite(lyricsLineSpacingPercent)
       ? Math.round(clamp(lyricsLineSpacingPercent, 60, 150))
       : defaultSettings.lyricsLineSpacingPercent,
@@ -929,6 +955,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
         : defaultSettings.lastFmMinScrobbleSeconds,
     lastFmAuthToken: normalizeOptionalText(settings.lastFmAuthToken),
     smtcEnabled: settings.smtcEnabled !== false,
+    taskbarPlaybackControlsEnabled: settings.taskbarPlaybackControlsEnabled === true,
   };
 };
 

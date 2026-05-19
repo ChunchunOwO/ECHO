@@ -439,6 +439,8 @@ export type TranslationKey =
   | 'mvSettings.network.autoApplyThresholdDescription'
   | 'mvSettings.network.autoPreload'
   | 'mvSettings.network.autoPreloadDescription'
+  | 'mvSettings.network.diagnosticsReport'
+  | 'mvSettings.network.diagnosticsReportDescription'
   | 'mvSettings.network.maxQuality'
   | 'mvSettings.network.preferHighestViewCount'
   | 'mvSettings.network.preferHighestViewCountDescription'
@@ -653,6 +655,8 @@ export type TranslationKey =
   | 'settings.integrations.discord.action.refresh'
   | 'settings.integrations.discord.title'
   | 'settings.integrations.smtc.description'
+  | 'settings.integrations.taskbarPlayback.description'
+  | 'settings.integrations.taskbarPlayback.title'
   | 'settings.integrations.smtc.title'
   | 'settings.integrations.lastfm.action.completeAuth'
   | 'settings.integrations.lastfm.action.connect'
@@ -897,6 +901,8 @@ export type TranslationKey =
   | 'settings.nav.library.label'
   | 'settings.nav.playback.description'
   | 'settings.nav.playback.label'
+  | 'settings.nav.plugins.description'
+  | 'settings.nav.plugins.label'
   | 'settings.nav.remote.description'
   | 'settings.nav.remote.label'
   | 'settings.nav.shortcuts.description'
@@ -1435,6 +1441,8 @@ const zhCN: TranslationMap = {
   'mvSettings.network.autoApplyThresholdDescription': '候选达到 {threshold} 以上才会自动应用。',
   'mvSettings.network.autoPreload': '是否预加载MV',
   'mvSettings.network.autoPreloadDescription': '开启后，只要播放歌曲就会尝试提前查找并准备当前歌曲的 MV。',
+  'mvSettings.network.diagnosticsReport': 'MV 诊断报告',
+  'mvSettings.network.diagnosticsReportDescription': '默认关闭；开启后，MV 页面无画面时显示可复制的本机诊断信息。',
   'mvSettings.network.maxQuality': '最高画质',
   'mvSettings.network.preferHighestViewCount': '按播放量匹配',
   'mvSettings.network.preferHighestViewCountDescription': '开启后自动搜索只用歌名和歌手，并优先选择播放量最高的可播放 MV。',
@@ -1649,6 +1657,8 @@ const zhCN: TranslationMap = {
   'settings.integrations.discord.description': '将当前播放状态同步到 Discord Rich Presence，可显示歌曲、艺术家、进度和播放状态。',
   'settings.integrations.discord.title': 'Discord 状态',
   'settings.integrations.smtc.description': '把当前播放信息、封面、进度和媒体键动作发布到 Windows 音量浮层与锁屏媒体控件。',
+  'settings.integrations.taskbarPlayback.description': '在 Windows 任务栏图标上显示播放进度，并在悬停缩略图里提供上一首、播放暂停和下一首按钮。',
+  'settings.integrations.taskbarPlayback.title': '任务栏音乐控制',
   'settings.integrations.smtc.title': 'Windows 媒体控件',
   'settings.integrations.lastfm.action.completeAuth': '完成授权',
   'settings.integrations.lastfm.action.connect': '连接 Last.fm',
@@ -1893,6 +1903,8 @@ const zhCN: TranslationMap = {
   'settings.nav.library.label': '媒体库',
   'settings.nav.playback.description': '输出、缓冲与播放控制',
   'settings.nav.playback.label': '播放',
+  'settings.nav.plugins.description': '本地扩展、权限和脚本',
+  'settings.nav.plugins.label': '插件',
   'settings.nav.remote.description': 'NAS、WebDAV、Subsonic',
   'settings.nav.remote.label': '网盘 / 远程',
   'settings.nav.shortcuts.description': '全局按键、播放暂停、上一首、下一首',
@@ -2357,6 +2369,8 @@ const zhTW: TranslationMap = {
   'mvSettings.network.autoApplyThresholdDescription': '候選達到 {threshold} 以上才會自動套用。',
   'mvSettings.network.autoPreload': '是否預載 MV',
   'mvSettings.network.autoPreloadDescription': '開啟後，只要播放歌曲就會嘗試提前查找並準備目前歌曲的 MV。',
+  'mvSettings.network.diagnosticsReport': 'MV 診斷報告',
+  'mvSettings.network.diagnosticsReportDescription': '預設關閉；開啟後，MV 頁面無畫面時顯示可複製的本機診斷資訊。',
   'mvSettings.network.maxQuality': '最高畫質',
   'mvSettings.network.preferHighestViewCount': '按播放量匹配',
   'mvSettings.network.preferHighestViewCountDescription': '開啟後自動搜尋只用歌名和歌手，並優先選擇播放量最高的可播放 MV。',
@@ -2445,6 +2459,8 @@ const zhTW: TranslationMap = {
   'settings.nav.remote.label': '網路硬碟 / 遠端',
   'settings.nav.appearance.label': '外觀',
   'settings.nav.library.label': '媒體庫',
+  'settings.nav.plugins.label': '外掛',
+  'settings.nav.plugins.description': '本機擴充、權限和腳本',
   'settings.nav.about.label': '關於 / 進階',
   'settings.nav.danger.label': '危險操作',
   'settings.eq.action.autoPreamp': '自動 {value}',
@@ -2537,6 +2553,8 @@ const zhTW: TranslationMap = {
   'settings.integrations.discord.action.refresh': '重新整理狀態',
   'settings.integrations.discord.title': 'Discord 狀態',
   'settings.integrations.smtc.description': '把目前播放資訊、封面、進度和媒體鍵動作發布到 Windows 音量浮層與鎖定畫面媒體控制。',
+  'settings.integrations.taskbarPlayback.description': '在 Windows 工作列圖示上顯示播放進度，並在懸停縮圖中提供上一首、播放暫停和下一首按鈕。',
+  'settings.integrations.taskbarPlayback.title': '工作列音樂控制',
   'settings.integrations.smtc.title': 'Windows 媒體控制',
   'settings.integrations.lastfm.action.completeAuth': '完成授權',
   'settings.integrations.lastfm.action.connect': '連接 Last.fm',
@@ -3094,6 +3112,8 @@ const jaJP: TranslationMap = {
   'mvSettings.network.autoApplyThresholdDescription': '候補が {threshold} 以上の場合だけ自動適用します。',
   'mvSettings.network.autoPreload': 'MV をプリロード',
   'mvSettings.network.autoPreloadDescription': 'オンにすると、曲の再生時に現在の曲の MV を事前に検索して準備します。',
+  'mvSettings.network.diagnosticsReport': 'MV 診断レポート',
+  'mvSettings.network.diagnosticsReportDescription': '既定ではオフです。オンにすると、MV 画面が表示されない時にコピー可能なローカル診断情報を表示します。',
   'mvSettings.network.maxQuality': '最大画質',
   'mvSettings.network.preferHighestViewCount': '再生数でマッチ',
   'mvSettings.network.preferHighestViewCountDescription': 'オンにすると自動検索は曲名とアーティストだけを使い、再生数が最も多い再生可能な MV を優先します。',
@@ -3277,6 +3297,8 @@ const jaJP: TranslationMap = {
   'settings.nav.appearance.description': 'テーマ、フォント、背景',
   'settings.nav.library.label': 'メディアライブラリ',
   'settings.nav.library.description': '取り込み、スキャン、整理',
+  'settings.nav.plugins.label': 'プラグイン',
+  'settings.nav.plugins.description': 'ローカル拡張、権限、スクリプト',
   'settings.nav.about.label': '情報 / 詳細',
   'settings.nav.about.description': 'バージョン、更新、開発ツール',
   'settings.nav.danger.label': '危険な操作',
@@ -3345,6 +3367,8 @@ const jaJP: TranslationMap = {
   'settings.integrations.discord.title': 'Discord ステータス',
   'settings.integrations.discord.description': '現在の再生状態を Discord Rich Presence に同期し、曲名、アーティスト、進行状況、再生状態を表示します。',
   'settings.integrations.smtc.description': '現在の再生情報、アートワーク、進行状況、メディアキー操作を Windows の音量フライアウトとロック画面へ公開します。',
+  'settings.integrations.taskbarPlayback.description': 'Windows タスクバー アイコンに再生進行状況を表示し、プレビューに前へ、再生/一時停止、次へのボタンを出します。',
+  'settings.integrations.taskbarPlayback.title': 'タスクバー音楽コントロール',
   'settings.integrations.smtc.title': 'Windows メディア コントロール',
   'settings.integrations.lastfm.action.completeAuth': '認証を完了',
   'settings.integrations.lastfm.action.connect': 'Last.fm に接続',
@@ -3897,6 +3921,8 @@ const enUS: TranslationMap = {
   'mvSettings.network.autoApplyThresholdDescription': 'Only apply candidates at {threshold} or higher.',
   'mvSettings.network.autoPreload': 'Preload MV',
   'mvSettings.network.autoPreloadDescription': 'When enabled, playing a song will look up and prepare its MV ahead of time.',
+  'mvSettings.network.diagnosticsReport': 'MV diagnostics report',
+  'mvSettings.network.diagnosticsReportDescription': 'Off by default; when enabled, the MV page shows a copyable local report if no video is visible.',
   'mvSettings.network.maxQuality': 'Max quality',
   'mvSettings.network.preferHighestViewCount': 'Match by views',
   'mvSettings.network.preferHighestViewCountDescription': 'When enabled, auto search uses only the song and artist, then prefers the playable MV with the highest view count.',
@@ -4181,6 +4207,8 @@ const enUS: TranslationMap = {
   'settings.nav.appearance.description': 'Theme, font, background',
   'settings.nav.library.label': 'Media Library',
   'settings.nav.library.description': 'Import, scan, and cleanup',
+  'settings.nav.plugins.label': 'Plugins',
+  'settings.nav.plugins.description': 'Local extensions, permissions, and scripts',
   'settings.nav.about.label': 'About / Advanced',
   'settings.nav.about.description': 'Version, updates, and developer tools',
   'settings.nav.danger.label': 'Danger Zone',
@@ -4293,6 +4321,8 @@ const enUS: TranslationMap = {
   'settings.integrations.discord.title': 'Discord Status',
   'settings.integrations.discord.description': 'Sync the current playback state to Discord Rich Presence, including track, artist, progress, and play state.',
   'settings.integrations.smtc.description': 'Publish the current track, artwork, timeline, and media-key actions to the Windows volume flyout and lock screen.',
+  'settings.integrations.taskbarPlayback.description': 'Show playback progress on the Windows taskbar icon and add previous, play/pause, and next buttons to the hover preview.',
+  'settings.integrations.taskbarPlayback.title': 'Taskbar Music Controls',
   'settings.integrations.smtc.title': 'Windows Media Controls',
   'settings.integrations.lastfm.action.completeAuth': 'Complete authorization',
   'settings.integrations.lastfm.action.connect': 'Connect Last.fm',

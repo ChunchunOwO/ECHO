@@ -373,6 +373,21 @@ CREATE TABLE IF NOT EXISTS network_cover_candidates (
   FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS album_online_info_cache (
+  cache_key TEXT PRIMARY KEY,
+  album_id TEXT NOT NULL,
+  normalized_title TEXT NOT NULL,
+  normalized_artist TEXT NOT NULL,
+  credits_json TEXT NOT NULL,
+  information_json TEXT,
+  match_json TEXT,
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  provider_errors_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS lyrics_cache (
   id TEXT PRIMARY KEY,
   cache_key TEXT NOT NULL UNIQUE,
@@ -646,6 +661,7 @@ CREATE INDEX IF NOT EXISTS idx_covers_source_hash ON covers(source_hash);
 CREATE INDEX IF NOT EXISTS idx_network_metadata_candidates_track_id ON network_metadata_candidates(track_id);
 CREATE INDEX IF NOT EXISTS idx_network_metadata_decisions_track_id ON network_metadata_decisions(track_id);
 CREATE INDEX IF NOT EXISTS idx_network_cover_candidates_track_id ON network_cover_candidates(track_id);
+CREATE INDEX IF NOT EXISTS idx_album_online_info_cache_album_id ON album_online_info_cache(album_id);
 CREATE INDEX IF NOT EXISTS idx_lyrics_cache_track_provider ON lyrics_cache(track_id, provider);
 CREATE INDEX IF NOT EXISTS idx_lyrics_cache_cache_key ON lyrics_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_lyrics_candidates_track_provider_status ON lyrics_candidates(track_id, provider, status);

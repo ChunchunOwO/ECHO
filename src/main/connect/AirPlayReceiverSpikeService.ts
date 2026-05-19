@@ -8,7 +8,7 @@ import { delimiter, dirname, join } from 'node:path';
 import readline from 'node:readline';
 import { PassThrough, Transform } from 'node:stream';
 import { app } from 'electron';
-import type { AudioStatus } from '../../shared/types/audio';
+import type { AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverClient, ConnectReceiverDebugEvent } from '../../shared/types/connect';
 import { getAudioSession } from '../audio/AudioSession';
 import { AirPlayMdnsAdvertiser } from './AirPlayMdnsAdvertiser';
@@ -58,11 +58,7 @@ type AirPlayAudioSession = {
     sampleRate: number;
     channels: number;
     durationSeconds?: number;
-    output?: {
-      requestedOutputSampleRate?: number;
-      latencyProfile?: 'balanced' | 'lowLatency' | 'stable';
-      bufferSizeFrames?: number;
-    };
+    output?: AudioOutputSettings;
   }) => Promise<AudioStatus>;
   pause: () => Promise<AudioStatus> | AudioStatus;
   stop: () => Promise<AudioStatus> | AudioStatus;
@@ -79,6 +75,8 @@ type AirPlayReceiverDependencies = {
   audioSession?: AirPlayAudioSession;
   advertisedName?: string;
   loadRaopModule?: () => Promise<RaopModule>;
+  getAdvertiseInterfaces?: () => AirPlayAdvertiseInterface[];
+  createMdnsAdvertiser?: () => AirPlayMdnsAdvertiserLike;
   now?: () => number;
 };
 
@@ -103,9 +101,12 @@ const airPlayOutputBufferFrames = 8192;
 const airPlayHttpPcmFallbackMs = 1_500;
 
 type AirPlayAdvertiseInterface = {
+  name: string;
   address: string;
   mac: string;
 };
+
+type AirPlayMdnsAdvertiserLike = Pick<AirPlayMdnsAdvertiser, 'start' | 'stop'>;
 
 const loadDefaultRaopModule = async (): Promise<RaopModule> => {
   return new AirPlayRaopHelperModule();
@@ -227,18 +228,45 @@ const normalizeMac = (mac: string | null | undefined): string | null => {
   return cleaned.match(/.{1,2}/gu)?.join(':') ?? null;
 };
 
+const isBenchmarkIpv4 = (address: string): boolean => /^198\.(?:18|19)\./u.test(address);
+
+const isApipaIpv4 = (address: string): boolean => address.startsWith('169.254.');
+
+const isPrivateLanIpv4 = (address: string): boolean =>
+  address.startsWith('10.') ||
+  address.startsWith('192.168.') ||
+  /^172\.(?:1[6-9]|2\d|3[0-1])\./u.test(address);
+
+const isLikelyVirtualAirPlayInterface = (name: string): boolean =>
+  /(?:mihomo|clash|vpn|wireguard|tailscale|zerotier|vmware|virtualbox|hyper-v|docker|wsl|loopback|vethernet|tap|tun|npcap|bluetooth)/iu.test(name);
+
+const scoreAdvertiseInterface = (item: AirPlayAdvertiseInterface): number => {
+  let score = isPrivateLanIpv4(item.address) ? 0 : 20;
+  if (/wi-?fi|wlan|ethernet|以太网/iu.test(item.name)) {
+    score -= 5;
+  }
+  if (isLikelyVirtualAirPlayInterface(item.name)) {
+    score += 50;
+  }
+  if (item.mac === '02:45:43:48:4F:00') {
+    score += 10;
+  }
+  return score;
+};
+
 const getAdvertiseInterfaces = (): AirPlayAdvertiseInterface[] =>
-  Object.values(networkInterfaces())
-    .flatMap((items) => items ?? [])
-    .filter((item) => item.family === 'IPv4' && !item.internal)
-    .map((item) => ({
+  Object.entries(networkInterfaces())
+    .flatMap(([name, items]) => (items ?? []).map((item) => ({ name, item })))
+    .filter(({ item }) => item.family === 'IPv4' && !item.internal)
+    .map(({ name, item }) => ({
+      name,
       address: item.address,
       mac: normalizeMac(item.mac) ?? '02:45:43:48:4F:00',
     }))
+    .filter((item) => !isBenchmarkIpv4(item.address) && !isApipaIpv4(item.address))
     .sort((left, right) => {
-      const score = (value: AirPlayAdvertiseInterface): number =>
-        value.address.startsWith('192.168.') ? 0 : value.address.startsWith('10.') ? 1 : value.address.startsWith('172.') ? 2 : 3;
-      return score(left) - score(right);
+      const scoreDelta = scoreAdvertiseInterface(left) - scoreAdvertiseInterface(right);
+      return scoreDelta || left.name.localeCompare(right.name) || left.address.localeCompare(right.address);
     });
 
 const findAvailableTcpPort = async (host: string | null, basePort: number, portRange: number): Promise<number> => {
@@ -520,9 +548,15 @@ export const convertS16leToF32le = (input: Buffer): Buffer => {
 };
 
 const createAirPlayOutputSettings = (): NonNullable<Parameters<AirPlayAudioSession['playPcmStream']>[0]['output']> => ({
+  outputMode: 'shared',
+  sharedBackend: 'auto',
   requestedOutputSampleRate: airPlayOutputSampleRate,
   latencyProfile: 'stable',
   bufferSizeFrames: airPlayOutputBufferFrames,
+  useJuceDecode: false,
+  dsdOutputMode: 'pcm',
+  asioNativeDsdExperimentalEnabled: false,
+  releaseExclusiveOnPauseExperimentalEnabled: false,
 });
 
 const airPlayStateFromAudioStatus = (audioStatus: AudioStatus, currentState: AirPlayReceiverStatus['state']): AirPlayReceiverStatus['state'] => {
@@ -575,11 +609,13 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private readonly audioSession: AirPlayAudioSession;
   private readonly advertisedName: string;
   private readonly loadRaopModule: () => Promise<RaopModule>;
+  private readonly getAdvertiseInterfaces: () => AirPlayAdvertiseInterface[];
+  private readonly createMdnsAdvertiser: () => AirPlayMdnsAdvertiserLike;
   private readonly now: () => number;
   private raopModule: RaopModule | null = null;
   private receiverHandle: number | null = null;
   private advertisedInterface: AirPlayAdvertiseInterface | null = null;
-  private mdnsAdvertiser: AirPlayMdnsAdvertiser | null = null;
+  private mdnsAdvertisers: AirPlayMdnsAdvertiserLike[] = [];
   private pcmStream: PassThrough | null = null;
   private httpPcmRequest: ClientRequest | null = null;
   private httpPcmTransform: Transform | null = null;
@@ -600,6 +636,8 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.audioSession = dependencies.audioSession ?? getAudioSession();
     this.advertisedName = dependencies.advertisedName ?? defaultAdvertisedName();
     this.loadRaopModule = dependencies.loadRaopModule ?? loadDefaultRaopModule;
+    this.getAdvertiseInterfaces = dependencies.getAdvertiseInterfaces ?? getAdvertiseInterfaces;
+    this.createMdnsAdvertiser = dependencies.createMdnsAdvertiser ?? (() => new AirPlayMdnsAdvertiser());
     this.now = dependencies.now ?? Date.now;
     this.status = this.createDisabledStatus();
     this.audioSession.on('status', this.handleAudioStatus);
@@ -701,40 +739,48 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     try {
       this.raopModule ??= await this.loadRaopModule();
       this.raopModule.setLogHandler?.((event) => this.addDebugEvent('log', this.formatNativeLog(event)), 'info', 'info', 'warn');
-      const advertiseInterface = getAdvertiseInterfaces()[0] ?? null;
+      const advertiseInterfaces = this.getAdvertiseInterfaces();
+      const advertiseInterface = advertiseInterfaces[0] ?? null;
       this.advertisedInterface = advertiseInterface;
-      const portBase = await findAvailableTcpPort(advertiseInterface?.address ?? null, 6000, 100);
+      const portBase = await findAvailableTcpPort(null, 6000, 100);
       this.receiverHandle = await this.raopModule.startReceiver(
         {
           name: this.advertisedName,
           model: airPlayModel,
-          ...(advertiseInterface ? { host: advertiseInterface.address, mac: advertiseInterface.mac } : {}),
+          ...(advertiseInterface ? { mac: advertiseInterface.mac } : {}),
           metadata: true,
           portBase,
           portRange: 100,
         },
         (event) => this.handleRaopEvent(event),
       );
-      if (advertiseInterface) {
+      const advertisedAddresses: string[] = [];
+      for (const item of advertiseInterfaces) {
         try {
-          this.mdnsAdvertiser = new AirPlayMdnsAdvertiser();
-          await this.mdnsAdvertiser.start({
+          const mdnsAdvertiser = this.createMdnsAdvertiser();
+          await mdnsAdvertiser.start({
             name: this.advertisedName,
             model: airPlayModel,
-            address: advertiseInterface.address,
-            mac: advertiseInterface.mac,
+            address: item.address,
+            mac: item.mac,
             port: portBase,
           });
-          this.addDebugEvent('mdns', `fallback advertiser on ${advertiseInterface.address}:${portBase}`);
+          this.mdnsAdvertisers.push(mdnsAdvertiser);
+          advertisedAddresses.push(`${item.address} (${item.name})`);
         } catch (error) {
-          this.mdnsAdvertiser = null;
-          this.addDebugEvent('mdns', error instanceof Error ? error.message : String(error));
+          this.addDebugEvent('mdns', `${item.address}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
       this.addDebugEvent(
+        'mdns',
+        advertisedAddresses.length > 0
+          ? `fallback advertisers on ${advertisedAddresses.join(', ')}`
+          : 'no eligible LAN IPv4 interface for AirPlay discovery',
+      );
+      this.addDebugEvent(
         'start',
         advertiseInterface
-          ? `RAOP receiver started on ${advertiseInterface.address}:${portBase} (${advertiseInterface.mac})`
+          ? `RAOP receiver started on 0.0.0.0:${portBase}; primary advertisement ${advertiseInterface.address} (${advertiseInterface.mac})`
           : `RAOP receiver started on 0.0.0.0:${portBase}; no LAN IPv4 interface found`,
       );
       this.setStatus({
@@ -789,12 +835,17 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     } else {
       this.clearCurrentSession('');
     }
-    if (this.mdnsAdvertiser) {
-      await this.mdnsAdvertiser.stop().catch((error) => {
-        this.addDebugEvent('mdns', error instanceof Error ? error.message : String(error));
-      });
+    if (this.mdnsAdvertisers.length > 0) {
+      const mdnsAdvertisers = this.mdnsAdvertisers;
+      this.mdnsAdvertisers = [];
+      await Promise.all(
+        mdnsAdvertisers.map((mdnsAdvertiser) =>
+          mdnsAdvertiser.stop().catch((error) => {
+            this.addDebugEvent('mdns', error instanceof Error ? error.message : String(error));
+          }),
+        ),
+      );
     }
-    this.mdnsAdvertiser = null;
     if (this.receiverHandle !== null && this.raopModule) {
       try {
         await this.raopModule.stopReceiver(this.receiverHandle);

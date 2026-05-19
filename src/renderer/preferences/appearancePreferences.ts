@@ -3,7 +3,7 @@ import { getAppBridge } from '../utils/echoBridge';
 
 export type { AppearancePreferences } from '../../shared/types/appSettings';
 
-export type AppearanceFontSlot = 'main' | 'chinese';
+export type AppearanceFontSlot = 'main' | 'chinese' | 'lyrics';
 
 export type AppearanceFontFile = {
   path: string;
@@ -53,7 +53,7 @@ const normalizePreferences = (value: Partial<AppearancePreferences>): Appearance
   textDepth: clamp(Number(value.textDepth) || defaultAppearancePreferences.textDepth, 35, 100),
 });
 
-const serializeFontList = (value: string): string => {
+export const serializeFontList = (value: string): string => {
   const families = value
     .split(',')
     .map((family) => family.trim())
@@ -143,7 +143,13 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences): 
 const loadedFontFaces = new Map<AppearanceFontSlot, FontFace>();
 
 export const registerAppearanceFontFile = async (slot: AppearanceFontSlot, fontFile: AppearanceFontFile): Promise<string> => {
-  const family = normalizeFontName(fontFile.family, slot === 'main' ? defaultAppearancePreferences.mainFontFamily : defaultAppearancePreferences.chineseFontFamily);
+  const fallbackFamily =
+    slot === 'main'
+      ? defaultAppearancePreferences.mainFontFamily
+      : slot === 'chinese'
+        ? defaultAppearancePreferences.chineseFontFamily
+        : 'Microsoft YaHei';
+  const family = normalizeFontName(fontFile.family, fallbackFamily);
   const fontFace = new FontFace(family, `url("${fontFile.dataUrl}")`);
   const loadedFontFace = await fontFace.load();
   const previousFontFace = loadedFontFaces.get(slot);

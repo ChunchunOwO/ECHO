@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
-import { Film, Music2, X } from 'lucide-react';
+import { Clipboard, Film, Music2, X } from 'lucide-react';
 import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { MvMatchCandidate, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../../../shared/types/mv';
 import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
 import { sampleVideoElement } from './lyricsReadableColor';
+import { mvDiagnosticsPreferenceChangedEvent, readMvDiagnosticsEnabled } from './mvDiagnostics';
 
 export type MvAudioClock = {
   positionSeconds: number;
@@ -132,6 +133,7 @@ const getUnavailableReason = ({
 };
 
 const mvSyncCorrectionCooldownMs = 1000;
+const mvUnavailableNoticeAutoDismissMs = 3000;
 const mvSyncProfiles: Record<NonNullable<MvSettings['syncMode']>, { toleranceSeconds: number; hardSeekSeconds: number; maxRateDelta: number }> = {
   stable: { toleranceSeconds: 1.2, hardSeekSeconds: 4, maxRateDelta: 0.06 },
   balanced: { toleranceSeconds: 0.7, hardSeekSeconds: 2.5, maxRateDelta: 0.1 },
@@ -144,8 +146,12 @@ const isReceiverTrackId = (value: string | null | undefined): value is string =>
   Boolean(value?.startsWith('dlna-receiver:') || value?.startsWith('airplay-receiver:'));
 const shouldUseSnapshotMvSearch = (track: LibraryTrack | null | undefined, trackId: string | null | undefined): boolean =>
   Boolean(isReceiverTrackId(trackId) || track?.isTemporary || track?.mediaType === 'remote');
-const bestMvCandidate = (candidates: MvMatchCandidate[]): MvMatchCandidate | null =>
-  candidates.find((entry) => entry.playableInApp) ?? candidates[0] ?? null;
+const rankedMvCandidates = (candidates: MvMatchCandidate[]): MvMatchCandidate[] => [
+  ...candidates.filter((entry) => entry.playableInApp),
+  ...candidates.filter((entry) => !entry.playableInApp),
+];
+const isPlayableTrackVideo = (video: TrackVideo | null | undefined): video is TrackVideo =>
+  Boolean(video?.playableInApp && video.mediaUrl);
 const shouldAutoSearchForTrack = (
   settings: MvSettings,
   currentTrack: LibraryTrack | null | undefined,
@@ -426,6 +432,8 @@ export const MvPanel = ({
   const [error, setError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState(false);
   const [isUnavailableNoticeDismissed, setUnavailableNoticeDismissed] = useState(false);
+  const [isDiagnosticsReportEnabled, setDiagnosticsReportEnabled] = useState(readMvDiagnosticsEnabled);
+  const [hasCopiedDiagnosticsReport, setHasCopiedDiagnosticsReport] = useState(false);
   const requestRef = useRef(0);
   const preloadAttemptRef = useRef<string | null>(null);
   const lastVideoSyncAtRef = useRef(0);
@@ -512,7 +520,7 @@ export const MvPanel = ({
 
     try {
       const resolved = await window.echo.mv.resolveStreams(video.id);
-      return resolved.video;
+      return isPlayableTrackVideo(video) && !isPlayableTrackVideo(resolved.video) ? video : resolved.video;
     } catch (resolveError) {
       if (isMvDatabaseLoadError(resolveError)) {
         throw resolveError;
@@ -520,6 +528,29 @@ export const MvPanel = ({
       return video;
     }
   }, []);
+
+  const selectFirstPlayableCandidate = useCallback(
+    async (mvApi: NonNullable<NonNullable<Window['echo']>['mv']>, targetTrackId: string, candidates: MvMatchCandidate[]): Promise<TrackVideo | null> => {
+      if (!mvApi.selectVideo) {
+        return null;
+      }
+
+      for (const candidate of rankedMvCandidates(candidates)) {
+        try {
+          const selected = await mvApi.selectVideo(targetTrackId, candidate.id);
+          const resolved = await resolveNetworkVideo(selected);
+          if (isPlayableTrackVideo(resolved)) {
+            return resolved;
+          }
+        } catch {
+          // Try the next candidate; search results can include external-only videos.
+        }
+      }
+
+      return null;
+    },
+    [resolveNetworkVideo],
+  );
 
   const searchCandidatesForActiveTrack = useCallback(async (options: { forceSnapshot?: boolean } = {}): Promise<TrackVideo | null> => {
     const mvApi = window.echo?.mv;
@@ -538,13 +569,12 @@ export const MvPanel = ({
         trackId,
       });
       const candidates = await mvApi.searchNetworkCandidatesForSnapshot(request);
-      const candidate = bestMvCandidate(candidates);
-      return candidate && mvApi.selectVideo ? mvApi.selectVideo(request.trackId, candidate.id) : null;
+      return selectFirstPlayableCandidate(mvApi, request.trackId, candidates);
     }
 
     await mvApi.searchNetworkCandidates?.(trackId);
     return null;
-  }, [artist, coverUrl, currentTrack, title, trackId]);
+  }, [artist, coverUrl, currentTrack, selectFirstPlayableCandidate, title, trackId]);
 
   const getTemporaryPlayableForActiveTrack = useCallback(async (options: { forceSnapshot?: boolean } = {}): Promise<TrackVideo | null> => {
     const mvApi = window.echo?.mv;
@@ -664,7 +694,7 @@ export const MvPanel = ({
 
       const mvApi = window.echo?.mv;
       let video = await mvApi?.getSelected?.(effectiveTrackId) ?? null;
-      if (!video && mvApi?.searchNetworkCandidatesForSnapshot && mvApi.selectVideo) {
+      if (!video && mvApi?.searchNetworkCandidatesForSnapshot) {
         let streamingMvItems: StreamingMvItem[] = [];
         try {
           const streamingMv = await window.echo?.streaming?.getMv?.(streamingTarget);
@@ -695,9 +725,9 @@ export const MvPanel = ({
             mediaType: 'streaming',
             query: [item.title, item.artist || artist].filter(Boolean).join(' '),
           });
-          const candidate = candidates.find((entry) => entry.playableInApp) ?? candidates[0] ?? null;
-          if (candidate) {
-            video = await mvApi.selectVideo(effectiveTrackId, candidate.id);
+          const selectedCandidate = await selectFirstPlayableCandidate(mvApi, effectiveTrackId, candidates);
+          if (selectedCandidate) {
+            video = selectedCandidate;
             break;
           }
         }
@@ -740,7 +770,7 @@ export const MvPanel = ({
           setIsLoading(false);
         }
       });
-  }, [artist, coverUrl, loadSettings, resolveNetworkVideo, streamingTarget, title, trackId]);
+  }, [artist, coverUrl, loadSettings, resolveNetworkVideo, selectFirstPlayableCandidate, streamingTarget, title, trackId]);
 
   useEffect(() => {
     void loadSelected();
@@ -820,10 +850,116 @@ export const MvPanel = ({
       });
   const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? '临时 MV 播放中，数据库待修复' : null;
   const mvNotice = unavailableReason ?? temporaryPlaybackNotice;
+  const mvDiagnosticsReport = useMemo(() => {
+    if (!isDiagnosticsReportEnabled || showVideo) {
+      return null;
+    }
+
+    return JSON.stringify(
+      {
+        timestamp: new Date().toISOString(),
+        reason: unavailableReason,
+        error,
+        videoError,
+        isLoading,
+        track: {
+          id: trackId,
+          title,
+          artist,
+          mediaType: currentTrack?.mediaType ?? null,
+          durationSeconds: currentTrack?.duration ?? audioClock.durationSeconds ?? null,
+        },
+        selectedVideo: selectedVideo
+          ? {
+              id: selectedVideo.id,
+              provider: selectedVideo.provider,
+              sourceType: selectedVideo.sourceType,
+              sourceId: selectedVideo.sourceId,
+              title: selectedVideo.title,
+              qualityLabel: selectedVideo.qualityLabel,
+              selectedQualityId: selectedVideo.selectedQualityId,
+              mimeType: selectedVideo.mimeType,
+              playableInApp: selectedVideo.playableInApp,
+              hasMediaUrl: Boolean(selectedVideo.mediaUrl),
+              temporary: selectedVideo.temporary === true,
+            }
+          : null,
+        settings: {
+          enabled: settings.enabled !== false,
+          autoSearch: settings.autoSearch,
+          autoPreload: settings.autoPreload,
+          maxQuality: settings.maxQuality,
+          allow60fps: settings.allow60fps,
+          immersiveBackground: settings.immersiveBackground !== false,
+          restartAudioOnLoad: settings.restartAudioOnLoad,
+          syncMode: settings.syncMode ?? 'balanced',
+        },
+        audioClock: normalizeAudioClock(audioClock),
+        userAgent: navigator.userAgent,
+      },
+      null,
+      2,
+    );
+  }, [
+    artist,
+    audioClock,
+    currentTrack?.duration,
+    currentTrack?.mediaType,
+    error,
+    isDiagnosticsReportEnabled,
+    isLoading,
+    selectedVideo,
+    settings,
+    showVideo,
+    title,
+    trackId,
+    unavailableReason,
+    videoError,
+  ]);
+
+  const copyDiagnosticsReport = useCallback((): void => {
+    if (!mvDiagnosticsReport) {
+      return;
+    }
+
+    const writeReport = navigator.clipboard?.writeText(mvDiagnosticsReport);
+    if (!writeReport) {
+      return;
+    }
+
+    void writeReport.then(() => {
+      setHasCopiedDiagnosticsReport(true);
+      window.setTimeout(() => setHasCopiedDiagnosticsReport(false), 1200);
+    });
+  }, [mvDiagnosticsReport]);
 
   useEffect(() => {
     setUnavailableNoticeDismissed(false);
+    setHasCopiedDiagnosticsReport(false);
   }, [trackId, mvNotice]);
+
+  useEffect(() => {
+    const handlePreferenceChanged = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? event.detail as { enabled?: unknown } | null : null;
+      setDiagnosticsReportEnabled(typeof detail?.enabled === 'boolean' ? detail.enabled : readMvDiagnosticsEnabled());
+    };
+
+    window.addEventListener(mvDiagnosticsPreferenceChangedEvent, handlePreferenceChanged);
+    return () => window.removeEventListener(mvDiagnosticsPreferenceChangedEvent, handlePreferenceChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!mvNotice || isUnavailableNoticeDismissed) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setUnavailableNoticeDismissed(true);
+    }, mvUnavailableNoticeAutoDismissMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isUnavailableNoticeDismissed, mvNotice]);
+
   const immersiveBackgroundStyle = useMemo(
     () =>
       ({
@@ -1169,6 +1305,19 @@ export const MvPanel = ({
             <X size={13} aria-hidden="true" />
           </button>
         </div>
+      ) : null}
+
+      {mvDiagnosticsReport ? (
+        <section className="lyrics-mv-diagnostics-report" aria-label="MV diagnostics">
+          <div>
+            <strong>MV 诊断报告</strong>
+            <button type="button" onClick={copyDiagnosticsReport}>
+              <Clipboard size={13} />
+              {hasCopiedDiagnosticsReport ? '已复制' : '复制'}
+            </button>
+          </div>
+          <textarea readOnly value={mvDiagnosticsReport} />
+        </section>
       ) : null}
 
       {showImmersiveBackground ? (

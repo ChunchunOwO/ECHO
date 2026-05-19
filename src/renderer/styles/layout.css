@@ -36,25 +36,45 @@
   place-items: center;
   overflow: hidden;
   background: #eef2f7;
+  opacity: 1;
   pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    visibility 120ms ease;
+  visibility: visible;
 }
 
 html[data-theme="dark"] .app-wallpaper-layer {
   background: #101318;
 }
 
-.app-wallpaper-layer img {
+.app-wallpaper-layer[data-hidden="true"] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.app-wallpaper-layer img,
+.app-wallpaper-layer video {
   width: 100%;
   height: 100%;
   object-fit: contain;
   opacity: 0;
   transform-origin: center;
   transition: opacity 120ms ease;
-  will-change: transform, filter;
 }
 
-.app-wallpaper-layer[data-loaded="true"] img {
+.app-wallpaper-layer video {
+  display: block;
+}
+
+.app-wallpaper-layer[data-loaded="true"] img,
+.app-wallpaper-layer[data-loaded="true"] video {
   opacity: 1;
+}
+
+.app-wallpaper-layer[data-loaded="true"]:not([data-hidden="true"]) img,
+.app-wallpaper-layer[data-loaded="true"]:not([data-hidden="true"]) video {
+  will-change: transform, filter;
 }
 
 .app-shell--standalone {

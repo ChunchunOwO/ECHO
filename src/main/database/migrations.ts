@@ -1068,6 +1068,36 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 32,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS album_online_info_cache (
+          cache_key TEXT PRIMARY KEY,
+          album_id TEXT NOT NULL,
+          normalized_title TEXT NOT NULL,
+          normalized_artist TEXT NOT NULL,
+          credits_json TEXT NOT NULL,
+          information_json TEXT,
+          match_json TEXT,
+          sources_json TEXT NOT NULL DEFAULT '[]',
+          provider_errors_json TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_album_online_info_cache_album_id
+          ON album_online_info_cache(album_id);
+      `);
+    },
+  },
+  {
+    id: 33,
+    apply: (database) => {
+      addColumnIfMissing(database, 'album_online_info_cache', 'information_json', 'information_json TEXT');
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

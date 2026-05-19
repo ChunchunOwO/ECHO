@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { PlayerBar } from '../components/player/PlayerBar';
+import { PlaybackQueueDrawer } from '../components/player/PlaybackQueueDrawer';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
 import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer';
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
@@ -60,12 +61,14 @@ const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
 type AppWallpaperSettings = Pick<
   AppSettings,
   | 'appCustomWallpaperPath'
+  | 'appWallpaperMediaType'
   | 'appWallpaperScalePercent'
   | 'appWallpaperBlurPx'
   | 'appWallpaperBrightnessPercent'
   | 'appWallpaperUiOpacityPercent'
   | 'appWallpaperVisualProtectionEnabled'
   | 'appWallpaperUnifiedOpacityEnabled'
+  | 'appVideoWallpaperPauseMode'
 >;
 
 type LyricsMiniPlayerSettings = Pick<
@@ -78,12 +81,14 @@ type LyricsMiniPlayerSettings = Pick<
 
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
+  appWallpaperMediaType: 'image',
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
   appWallpaperBrightnessPercent: 100,
   appWallpaperUiOpacityPercent: 100,
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
+  appVideoWallpaperPauseMode: 'smart',
 };
 
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
@@ -109,12 +114,14 @@ const isSpotifyPlaybackSetupError = (message: string): boolean =>
 
 const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings => ({
   appCustomWallpaperPath: settings.appCustomWallpaperPath,
+  appWallpaperMediaType: settings.appWallpaperMediaType ?? 'image',
   appWallpaperScalePercent: settings.appWallpaperScalePercent,
   appWallpaperBlurPx: settings.appWallpaperBlurPx,
   appWallpaperBrightnessPercent: settings.appWallpaperBrightnessPercent,
   appWallpaperUiOpacityPercent: settings.appWallpaperUiOpacityPercent,
   appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
   appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled,
+  appVideoWallpaperPauseMode: settings.appVideoWallpaperPauseMode ?? 'smart',
 });
 
 const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
@@ -181,12 +188,17 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
+  const [isLyricsQueueDrawerOpen, setIsLyricsQueueDrawerOpen] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const [appWallpaperSettings, setAppWallpaperSettings] = useState<AppWallpaperSettings>(defaultAppWallpaperSettings);
-  const [loadedAppWallpaperUrl, setLoadedAppWallpaperUrl] = useState<string | null>(null);
+  const [loadedAppWallpaperKey, setLoadedAppWallpaperKey] = useState<string | null>(null);
+  const [isAppWallpaperDocumentHidden, setIsAppWallpaperDocumentHidden] = useState(() => document.visibilityState === 'hidden');
+  const [isAppWallpaperBlurPaused, setIsAppWallpaperBlurPaused] = useState(false);
+  const appWallpaperVideoRef = useRef<HTMLVideoElement | null>(null);
+  const appWallpaperBlurTimerRef = useRef<number | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastAudioErrorRef = useRef<string | null>(null);
@@ -226,7 +238,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const currentMiniPlayerTrack = playbackQueue.currentTrack ?? playbackQueue.lastPlayedTrack ?? null;
   const lyricsMiniPlayerCoverUrl = useMemo(
     () => miniPlayerArtworkUrl(currentMiniPlayerTrack),
-    [currentMiniPlayerTrack?.coverId, currentMiniPlayerTrack?.coverThumb],
+    [currentMiniPlayerTrack],
   );
   const lyricsMiniPlayerStyle = useMemo<CSSProperties>(() => {
     const opacity = Math.max(0.2, Math.min(1, (lyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent ?? 78) / 100));
@@ -255,8 +267,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const appWallpaperUrl = appWallpaperSettings.appCustomWallpaperPath
     ? `echo-wallpaper://app/custom?path=${encodeURIComponent(appWallpaperSettings.appCustomWallpaperPath)}`
     : null;
-  const visibleAppWallpaperUrl = appWallpaperUrl && !isLyricsRoute ? appWallpaperUrl : null;
-  const isAppWallpaperReady = Boolean(visibleAppWallpaperUrl && loadedAppWallpaperUrl === visibleAppWallpaperUrl);
+  const shouldShowAppWallpaperVisual = Boolean(appWallpaperUrl && !isLyricsRoute);
+  const isAppWallpaperVideo = appWallpaperSettings.appWallpaperMediaType === 'video';
+  const appWallpaperKey = appWallpaperUrl
+    ? `${appWallpaperSettings.appWallpaperMediaType ?? 'image'}:${appWallpaperUrl}`
+    : null;
+  const isAppWallpaperReady = Boolean(appWallpaperKey && loadedAppWallpaperKey === appWallpaperKey);
+  const shouldPauseAppWallpaperVideo = Boolean(
+    isAppWallpaperVideo &&
+    appWallpaperUrl &&
+    (!shouldShowAppWallpaperVisual ||
+      (appWallpaperSettings.appVideoWallpaperPauseMode !== 'never' &&
+        (isAppWallpaperDocumentHidden ||
+          (appWallpaperSettings.appVideoWallpaperPauseMode !== 'minimized' && isAppWallpaperBlurPaused)))),
+  );
   const appWallpaperRawUiAlpha = isAppWallpaperReady
     ? Math.max(0, Math.min(1, appWallpaperSettings.appWallpaperUiOpacityPercent / 100))
     : 1;
@@ -264,9 +288,14 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     isAppWallpaperReady &&
     !appWallpaperSettings.appWallpaperVisualProtectionEnabled &&
     appWallpaperRawUiAlpha <= 0;
+  const isAppWallpaperUiZero = isAppWallpaperReady && appWallpaperRawUiAlpha <= 0;
   const appWallpaperStyle = useMemo<CSSProperties>(() => {
-    const blurPx = appWallpaperSettings.appWallpaperBlurPx;
+    const blurPx = isAppWallpaperVideo
+      ? Math.min(appWallpaperSettings.appWallpaperBlurPx, 12)
+      : appWallpaperSettings.appWallpaperBlurPx;
     const brightnessPercent = appWallpaperSettings.appWallpaperBrightnessPercent;
+    const baseScale = appWallpaperSettings.appWallpaperScalePercent / 100;
+    const blurOverscanScale = blurPx > 0 ? Math.min(0.18, blurPx * 0.004) : 0;
     const filterParts = [
       blurPx > 0 ? `blur(${blurPx}px)` : null,
       brightnessPercent !== 100 ? `brightness(${brightnessPercent}%)` : null,
@@ -274,12 +303,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     return {
       filter: filterParts.length ? filterParts.join(' ') : 'none',
-      transform: `scale(${(appWallpaperSettings.appWallpaperScalePercent / 100).toFixed(2)})`,
+      transform: `scale(${(baseScale + blurOverscanScale).toFixed(3)})`,
     };
   }, [
     appWallpaperSettings.appWallpaperBlurPx,
     appWallpaperSettings.appWallpaperBrightnessPercent,
     appWallpaperSettings.appWallpaperScalePercent,
+    isAppWallpaperVideo,
   ]);
   const appShellStyle = useMemo(() => {
     const uiAlpha =
@@ -317,17 +347,92 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   ]);
 
   useEffect(() => {
-    if (!visibleAppWallpaperUrl) {
+    if (!appWallpaperKey) {
+      setLoadedAppWallpaperKey(null);
       return;
     }
 
-    setLoadedAppWallpaperUrl((current) => (current === visibleAppWallpaperUrl ? current : null));
-  }, [visibleAppWallpaperUrl]);
+    setLoadedAppWallpaperKey((current) => (current === appWallpaperKey ? current : null));
+  }, [appWallpaperKey]);
+
+  useEffect(() => {
+    const handleVisibilityChange = (): void => {
+      setIsAppWallpaperDocumentHidden(document.visibilityState === 'hidden');
+    };
+    const handleWindowBlur = (): void => {
+      if (appWallpaperBlurTimerRef.current !== null) {
+        window.clearTimeout(appWallpaperBlurTimerRef.current);
+      }
+      appWallpaperBlurTimerRef.current = window.setTimeout(() => {
+        appWallpaperBlurTimerRef.current = null;
+        setIsAppWallpaperBlurPaused(true);
+      }, 15000);
+    };
+    const handleWindowFocus = (): void => {
+      if (appWallpaperBlurTimerRef.current !== null) {
+        window.clearTimeout(appWallpaperBlurTimerRef.current);
+        appWallpaperBlurTimerRef.current = null;
+      }
+      setIsAppWallpaperBlurPaused(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      if (appWallpaperBlurTimerRef.current !== null) {
+        window.clearTimeout(appWallpaperBlurTimerRef.current);
+        appWallpaperBlurTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = appWallpaperVideoRef.current;
+    if (!video || !isAppWallpaperVideo || !appWallpaperUrl) {
+      return;
+    }
+
+    if (shouldPauseAppWallpaperVideo) {
+      video.pause();
+      return;
+    }
+
+    if (video.readyState >= 2 && appWallpaperKey && loadedAppWallpaperKey !== appWallpaperKey) {
+      setLoadedAppWallpaperKey(appWallpaperKey);
+    }
+
+    try {
+      const playResult = video.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        void playResult.catch(() => {
+          // Muted background video autoplay is best-effort; keep the UI usable if Chromium refuses.
+        });
+      }
+    } catch {
+      // Some test/runtime environments expose media elements without playback support.
+    }
+  }, [
+    appWallpaperKey,
+    appWallpaperUrl,
+    isAppWallpaperVideo,
+    loadedAppWallpaperKey,
+    shouldPauseAppWallpaperVideo,
+    shouldShowAppWallpaperVisual,
+  ]);
 
   const navigateRoute = useCallback(
     (routeId: AppRouteId): void => {
       if (routeId === 'lyrics' && activeRouteId !== 'lyrics') {
         previousRouteIdRef.current = activeRouteId;
+      }
+
+      if (routeId !== 'lyrics') {
+        setIsLyricsQueueDrawerOpen(false);
       }
 
       setActiveRouteId(routeId);
@@ -339,6 +444,14 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     rememberLyricsViewMode(mode);
     setActiveLyricsViewMode(mode);
   }, []);
+
+  const handleOpenLyricsQueueDrawer = useCallback((): void => {
+    setIsLyricsQueueDrawerOpen(true);
+  }, []);
+
+  const handleOpenFullQueueFromLyricsDrawer = useCallback((): void => {
+    navigateRoute('queue');
+  }, [navigateRoute]);
 
   const dismissChromeNotice = useCallback((): void => {
     setIsChromeNoticeVisible(false);
@@ -634,15 +747,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       if (
         patch &&
         ('appCustomWallpaperPath' in patch ||
+          'appWallpaperMediaType' in patch ||
           'appWallpaperScalePercent' in patch ||
           'appWallpaperBlurPx' in patch ||
           'appWallpaperBrightnessPercent' in patch ||
           'appWallpaperUiOpacityPercent' in patch ||
           'appWallpaperVisualProtectionEnabled' in patch ||
-          'appWallpaperUnifiedOpacityEnabled' in patch)
+          'appWallpaperUnifiedOpacityEnabled' in patch ||
+          'appVideoWallpaperPauseMode' in patch)
       ) {
         setAppWallpaperSettings((current) => ({
           appCustomWallpaperPath: 'appCustomWallpaperPath' in patch ? (patch.appCustomWallpaperPath ?? null) : current.appCustomWallpaperPath,
+          appWallpaperMediaType: 'appWallpaperMediaType' in patch
+            ? (patch.appWallpaperMediaType ?? defaultAppWallpaperSettings.appWallpaperMediaType)
+            : current.appWallpaperMediaType,
           appWallpaperScalePercent: 'appWallpaperScalePercent' in patch
             ? (patch.appWallpaperScalePercent ?? defaultAppWallpaperSettings.appWallpaperScalePercent)
             : current.appWallpaperScalePercent,
@@ -661,6 +779,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           appWallpaperUnifiedOpacityEnabled: 'appWallpaperUnifiedOpacityEnabled' in patch
             ? (patch.appWallpaperUnifiedOpacityEnabled === true)
             : current.appWallpaperUnifiedOpacityEnabled,
+          appVideoWallpaperPauseMode: 'appVideoWallpaperPauseMode' in patch
+            ? (patch.appVideoWallpaperPauseMode ?? defaultAppWallpaperSettings.appVideoWallpaperPauseMode)
+            : current.appVideoWallpaperPauseMode,
         }));
         return;
       }
@@ -700,6 +821,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     };
     const handleNavigateSettings = (): void => {
       navigateRoute('settings');
+    };
+    const handleNavigatePlugins = (): void => {
+      navigateRoute('plugins');
     };
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
@@ -742,6 +866,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     window.addEventListener('app:navigate:songs', handleNavigateSongs);
     window.addEventListener('app:navigate:settings', handleNavigateSettings);
+    window.addEventListener('app:navigate:plugins', handleNavigatePlugins);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
@@ -752,6 +877,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
       window.removeEventListener('app:navigate:songs', handleNavigateSongs);
       window.removeEventListener('app:navigate:settings', handleNavigateSettings);
+      window.removeEventListener('app:navigate:plugins', handleNavigatePlugins);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
@@ -1023,25 +1149,47 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''} ${
         shouldUseLyricsPlayerDrawer ? 'app-shell--lyrics-player-drawer app-shell--lyrics-mini-player' : ''
       } ${
-        visibleAppWallpaperUrl ? 'app-shell--wallpaper' : ''
+        shouldShowAppWallpaperVisual ? 'app-shell--wallpaper' : ''
       } ${
-        isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
+        shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       }`}
-      data-wallpaper-unified-opacity={isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
+      data-wallpaper-unified-opacity={shouldShowAppWallpaperVisual && isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
       data-wallpaper-visual-protection={
-        isAppWallpaperReady ? (appWallpaperSettings.appWallpaperVisualProtectionEnabled ? 'true' : 'false') : undefined
+        shouldShowAppWallpaperVisual && isAppWallpaperReady ? (appWallpaperSettings.appWallpaperVisualProtectionEnabled ? 'true' : 'false') : undefined
       }
-      data-wallpaper-ui-transparent={isAppWallpaperUiTransparent ? 'true' : undefined}
+      data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
+      data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       style={appShellStyle}
     >
-      {visibleAppWallpaperUrl ? (
-        <div className="app-wallpaper-layer" aria-hidden="true" data-loaded={isAppWallpaperReady}>
-          <img
-            src={visibleAppWallpaperUrl}
-            alt=""
-            style={appWallpaperStyle}
-            onLoad={() => setLoadedAppWallpaperUrl(visibleAppWallpaperUrl)}
-          />
+      {appWallpaperUrl ? (
+        <div
+          className="app-wallpaper-layer"
+          aria-hidden="true"
+          data-hidden={shouldShowAppWallpaperVisual ? undefined : 'true'}
+          data-loaded={isAppWallpaperReady}
+        >
+          {isAppWallpaperVideo ? (
+            <video
+              ref={appWallpaperVideoRef}
+              src={appWallpaperUrl}
+              muted
+              loop
+              autoPlay
+              playsInline
+              preload="metadata"
+              style={appWallpaperStyle}
+              onCanPlay={() => setLoadedAppWallpaperKey(appWallpaperKey)}
+              onLoadedData={() => setLoadedAppWallpaperKey(appWallpaperKey)}
+              onError={() => setLoadedAppWallpaperKey(null)}
+            />
+          ) : (
+            <img
+              src={appWallpaperUrl}
+              alt=""
+              style={appWallpaperStyle}
+              onLoad={() => setLoadedAppWallpaperKey(appWallpaperKey)}
+            />
+          )}
         </div>
       ) : null}
 
@@ -1165,6 +1313,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       />
       <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
       <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
+      <PlaybackQueueDrawer
+        isOpen={isLyricsRoute && isLyricsQueueDrawerOpen}
+        onClose={() => setIsLyricsQueueDrawerOpen(false)}
+        onOpenFullQueue={handleOpenFullQueueFromLyricsDrawer}
+      />
 
       {shouldRenderPlayerBar ? (
         <div
@@ -1172,7 +1325,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           data-mini-player-color-mode={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode : undefined}
           style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >
-          <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
+          <PlayerBar
+            onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
+            onOpenQueue={isLyricsRoute ? handleOpenLyricsQueueDrawer : undefined}
+          />
         </div>
       ) : null}
     </div>

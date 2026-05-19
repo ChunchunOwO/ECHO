@@ -531,6 +531,27 @@ describe('MvSettingsDrawer', () => {
     );
   });
 
+  it('keeps the current MV selected when a searched candidate can only open externally', async () => {
+    const selectedVideo = makeVideo({ id: 'video-current', title: 'Current playable MV' });
+    const externalCandidate = { ...makeCandidate(), id: 'candidate-external', title: 'External Only MV', provider: 'bilibili' as const };
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    renderDrawer(defaultMvSettings, selectedVideo);
+    vi.mocked(window.echo.mv.searchNetworkCandidates).mockResolvedValue([externalCandidate]);
+    vi.mocked(window.echo.mv.selectVideo).mockRejectedValue(new Error('此 MV 暂时无法在应用内播放，可外部打开。'));
+
+    const input = await screen.findByRole('textbox', { name: /MV search keywords/ });
+    fireEvent.change(input, { target: { value: 'External Only MV' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
+    const candidateButton = await screen.findByRole('button', { name: /External Only MV/ });
+    dispatchSpy.mockClear();
+    fireEvent.click(candidateButton);
+
+    await waitFor(() => expect(window.echo.mv.selectVideo).toHaveBeenCalledWith('track-1', 'candidate-external'));
+    expect(await screen.findByText('此 MV 暂时无法在应用内播放，可外部打开。')).toBeTruthy();
+    expect(screen.getAllByText('Current playable MV').length).toBeGreaterThan(0);
+    expect(dispatchSpy.mock.calls.some(([event]) => event instanceof CustomEvent && event.type === 'mv:changed')).toBe(false);
+  });
+
   it('shows an empty network search result as a neutral status', async () => {
     renderDrawer();
 

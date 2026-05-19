@@ -2338,15 +2338,30 @@ describe('Library Core', () => {
 
   it('getAlbumTracks returns paginated tracks from persisted album_tracks', async () => {
     const harness = createHarness();
-    writeAudioFile(harness.folder, 'A.flac');
-    writeAudioFile(harness.folder, 'B.flac');
+    const second = writeAudioFile(harness.folder, 'A.flac');
+    const first = writeAudioFile(harness.folder, 'B.flac');
+    const unnumbered = writeAudioFile(harness.folder, 'C.flac');
+    harness.metadataService.overrides.set(
+      second,
+      baseMetadata({ title: 'Second Song', album: 'Sorted Album', albumArtist: 'Echo Unit', trackNo: 2 }),
+    );
+    harness.metadataService.overrides.set(
+      first,
+      baseMetadata({ title: 'First Song', album: 'Sorted Album', albumArtist: 'Echo Unit', trackNo: 1 }),
+    );
+    harness.metadataService.overrides.set(
+      unnumbered,
+      baseMetadata({ title: 'Bonus Song', album: 'Sorted Album', albumArtist: 'Echo Unit', trackNo: null }),
+    );
     harness.addFolder();
 
     await harness.scanFolder();
     const [album] = harness.service.getAlbums({ pageSize: 1 }).items;
+    const allTracks = harness.service.getAlbumTracks(album.id, { page: 1, pageSize: 10 });
     const firstPage = harness.service.getAlbumTracks(album.id, { page: 1, pageSize: 1 });
     const secondPage = harness.service.getAlbumTracks(album.id, { page: 2, pageSize: 1 });
 
+    expect(allTracks.items.map((track) => track.title)).toEqual(['First Song', 'Second Song', 'Bonus Song']);
     expect(firstPage.items).toHaveLength(1);
     expect(firstPage.hasMore).toBe(true);
     expect(secondPage.items).toHaveLength(1);

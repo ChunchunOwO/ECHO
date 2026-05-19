@@ -35,7 +35,11 @@ const passthroughHeaders = (response: Response, fallbackMimeType: string | null)
   const headers = new Headers({
     'Cache-Control': 'no-store',
   });
-  const contentType = response.headers.get('content-type') ?? fallbackMimeType;
+  const upstreamContentType = response.headers.get('content-type');
+  const contentType =
+    !upstreamContentType || upstreamContentType.toLowerCase().startsWith('application/octet-stream')
+      ? fallbackMimeType ?? upstreamContentType
+      : upstreamContentType;
   const contentLength = response.headers.get('content-length');
   const contentRange = response.headers.get('content-range');
   const acceptRanges = response.headers.get('accept-ranges');

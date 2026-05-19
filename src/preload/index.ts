@@ -504,7 +504,10 @@ const echoApi: EchoApi = {
     close: () => ipcRenderer.invoke(IpcChannels.AppWindowClose),
     getSettings: () => ipcRenderer.invoke(IpcChannels.AppGetSettings),
     setSettings: (patch) => ipcRenderer.invoke(IpcChannels.AppSetSettings, patch),
+    getTaskbarPlaybackStatus: () => ipcRenderer.invoke(IpcChannels.AppGetTaskbarPlaybackStatus),
     resetSettings: () => ipcRenderer.invoke(IpcChannels.AppResetSettings),
+    exportSettings: () => ipcRenderer.invoke(IpcChannels.AppExportSettings),
+    importSettings: () => ipcRenderer.invoke(IpcChannels.AppImportSettings),
     chooseFontFile: () => ipcRenderer.invoke(IpcChannels.AppChooseFontFile),
     chooseLyricsWallpaper: () => ipcRenderer.invoke(IpcChannels.AppChooseLyricsWallpaper),
     chooseAppWallpaper: () => ipcRenderer.invoke(IpcChannels.AppChooseAppWallpaper),
@@ -596,6 +599,7 @@ const echoApi: EchoApi = {
     clearLikedAlbums: () => ipcRenderer.invoke(IpcChannels.LibraryClearLikedAlbums),
     getAlbums: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbums, query),
     getAlbum: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbum, albumId),
+    getAlbumOnlineInfo: (albumId, options) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumOnlineInfo, albumId, options),
     getAlbumForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumForTrack, trackId),
     getArtists: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtists, query),
     getArtist: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryGetArtist, artistId),
@@ -1000,6 +1004,16 @@ const echoApi: EchoApi = {
       ipcRenderer.on(IpcChannels.DownloadsJobsUpdated, listener);
       return () => ipcRenderer.off(IpcChannels.DownloadsJobsUpdated, listener);
     },
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke(IpcChannels.PluginsList),
+    createExample: (kind) => ipcRenderer.invoke(IpcChannels.PluginsCreateExample, kind),
+    enable: (request) => ipcRenderer.invoke(IpcChannels.PluginsEnable, request),
+    disable: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsDisable, pluginId),
+    reload: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsReload, pluginId),
+    openDirectory: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsOpenDirectory, pluginId),
+    runCommand: (request) => ipcRenderer.invoke(IpcChannels.PluginsRunCommand, request),
+    getLogs: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsGetLogs, pluginId),
   },
   accounts: {
     getStatuses: () => ipcRenderer.invoke(IpcChannels.AccountGetStatuses),

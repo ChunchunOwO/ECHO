@@ -9,7 +9,7 @@ import { getAudioSession } from '../../audio/AudioSession';
 import { getCrashReportService } from '../../diagnostics/CrashReportService';
 import { getLibraryService } from '../../library/LibraryService';
 import type { CoverVariant } from '../../library/libraryTypes';
-import { getSmtcService } from './getSmtcService';
+import { disposeAndResetSmtcService, getSmtcService } from './getSmtcService';
 
 type SmtcSyncState = {
   initialized: boolean;
@@ -29,9 +29,18 @@ const state: SmtcSyncState = {
   lastTimelineSyncAt: 0,
 };
 
+const smtcRecoveryWindowMs = 60_000;
+const smtcMaxRecoveriesPerWindow = 2;
+const smtcRecoveryAttempts: number[] = [];
+let smtcRecoveryInFlight = false;
+
 const logWarn = (message: string, payload?: unknown): void => {
   getCrashReportService().getLogger()?.warn('main', message, payload);
   console.warn(message, payload ?? '');
+};
+
+const logInfo = (message: string, payload?: unknown): void => {
+  getCrashReportService().getLogger()?.info('main', message, payload);
 };
 
 const safeNumber = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
@@ -182,4 +191,61 @@ export const disposeSmtcIntegration = async (): Promise<void> => {
   state.lastMetadataKey = null;
   state.lastPlaybackState = null;
   state.lastTimelineSyncAt = 0;
+};
+
+const reserveSmtcRecoveryAttempt = (now = Date.now()): boolean => {
+  while (smtcRecoveryAttempts.length > 0 && now - smtcRecoveryAttempts[0] > smtcRecoveryWindowMs) {
+    smtcRecoveryAttempts.shift();
+  }
+
+  if (smtcRecoveryAttempts.length >= smtcMaxRecoveriesPerWindow) {
+    return false;
+  }
+
+  smtcRecoveryAttempts.push(now);
+  return true;
+};
+
+export const recoverSmtcIntegration = async (reason = 'runtime-recovery'): Promise<boolean> => {
+  if (!state.initialized) {
+    logWarn('[SMTC] recovery skipped because the integration is not initialized', { reason });
+    return false;
+  }
+
+  if (smtcRecoveryInFlight) {
+    logWarn('[SMTC] recovery skipped because another recovery is already running', { reason });
+    return false;
+  }
+
+  if (!reserveSmtcRecoveryAttempt()) {
+    logWarn('[SMTC] recovery skipped because the retry limit was reached', {
+      reason,
+      windowMs: smtcRecoveryWindowMs,
+      maxAttempts: smtcMaxRecoveriesPerWindow,
+    });
+    return false;
+  }
+
+  smtcRecoveryInFlight = true;
+  try {
+    logInfo('[SMTC] attempting lightweight integration recovery', { reason });
+    await disposeSmtcIntegration();
+    await disposeAndResetSmtcService();
+    await initializeSmtcIntegration();
+    logInfo('[SMTC] lightweight integration recovery completed', { reason });
+    return true;
+  } catch (error) {
+    logWarn('[SMTC] lightweight integration recovery failed', {
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  } finally {
+    smtcRecoveryInFlight = false;
+  }
+};
+
+export const resetSmtcRecoveryStateForTests = (): void => {
+  smtcRecoveryAttempts.length = 0;
+  smtcRecoveryInFlight = false;
 };

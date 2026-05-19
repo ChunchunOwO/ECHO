@@ -243,12 +243,17 @@ export const isNativeOutputBridgeAvailable = (): boolean => resolveHostBinary() 
 class BridgeWritable extends Writable {
   private isClosed = false;
 
-  constructor(private readonly target: Writable) {
+  constructor(
+    private readonly target: Writable,
+    onTargetError?: (error: Error) => void,
+  ) {
     super();
 
     target.on('error', (err) => {
       this.isClosed = true;
-      this.destroy(err);
+      const error = err instanceof Error ? err : new Error(String(err));
+      onTargetError?.(error);
+      this.destroy(onTargetError ? undefined : error);
     });
     target.on('close', () => {
       this.isClosed = true;
@@ -602,8 +607,7 @@ export class NativeOutputBridge extends EventEmitter {
         windowsHide: true,
       });
       const spawnedProc = this.proc;
-      this.bridgeWritable = new BridgeWritable(this.proc.stdin);
-      this.bridgeWritable.on('error', (error) => {
+      const handleStdinFailure = (error: Error) => {
         if (this.proc !== spawnedProc && this.pendingGracefulStop?.proc !== spawnedProc) {
           return;
         }
@@ -626,7 +630,9 @@ export class NativeOutputBridge extends EventEmitter {
         }
 
         this.emit('error', hostError);
-      });
+      };
+      this.bridgeWritable = new BridgeWritable(this.proc.stdin, handleStdinFailure);
+      this.bridgeWritable.on('error', handleStdinFailure);
 
       this.stdoutReadline = readline.createInterface({ input: this.proc.stdout });
       const stdout = this.stdoutReadline;

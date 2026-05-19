@@ -192,7 +192,7 @@ describe('MvService', () => {
     expect(video.filePath).toBeNull();
   });
 
-  it('selectVideo clears other selected videos for the same track', () => {
+  it('selectVideo clears other selected videos for the same track', async () => {
     const { root, service, track } = createHarness();
     const firstPath = join(root, 'Echo Song.mp4');
     const secondPath = join(root, 'Echo Artist - Echo Song.webm');
@@ -201,7 +201,7 @@ describe('MvService', () => {
     const first = service.bindLocalVideo(track.id, firstPath);
     const second = service.bindLocalVideo(track.id, secondPath);
 
-    service.selectVideo(track.id, first.id);
+    await service.selectVideo(track.id, first.id);
     const videos = service.getVideoCandidates(track.id);
 
     expect(videos.find((video) => video.id === first.id)?.selected).toBe(true);
@@ -220,7 +220,7 @@ describe('MvService', () => {
     expect(service.getVideoCandidates(track.id)).toHaveLength(1);
   });
 
-  it('saves MV offset only on the selected video for the current track', () => {
+  it('saves MV offset only on the selected video for the current track', async () => {
     const { root, service, track } = createHarness();
     const firstPath = join(root, 'Echo Song.mp4');
     const secondPath = join(root, 'Echo Song Live.mp4');
@@ -230,7 +230,7 @@ describe('MvService', () => {
     const second = service.bindLocalVideo(track.id, secondPath);
 
     const updated = service.setVideoOffset(track.id, 750);
-    service.selectVideo(track.id, first.id);
+    await service.selectVideo(track.id, first.id);
 
     expect(updated?.id).toBe(second.id);
     expect(updated?.offsetMs).toBe(750);
@@ -309,7 +309,7 @@ describe('MvService', () => {
     appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
 
     const candidates = await service.searchNetworkCandidates(track.id);
-    const selectedManually = service.selectVideo(track.id, candidates.find((candidate) => candidate.title === 'Echo Song Live MV')!.id);
+    const selectedManually = await service.selectVideo(track.id, candidates.find((candidate) => candidate.title === 'Echo Song Live MV')!.id);
     await service.resolveStreams(selectedManually.id);
     appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: true };
 
@@ -460,6 +460,149 @@ describe('MvService', () => {
     expect(service.getVideoCandidates(track.id).find((video) => video.sourceId === 'BV1external')).toMatchObject({
       selected: false,
       playableInApp: false,
+    });
+  });
+
+  it('keeps a playable cached stream when a later refresh resolves only to an external link', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1preserve',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1preserve',
+      providerUrl: 'https://www.bilibili.com/video/BV1preserve',
+      thumbnailUrl: null,
+      uploader: null,
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.95,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi
+        .fn()
+        .mockResolvedValueOnce([makeResolvedVariant({ rawProviderJson: { provider: 'bilibili', resolver: 'legacy', qn: 80, qualityRank: 3 } })])
+        .mockResolvedValueOnce([makeExternalVariant('https://www.bilibili.com/video/BV1preserve')]),
+    };
+    const { service, track } = createHarness([provider]);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
+    const firstMediaUrl = selected.mediaUrl;
+    const refreshed = await service.resolveStreams(selected.id);
+
+    expect(provider.resolve).toHaveBeenCalledTimes(2);
+    expect(firstMediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-80`);
+    expect(refreshed.video).toMatchObject({
+      playableInApp: true,
+      mediaUrl: firstMediaUrl,
+      qualityLabel: '1080p',
+    });
+  });
+
+  it('serves a stale cached stream to the MV protocol when refresh resolves only to an external link', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1stale',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1stale',
+      providerUrl: 'https://www.bilibili.com/video/BV1stale',
+      thumbnailUrl: null,
+      uploader: null,
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.95,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi
+        .fn()
+        .mockResolvedValueOnce([
+          makeResolvedVariant({
+            id: 'bilibili-qn-80',
+            expiresAt: '2000-01-01T00:00:00.000Z',
+            url: 'https://cdn.example/stale-1080.mp4',
+            rawProviderJson: { provider: 'bilibili', resolver: 'legacy', qn: 80, qualityRank: 3 },
+          }),
+        ])
+        .mockResolvedValueOnce([makeExternalVariant('https://www.bilibili.com/video/BV1stale')]),
+    };
+    const { service, track } = createHarness([provider]);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
+    const variant = await service.getStreamVariantForProtocol(selected.id, 'bilibili-qn-80');
+
+    expect(provider.resolve).toHaveBeenCalledTimes(2);
+    expect(variant).toMatchObject({
+      url: 'https://cdn.example/stale-1080.mp4',
+      mimeType: 'video/mp4',
+    });
+    expect(service.getSelectedVideo(track.id)).toMatchObject({
+      playableInApp: true,
+      mediaUrl: `echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-80`,
+    });
+  });
+
+  it('does not let a manually selected external-only network candidate replace the current MV', async () => {
+    const playableCandidate: MvMatchCandidate = {
+      id: 'bilibili:BV1playable',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1playable',
+      providerUrl: 'https://www.bilibili.com/video/BV1playable',
+      thumbnailUrl: null,
+      uploader: null,
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.95,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const externalCandidate: MvMatchCandidate = {
+      ...playableCandidate,
+      id: 'bilibili:BV1external',
+      title: 'Echo Song External',
+      url: 'https://www.bilibili.com/video/BV1external',
+      providerUrl: 'https://www.bilibili.com/video/BV1external',
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [playableCandidate, externalCandidate]),
+      resolve: vi.fn(async (video) =>
+        video.sourceId === 'BV1external' ? [makeExternalVariant(video.providerUrl ?? video.url ?? undefined)] : [makeResolvedVariant()],
+      ),
+    };
+    const { service, track } = createHarness([provider]);
+    appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
+
+    const candidates = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, candidates.find((candidate) => candidate.title === 'Echo Song MV')!.id);
+
+    await expect(service.selectVideo(track.id, candidates.find((candidate) => candidate.title === 'Echo Song External')!.id)).rejects.toThrow(
+      '此 MV 暂时无法在应用内播放',
+    );
+
+    expect(service.getSelectedVideo(track.id)).toMatchObject({
+      id: selected.id,
+      sourceId: 'BV1playable',
+      playableInApp: true,
     });
   });
 
@@ -637,7 +780,7 @@ describe('MvService', () => {
     appSettingsMock.current = { ...appSettingsMock.current, mvAutoSearch: false };
 
     const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
-    const selected = service.selectVideo(track.id, resolvedCandidate.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
     database.prepare('UPDATE track_videos SET selected_quality_id = ? WHERE id = ?').run('old-expired-quality', selected.id);
 
     const resolved = await service.resolveStreams(selected.id);
@@ -978,7 +1121,7 @@ describe('MvService', () => {
     const { service, track } = createHarness([provider]);
 
     const candidates = await service.searchNetworkCandidates(track.id);
-    const selected = service.selectVideo(track.id, candidates[0].id);
+    const selected = await service.selectVideo(track.id, candidates[0].id);
     const resolved = await service.resolveStreams(selected.id);
 
     expect(candidates[0]).toMatchObject({
@@ -1066,12 +1209,69 @@ describe('MvService', () => {
     const { service, track } = createHarness([provider]);
 
     const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
-    const selected = service.selectVideo(track.id, resolvedCandidate.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
     const resolved = await service.resolveStreams(selected.id);
 
     expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-116`);
     expect(resolved.video.qualityLabel).toBe('1080p 60fps');
     expect(resolved.video.height).toBe(888);
+  });
+
+  it('skips non-playable Bilibili HEVC variants and falls back to a playable AVC stream', async () => {
+    appSettingsMock.current = { ...appSettingsMock.current, mvMaxQuality: '2160p' };
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1echo',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1echo',
+      providerUrl: 'https://www.bilibili.com/video/BV1echo',
+      thumbnailUrl: null,
+      uploader: null,
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.9,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => [
+        makeResolvedVariant({
+          id: 'bilibili-qn-120',
+          label: '4K',
+          qualityTier: '2160p',
+          width: 3840,
+          height: 2160,
+          codec: 'hev1.1.6.L153.90',
+          playableInApp: false,
+          url: 'https://cdn.example/echo-4k-hevc.m4s',
+          rawProviderJson: { provider: 'bilibili', resolver: 'bilibili-dash-video-v4', qn: 120, qualityRank: 5 },
+        }),
+        makeResolvedVariant({
+          id: 'bilibili-qn-80',
+          label: '1080p',
+          qualityTier: '1080p',
+          width: 1920,
+          height: 1080,
+          codec: 'avc1.640032',
+          playableInApp: true,
+          url: 'https://cdn.example/echo-1080-avc.m4s',
+          rawProviderJson: { provider: 'bilibili', resolver: 'bilibili-dash-video-v4', qn: 80, qualityRank: 2 },
+        }),
+      ]),
+    };
+    const { service, track } = createHarness([provider]);
+
+    const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
+
+    expect(selected.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-80`);
+    expect(selected.qualityLabel).toBe('1080p');
+    expect(selected.height).toBe(1080);
   });
 
   it('caps Bilibili auto quality at regular 4K when max quality is 2160p', async () => {
@@ -1101,7 +1301,7 @@ describe('MvService', () => {
         width: 3840,
         height: 2160,
         fps: null,
-        codec: 'hev1',
+          codec: 'avc1',
         container: 'mp4',
         mimeType: 'video/mp4',
         protocol: 'direct',
@@ -1119,7 +1319,7 @@ describe('MvService', () => {
         width: 3840,
         height: 2160,
         fps: null,
-        codec: 'hev1',
+          codec: 'avc1',
         container: 'mp4',
         mimeType: 'video/mp4',
         protocol: 'direct',
@@ -1139,7 +1339,7 @@ describe('MvService', () => {
     const { service, track } = createHarness([provider]);
 
     const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
-    const selected = service.selectVideo(track.id, resolvedCandidate.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
     const resolved = await service.resolveStreams(selected.id);
 
     expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-120`);
@@ -1173,7 +1373,7 @@ describe('MvService', () => {
         width: 3840,
         height: 2160,
         fps: 60,
-        codec: 'hev1',
+          codec: 'avc1',
         container: 'mp4',
         mimeType: 'video/mp4',
         protocol: 'direct',
@@ -1191,7 +1391,7 @@ describe('MvService', () => {
         width: 3840,
         height: 2160,
         fps: 120,
-        codec: 'hev1',
+          codec: 'avc1',
         container: 'mp4',
         mimeType: 'video/mp4',
         protocol: 'direct',
@@ -1211,7 +1411,7 @@ describe('MvService', () => {
     const { service, track } = createHarness([provider]);
 
     const [resolvedCandidate] = await service.searchNetworkCandidates(track.id);
-    const selected = service.selectVideo(track.id, resolvedCandidate.id);
+    const selected = await service.selectVideo(track.id, resolvedCandidate.id);
     const resolved = await service.resolveStreams(selected.id);
 
     expect(resolved.video.mediaUrl).toBe(`echo-mv://stream/${encodeURIComponent(selected.id)}/bilibili-qn-120-120fps`);

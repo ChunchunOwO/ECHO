@@ -3670,7 +3670,11 @@ export class LibraryStore {
           remote_album_rows.availability
         FROM remote_album_rows
         WHERE remote_album_rows.album_id = ?
-        ORDER BY COALESCE(remote_album_rows.disc_no, 0), COALESCE(remote_album_rows.track_no, 0), remote_album_rows.title COLLATE NOCASE
+        ORDER BY
+          COALESCE(remote_album_rows.disc_no, 1),
+          CASE WHEN remote_album_rows.track_no IS NULL THEN 1 ELSE 0 END,
+          remote_album_rows.track_no,
+          remote_album_rows.title COLLATE NOCASE
         LIMIT ? OFFSET ?`,
         albumId,
         pageSize,
@@ -3698,7 +3702,12 @@ export class LibraryStore {
       FROM album_tracks
       INNER JOIN tracks ON tracks.id = album_tracks.track_id
       WHERE album_tracks.album_id = ? AND tracks.missing = 0
-      ORDER BY album_tracks.position ASC
+      ORDER BY
+        COALESCE(album_tracks.disc_no, tracks.disc_no, 1),
+        CASE WHEN COALESCE(album_tracks.track_no, tracks.track_no) IS NULL THEN 1 ELSE 0 END,
+        COALESCE(album_tracks.track_no, tracks.track_no),
+        tracks.title COLLATE NOCASE,
+        album_tracks.position ASC
       LIMIT ? OFFSET ?`,
       albumId,
       pageSize,

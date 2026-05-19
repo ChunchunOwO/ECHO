@@ -70,6 +70,9 @@ export const registerAppLifecycle = (): void => {
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-background-timer-throttling');
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('app.echo.next');
+  }
 
   const hasSingleInstanceLock = app.requestSingleInstanceLock();
   if (!hasSingleInstanceLock) {

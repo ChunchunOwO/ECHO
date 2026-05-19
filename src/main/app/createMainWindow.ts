@@ -4,6 +4,7 @@ import { BrowserWindow } from 'electron';
 import type { AppSettings, RememberedWindowSize } from '../../shared/types/appSettings';
 import { getAppSettings, setAppSettings } from './appSettings';
 import { bindBackgroundPlaybackShortcutsToWindow } from './backgroundPlaybackShortcuts';
+import { bindTaskbarPlaybackIntegration } from './taskbarPlaybackIntegration';
 import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
@@ -145,6 +146,7 @@ export const createMainWindow = (): BrowserWindow => {
 
   setMainWindow(window);
   bindBackgroundPlaybackShortcutsToWindow();
+  bindTaskbarPlaybackIntegration(window);
 
   return window;
 };

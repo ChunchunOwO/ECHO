@@ -145,6 +145,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -161,6 +162,25 @@ describe('MvPanel', () => {
     expect(screen.getByText('未找到可播放 MV')).toBeTruthy();
     expect(screen.queryByText('Find local')).toBeNull();
     expect(screen.queryByText('Choose file')).toBeNull();
+  });
+
+  it('auto-dismisses the MV unavailable notice after three seconds', async () => {
+    vi.useFakeTimers();
+    renderPanel(null);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('未找到可播放 MV')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.queryByText('未找到可播放 MV')).toBeNull();
   });
 
   it('can hide track info on the cover fallback card', async () => {
@@ -1369,6 +1389,60 @@ describe('MvPanel', () => {
     await waitFor(() => expect(window.echo.mv.searchNetworkCandidates).toHaveBeenCalledWith('track-1'));
     await waitFor(() => expect(getSelected).toHaveBeenCalledTimes(2));
     expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-mv://stream/video-playable/bilibili-qn-80');
+    expect(screen.queryByText('MV unavailable')).toBeNull();
+  });
+
+  it('keeps a playable MV visible when a stream refresh degrades to external-only', async () => {
+    const playableVideo = makeVideo({
+      id: 'video-playable',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      sourceId: 'BV1playable',
+      mediaUrl: 'echo-mv://stream/video-playable/bilibili-qn-80',
+      qualityLabel: '1080p',
+    });
+    const externalRefresh = {
+      ...playableVideo,
+      playableInApp: false,
+      mediaUrl: null,
+      qualityLabel: null,
+    };
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(playableVideo),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        getTemporaryPlayableForSnapshot: vi.fn().mockResolvedValue(null),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: externalRefresh, variants: [] }),
+        setQuality: vi.fn(),
+        setOffset: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn(),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() => expect(window.echo.mv.resolveStreams).toHaveBeenCalledWith('video-playable'));
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-mv://stream/video-playable/bilibili-qn-80'));
     expect(screen.queryByText('MV unavailable')).toBeNull();
   });
 

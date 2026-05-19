@@ -24,6 +24,7 @@ import {
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { MvSettings } from '../../../shared/types/mv';
 import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../../shared/types/lyrics';
+import { registerAppearanceFontFile } from '../../preferences/appearancePreferences';
 
 type LyricsSettingsDrawerProps = {
   isOpen: boolean;
@@ -33,6 +34,14 @@ type LyricsSettingsDrawerProps = {
 type LyricsSettingsPanelProps = {
   className?: string;
   variant?: 'drawer' | 'settings';
+};
+
+type LocalFontData = {
+  family: string;
+};
+
+type NavigatorWithLocalFonts = Navigator & {
+  queryLocalFonts?: () => Promise<LocalFontData[]>;
 };
 
 const drawerExitAnimationMs = 320;
@@ -63,6 +72,8 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsWordHighlightEnabled'
   | 'lyricsFontSizePx'
   | 'lyricsSecondaryFontSizePx'
+  | 'lyricsFontFamily'
+  | 'lyricsFontFilePath'
   | 'lyricsLineSpacingPercent'
   | 'lyricsLineMaxChars'
   | 'lyricsContextOpacityPercent'
@@ -102,6 +113,8 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsWordHighlightEnabled: true,
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
+  lyricsFontFamily: 'Microsoft YaHei',
+  lyricsFontFilePath: null,
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
@@ -117,6 +130,22 @@ const fallbackSettings: LyricsDrawerSettings = {
 };
 
 const colorSwatches = ['#314054', '#FFFFFF', '#F6D365', '#8FCFBD', '#A8C7FA', '#FF8A80'];
+const fallbackLyricsFontFamilies = [
+  'Microsoft YaHei',
+  'Microsoft JhengHei',
+  'PingFang SC',
+  'PingFang TC',
+  'Noto Sans SC',
+  'Noto Sans TC',
+  'Source Han Sans SC',
+  'Source Han Sans TC',
+  'SimHei',
+  'SimSun',
+  'Segoe UI',
+  'Arial',
+  'Inter',
+  'Outfit',
+];
 const defaultLyricsEnabledProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 type OnlineLyricsProviderId = Extract<LyricsProviderId, 'lrclib' | 'netease' | 'qqmusic'>;
@@ -210,6 +239,7 @@ const formatDuration = (durationSeconds: number | null): string => {
 
 const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
 const thresholdFromPercent = (value: string): number => Math.max(30, Math.min(100, Math.round(Number(value)))) / 100;
+const sanitizeFontFamily = (value: string): string => value.replace(/[\r\n;]/g, '').trim();
 
 const riskLabel = (risk: LyricsSearchCandidate['risk']): string => {
   if (risk === 'low') return '精准匹配';
@@ -266,6 +296,8 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
+  lyricsFontFamily: settings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily,
+  lyricsFontFilePath: settings.lyricsFontFilePath ?? fallbackSettings.lyricsFontFilePath,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
   lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
@@ -287,6 +319,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(true);
+  const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackLyricsFontFamilies);
+  const [fontFamilyDraft, setFontFamilyDraft] = useState<string>(fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei');
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
   const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
@@ -308,6 +342,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const showPersistentControls = variant === 'drawer' || variant === 'settings';
   const lyricsContextOpacityPercent = effectiveSettings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent;
   const lyricsLineMaxChars = effectiveSettings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars ?? 0;
+  const lyricsFontFamily = effectiveSettings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei';
   const enabledProviderSet = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
   const orderedLyricsSourceOptions = useMemo(() => {
     const orderedIds = [
@@ -386,6 +421,43 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         : lyricsCandidates.filter((candidate) => sourceFilterKey(candidate) === activeLyricsCandidateSource),
     [activeLyricsCandidateSource, lyricsCandidates],
   );
+
+  useEffect(() => {
+    setFontFamilyDraft(lyricsFontFamily);
+  }, [lyricsFontFamily]);
+
+  useEffect(() => {
+    if (!showPersistentControls || !isLyricsStyleControlsOpen) {
+      return undefined;
+    }
+
+    const queryLocalFonts = (navigator as NavigatorWithLocalFonts).queryLocalFonts;
+
+    if (!queryLocalFonts) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    void queryLocalFonts()
+      .then((fonts) => {
+        if (cancelled) {
+          return;
+        }
+
+        const families = Array.from(
+          new Set([
+            ...fallbackLyricsFontFamilies,
+            ...fonts.map((font) => sanitizeFontFamily(font.family)).filter(Boolean),
+          ]),
+        ).sort((a, b) => a.localeCompare(b));
+        setFontFamilies(families);
+      })
+      .catch(() => setFontFamilies(fallbackLyricsFontFamilies));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLyricsStyleControlsOpen, showPersistentControls]);
 
   const loadCurrentLyricsProvider = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
@@ -632,6 +704,42 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       }
     };
   }, []);
+
+  const applyLyricsFontFamily = useCallback((value: string): void => {
+    const fontFamily = sanitizeFontFamily(value);
+    if (!fontFamily || fontFamily === lyricsFontFamily) {
+      setFontFamilyDraft(lyricsFontFamily);
+      return;
+    }
+
+    setFontFamilies((current) => Array.from(new Set([...current, fontFamily])).sort((a, b) => a.localeCompare(b)));
+    void patchSettings({ lyricsFontFamily: fontFamily, lyricsFontFilePath: null });
+  }, [lyricsFontFamily, patchSettings]);
+
+  const chooseLyricsFontFile = useCallback(async (): Promise<void> => {
+    const app = window.echo?.app;
+    if (!app?.chooseFontFile) {
+      setError('Desktop bridge unavailable');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const fontFile = await app.chooseFontFile();
+      if (!fontFile) {
+        return;
+      }
+
+      const fontFamily = await registerAppearanceFontFile('lyrics', fontFile);
+      setFontFamilies((current) => Array.from(new Set([...current, fontFamily])).sort((a, b) => a.localeCompare(b)));
+      setFontFamilyDraft(fontFamily);
+      await patchSettings({ lyricsFontFamily: fontFamily, lyricsFontFilePath: fontFile.path });
+    } catch (fontError) {
+      setError(fontError instanceof Error ? fontError.message : String(fontError));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [patchSettings]);
 
   const chooseWallpaper = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
@@ -1308,6 +1416,78 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。</p>
           </>
+          ) : null}
+
+          {showPersistentControls ? (
+          <div className="lyrics-font-panel" hidden={!isLyricsStyleControlsOpen}>
+            <div className="lyrics-color-panel__header">
+              <span>
+                <Type size={15} />
+                <strong>歌词字体</strong>
+              </span>
+              <em title={effectiveSettings.lyricsFontFilePath ?? undefined}>
+                {effectiveSettings.lyricsFontFilePath ? '自定义字体' : '系统字体'}
+              </em>
+            </div>
+            <label className="lyrics-font-family-field">
+              <input
+                list="lyrics-font-family-options"
+                value={fontFamilyDraft}
+                disabled={isBusy}
+                onChange={(event) => setFontFamilyDraft(event.currentTarget.value)}
+                onBlur={(event) => applyLyricsFontFamily(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur();
+                  }
+                }}
+                style={{ fontFamily: `"${lyricsFontFamily}", var(--echo-font-family)` }}
+              />
+              <datalist id="lyrics-font-family-options">
+                {fontFamilies.map((fontFamily) => (
+                  <option value={fontFamily} key={fontFamily} />
+                ))}
+              </datalist>
+            </label>
+            <div className="lyrics-font-actions">
+              <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => applyLyricsFontFamily(fontFamilyDraft)}>
+                <Check size={15} />
+                <span>
+                  <strong>应用系统字体</strong>
+                  <small>只影响歌词页和歌词行</small>
+                </span>
+                <em>Apply</em>
+              </button>
+              <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => void chooseLyricsFontFile()}>
+                <Upload size={15} />
+                <span>
+                  <strong>导入字体文件</strong>
+                  <small>TTF / OTF / WOFF / WOFF2</small>
+                </span>
+                <em>Choose</em>
+              </button>
+              <button
+                className="audio-device-pill"
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  const fallbackFontFamily = fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei';
+                  setFontFamilyDraft(fallbackFontFamily);
+                  void patchSettings({
+                    lyricsFontFamily: fallbackFontFamily,
+                    lyricsFontFilePath: fallbackSettings.lyricsFontFilePath,
+                  });
+                }}
+              >
+                <RotateCcw size={15} />
+                <span>
+                  <strong>恢复默认歌词字体</strong>
+                  <small>{fallbackSettings.lyricsFontFamily}</small>
+                </span>
+                <em>Reset</em>
+              </button>
+            </div>
+          </div>
           ) : null}
 
           {showPersistentControls && isSecondaryLyricsSizeOpen ? (

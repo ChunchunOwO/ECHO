@@ -42,6 +42,7 @@ import { titleFromPath } from "../components/player/playerFormat";
 import { usePlaybackQueue } from "../stores/PlaybackQueueProvider";
 import { refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from "../stores/playbackStatusStore";
 import { openAlbumDetailForTrack } from "../utils/albumNavigation";
+import { serializeFontList } from "../preferences/appearancePreferences";
 
 type LyricsPageProps = {
   initialLyrics?: LyricLine[];
@@ -108,6 +109,8 @@ type LyricsDisplaySettings = Pick<
   | "lyricsCandidatePanelAutoOpenEnabled"
   | "lyricsEmptyStateHidden"
   | "lyricsFontSizePx"
+  | "lyricsFontFamily"
+  | "lyricsFontFilePath"
   | "lyricsColor"
   | "lyricsBackgroundMode"
   | "lyricsCustomWallpaperPath"
@@ -150,6 +153,8 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsCandidatePanelAutoOpenEnabled: true,
   lyricsEmptyStateHidden: true,
   lyricsFontSizePx: 40,
+  lyricsFontFamily: "Microsoft YaHei",
+  lyricsFontFilePath: null,
   lyricsColor: "#314054",
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -617,6 +622,8 @@ const selectLyricsDisplaySettings = (
   lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled !== false,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsFontSizePx: settings.lyricsFontSizePx,
+  lyricsFontFamily: settings.lyricsFontFamily ?? fallbackLyricsDisplaySettings.lyricsFontFamily,
+  lyricsFontFilePath: settings.lyricsFontFilePath ?? fallbackLyricsDisplaySettings.lyricsFontFilePath,
   lyricsColor: settings.lyricsColor,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
@@ -674,6 +681,8 @@ const lyricsDisplaySettingsKeys = [
   "lyricsCandidatePanelAutoOpenEnabled",
   "lyricsEmptyStateHidden",
   "lyricsFontSizePx",
+  "lyricsFontFamily",
+  "lyricsFontFilePath",
   "lyricsColor",
   "lyricsBackgroundMode",
   "lyricsCustomWallpaperPath",
@@ -1137,6 +1146,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         "--lyrics-wallpaper": lyricsWallpaperUrl
           ? cssUrl(lyricsWallpaperUrl)
           : "none",
+        "--lyrics-font-family": [
+          serializeFontList(lyricsDisplaySettings.lyricsFontFamily ?? fallbackLyricsDisplaySettings.lyricsFontFamily ?? "Microsoft YaHei"),
+          "var(--echo-font-family)",
+        ].join(", "),
         "--lyrics-font-size": `${lyricsDisplaySettings.lyricsFontSizePx}px`,
         "--lyrics-secondary-font-size": `${lyricsDisplaySettings.lyricsSecondaryFontSizePx}px`,
         "--lyrics-line-max-width": lyricsDisplaySettings.lyricsLineMaxChars && lyricsDisplaySettings.lyricsLineMaxChars > 0
@@ -1168,6 +1181,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsCoverBlurPx,
       lyricsDisplaySettings.lyricsCoverBrightnessPercent,
       lyricsDisplaySettings.lyricsCoverOpacityPercent,
+      lyricsDisplaySettings.lyricsFontFamily,
       lyricsDisplaySettings.lyricsFontSizePx,
       lyricsDisplaySettings.lyricsLineMaxChars,
       lyricsDisplaySettings.lyricsSecondaryFontSizePx,

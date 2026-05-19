@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 
 const handlers: Record<string, (...args: unknown[]) => unknown> = {};
@@ -6,8 +9,10 @@ const handleMock = vi.fn((channel: string, handler: (...args: unknown[]) => unkn
   handlers[channel] = handler;
 });
 const showOpenDialogMock = vi.fn();
+const showSaveDialogMock = vi.fn();
 const openExternalMock = vi.fn();
-const setAppSettingsMock = vi.fn((patch) => ({ coverCacheDir: patch.coverCacheDir ?? null, hideToTrayOnClose: false }));
+const setAppSettingsMock = vi.fn((patch: Record<string, unknown>) => ({ coverCacheDir: patch.coverCacheDir ?? null, hideToTrayOnClose: false, ...patch }));
+const getAppSettingsMock = vi.fn<() => Record<string, unknown>>(() => ({ coverCacheDir: null, hideToTrayOnClose: false }));
 const getLibraryServiceMock = vi.fn();
 const ensureCoverCacheDirectoryMock = vi.fn();
 const fromWebContentsMock = vi.fn();
@@ -18,17 +23,28 @@ const validateGlobalShortcutMock = vi.fn(() => ({
   reason: 'available',
   valid: true,
 }));
+const appPathMock = vi.fn((name: string) =>
+  name === 'downloads' ? tmpdir() : join(tmpdir(), 'echo-next-register-ipc-test-userdata'),
+);
 
 vi.mock('electron', () => ({
+  default: {
+    app: {
+      getAppPath: () => 'D:\\ECHONext\\ECHO-Next',
+      getPath: appPathMock,
+      isPackaged: false,
+    },
+  },
   app: {
     getVersion: () => '0.0.0-test',
-    getPath: () => 'D:\\Echo',
+    getPath: appPathMock,
   },
   BrowserWindow: {
     fromWebContents: fromWebContentsMock,
   },
   dialog: {
     showOpenDialog: showOpenDialogMock,
+    showSaveDialog: showSaveDialogMock,
   },
   ipcMain: {
     handle: handleMock,
@@ -80,9 +96,10 @@ vi.mock('../app/appSettings', () => ({
     lastFmAuthToken: null,
     smtcEnabled: true,
   },
-  getAppSettings: vi.fn(() => ({ coverCacheDir: null, hideToTrayOnClose: false })),
+  getAppSettings: getAppSettingsMock,
   getAppWallpaperDirectory: vi.fn(() => 'D:\\Echo\\app-wallpapers'),
   getLyricsWallpaperDirectory: vi.fn(() => 'D:\\Echo\\lyrics-wallpapers'),
+  normalizeSettings: vi.fn((value) => ({ coverCacheDir: null, hideToTrayOnClose: false, ...(value as Record<string, unknown>) })),
   setAppSettings: setAppSettingsMock,
 }));
 
@@ -150,12 +167,32 @@ vi.mock('./diagnosticsIpc', () => ({
   registerDiagnosticsIpc: vi.fn(),
 }));
 
+vi.mock('./connectIpc', () => ({
+  registerConnectIpc: vi.fn(),
+}));
+
 vi.mock('./discordPresenceIpc', () => ({
   registerDiscordPresenceIpc: vi.fn(),
 }));
 
+vi.mock('./downloadsIpc', () => ({
+  registerDownloadsIpc: vi.fn(),
+}));
+
+vi.mock('./pluginIpc', () => ({
+  registerPluginIpc: vi.fn(),
+}));
+
 vi.mock('./lastFmIpc', () => ({
   registerLastFmIpc: vi.fn(),
+}));
+
+vi.mock('./remoteSourcesIpc', () => ({
+  registerRemoteSourcesIpc: vi.fn(),
+}));
+
+vi.mock('./streamingIpc', () => ({
+  registerStreamingIpc: vi.fn(),
 }));
 
 vi.mock('../integrations/discord/getDiscordPresenceService', () => ({
@@ -179,13 +216,16 @@ describe('app IPC cover cache directory', () => {
     resetHandlers();
     handleMock.mockClear();
     showOpenDialogMock.mockReset();
+    showSaveDialogMock.mockReset();
     openExternalMock.mockReset();
     setAppSettingsMock.mockClear();
+    getAppSettingsMock.mockClear();
     getLibraryServiceMock.mockReset();
     ensureCoverCacheDirectoryMock.mockReset();
     fromWebContentsMock.mockReset();
     refreshGlobalShortcutRegistrationMock.mockClear();
     validateGlobalShortcutMock.mockClear();
+    appPathMock.mockClear();
     const module = await import('./registerIpc');
     module.registerIpc();
   });
@@ -207,6 +247,7 @@ describe('app IPC cover cache directory', () => {
       hasRunningJobs: () => false,
       getDefaultCoverCacheDir: () => 'D:\\Echo\\cover-cache',
       setCoverCacheDir: vi.fn(),
+      syncLiveLibraryWatcherFromSettings: vi.fn(),
     };
     getLibraryServiceMock.mockReturnValue(service);
 
@@ -223,6 +264,7 @@ describe('app IPC cover cache directory', () => {
       hasRunningJobs: () => false,
       getDefaultCoverCacheDir: () => 'D:\\Echo\\cover-cache',
       setCoverCacheDir: vi.fn(),
+      syncLiveLibraryWatcherFromSettings: vi.fn(),
     };
     getLibraryServiceMock.mockReturnValue(service);
 
@@ -248,7 +290,7 @@ describe('app IPC cover cache directory', () => {
     );
   });
 
-  it('uses an image-only picker for app wallpaper selection', async () => {
+  it('uses an image and video picker for app wallpaper selection', async () => {
     showOpenDialogMock.mockResolvedValue({ canceled: true, filePaths: [] });
 
     const result = await handlers[IpcChannels.AppChooseAppWallpaper]!();
@@ -256,10 +298,35 @@ describe('app IPC cover cache directory', () => {
     expect(result).toBeNull();
     expect(showOpenDialogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        filters: [{ name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+        filters: [
+          { name: 'Background files', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'm4v', 'webm'] },
+          { name: 'Image files', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+          { name: 'Video files', extensions: ['mp4', 'm4v', 'webm'] },
+        ],
         properties: ['openFile'],
       }),
     );
+  });
+
+  it('copies browser-playable video files for app wallpaper selection', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-app-video-wallpaper-'));
+    const videoPath = join(tempRoot, 'motion.webm');
+    writeFileSync(videoPath, 'video');
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: [videoPath] });
+
+    try {
+      const result = await handlers[IpcChannels.AppChooseAppWallpaper]!();
+
+      expect(typeof result).toBe('string');
+      expect(String(result)).toMatch(/\.webm$/u);
+      expect(existsSync(String(result))).toBe(true);
+      expect(readFileSync(String(result), 'utf8')).toBe('video');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+      if (typeof appPathMock('userData') === 'string') {
+        rmSync(appPathMock('userData'), { recursive: true, force: true });
+      }
+    }
   });
 
   it('opens external http links through the system browser only', async () => {
@@ -289,7 +356,46 @@ describe('app IPC cover cache directory', () => {
     expect(window.unmaximize).not.toHaveBeenCalled();
   });
 
-  it('refreshes global shortcuts when shortcut settings change', () => {
+  it('exports app settings to a selected JSON backup', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-settings-export-'));
+    const exportPath = join(tempRoot, 'settings.json');
+    showSaveDialogMock.mockResolvedValue({ canceled: false, filePath: exportPath });
+    getAppSettingsMock.mockReturnValue({ locale: 'ja-JP', coverCacheDir: null, hideToTrayOnClose: false });
+
+    const result = await handlers[IpcChannels.AppExportSettings]!();
+
+    expect(result).toBe(exportPath);
+    const payload = JSON.parse(readFileSync(exportPath, 'utf8')) as { format: string; settings: { locale: string } };
+    expect(payload.format).toBe('echo-next-settings-backup');
+    expect(payload.settings.locale).toBe('ja-JP');
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('backs up current settings before importing a selected JSON backup', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-settings-import-'));
+    const importPath = join(tempRoot, 'incoming.json');
+    writeFileSync(importPath, JSON.stringify({ format: 'echo-next-settings-backup', version: 1, settings: { locale: 'en-US', coverCacheDir: null } }), 'utf8');
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: [importPath] });
+    getAppSettingsMock.mockReturnValue({ locale: 'zh-CN', coverCacheDir: null, hideToTrayOnClose: false });
+    const service = {
+      hasRunningJobs: () => false,
+      getDefaultCoverCacheDir: () => 'D:\\Echo\\cover-cache',
+      setCoverCacheDir: vi.fn(),
+      syncLiveLibraryWatcherFromSettings: vi.fn(),
+    };
+    getLibraryServiceMock.mockReturnValue(service);
+    setAppSettingsMock.mockImplementation((patch) => ({ coverCacheDir: null, hideToTrayOnClose: false, ...(patch as Record<string, unknown>) }));
+
+    const result = (await handlers[IpcChannels.AppImportSettings]!()) as { backupPath: string; settings: { locale: string } };
+
+    expect(result.settings.locale).toBe('en-US');
+    expect(existsSync(result.backupPath)).toBe(true);
+    expect(setAppSettingsMock).toHaveBeenCalledWith(expect.objectContaining({ locale: 'en-US' }));
+    expect(service.setCoverCacheDir).toHaveBeenCalledWith('D:\\Echo\\cover-cache');
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('refreshes global shortcuts when shortcut settings change', async () => {
     const shortcutPatch = {
       globalShortcuts: {
         playPause: { enabled: true, accelerator: 'Ctrl+Alt+Space' },
@@ -297,7 +403,7 @@ describe('app IPC cover cache directory', () => {
     };
     setAppSettingsMock.mockReturnValue({ ...shortcutPatch, coverCacheDir: null, hideToTrayOnClose: false });
 
-    handlers[IpcChannels.AppSetSettings]!(null, shortcutPatch);
+    await handlers[IpcChannels.AppSetSettings]!(null, shortcutPatch);
 
     expect(setAppSettingsMock).toHaveBeenCalledWith(shortcutPatch);
     expect(refreshGlobalShortcutRegistrationMock).toHaveBeenCalledTimes(1);

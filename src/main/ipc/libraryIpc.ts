@@ -1301,6 +1301,11 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetAlbum, (_event, albumId: unknown) =>
     getLibraryService().getAlbum(requireText(albumId, 'albumId')),
   );
+  ipcMain.handle(IpcChannels.LibraryGetAlbumOnlineInfo, (_event, albumId: unknown, options: unknown) =>
+    getLibraryService().getAlbumOnlineInfo(requireText(albumId, 'albumId'), {
+      force: Boolean(options && typeof options === 'object' && (options as { force?: unknown }).force === true),
+    }),
+  );
   ipcMain.handle(IpcChannels.LibraryGetAlbumForTrack, (_event, trackId: unknown) =>
     getLibraryService().getAlbumForTrack(requireText(trackId, 'trackId')),
   );

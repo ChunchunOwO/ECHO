@@ -62,6 +62,21 @@ const bilibiliQualityRank = (qn: number): number => {
   const index = bilibiliQualityOrder.indexOf(qn);
   return index >= 0 ? bilibiliQualityOrder.length - index : 0;
 };
+const isBrowserPlayableBilibiliCodec = (codec: string | null): boolean => {
+  if (!codec) {
+    return true;
+  }
+
+  const codecs = codec
+    .toLowerCase()
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return !codecs.some(
+    (entry) => entry.startsWith('hev1') || entry.startsWith('hvc1') || entry.startsWith('dvhe') || entry.startsWith('dvh1'),
+  );
+};
 const bilibiliMixinKeyEncTable = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16,
   24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
@@ -582,17 +597,18 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
           }
 
           const label = labelWithFrameRate(streamQuality.label, variantFps);
+          const codec = text(stream.codecs);
 
           variants.push({
             ...makeQualityVariant(streamId, label, streamQuality.tier, {
               width: streamWidth,
               height: variantHeight,
               fps: variantFps,
-              codec: text(stream.codecs),
+              codec,
               container: 'mp4',
               mimeType: 'video/mp4',
               protocol: 'direct',
-              playableInApp: true,
+              playableInApp: isBrowserPlayableBilibiliCodec(codec),
               requiresAccount: streamQn >= 112 && !this.credentials(this.id).cookie,
               expiresAt,
             }),

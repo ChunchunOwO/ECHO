@@ -29,6 +29,7 @@ import { titleFromPath } from './playerFormat';
 
 type PlayerBarProps = {
   onOpenAudioSettings?: () => void;
+  onOpenQueue?: () => void;
 };
 
 const progressRenderIntervalMs = 250;
@@ -373,7 +374,7 @@ const isPlaybackShortcutTextTarget = (event: KeyboardEvent): boolean => {
   return isTextEditingElement(document.activeElement);
 };
 
-export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element => {
+export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps): JSX.Element => {
   const queue = usePlaybackQueue();
   const sharedPlaybackStatus = useSharedPlaybackStatus();
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
@@ -1471,8 +1472,13 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [queue]);
 
   const handleOpenQueue = useCallback((): void => {
+    if (onOpenQueue) {
+      onOpenQueue();
+      return;
+    }
+
     window.dispatchEvent(new Event('app:navigate:queue'));
-  }, []);
+  }, [onOpenQueue]);
 
   const handleOpenLyrics = useCallback((): void => {
     rememberLyricsViewMode('lyrics');

@@ -88,6 +88,18 @@ describe('echo-wallpaper protocol', () => {
     expect(await response.text()).toBe('app-wallpaper');
   });
 
+  it('serves the configured app video wallpaper with a video content type', async () => {
+    const wallpaperPath = join(wallpaperDirectory, 'motion.mp4');
+    writeFileSync(wallpaperPath, 'video-wallpaper');
+    getAppSettingsMock.mockReturnValue({ appCustomWallpaperPath: wallpaperPath });
+
+    const response = await getWallpaperHandler()(new Request('echo-wallpaper://app/custom'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('video/mp4');
+    expect(await response.text()).toBe('video-wallpaper');
+  });
+
   it('does not serve wallpaper paths outside the app wallpaper directory', async () => {
     const outsideRoot = makeTempRoot();
     const wallpaperPath = join(outsideRoot, 'outside.png');

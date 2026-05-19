@@ -4,6 +4,7 @@ import {
   Captions,
   Check,
   Clapperboard,
+  Code2,
   Download,
   ExternalLink,
   FileText,
@@ -49,6 +50,7 @@ import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import type { LastFmStatus } from '../../shared/types/lastfm';
+import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type {
   ArtistImageCacheSummary,
   ArtistImageJobStatus,
@@ -98,6 +100,7 @@ import {
   getDownloadsBridge,
   getLastFmBridge,
   getLibraryBridge,
+  getPluginsBridge,
 } from '../utils/echoBridge';
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
@@ -300,6 +303,15 @@ const mvImmersiveBackgroundDefaults = {
   immersiveBackgroundBrightnessPercent: 100,
   immersiveBackgroundOverlayOpacityPercent: 0,
 } satisfies Partial<MvSettings>;
+const appVideoWallpaperPauseModes = ['smart', 'minimized', 'never'] satisfies Array<NonNullable<AppSettings['appVideoWallpaperPauseMode']>>;
+const appVideoWallpaperPauseModeLabels: Record<NonNullable<AppSettings['appVideoWallpaperPauseMode']>, string> = {
+  smart: '智能暂停',
+  minimized: '最小化暂停',
+  never: '始终播放',
+};
+
+const inferAppWallpaperMediaType = (filePath: string): NonNullable<AppSettings['appWallpaperMediaType']> =>
+  /\.(?:mp4|m4v|webm)$/iu.test(filePath.trim()) ? 'video' : 'image';
 
 const hasOwn = <T extends object>(value: T, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key);
 
@@ -385,7 +397,7 @@ const normalizeExternalAppSettingsPatch = (patch: Partial<AppSettings> | Partial
   ...appSettingsPatchFromMvSettingsPatch(patch as Partial<MvSettings>),
 });
 
-type SettingsNavKey = 'general' | 'playback' | 'shortcuts' | 'lyrics' | 'mv' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
+type SettingsNavKey = 'general' | 'playback' | 'shortcuts' | 'lyrics' | 'mv' | 'integrations' | 'plugins' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
 
 type SettingsNavItem = {
   key: SettingsNavKey;
@@ -542,6 +554,7 @@ const settingsNavItems: SettingsNavItem[] = [
   { key: 'lyrics', labelKey: 'route.lyricsSettings.label', descriptionKey: 'route.lyricsSettings.description', icon: Captions },
   { key: 'mv', labelKey: 'route.mvSettings.label', descriptionKey: 'route.mvSettings.description', icon: Clapperboard },
   { key: 'integrations', labelKey: 'settings.nav.integrations.label', descriptionKey: 'settings.nav.integrations.description', icon: Link2 },
+  { key: 'plugins', labelKey: 'settings.nav.plugins.label', descriptionKey: 'settings.nav.plugins.description', icon: Code2 },
   { key: 'remote', labelKey: 'settings.nav.remote.label', descriptionKey: 'settings.nav.remote.description', icon: Globe2 },
   { key: 'eq', labelKey: 'settings.nav.eq.label', descriptionKey: 'settings.nav.eq.description', icon: SlidersHorizontal },
   { key: 'appearance', labelKey: 'settings.nav.appearance.label', descriptionKey: 'settings.nav.appearance.description', icon: Palette },
@@ -551,6 +564,7 @@ const settingsNavItems: SettingsNavItem[] = [
 ];
 
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const pluginsDocumentationUrl = 'https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md';
 const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
 
 const readInitialSettingsSection = (): SettingsNavKey => {
@@ -604,6 +618,12 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'translate',
     'translated lyrics',
     'bilingual lyrics',
+    'font',
+    'lyrics font',
+    'custom font',
+    '字体',
+    '歌词字体',
+    '自定义字体',
     '歌词',
     '逐字',
     '偏移',
@@ -641,6 +661,7 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     '哔哩哔哩',
     '会员',
   ],
+  plugins: ['插件', 'plugin', 'plugins', '扩展', '脚本', 'manifest', '权限', '本地插件', '开发者', 'developer', 'sandbox', 'echo.plugin.json'],
   remote: ['remote', 'webdav', 'subsonic', 'jellyfin', 'emby', 'navidrome', 'server', '远程', '网盘', '服务器', '媒体库', '云端'],
   eq: ['eq', 'equalizer', 'balance', 'preamp', 'channel', '均衡器', '均衡', '声道', '平衡', '预放大'],
   appearance: [
@@ -2879,6 +2900,7 @@ export const SettingsPage = (): JSX.Element => {
   const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
   const wallpaperPersistTimerRef = useRef<number | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
+  const [taskbarPlaybackStatus, setTaskbarPlaybackStatus] = useState<TaskbarPlaybackStatus | null>(null);
   const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
   const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
   const [accountCookies, setAccountCookies] = useState<Record<AccountProvider, string>>({
@@ -2931,6 +2953,9 @@ export const SettingsPage = (): JSX.Element => {
   const [audioResetBusy, setAudioResetBusy] = useState(false);
   const [windowsAudioRestartBusy, setWindowsAudioRestartBusy] = useState(false);
   const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
+  const [settingsBackupBusy, setSettingsBackupBusy] = useState<'export' | 'import' | null>(null);
+  const [settingsBackupMessage, setSettingsBackupMessage] = useState<string | null>(null);
+  const [pluginSettingsMessage, setPluginSettingsMessage] = useState<string | null>(null);
   const [recordingShortcutAction, setRecordingShortcutAction] = useState<GlobalShortcutAction | null>(null);
   const [shortcutMessages, setShortcutMessages] = useState<Partial<Record<GlobalShortcutAction, string | null>>>({});
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
@@ -2971,6 +2996,29 @@ export const SettingsPage = (): JSX.Element => {
       terms: string[];
     }> = [
       {
+        id: 'row-plugins',
+        sectionKey: 'plugins',
+        targetId: 'settings-row-plugins',
+        title: '本地插件',
+        description: '管理 userData/plugins 下的 echo.plugin.json、plugin.js 和面板文件。',
+        terms: [
+          '本地插件',
+          '插件',
+          'plugin',
+          'plugins',
+          '扩展',
+          '脚本',
+          'manifest',
+          'echo.plugin.json',
+          'plugin.js',
+          'panel.html',
+          '权限',
+          '开发者',
+          'sandbox',
+          '沙箱',
+        ],
+      },
+      {
         id: 'row-discord-presence',
         sectionKey: 'integrations',
         targetId: 'settings-row-discord-presence',
@@ -3007,6 +3055,26 @@ export const SettingsPage = (): JSX.Element => {
         title: t('settings.integrations.smtc.title'),
         description: t('settings.integrations.smtc.description'),
         terms: [t('settings.integrations.smtc.title'), t('settings.integrations.smtc.description'), 'smtc', 'media session', 'system media controls', '系统媒体控制', '狀態列', '状态栏'],
+      },
+      {
+        id: 'row-taskbar-playback',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-taskbar-playback',
+        title: t('settings.integrations.taskbarPlayback.title'),
+        description: t('settings.integrations.taskbarPlayback.description'),
+        terms: [
+          t('settings.integrations.taskbarPlayback.title'),
+          t('settings.integrations.taskbarPlayback.description'),
+          'taskbar',
+          'thumbnail toolbar',
+          'progress bar',
+          'windows taskbar',
+          '任务栏',
+          '工作列',
+          '播放进度',
+          '上一首',
+          '下一首',
+        ],
       },
       {
         id: 'row-lastfm',
@@ -3079,9 +3147,9 @@ export const SettingsPage = (): JSX.Element => {
         id: 'row-wallpaper',
         sectionKey: 'appearance',
         targetId: 'settings-row-wallpaper',
-        title: '自定义壁纸',
-        description: '保存原图文件，不压缩、不转码；默认完整显示不裁切。',
-        terms: ['自定义壁纸', '保存原图文件，不压缩、不转码；默认完整显示不裁切。', 'wallpaper', 'background', 'opacity', 'blur', '壁纸', '背景', '透明度'],
+        title: '自定义背景',
+        description: '支持图片和本地视频；视频静音循环，不进入音频链路。',
+        terms: ['自定义背景', '视频壁纸', '动态背景', 'wallpaper', 'video wallpaper', 'background', 'opacity', 'blur', '壁纸', '背景', '透明度'],
       },
       {
         id: 'row-library-folders',
@@ -3279,6 +3347,21 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshTaskbarPlaybackStatus = useCallback(async () => {
+    try {
+      const app = getAppBridge();
+
+      if (!app?.getTaskbarPlaybackStatus) {
+        setTaskbarPlaybackStatus(null);
+        return;
+      }
+
+      setTaskbarPlaybackStatus(await app.getTaskbarPlaybackStatus());
+    } catch {
+      setTaskbarPlaybackStatus(null);
+    }
+  }, []);
+
   const refreshLastFmStatus = useCallback(async () => {
     try {
       const lastfm = getLastFmBridge();
@@ -3402,10 +3485,11 @@ export const SettingsPage = (): JSX.Element => {
 
     return scheduleSettingsIdleTask(() => {
       void refreshDiscordPresenceStatus();
+      void refreshTaskbarPlaybackStatus();
       void refreshLastFmStatus();
       void refreshAccountStatuses();
     });
-  }, [activeSection, refreshAccountStatuses, refreshDiscordPresenceStatus, refreshLastFmStatus]);
+  }, [activeSection, refreshAccountStatuses, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshTaskbarPlaybackStatus]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -4156,6 +4240,9 @@ export const SettingsPage = (): JSX.Element => {
       .setSettings(patch)
       .then((settings) => {
         setAppSettings(settings);
+        if (Object.prototype.hasOwnProperty.call(patch, 'taskbarPlaybackControlsEnabled')) {
+          void refreshTaskbarPlaybackStatus();
+        }
         if (options.announce !== false) {
           dispatchSettingsChanged(options.mvSettingsPatch ? { ...settings, ...options.mvSettingsPatch } : settings);
         }
@@ -4163,7 +4250,7 @@ export const SettingsPage = (): JSX.Element => {
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
-  }, [dispatchSettingsChanged]);
+  }, [dispatchSettingsChanged, refreshTaskbarPlaybackStatus]);
 
   const mvQualityLabels = useMemo<Record<MvSettings['maxQuality'], string>>(
     () => ({
@@ -4177,6 +4264,30 @@ export const SettingsPage = (): JSX.Element => {
   );
   const mvProviderOrder = useMemo(() => normalizeMvProviderOrder(appSettings?.mvProviderOrder), [appSettings?.mvProviderOrder]);
   const mvEnabledProviders = useMemo(() => new Set(appSettings?.mvEnabledProviders ?? mvNetworkProviders), [appSettings?.mvEnabledProviders]);
+  const taskbarPlaybackLabel = useMemo(() => {
+    if (!taskbarPlaybackStatus) {
+      return '未检测';
+    }
+    if (!taskbarPlaybackStatus.supported) {
+      return '非 Windows';
+    }
+    if (!taskbarPlaybackStatus.bound || !taskbarPlaybackStatus.windowAvailable) {
+      return '未绑定窗口';
+    }
+    if (!taskbarPlaybackStatus.enabled) {
+      return '已关闭';
+    }
+    if (taskbarPlaybackStatus.lastError) {
+      return `异常: ${taskbarPlaybackStatus.lastError}`;
+    }
+    if (!taskbarPlaybackStatus.visible) {
+      return taskbarPlaybackStatus.playbackState ? `等待播放 (${taskbarPlaybackStatus.playbackState})` : '等待播放';
+    }
+
+    const progress =
+      typeof taskbarPlaybackStatus.progress === 'number' ? ` ${Math.round(taskbarPlaybackStatus.progress * 100)}%` : '';
+    return `已应用${progress}`;
+  }, [taskbarPlaybackStatus]);
 
   const patchMvSettings = useCallback(
     (patch: Partial<MvSettings>): void => {
@@ -4254,6 +4365,42 @@ export const SettingsPage = (): JSX.Element => {
     await app.openExternalUrl(url);
   };
 
+  const handleOpenPluginsPage = (): void => {
+    window.dispatchEvent(new Event('app:navigate:plugins'));
+  };
+
+  const handleOpenPluginDirectory = async (): Promise<void> => {
+    const plugins = getPluginsBridge();
+
+    if (!plugins) {
+      setPluginSettingsMessage('插件桥接不可用，请在 ECHO Next 桌面端打开。');
+      return;
+    }
+
+    try {
+      await plugins.openDirectory();
+      setPluginSettingsMessage('已打开插件目录。');
+    } catch (pluginError) {
+      setPluginSettingsMessage(pluginError instanceof Error ? pluginError.message : String(pluginError));
+    }
+  };
+
+  const handleCreatePlaybackPanelExample = async (): Promise<void> => {
+    const plugins = getPluginsBridge();
+
+    if (!plugins) {
+      setPluginSettingsMessage('插件桥接不可用，请在 ECHO Next 桌面端打开。');
+      return;
+    }
+
+    try {
+      await plugins.createExample('playback-panel');
+      setPluginSettingsMessage('已创建播放状态面板示例，可前往插件页启用或重载。');
+    } catch (pluginError) {
+      setPluginSettingsMessage(pluginError instanceof Error ? pluginError.message : String(pluginError));
+    }
+  };
+
   const previewAndPersistAppWallpaperSettings = (patch: Partial<AppSettings>): void => {
     setAppSettings((current) => (current ? { ...current, ...patch } : current));
     dispatchSettingsChanged(patch);
@@ -4282,7 +4429,10 @@ export const SettingsPage = (): JSX.Element => {
         return;
       }
 
-      patchAppSettings({ appCustomWallpaperPath: wallpaperPath });
+      patchAppSettings({
+        appCustomWallpaperPath: wallpaperPath,
+        appWallpaperMediaType: inferAppWallpaperMediaType(wallpaperPath),
+      });
       setError(null);
     } catch (wallpaperError) {
       setError(wallpaperError instanceof Error ? wallpaperError.message : String(wallpaperError));
@@ -4290,7 +4440,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleAppWallpaperClear = (): void => {
-    patchAppSettings({ appCustomWallpaperPath: null });
+    patchAppSettings({ appCustomWallpaperPath: null, appWallpaperMediaType: 'image' });
   };
 
   const handleDiscordPresenceToggle = async (): Promise<void> => {
@@ -5666,6 +5816,71 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleExportSettings = async (): Promise<void> => {
+    const app = getAppBridge();
+
+    if (!app?.exportSettings) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端导出设置。');
+      return;
+    }
+
+    try {
+      setSettingsBackupBusy('export');
+      setSettingsBackupMessage(null);
+      setError(null);
+      const exportedPath = await app.exportSettings();
+
+      if (exportedPath) {
+        setSettingsBackupMessage(`设置参数已导出：${exportedPath}`);
+      }
+    } catch (exportError) {
+      setSettingsBackupMessage(null);
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+    } finally {
+      setSettingsBackupBusy(null);
+    }
+  };
+
+  const handleImportSettings = async (): Promise<void> => {
+    if (!window.confirm('导入设置会先自动备份当前参数，然后覆盖应用偏好、播放、歌词、MV、外观、快捷键等设置；不会删除音乐文件或曲库。是否继续？')) {
+      return;
+    }
+
+    const app = getAppBridge();
+
+    if (!app?.importSettings) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端导入设置。');
+      return;
+    }
+
+    try {
+      setSettingsBackupBusy('import');
+      setSettingsBackupMessage(null);
+      setError(null);
+      const result = await app.importSettings();
+
+      if (!result) {
+        return;
+      }
+
+      setAppSettings(result.settings);
+      handleAppearanceChange(result.settings.appearancePreferences ?? defaultAppearancePreferences);
+      setPendingAlbumMergeStrategy(result.settings.albumMergeStrategy);
+      setPendingCacheDirectory(undefined);
+      setCacheDirectoryResult(null);
+      setCacheDirectoryMessage(null);
+      setDefaultCacheDirectory(await app.getDefaultCacheDirectory());
+      dispatchSettingsChanged(result.settings);
+      window.dispatchEvent(new Event('library:changed'));
+      setSettingsBackupMessage(`设置参数已导入。导入前备份：${result.backupPath}`);
+    } catch (importError) {
+      setSettingsBackupMessage(null);
+      setError(importError instanceof Error ? importError.message : String(importError));
+    } finally {
+      setSettingsBackupBusy(null);
+    }
+  };
+
   const handleFontPickerOpen = (target: FontPickerTarget): void => {
     setFontPickerTarget(target);
     setFontPickerQuery('');
@@ -5933,14 +6148,26 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.general.backup.title')} description={t('settings.general.backup.description')}>
                 <div className="settings-chip-row">
-                  <button className="settings-action-button" type="button">
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={settingsBackupBusy !== null}
+                    onClick={() => void handleExportSettings()}
+                  >
                     <Download size={15} />
-                    {t('settings.general.backup.export')}
+                    {settingsBackupBusy === 'export' ? '导出中...' : t('settings.general.backup.export')}
                   </button>
-                  <button className="settings-action-button" type="button">
-                    {t('settings.general.backup.import')}
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={settingsBackupBusy !== null}
+                    onClick={() => void handleImportSettings()}
+                  >
+                    <FileText size={15} />
+                    {settingsBackupBusy === 'import' ? '导入中...' : t('settings.general.backup.import')}
                   </button>
                 </div>
+                {settingsBackupMessage ? <StatusText tone="good">{settingsBackupMessage}</StatusText> : null}
               </SettingRow>
             </SettingSection>
 
@@ -6385,6 +6612,7 @@ export const SettingsPage = (): JSX.Element => {
                             }[mode]}
                           </ChipButton>
                         ))}
+                        <StatusText tone="muted">建议使用智能暂停；视频模糊越高越吃 GPU。</StatusText>
                       </div>
                     ) : null}
                     <div className="settings-inline-toggle">
@@ -6557,6 +6785,30 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
+                id="settings-row-taskbar-playback"
+                highlighted={highlightedSettingId === 'settings-row-taskbar-playback'}
+                title={t('settings.integrations.taskbarPlayback.title')}
+                description={t('settings.integrations.taskbarPlayback.description')}
+              >
+                <div className="settings-chip-row">
+                  <StatusText tone={taskbarPlaybackStatus?.visible ? 'good' : 'muted'}>
+                    {taskbarPlaybackLabel}
+                  </StatusText>
+                  <button className="settings-action-button" type="button" onClick={() => void refreshTaskbarPlaybackStatus()}>
+                    刷新状态
+                  </button>
+                  <ToggleButton
+                    active={appSettings?.taskbarPlaybackControlsEnabled ?? false}
+                    disabled={!appSettings}
+                    onClick={() =>
+                      patchAppSettings({
+                        taskbarPlaybackControlsEnabled: !(appSettings?.taskbarPlaybackControlsEnabled ?? false),
+                      })
+                    }
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
                 id="settings-row-lastfm"
                 highlighted={highlightedSettingId === 'settings-row-lastfm'}
                 title={t('settings.integrations.lastfm.title')}
@@ -6691,6 +6943,59 @@ export const SettingsPage = (): JSX.Element => {
               </div>
               <SettingRow title={t('settings.integrations.mobile.title')} description={t('settings.integrations.mobile.description')}>
                 <ToggleButton />
+              </SettingRow>
+            </SettingSection>
+
+            <SettingSection activeKey={activeSection} icon={Code2} id="plugins" title={t('settings.nav.plugins.label')}>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                id="settings-row-plugins"
+                highlighted={highlightedSettingId === 'settings-row-plugins'}
+                title="本地插件"
+                description="插件默认放在 userData/plugins 下，用户可以直接编辑 echo.plugin.json、plugin.js 和面板文件。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--plugins">
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>运行方式</em>
+                      <strong>本地沙箱</strong>
+                    </span>
+                    <span>
+                      <em>默认状态</em>
+                      <strong>手动启用</strong>
+                    </span>
+                    <span>
+                      <em>权限</em>
+                      <strong>启用时确认</strong>
+                    </span>
+                    <span>
+                      <em>播放安全</em>
+                      <strong>不进入音频热路径</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={handleOpenPluginsPage}>
+                      <Code2 size={15} />
+                      打开插件页
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleOpenPluginDirectory()}>
+                      <FolderOpen size={15} />
+                      打开插件目录
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleCreatePlaybackPanelExample()}>
+                      <FileText size={15} />
+                      新建示例插件
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(pluginsDocumentationUrl)}>
+                      <ExternalLink size={15} />
+                      查看插件文档
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    插件页负责启用、禁用、重载、命令和日志；这里保留入口和安全边界说明，避免两套管理 UI 分叉。
+                  </p>
+                  {pluginSettingsMessage ? <p className="settings-inline-note">{pluginSettingsMessage}</p> : null}
+                </div>
               </SettingRow>
             </SettingSection>
 
@@ -6938,24 +7243,38 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-wallpaper"
                 highlighted={highlightedSettingId === 'settings-row-wallpaper'}
-                title="自定义壁纸"
-                description="保存原图文件，不压缩、不转码；默认完整显示不裁切。"
+                title="自定义背景"
+                description="支持图片和本地视频；视频静音循环，不进入音频链路。"
               >
                 {appSettings?.appCustomWallpaperPath ? (
                   <div className="settings-cache-panel settings-cache-panel--app-wallpaper">
                     <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                       <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppWallpaperChoose()}>
                         <FolderOpen size={15} />
-                        选择壁纸
+                        选择背景
                       </button>
                       <button className="settings-danger-button" type="button" onClick={handleAppWallpaperClear}>
                         <Trash2 size={15} />
-                        清除壁纸
+                        清除背景
                       </button>
                     </div>
                     <p className="settings-wallpaper-path" title={appSettings.appCustomWallpaperPath}>
                       {appSettings.appCustomWallpaperPath}
                     </p>
+                    {appSettings.appWallpaperMediaType === 'video' ? (
+                      <div className="settings-chip-row settings-chip-row--left">
+                        <StatusText tone="good">视频壁纸 · 静音循环</StatusText>
+                        {appVideoWallpaperPauseModes.map((mode) => (
+                          <ChipButton
+                            active={(appSettings.appVideoWallpaperPauseMode ?? 'smart') === mode}
+                            key={mode}
+                            onClick={() => previewAndPersistAppWallpaperSettings({ appVideoWallpaperPauseMode: mode })}
+                          >
+                            {appVideoWallpaperPauseModeLabels[mode]}
+                          </ChipButton>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="settings-wallpaper-controls">
                         <div className="settings-wallpaper-control">
                           <span>壁纸缩放</span>
@@ -7029,7 +7348,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-wallpaper-empty-actions">
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppWallpaperChoose()}>
                       <FolderOpen size={15} />
-                      选择壁纸
+                      选择背景
                     </button>
                   </div>
                 )}

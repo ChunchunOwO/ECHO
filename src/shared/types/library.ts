@@ -851,6 +851,62 @@ export type LibraryAlbumDetail = LibraryAlbum & {
   coverLarge: string | null;
 };
 
+export type AlbumOnlineInfoStatus = 'ready' | 'partial' | 'empty' | 'error';
+
+export type AlbumOnlineInfoSource = {
+  provider: 'musicbrainz' | 'wikipedia';
+  label: string;
+};
+
+export type AlbumOnlineInfoMatch = {
+  provider: 'musicbrainz';
+  providerItemId: string;
+  title: string;
+  artist: string;
+  year: number | null;
+  confidence: number;
+  url: string | null;
+  possible: boolean;
+};
+
+export type AlbumCreditPerson = {
+  name: string;
+  detail: string | null;
+  trackTitle: string | null;
+  source: 'release' | 'recording' | 'work' | 'label';
+};
+
+export type AlbumCreditGroup = {
+  role: string;
+  people: AlbumCreditPerson[];
+};
+
+export type AlbumInformationSummary = {
+  title: string;
+  description: string | null;
+  extract: string;
+  url: string | null;
+  language: string;
+  thumbnailUrl: string | null;
+};
+
+export type AlbumOnlineInfo = {
+  albumId: string;
+  status: AlbumOnlineInfoStatus;
+  sources: AlbumOnlineInfoSource[];
+  match: AlbumOnlineInfoMatch | null;
+  credits: AlbumCreditGroup[];
+  information: AlbumInformationSummary | null;
+  fetchedAt: string | null;
+  expiresAt: string | null;
+  fromCache: boolean;
+  errors: string[];
+};
+
+export type AlbumOnlineInfoRequestOptions = {
+  force?: boolean;
+};
+
 export type LibraryArtist = {
   id: string;
   mediaType?: 'local' | 'remote';

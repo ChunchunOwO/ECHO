@@ -7,6 +7,7 @@ import { FoldersPage } from '../pages/FoldersPage';
 import { HistoryPage } from '../pages/HistoryPage';
 import { ImportFolderPage } from '../pages/ImportFolderPage';
 import { PlaylistsPage } from '../pages/PlaylistsPage';
+import { PluginsPage } from '../pages/PluginsPage';
 import { QueuePage } from '../pages/QueuePage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { SongsPage } from '../pages/SongsPage';
@@ -27,6 +28,7 @@ import {
   EchoLikedIcon,
   EchoLyricsSettingsIcon,
   EchoPlaylistsIcon,
+  EchoPluginsIcon,
   EchoQueueIcon,
   EchoRemoteIcon,
   EchoSettingsIcon,
@@ -49,6 +51,7 @@ export type AppRouteId =
   | 'queue'
   | 'history'
   | 'playlists'
+  | 'plugins'
   | 'liked'
   | 'audio-settings'
   | 'lyrics-settings'
@@ -204,6 +207,14 @@ export const appRoutes: AppRoute[] = [
     icon: EchoPlaylistsIcon,
     placement: 'main',
     element: <PlaylistsPage />,
+  },
+  {
+    id: 'plugins',
+    label: '插件',
+    description: '本地可编辑插件。',
+    icon: EchoPluginsIcon,
+    placement: 'main',
+    element: <PluginsPage />,
   },
   {
     id: 'liked',

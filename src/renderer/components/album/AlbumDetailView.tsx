@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Disc3, Heart, MoreHorizontal, Play } from 'lucide-react';
-import type { EditableTrackTags, LibraryAlbum, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import { ArrowLeft, Disc3, Heart, Loader2, MoreHorizontal, Play, RefreshCw } from 'lucide-react';
+import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { openAlbumDetailForTrack } from '../../utils/albumNavigation';
 import { resolvePlaylistForTrackAdd } from '../../utils/appPrompt';
+import { getLibraryBridge } from '../../utils/echoBridge';
 import { OsuTimingPanel } from '../library/OsuTimingPanel';
 import { TrackContextMenu } from '../library/TrackContextMenu';
 import type { TrackMenuAction } from '../library/TrackContextMenu';
@@ -74,6 +75,24 @@ type TrackMenuState = {
   position: { x: number; y: number };
 };
 
+type AlbumDetailTab = 'tracks' | 'credits' | 'information';
+
+type OnlineInfoState = {
+  loading: boolean;
+  info: AlbumOnlineInfo | null;
+  error: string | null;
+  loadedForAlbumId: string | null;
+};
+
+const emptyOnlineInfoState = (): OnlineInfoState => ({
+  loading: false,
+  info: null,
+  error: null,
+  loadedForAlbumId: null,
+});
+
+const formatConfidence = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, removeTrackFromQueue, replaceQueue, updateTrackSnapshot } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
@@ -93,6 +112,8 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [activeTab, setActiveTab] = useState<AlbumDetailTab>('tracks');
+  const [onlineInfoState, setOnlineInfoState] = useState<OnlineInfoState>(() => emptyOnlineInfoState());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const likedTrackIds = useLikedTrackIds(loadedTracks.map((track) => track.id));
   const duration = formatDuration(album.duration);
@@ -143,6 +164,59 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     [album.id, album.title],
   );
   const detailCoverSrc = coverLarge && !failedLargeCover ? coverLarge : failedThumbCover ? null : album.coverThumb;
+
+  const loadOnlineInfo = useCallback(
+    async (force = false): Promise<void> => {
+      const bridge = getLibraryBridge();
+      if (!bridge?.getAlbumOnlineInfo) {
+        setOnlineInfoState((current) => ({
+          ...current,
+          loading: false,
+          error: 'Online album info is not available in this build.',
+        }));
+        return;
+      }
+
+      setOnlineInfoState((current) => ({
+        ...current,
+        loading: true,
+        error: null,
+      }));
+
+      try {
+        const info = await bridge.getAlbumOnlineInfo(album.id, { force });
+        setOnlineInfoState({
+          loading: false,
+          info,
+          error: null,
+          loadedForAlbumId: album.id,
+        });
+      } catch (error) {
+        setOnlineInfoState((current) => ({
+          ...current,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+          loadedForAlbumId: album.id,
+        }));
+      }
+    },
+    [album.id],
+  );
+
+  useEffect(() => {
+    setActiveTab('tracks');
+    setOnlineInfoState(emptyOnlineInfoState());
+  }, [album.id]);
+
+  useEffect(() => {
+    if (activeTab === 'tracks') {
+      return;
+    }
+    if (onlineInfoState.loading || onlineInfoState.loadedForAlbumId === album.id) {
+      return;
+    }
+    void loadOnlineInfo(false);
+  }, [activeTab, album.id, loadOnlineInfo, onlineInfoState.loadedForAlbumId, onlineInfoState.loading]);
 
   const refreshAlbumLiked = useCallback(async (): Promise<void> => {
     try {
@@ -453,6 +527,138 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     setFailedThumbCover(true);
   }, [coverLarge, failedLargeCover]);
 
+  const renderOnlineState = (section: 'credits' | 'information'): JSX.Element | null => {
+    const info = onlineInfoState.info;
+    const isEmpty =
+      info &&
+      (section === 'credits'
+        ? info.credits.length === 0
+        : !info.information);
+
+    if (onlineInfoState.loading && !info) {
+      return (
+        <div className="album-online-state">
+          <Loader2 className="spinning-icon" size={18} />
+          <span>Reading online album info...</span>
+        </div>
+      );
+    }
+
+    if (onlineInfoState.error && !info) {
+      return (
+        <div className="album-online-state">
+          <strong>Online info unavailable</strong>
+          <span>{onlineInfoState.error}</span>
+          <button type="button" onClick={() => void loadOnlineInfo(true)}>
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+        </div>
+      );
+    }
+
+    if (isEmpty) {
+      return (
+        <div className="album-online-state">
+          <strong>No reliable online info found</strong>
+          <span>{info.errors[0] ?? 'MusicBrainz and Wikipedia did not return enough matching data for this album.'}</span>
+          <button type="button" onClick={() => void loadOnlineInfo(true)} disabled={onlineInfoState.loading}>
+            {onlineInfoState.loading ? <Loader2 className="spinning-icon" size={14} /> : <RefreshCw size={14} />}
+            Refresh
+          </button>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderOnlineHeader = (): JSX.Element | null => {
+    const info = onlineInfoState.info;
+    if (!info) {
+      return null;
+    }
+
+    return (
+      <div className="album-online-header">
+        <div>
+          <span>Online sources</span>
+          <strong>{info.sources.map((source) => source.label).join(' / ') || 'No source matched'}</strong>
+          {info.match ? (
+            <small>
+              {info.match.possible ? 'Possible MusicBrainz match' : 'MusicBrainz match'} · {formatConfidence(info.match.confidence)}
+            </small>
+          ) : null}
+        </div>
+        <button type="button" onClick={() => void loadOnlineInfo(true)} disabled={onlineInfoState.loading}>
+          {onlineInfoState.loading ? <Loader2 className="spinning-icon" size={14} /> : <RefreshCw size={14} />}
+          Refresh
+        </button>
+      </div>
+    );
+  };
+
+  const renderCredits = (): JSX.Element => {
+    const state = renderOnlineState('credits');
+    if (state) {
+      return state;
+    }
+
+    const info = onlineInfoState.info;
+    return (
+      <div className="album-online-panel album-credits-panel">
+        {renderOnlineHeader()}
+        {info?.credits.map((group) => (
+          <section className="album-credit-group" key={group.role}>
+            <h3>{group.role}</h3>
+            <div className="album-credit-people">
+              {group.people.map((person) => (
+                <span className="album-credit-chip" key={`${group.role}-${person.name}-${person.trackTitle ?? ''}-${person.detail ?? ''}`}>
+                  <strong>{person.name}</strong>
+                  {person.detail ? <small>{person.detail}</small> : null}
+                  {person.trackTitle ? <em>{person.trackTitle}</em> : null}
+                </span>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  };
+
+  const renderInformation = (): JSX.Element => {
+    const state = renderOnlineState('information');
+    if (state) {
+      return state;
+    }
+
+    const info = onlineInfoState.info;
+    const information = info?.information;
+    return (
+      <div className="album-online-panel album-information-panel">
+        {renderOnlineHeader()}
+        {information ? (
+          <section className="album-information-article">
+            <div className="album-information-main">
+              <span>{information.language}.wikipedia.org</span>
+              <h3>{information.title}</h3>
+              {information.description ? <small>{information.description}</small> : null}
+              <p>{information.extract}</p>
+            </div>
+            <div className="album-information-aside">
+              {information.thumbnailUrl ? <img alt="" src={information.thumbnailUrl} loading="lazy" decoding="async" /> : null}
+              {information.url ? (
+                <a href={information.url} target="_blank" rel="noreferrer">
+                  Open Wikipedia
+                </a>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className={`album-detail-page ${isReturning ? 'is-returning' : ''}`}>
       <button className="album-back-button" type="button" onClick={returnBack}>
@@ -517,30 +723,36 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
 
       <section className="album-detail-track-console" aria-label={`${album.title} track console`}>
         <header className="album-detail-tabs" aria-label="Album sections">
-          <button className="album-detail-tab" type="button" aria-current="page">
+          <button className="album-detail-tab" type="button" aria-current={activeTab === 'tracks' ? 'page' : undefined} onClick={() => setActiveTab('tracks')}>
             Tracks
           </button>
-          <button className="album-detail-tab" type="button">
+          <button className="album-detail-tab" type="button" aria-current={activeTab === 'credits' ? 'page' : undefined} onClick={() => setActiveTab('credits')}>
             Credits
           </button>
-          <button className="album-detail-tab" type="button">
-            Related
+          <button className="album-detail-tab" type="button" aria-current={activeTab === 'information' ? 'page' : undefined} onClick={() => setActiveTab('information')}>
+            Information
           </button>
         </header>
-        <AlbumTrackList
-          albumId={album.id}
-          currentTrackId={currentTrackId}
-          summary={{
-            duration: duration ?? 'Unknown length',
-            signal: formatSummary ?? 'Reading signal',
-            totalLabel: loadedTotal > 0 ? formatTrackCount(loadedTotal) : formatTrackCount(album.trackCount),
-          }}
-          onFirstTrackChange={handleFirstTrackChange}
-          onLoadedTracksChange={handleLoadedTracksChange}
-          onOpenTrackMenu={handleOpenTrackMenu}
-          onPlayTrack={handlePlayTrack}
-          onToggleTrackLiked={handleToggleTrackLiked}
-        />
+        {activeTab === 'tracks' ? (
+          <AlbumTrackList
+            albumId={album.id}
+            currentTrackId={currentTrackId}
+            summary={{
+              duration: duration ?? 'Unknown length',
+              signal: formatSummary ?? 'Reading signal',
+              totalLabel: loadedTotal > 0 ? formatTrackCount(loadedTotal) : formatTrackCount(album.trackCount),
+            }}
+            onFirstTrackChange={handleFirstTrackChange}
+            onLoadedTracksChange={handleLoadedTracksChange}
+            onOpenTrackMenu={handleOpenTrackMenu}
+            onPlayTrack={handlePlayTrack}
+            onToggleTrackLiked={handleToggleTrackLiked}
+          />
+        ) : activeTab === 'credits' ? (
+          renderCredits()
+        ) : (
+          renderInformation()
+        )}
       </section>
 
       {trackMenu ? (

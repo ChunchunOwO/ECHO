@@ -281,6 +281,62 @@ describe('PlaylistsPage actions menu', () => {
     );
   });
 
+  it('sends selected quality when remote playlist items include cached track details', async () => {
+    const remoteTrackItem = item({
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:123',
+      sourceProvider: 'netease',
+      sourceItemId: '123',
+      titleSnapshot: 'NetEase Song',
+      track: track({
+        id: 'streaming:netease:123',
+        mediaType: 'streaming',
+        path: 'streaming:netease:123',
+        provider: 'netease',
+        providerTrackId: '123',
+        stableKey: 'streaming:netease:123',
+        title: 'NetEase Song',
+        codec: null,
+        sampleRate: null,
+        bitDepth: null,
+        bitrate: null,
+      }),
+    });
+    const playMediaItem = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: 'streaming:netease:123',
+      positionMs: 0,
+      durationMs: 180000,
+      filePath: null,
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ sourceProvider: 'netease', sourcePlaylistId: '163289102' })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([remoteTrackItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        startPlaybackHistory: vi.fn().mockResolvedValue({ historyId: 'history-1' }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+        playMediaItem,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'NetEase Song' }));
+    await waitFor(() =>
+      expect(playMediaItem).toHaveBeenCalledWith({
+        item: expect.objectContaining({
+          mediaType: 'streaming',
+          provider: 'netease',
+          providerTrackId: '123',
+          quality: 'hires',
+        }),
+      }),
+    );
+  });
+
   it('hides streaming quality for local playlists', async () => {
     window.echo = {
       library: {

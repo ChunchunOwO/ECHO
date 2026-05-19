@@ -9,6 +9,14 @@ import type { AppRoute } from './routes';
 import type { LibraryTrack } from '../../shared/types/library';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 64,
+    getVirtualItems: () => Array.from({ length: count }, (_, index) => ({ index, start: index * 64 })),
+    measureElement: vi.fn(),
+  }),
+}));
+
 const routes: AppRoute[] = [
   {
     id: 'songs',
@@ -28,6 +36,20 @@ const routes: AppRoute[] = [
     placement: 'main',
     chrome: 'standalone',
     element: <div>Standalone lyrics page</div>,
+  },
+];
+
+const routesWithQueue: AppRoute[] = [
+  routes[0],
+  routes[1],
+  {
+    id: 'queue',
+    label: 'Queue',
+    labelKey: 'route.queue.label',
+    description: 'Queue',
+    icon: ListMusic,
+    placement: 'main',
+    element: <div>Full queue page</div>,
   },
 ];
 
@@ -175,6 +197,31 @@ describe('AppLayout standalone routes', () => {
     expect(onSongsUnmount).not.toHaveBeenCalled();
   });
 
+  it('navigates to the plugin manager from a settings shortcut event', async () => {
+    const localRoutes: AppRoute[] = [
+      routes[0],
+      routes[1],
+      {
+        id: 'plugins',
+        label: 'Plugins',
+        description: 'Plugins',
+        icon: ListMusic,
+        placement: 'main',
+        element: <div>Plugin manager page</div>,
+      },
+    ];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={localRoutes} />
+      </AppProviders>,
+    );
+
+    window.dispatchEvent(new Event('app:navigate:plugins'));
+
+    await waitFor(() => expect(screen.getByText('Plugin manager page')).toBeTruthy());
+  });
+
   it('notifies the library views when a download is imported', async () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();
@@ -263,6 +310,40 @@ describe('AppLayout standalone routes', () => {
     expect(screen.queryByRole('complementary', { name: 'Main navigation' })).toBeNull();
     expect(screen.getByRole('contentinfo', { name: '播放控制' })).toBeTruthy();
   });
+
+  it('opens the full queue page from the shell player bar', async () => {
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithQueue} />
+      </AppProviders>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
+
+    await waitFor(() => expect(screen.getByText('Full queue page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+  });
+
+  it('opens the lightweight queue drawer from the lyrics player bar', async () => {
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithQueue} />
+      </AppProviders>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
+
+    expect(screen.getByRole('complementary', { name: '播放队列抽屉' })).toBeTruthy();
+    expect(screen.getByText('队列为空')).toBeTruthy();
+    expect(screen.queryByText('Full queue page')).toBeNull();
+  });
+
   it('returns to the previous shell route when the lyrics transport button is clicked from lyrics', async () => {
     render(
       <AppProviders>
@@ -755,7 +836,7 @@ describe('AppLayout standalone routes', () => {
     expect(screen.queryByText(/设置 > 集成/)).toBeNull();
   });
 
-  it('does not apply the app wallpaper layer to the standalone lyrics and MV page', async () => {
+  it('hides the app wallpaper layer on the standalone lyrics and MV page without unmounting it', async () => {
     window.echo = {
       app: {
         getSettings: vi.fn().mockResolvedValue({
@@ -787,7 +868,9 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
     expect(container.querySelector('.app-shell--lyrics')).toBeTruthy();
     expect(container.querySelector('.app-shell--wallpaper')).toBeNull();
-    expect(container.querySelector('.app-wallpaper-layer')).toBeNull();
+    const wallpaperLayer = container.querySelector('.app-wallpaper-layer') as HTMLElement | null;
+    expect(wallpaperLayer).toBeTruthy();
+    expect(wallpaperLayer?.dataset.hidden).toBe('true');
   });
 
   it('lets wallpaper opacity pass through without visual protection forcing full transparency', async () => {
@@ -865,6 +948,156 @@ describe('AppLayout standalone routes', () => {
     expect(shell.dataset.wallpaperVisualProtection).toBe('false');
     expect(shell.dataset.wallpaperUiTransparent).toBe('true');
     expect(shell.style.getPropertyValue('--app-wallpaper-ui-titlebar-alpha')).toBe('0.000');
+  });
+
+  it('renders video app wallpaper and marks it ready after media load', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\motion.mp4',
+          appWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'smart',
+          appWallpaperScalePercent: 115,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 80,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLVideoElement;
+    });
+    expect(video.muted).toBe(true);
+    expect(video.loop).toBe(true);
+
+    fireEvent.loadedData(video);
+
+    await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+    await waitFor(() => expect(playSpy).toHaveBeenCalled());
+    playSpy.mockRestore();
+  });
+
+  it('keeps video wallpaper mounted when navigating away and resumes it on return', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\motion.mp4',
+          appWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'smart',
+          appWallpaperScalePercent: 115,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 80,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLVideoElement;
+    });
+    fireEvent.loadedData(video);
+    await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    const hiddenLayer = container.querySelector('.app-wallpaper-layer') as HTMLElement | null;
+    expect(hiddenLayer?.dataset.hidden).toBe('true');
+    expect(container.querySelector('.app-wallpaper-layer video')).toBe(video);
+    expect(container.querySelector('.app-shell--wallpaper-ready')).toBeNull();
+    expect(pauseSpy).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Shell page')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+    expect(container.querySelector('.app-wallpaper-layer video')).toBe(video);
+    expect((container.querySelector('.app-wallpaper-layer') as HTMLElement | null)?.dataset.hidden).toBeUndefined();
+    expect(playSpy).toHaveBeenCalled();
+  });
+
+  it('resumes ready video wallpaper after page visibility returns', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\motion.mp4',
+          appWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'smart',
+          appWallpaperScalePercent: 115,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 80,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    try {
+      const { container } = render(
+        <AppProviders>
+          <AppLayout routes={routes} />
+        </AppProviders>,
+      );
+
+      const video = await waitFor(() => {
+        const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+        expect(element).toBeTruthy();
+        return element as HTMLVideoElement;
+      });
+      fireEvent.loadedData(video);
+      await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await waitFor(() => expect(pauseSpy).toHaveBeenCalled());
+
+      playSpy.mockClear();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      await waitFor(() => expect(playSpy).toHaveBeenCalled());
+    } finally {
+      if (visibilityDescriptor) {
+        Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
+      } else {
+        delete (document as Document & { visibilityState?: DocumentVisibilityState }).visibilityState;
+      }
+    }
   });
 });
 

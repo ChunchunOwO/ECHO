@@ -120,6 +120,30 @@ describe('echo-video protocol', () => {
     );
   });
 
+  it('uses the resolved MV mime type when the upstream stream is octet-stream', async () => {
+    getStreamVariantForProtocolMock.mockResolvedValue({
+      videoId: 'video-1',
+      variantId: 'variant-1',
+      url: 'https://cdn.example/video.m4s',
+      headers: { Referer: 'https://www.bilibili.com/video/BV1echo' },
+      mimeType: 'video/mp4',
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('stream', {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': '6',
+        },
+      }),
+    );
+    const handler = handleMock.mock.calls.find(([scheme]) => scheme === 'echo-mv')?.[1] as (request: Request) => Promise<Response>;
+
+    const response = await handler(new Request('echo-mv://stream/video-1/variant-1'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('video/mp4');
+  });
+
   it('does not proxy arbitrary network stream paths', async () => {
     const handler = handleMock.mock.calls.find(([scheme]) => scheme === 'echo-mv')?.[1] as (request: Request) => Promise<Response>;
 

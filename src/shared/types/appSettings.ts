@@ -8,6 +8,8 @@ import type { GlobalShortcutSettings } from './globalShortcuts';
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
 export type LyricsMiniPlayerColorMode = 'default' | 'custom' | 'cover';
+export type AppWallpaperMediaType = 'image' | 'video';
+export type AppVideoWallpaperPauseMode = 'smart' | 'minimized' | 'never';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 export type ReplayGainMode = 'off' | 'track' | 'album';
@@ -130,12 +132,14 @@ export type AppSettings = {
   rememberWindowSizeEnabled?: boolean;
   rememberedWindowSize?: RememberedWindowSize | null;
   appCustomWallpaperPath: string | null;
+  appWallpaperMediaType?: AppWallpaperMediaType;
   appWallpaperScalePercent: number;
   appWallpaperBlurPx: number;
   appWallpaperBrightnessPercent: number;
   appWallpaperUiOpacityPercent: number;
   appWallpaperVisualProtectionEnabled?: boolean;
   appWallpaperUnifiedOpacityEnabled: boolean;
+  appVideoWallpaperPauseMode?: AppVideoWallpaperPauseMode;
   networkMetadataEnabled: boolean;
   networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music'>;
   audioAnalysisEnabled?: boolean;
@@ -166,6 +170,8 @@ export type AppSettings = {
   lyricsWordHighlightEnabled?: boolean;
   lyricsFontSizePx: number;
   lyricsSecondaryFontSizePx?: number;
+  lyricsFontFamily?: string;
+  lyricsFontFilePath?: string | null;
   lyricsLineSpacingPercent?: number;
   lyricsLineMaxChars?: number;
   lyricsContextOpacityPercent?: number;
@@ -225,4 +231,5 @@ export type AppSettings = {
   lastFmMinScrobbleSeconds: number;
   lastFmAuthToken: string | null;
   smtcEnabled: boolean;
+  taskbarPlaybackControlsEnabled: boolean;
 };

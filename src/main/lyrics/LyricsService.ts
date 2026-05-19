@@ -986,6 +986,22 @@ export class LyricsService {
           lines_json = excluded.lines_json,
           offset_ms = excluded.offset_ms,
           score = excluded.score,
+          updated_at = excluded.updated_at
+        ON CONFLICT(id) DO UPDATE SET
+          cache_key = excluded.cache_key,
+          track_id = excluded.track_id,
+          provider = excluded.provider,
+          provider_lyrics_id = excluded.provider_lyrics_id,
+          title = excluded.title,
+          artist = excluded.artist,
+          album = excluded.album,
+          duration_seconds = excluded.duration_seconds,
+          kind = excluded.kind,
+          plain_lyrics = excluded.plain_lyrics,
+          synced_lyrics = excluded.synced_lyrics,
+          lines_json = excluded.lines_json,
+          offset_ms = excluded.offset_ms,
+          score = excluded.score,
           updated_at = excluded.updated_at`,
       )
       .run(
@@ -1279,7 +1295,7 @@ export class LyricsService {
       return lyrics;
     }
 
-    return this.writeLyricsCache(query, enriched);
+    return this.writeLyricsCacheWithRepair(query, enriched);
   }
 
   private missingPreferredSecondaryFields(

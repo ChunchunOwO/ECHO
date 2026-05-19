@@ -44,7 +44,12 @@ export const getSmtcService = (): SmtcService => {
   return smtcService;
 };
 
-export const resetSmtcServiceForTests = (): void => {
-  void smtcService?.dispose();
+export const disposeAndResetSmtcService = async (): Promise<void> => {
+  const service = smtcService;
   smtcService = null;
+  await service?.dispose();
+};
+
+export const resetSmtcServiceForTests = (): void => {
+  void disposeAndResetSmtcService();
 };

@@ -554,6 +554,51 @@ describe('LyricsService', () => {
     expect(cached?.lines[0].romanization).toBe('sakura');
   });
 
+  it('updates stale cached lyrics by id when romanization changes the cache key', async () => {
+    const { database, service } = createHarness();
+    const japaneseLine = '\u3055\u304f\u3089';
+    database
+      .prepare(
+        `INSERT INTO lyrics_cache (
+          id, cache_key, track_id, provider, provider_lyrics_id, title, artist, album,
+          duration_seconds, kind, plain_lyrics, synced_lyrics, lines_json, offset_ms, score,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'stale-romanization-cache',
+        'lrclib|stale title|echo artist|echo album|120',
+        'track-1',
+        'lrclib',
+        'lrclib-1',
+        'Echo Song',
+        'Echo Artist',
+        'Echo Album',
+        120,
+        'synced',
+        japaneseLine,
+        `[00:01.00]${japaneseLine}`,
+        JSON.stringify([{ timeMs: 1000, text: japaneseLine }]),
+        0,
+        0.99,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+    const cachedRow = database
+      .prepare<[string], { cache_key: string; lines_json: string }>(
+        'SELECT cache_key, lines_json FROM lyrics_cache WHERE id = ? LIMIT 1',
+      )
+      .get('stale-romanization-cache');
+    const cacheCount = database.prepare('SELECT COUNT(*) AS count FROM lyrics_cache').get() as { count: number };
+
+    expect(lyrics?.lines[0].romanization).toBe('sakura');
+    expect(cachedRow?.cache_key).toBe('lrclib|echo song|echo artist|echo album|120|');
+    expect(JSON.parse(cachedRow?.lines_json ?? '[]')[0].romanization).toBe('sakura');
+    expect(cacheCount.count).toBe(1);
+  });
+
   it('does not romanize non-Japanese provider lyrics', async () => {
     const { service } = createHarness({
       onlineProvider: {

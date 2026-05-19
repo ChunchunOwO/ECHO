@@ -313,6 +313,32 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateIndexSummary, 'strict');
   });
 
+  it('exposes plugin management APIs through IPC', async () => {
+    await exposedApi!.plugins.list();
+    await exposedApi!.plugins.createExample('playback-panel');
+    await exposedApi!.plugins.enable({ pluginId: 'echo.playback-panel', trustedPermissions: ['playback:read'] });
+    await exposedApi!.plugins.disable('echo.playback-panel');
+    await exposedApi!.plugins.reload('echo.playback-panel');
+    await exposedApi!.plugins.openDirectory('echo.playback-panel');
+    await exposedApi!.plugins.runCommand({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
+    await exposedApi!.plugins.getLogs('echo.playback-panel');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsList);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsCreateExample, 'playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsEnable, {
+      pluginId: 'echo.playback-panel',
+      trustedPermissions: ['playback:read'],
+    });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsDisable, 'echo.playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsReload, 'echo.playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsOpenDirectory, 'echo.playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsRunCommand, {
+      pluginId: 'echo.playback-panel',
+      commandId: 'show-status',
+    });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsGetLogs, 'echo.playback-panel');
+  });
+
   it('exposes account status APIs without cookie readback helpers', async () => {
     const handler = vi.fn();
     await exposedApi!.accounts.saveCookie('netease', 'MUSIC_U=secret');

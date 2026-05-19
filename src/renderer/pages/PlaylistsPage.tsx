@@ -173,6 +173,7 @@ const itemToTrack = (item: LibraryPlaylistItem, streamingQuality?: StreamingAudi
   if (item.track && !item.unavailable) {
     return {
       ...item.track,
+      streamingQuality: item.track.mediaType === 'streaming' ? (item.track.streamingQuality ?? streamingQuality) : item.track.streamingQuality,
       playlistItemId: item.id,
       unavailable: false,
     };

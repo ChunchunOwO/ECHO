@@ -7,6 +7,8 @@ import type {
   ChannelBalanceState,
 } from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
+import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
+import type { SettingsImportResult } from '../shared/types/settingsBackup';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
@@ -15,6 +17,8 @@ import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBan
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type {
   AddLocalAudioFilesToPlaylistResult,
+  AlbumOnlineInfo,
+  AlbumOnlineInfoRequestOptions,
   EmbeddedTrackTagsLoadResult,
   ImportPathClassification,
   LibraryAlbum,
@@ -102,6 +106,15 @@ import type {
   DownloadToolsStatus,
 } from '../shared/types/downloads';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
+import type {
+  PluginCreateExampleKind,
+  PluginCreateExampleResult,
+  PluginEnableRequest,
+  PluginListResult,
+  PluginLogEntry,
+  PluginRunCommandRequest,
+  PluginSummary,
+} from '../shared/types/plugins';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { LyricsProviderId, LyricsSearchCandidate, LyricsTrackSnapshotRequest, TrackLyrics } from '../shared/types/lyrics';
 import type { MvMatchCandidate, MvResolvedStreams, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../shared/types/mv';
@@ -158,7 +171,10 @@ export type EchoApi = {
     close: () => Promise<void>;
     getSettings: () => Promise<AppSettings>;
     setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+    getTaskbarPlaybackStatus: () => Promise<TaskbarPlaybackStatus>;
     resetSettings: () => Promise<AppSettings>;
+    exportSettings: () => Promise<string | null>;
+    importSettings: () => Promise<SettingsImportResult | null>;
     chooseFontFile: () => Promise<FontFileAsset | null>;
     chooseLyricsWallpaper: () => Promise<string | null>;
     chooseAppWallpaper: () => Promise<string | null>;
@@ -228,6 +244,7 @@ export type EchoApi = {
     clearLikedAlbums: () => Promise<void>;
     getAlbums: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
     getAlbum: (albumId: string) => Promise<LibraryAlbumDetail | null>;
+    getAlbumOnlineInfo: (albumId: string, options?: AlbumOnlineInfoRequestOptions) => Promise<AlbumOnlineInfo>;
     getAlbumForTrack: (trackId: string) => Promise<LibraryAlbum | null>;
     getArtists: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryArtist>>;
     getArtist: (artistId: string) => Promise<LibraryArtist | null>;
@@ -487,6 +504,16 @@ export type EchoApi = {
     search: (request: string | DownloadSearchRequest) => Promise<DownloadSearchResponse>;
     checkTools: () => Promise<DownloadToolsStatus>;
     onJobsUpdated: (handler: (jobs: DownloadJob[]) => void) => () => void;
+  };
+  plugins: {
+    list: () => Promise<PluginListResult>;
+    createExample: (kind: PluginCreateExampleKind) => Promise<PluginCreateExampleResult>;
+    enable: (request: PluginEnableRequest) => Promise<PluginSummary>;
+    disable: (pluginId: string) => Promise<PluginSummary>;
+    reload: (pluginId: string) => Promise<PluginSummary>;
+    openDirectory: (pluginId?: string) => Promise<void>;
+    runCommand: (request: PluginRunCommandRequest) => Promise<unknown>;
+    getLogs: (pluginId?: string) => Promise<PluginLogEntry[]>;
   };
   accounts: {
     getStatuses: () => Promise<AccountStatus[]>;

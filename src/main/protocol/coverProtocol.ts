@@ -44,6 +44,11 @@ const contentTypeForPath = (filePath: string, fallback: string | null): string =
       return 'image/png';
     case '.svg':
       return 'image/svg+xml';
+    case '.mp4':
+    case '.m4v':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
     default:
       return fallback ?? 'application/octet-stream';
   }

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
@@ -86,6 +88,7 @@ const settings: AppSettings = {
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  taskbarPlaybackControlsEnabled: false,
 };
 
 const getSettingsMock = vi.fn();
@@ -113,6 +116,8 @@ const kickoffArtistImageBackfillMock = vi.fn();
 const getArtistImageJobStatusMock = vi.fn();
 const startReplayGainAnalysisMock = vi.fn();
 const getReplayGainAnalysisStatusMock = vi.fn();
+const openPluginDirectoryMock = vi.fn();
+const createPluginExampleMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -252,6 +257,10 @@ vi.mock('../utils/echoBridge', () => ({
     getSettings: getDownloadSettingsMock,
     chooseOutputDirectory: chooseDownloadOutputDirectoryMock,
   }),
+  getPluginsBridge: () => ({
+    openDirectory: openPluginDirectoryMock,
+    createExample: createPluginExampleMock,
+  }),
   getDiscordPresenceBridge: () => ({
     getStatus: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: false, lastError: null }),
     setEnabled: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: true, lastError: null }),
@@ -349,6 +358,8 @@ beforeEach(() => {
   audioForceRestartMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   audioRestartWindowsAudioServiceMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   openExternalUrlMock.mockResolvedValue(undefined);
+  openPluginDirectoryMock.mockResolvedValue(undefined);
+  createPluginExampleMock.mockResolvedValue({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel' });
   validateGlobalShortcutMock.mockResolvedValue({
     accelerator: 'Ctrl+Alt+Space',
     available: true,
@@ -501,6 +512,59 @@ describe('SettingsPage', () => {
     const row = screen.getByText('settings.integrations.discord.title').closest('.setting-row') as HTMLElement;
     expect(row.id).toBe('settings-row-discord-presence');
     expect(row.getAttribute('data-search-highlight')).toBe('true');
+  });
+
+  it('finds the plugin settings entry and highlights the stable plugin row', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const searchInput = screen.getByPlaceholderText('settings.header.searchPlaceholder') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: 'manifest' } });
+    fireEvent.click(screen.getByRole('option', { name: /本地插件/ }));
+
+    expect(searchInput.value).toBe('');
+    const row = screen.getByText('本地插件').closest('.setting-row') as HTMLElement;
+    expect(row.id).toBe('settings-row-plugins');
+    expect(row.getAttribute('data-search-highlight')).toBe('true');
+  });
+
+  it('offers plugin actions from settings without duplicating the full manager', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const navigatePlugins = vi.fn();
+    window.addEventListener('app:navigate:plugins', navigatePlugins);
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.plugins\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /打开插件页/ }));
+    fireEvent.click(screen.getByRole('button', { name: /打开插件目录/ }));
+    fireEvent.click(screen.getByRole('button', { name: /新建示例插件/ }));
+    fireEvent.click(screen.getByRole('button', { name: /查看插件文档/ }));
+
+    expect(navigatePlugins).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(openPluginDirectoryMock).toHaveBeenCalledTimes(1));
+    expect(createPluginExampleMock).toHaveBeenCalledWith('playback-panel');
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md');
+    window.removeEventListener('app:navigate:plugins', navigatePlugins);
+  });
+
+  it('documents the v1 plugin manifest, permissions, API, examples, and security boundaries', () => {
+    const documentText = readFileSync(join(process.cwd(), 'docs', 'ECHO_NEXT_PLUGINS.md'), 'utf8');
+
+    expect(documentText).toContain('echo.plugin.json');
+    expect(documentText).toContain('## 权限');
+    expect(documentText).toContain('## 公开 API');
+    expect(documentText).toContain('## 示例模板');
+    expect(documentText).toContain('## 安全边界');
   });
 
   it('finds lyrics settings when searching for translation', async () => {
@@ -1228,7 +1292,7 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ suppressAccountExpiryNotices: true }));
   });
 
-  it('shows app wallpaper controls only after choosing a custom wallpaper', async () => {
+  it('shows app wallpaper controls only after choosing a custom background', async () => {
     const wallpaperPath = 'D:\\Echo\\app-wallpapers\\wallpaper.png';
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
@@ -1242,13 +1306,50 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     expect(screen.queryByText('壁纸缩放')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /选择壁纸/ }));
+    fireEvent.click(screen.getByRole('button', { name: /选择背景/ }));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appCustomWallpaperPath: wallpaperPath }));
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appCustomWallpaperPath: wallpaperPath,
+        appWallpaperMediaType: 'image',
+      }),
+    );
     expect(await screen.findByText('壁纸缩放')).toBeTruthy();
     expect(screen.getByText('壁纸模糊度')).toBeTruthy();
     expect(screen.getByText('壁纸亮度')).toBeTruthy();
     expect(screen.getByText('UI 透明度')).toBeTruthy();
     expect(screen.getByText('统一透明度')).toBeTruthy();
+  });
+
+  it('shows video wallpaper performance mode after choosing a local video background', async () => {
+    const wallpaperPath = 'D:\\Echo\\app-wallpapers\\motion.mp4';
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    chooseAppWallpaperMock.mockResolvedValue(wallpaperPath);
+    setSettingsMock.mockResolvedValue({
+      ...settings,
+      appCustomWallpaperPath: wallpaperPath,
+      appWallpaperMediaType: 'video',
+      appVideoWallpaperPauseMode: 'smart',
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /选择背景/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appCustomWallpaperPath: wallpaperPath,
+        appWallpaperMediaType: 'video',
+      }),
+    );
+    expect(await screen.findByText('视频壁纸 · 静音循环')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /智能暂停/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /最小化暂停/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /始终播放/ })).toBeTruthy();
   });
 });

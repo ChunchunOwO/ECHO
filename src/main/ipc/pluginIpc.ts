@@ -1,0 +1,46 @@
+import { ipcMain } from 'electron';
+import { IpcChannels } from '../../shared/constants/ipcChannels';
+import type { PluginCreateExampleKind, PluginEnableRequest, PluginRunCommandRequest } from '../../shared/types/plugins';
+import { getPluginService } from '../plugins/PluginService';
+
+const requireText = (value: unknown, field: string): string => {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+  return value.trim();
+};
+
+const exampleKinds = new Set<PluginCreateExampleKind>(['playback-panel', 'command-tool', 'library-script']);
+
+export const registerPluginIpc = (): void => {
+  const service = getPluginService();
+  service.scheduleAutoStart();
+
+  ipcMain.handle(IpcChannels.PluginsList, () => service.list());
+  ipcMain.handle(IpcChannels.PluginsCreateExample, (_event, kind: unknown) => {
+    if (typeof kind !== 'string' || !exampleKinds.has(kind as PluginCreateExampleKind)) {
+      throw new Error('unknown_plugin_example_kind');
+    }
+    return service.createExample(kind as PluginCreateExampleKind);
+  });
+  ipcMain.handle(IpcChannels.PluginsEnable, (_event, request: unknown) => {
+    if (!request || typeof request !== 'object' || Array.isArray(request)) {
+      throw new Error('plugin enable request must be an object');
+    }
+    return service.enable(request as PluginEnableRequest);
+  });
+  ipcMain.handle(IpcChannels.PluginsDisable, (_event, pluginId: unknown) => service.disable(requireText(pluginId, 'pluginId')));
+  ipcMain.handle(IpcChannels.PluginsReload, (_event, pluginId: unknown) => service.reload(requireText(pluginId, 'pluginId')));
+  ipcMain.handle(IpcChannels.PluginsOpenDirectory, (_event, pluginId: unknown) =>
+    service.openDirectory(typeof pluginId === 'string' && pluginId.trim() ? pluginId.trim() : undefined),
+  );
+  ipcMain.handle(IpcChannels.PluginsRunCommand, (_event, request: unknown) => {
+    if (!request || typeof request !== 'object' || Array.isArray(request)) {
+      throw new Error('plugin command request must be an object');
+    }
+    return service.runCommand(request as PluginRunCommandRequest);
+  });
+  ipcMain.handle(IpcChannels.PluginsGetLogs, (_event, pluginId: unknown) =>
+    service.getLogs(typeof pluginId === 'string' && pluginId.trim() ? pluginId.trim() : undefined),
+  );
+};

@@ -143,6 +143,63 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(status.error).toContain('node-libraop');
   });
 
+  it('binds the RAOP receiver to all adapters and advertises each LAN interface', async () => {
+    const audio = new FakeAudioSession();
+    const startReceiver = vi.fn(() => 23);
+    const stopReceiver = vi.fn();
+    const mdnsStarts: Array<{ address: string; mac: string; port: number }> = [];
+    const mdnsStops: Array<ReturnType<typeof vi.fn>> = [];
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      getAdvertiseInterfaces: () => [
+        { name: 'Ethernet', address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1' },
+        { name: 'Wi-Fi', address: '10.0.0.8', mac: '70:CF:84:CB:1E:D1' },
+      ],
+      createMdnsAdvertiser: () => {
+        const stop = vi.fn(async () => undefined);
+        mdnsStops.push(stop);
+        return {
+          start: vi.fn(async (advertisement) => {
+            mdnsStarts.push({
+              address: advertisement.address,
+              mac: advertisement.mac,
+              port: advertisement.port,
+            });
+          }),
+          stop,
+        };
+      },
+      loadRaopModule: async () => ({
+        startReceiver,
+        stopReceiver,
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+    });
+
+    const status = await service.setEnabled(true);
+    const options = startReceiver.mock.calls[0]?.[0];
+
+    expect(status.enabled).toBe(true);
+    expect(options).toEqual(expect.objectContaining({
+      name: 'ECHO Next (AirPlay)',
+      model: 'ECHO-Next-AirPlay-Spike',
+      mac: '60:CF:84:CB:1E:D1',
+      metadata: true,
+      portRange: 100,
+    }));
+    expect(options).not.toHaveProperty('host');
+    expect(mdnsStarts).toEqual([
+      { address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1', port: options.portBase },
+      { address: '10.0.0.8', mac: '70:CF:84:CB:1E:D1', port: options.portBase },
+    ]);
+
+    await service.setEnabled(false);
+
+    expect(stopReceiver).toHaveBeenCalledWith(23);
+    expect(mdnsStops).toHaveLength(2);
+    expect(mdnsStops.every((stop) => stop.mock.calls.length === 1)).toBe(true);
+  });
+
   it('maps RAOP metadata artwork and PCM events into an AirPlay playback session', async () => {
     const audio = new FakeAudioSession();
     const harness: { handler?: (event: Record<string, unknown>) => void } = {};
@@ -176,9 +233,15 @@ describe('AirPlayReceiverSpikeService', () => {
       sampleRate: 44100,
       channels: 2,
       output: expect.objectContaining({
+        outputMode: 'shared',
+        sharedBackend: 'auto',
         requestedOutputSampleRate: 48000,
         latencyProfile: 'stable',
         bufferSizeFrames: 8192,
+        useJuceDecode: false,
+        dsdOutputMode: 'pcm',
+        asioNativeDsdExperimentalEnabled: false,
+        releaseExclusiveOnPauseExperimentalEnabled: false,
       }),
     }));
     expect(status.state).toBe('playing');

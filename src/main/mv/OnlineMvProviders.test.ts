@@ -399,6 +399,68 @@ describe('BilibiliMvProvider', () => {
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=4048'), expect.anything());
   });
 
+  it('resolves the current Bilibili DASH response shape for BV1KjQDYdEx2 as playable in-app video', async () => {
+    const targetVideo: TrackVideo = {
+      ...video,
+      sourceId: 'BV1KjQDYdEx2',
+      title: '“敲卡哇伊的调调！！！被萌化惹🥰” |《さようなら、花泥棒さん (cover)》',
+      url: 'https://www.bilibili.com/video/BV1KjQDYdEx2',
+      providerUrl: 'https://www.bilibili.com/video/BV1KjQDYdEx2',
+    };
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ code: 0, data: { cid: 28882894939, title: targetVideo.title } });
+      }
+
+      if (url.includes('qn=80') || url.includes('qn=64')) {
+        return jsonResponse({
+          code: 0,
+          message: 'OK',
+          data: {
+            quality: 64,
+            accept_quality: [112, 80, 64, 32, 16],
+            dash: {
+              video: [
+                {
+                  id: 64,
+                  baseUrl: 'https://upos.example/BV1KjQDYdEx2-720p.m4s',
+                  backupUrl: ['https://upos-backup.example/BV1KjQDYdEx2-720p.m4s'],
+                  width: 1280,
+                  height: 720,
+                  frameRate: '30',
+                  codecs: 'avc1.640028',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(targetVideo, settings);
+
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-64',
+      label: '720p',
+      protocol: 'direct',
+      playableInApp: true,
+      url: 'https://upos.example/BV1KjQDYdEx2-720p.m4s',
+      headers: {
+        Referer: 'https://www.bilibili.com/video/BV1KjQDYdEx2',
+      },
+      rawProviderJson: {
+        cid: 28882894939,
+        qualityLimited: true,
+      },
+    });
+  });
+
   it('resolves unrestricted variants when max quality is selected and keeps 60fps variants', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
@@ -476,7 +538,7 @@ describe('BilibiliMvProvider', () => {
     expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80']);
   });
 
-  it('resolves 4K DASH video streams when the MV quality cap allows 2160p', async () => {
+  it('marks HEVC 4K DASH video streams as not in-app playable while preserving AVC fallback', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return jsonResponse({ data: { cid: 123 } });
@@ -506,6 +568,26 @@ describe('BilibiliMvProvider', () => {
         });
       }
 
+      if (url.includes('qn=80')) {
+        return jsonResponse({
+          data: {
+            quality: 80,
+            dash: {
+              video: [
+                {
+                  id: 80,
+                  baseUrl: 'https://upos.example/1080-avc.m4s',
+                  width: 1920,
+                  height: 1080,
+                  frameRate: '30',
+                  codecs: 'avc1.640032',
+                },
+              ],
+            },
+          },
+        });
+      }
+
       return jsonResponse({ code: -1 }, 403);
     }) as typeof fetch;
     const provider = new BilibiliMvProvider({
@@ -522,11 +604,20 @@ describe('BilibiliMvProvider', () => {
       width: 3840,
       height: 2160,
       fps: 60,
+      codec: 'hev1.1.6.L153.90',
+      playableInApp: false,
       url: 'https://upos.example/4k-video-only.m4s',
+    });
+    expect(variants.find((variant) => variant.id === 'bilibili-qn-80')).toMatchObject({
+      label: '1080p',
+      qualityTier: '1080p',
+      codec: 'avc1.640032',
+      playableInApp: true,
+      url: 'https://upos.example/1080-avc.m4s',
     });
   });
 
-  it('keeps 4K 120fps DASH streams as distinct playable variants', async () => {
+  it('keeps 4K 120fps DASH streams distinct but marks HEVC variants as not in-app playable', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return jsonResponse({ data: { cid: 123 } });
@@ -577,6 +668,8 @@ describe('BilibiliMvProvider', () => {
       width: 3840,
       height: 2160,
       fps: 120,
+      codec: 'hev1.1.6.L153.90',
+      playableInApp: false,
       url: 'https://upos.example/4k-120.m4s',
     });
   });

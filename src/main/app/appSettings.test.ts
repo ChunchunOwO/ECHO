@@ -1,13 +1,25 @@
-import { resolve } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+let userDataPath = process.cwd();
+const tempRoots: string[] = [];
 
 vi.mock('electron', () => ({
   app: {
-    getPath: () => process.cwd(),
+    getPath: () => userDataPath,
   },
 }));
 
 describe('app settings normalization', () => {
+  afterEach(() => {
+    userDataPath = process.cwd();
+    for (const root of tempRoots.splice(0)) {
+      rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    }
+  });
+
   it('keeps old settings files compatible when coverCacheDir is missing', async () => {
     const { normalizeSettings } = await import('./appSettings');
     const settings = normalizeSettings({
@@ -36,12 +48,14 @@ describe('app settings normalization', () => {
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
+    expect(settings.appWallpaperMediaType).toBe('image');
     expect(settings.appWallpaperScalePercent).toBe(100);
     expect(settings.appWallpaperBlurPx).toBe(0);
     expect(settings.appWallpaperBrightnessPercent).toBe(100);
     expect(settings.appWallpaperUiOpacityPercent).toBe(100);
     expect(settings.appWallpaperVisualProtectionEnabled).toBe(true);
     expect(settings.appWallpaperUnifiedOpacityEnabled).toBe(false);
+    expect(settings.appVideoWallpaperPauseMode).toBe('smart');
     expect(settings.scanPerformanceMode).toBe('balanced');
     expect(settings.backgroundSpacePauseEnabled).toBe(false);
     expect(settings.globalShortcuts?.playPause).toEqual({ enabled: false, accelerator: null });
@@ -319,6 +333,14 @@ describe('app settings normalization', () => {
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {
     const { normalizeSettings } = await import('./appSettings');
+    userDataPath = join(tmpdir(), `echo-next-settings-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    tempRoots.push(userDataPath);
+    const appWallpaperDirectory = join(userDataPath, 'app-wallpapers');
+    mkdirSync(appWallpaperDirectory, { recursive: true });
+    const videoWallpaperPath = join(appWallpaperDirectory, 'motion.mp4');
+    const unsupportedWallpaperPath = join(appWallpaperDirectory, 'motion.mkv');
+    writeFileSync(videoWallpaperPath, 'video');
+    writeFileSync(unsupportedWallpaperPath, 'unsupported');
 
     expect(
       normalizeSettings({
@@ -357,6 +379,30 @@ describe('app settings normalization', () => {
       appWallpaperVisualProtectionEnabled: true,
       appWallpaperUnifiedOpacityEnabled: false,
     });
+
+    expect(
+      normalizeSettings({
+        appCustomWallpaperPath: videoWallpaperPath,
+        appWallpaperMediaType: 'image',
+        appVideoWallpaperPauseMode: 'minimized',
+      }),
+    ).toMatchObject({
+      appCustomWallpaperPath: videoWallpaperPath,
+      appWallpaperMediaType: 'video',
+      appVideoWallpaperPauseMode: 'minimized',
+    });
+
+    expect(
+      normalizeSettings({
+        appCustomWallpaperPath: unsupportedWallpaperPath,
+        appWallpaperMediaType: 'video',
+        appVideoWallpaperPauseMode: 'always' as never,
+      }),
+    ).toMatchObject({
+      appCustomWallpaperPath: null,
+      appWallpaperMediaType: 'image',
+      appVideoWallpaperPauseMode: 'smart',
+    });
   });
 
   it('keeps Discord Rich Presence disabled by default', async () => {
@@ -378,6 +424,7 @@ describe('app settings normalization', () => {
       lastFmNowPlayingEnabled: true,
       lastFmMinScrobbleSeconds: 30,
       lastFmAuthToken: null,
+      taskbarPlaybackControlsEnabled: false,
     });
     expect(
       normalizeSettings({
@@ -388,6 +435,7 @@ describe('app settings normalization', () => {
         lastFmNowPlayingEnabled: false,
         lastFmMinScrobbleSeconds: 999,
         lastFmAuthToken: ' token ',
+        taskbarPlaybackControlsEnabled: true,
       }),
     ).toMatchObject({
       lastFmEnabled: true,
@@ -397,6 +445,7 @@ describe('app settings normalization', () => {
       lastFmNowPlayingEnabled: false,
       lastFmMinScrobbleSeconds: 240,
       lastFmAuthToken: 'token',
+      taskbarPlaybackControlsEnabled: true,
     });
   });
 

@@ -205,3 +205,15 @@ export const EchoSettingsIcon = createNavIcon(
     <path d="M12.2 16.6h6.6" />
   </>,
 );
+
+export const EchoPluginsIcon = createNavIcon(
+  'EchoPluginsIcon',
+  <>
+    <path d="M8.1 4.8h3.6v4.1H7.6a2.4 2.4 0 0 1-2.4-2.4V5.3" />
+    <path d="M12.3 4.8h3.6l2.9 2.9v10.1c0 1-.8 1.8-1.8 1.8H7c-1 0-1.8-.8-1.8-1.8V9.7" />
+    <path d="M15.9 4.8v3h3" />
+    <path d="m9 13.1 1.8 1.8L9 16.7" />
+    <path d="M15 13.1h-2.5" />
+    <path d="M15 16.7h-2.5" />
+  </>,
+);

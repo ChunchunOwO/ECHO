@@ -35,6 +35,7 @@ import { getNcmConverter } from './NcmConverter';
 import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
+import { AlbumOnlineInfoService } from './online/AlbumOnlineInfoService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
@@ -105,6 +106,8 @@ import type {
   NetworkMetadataScanJobStatus,
   NetworkTagCandidate,
   NetworkTagCandidateSearchRequest,
+  AlbumOnlineInfo,
+  AlbumOnlineInfoRequestOptions,
 } from '../../shared/types/library';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
@@ -190,6 +193,7 @@ export class LibraryService {
     private readonly artistImageCacheService: ArtistImageCacheService | null = null,
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
+    private readonly albumOnlineInfoService: AlbumOnlineInfoService | null = null,
   ) {
     this.moveCandidateService = new LibraryMoveCandidateService(this.database);
     this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
@@ -469,6 +473,17 @@ export class LibraryService {
 
   getAlbum(albumId: string): LibraryAlbumDetail | null {
     return this.store.getAlbum(albumId);
+  }
+
+  getAlbumOnlineInfo(albumId: string, options: AlbumOnlineInfoRequestOptions = {}): Promise<AlbumOnlineInfo> {
+    const album = this.getAlbum(albumId);
+    if (!album) {
+      throw new Error(`Unknown album ${albumId}`);
+    }
+
+    const tracks = this.getAllAlbumTracks(albumId);
+    const service = this.albumOnlineInfoService ?? new AlbumOnlineInfoService(this.database);
+    return service.getAlbumOnlineInfo({ album, tracks }, { ...options, locale: this.readAppSettings().locale });
   }
 
   getAlbumForTrack(trackId: string): LibraryAlbum | null {
@@ -2184,6 +2199,7 @@ export const createLibraryService = (
   });
 
   const networkMetadataService = new NetworkMetadataService(database);
+  const albumOnlineInfoService = new AlbumOnlineInfoService(database);
   const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
   const replayGainAnalysisJobQueue = new ReplayGainAnalysisJobQueue(store, {
     getTargetLufs: () => readSettings().replayGainTargetLufs ?? -18,
@@ -2221,6 +2237,7 @@ export const createLibraryService = (
     artistImageCacheService,
     readSettings,
     scanConcurrency,
+    albumOnlineInfoService,
   );
 };
 

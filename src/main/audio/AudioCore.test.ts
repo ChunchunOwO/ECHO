@@ -5276,6 +5276,19 @@ describe('NativeOutputBridge graceful shutdown', () => {
     bridge.stop();
   });
 
+  it('turns native stdin EOF into a bridge error instead of an uncaught stream error', async () => {
+    const { bridge, child } = await createStartedBridge();
+    const errors: Error[] = [];
+    bridge.on('error', (error) => errors.push(error));
+
+    child.stdin.emit('error', new Error('write EOF'));
+    await Promise.resolve();
+
+    expect(errors.at(-1)?.message).toContain('stdin_error:write EOF');
+    expect(bridge.isReady).toBe(false);
+    bridge.stop();
+  });
+
   it('stopGracefully resolves when shutdown-ack is received', async () => {
     const { bridge, child, stdoutRef } = await createStartedBridge();
     const stopped = bridge.stopGracefully('test', 100);

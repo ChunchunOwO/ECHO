@@ -66,9 +66,11 @@ const fallbackSettings: MvSettings = {
   autoSearch: true,
   autoPreload: true,
   autoApplyThreshold: 0.7,
+  preferHighestViewCount: false,
   immersiveBackground: true,
   ...immersiveBackgroundDefaults,
   restartAudioOnLoad: false,
+  syncMode: 'balanced',
   replayAudioOnChange: true,
   enabledProviders: ['bilibili', 'youtube'],
   providerOrder: ['bilibili', 'youtube'],
@@ -80,6 +82,13 @@ const providerLabels: Record<NetworkMvProviderId, string> = {
   bilibili: 'Bilibili',
   youtube: 'YouTube',
 };
+
+const mvSyncModes = ['stable', 'balanced', 'precise'] satisfies Array<NonNullable<MvSettings['syncMode']>>;
+const mvSyncModeLabels = {
+  stable: 'mvSettings.network.syncMode.stable',
+  balanced: 'mvSettings.network.syncMode.balanced',
+  precise: 'mvSettings.network.syncMode.precise',
+} satisfies Record<NonNullable<MvSettings['syncMode']>, Parameters<ReturnType<typeof useI18n>['t']>[0]>;
 
 const dispatchSettingsChanged = (patch: Partial<MvSettings> | Partial<AppSettings>): void => {
   window.dispatchEvent(new CustomEvent('settings:changed', { detail: patch }));
@@ -95,7 +104,9 @@ const formatVideoTitle = (video: TrackVideo | null, emptyLabel: string): string 
   return video.title?.trim() || video.sourceId?.trim() || emptyLabel;
 };
 
-const isResolutionQualityLabel = (label: string): boolean => /^(?:8K|4K|\d{3,4}p)(?:\s*\/?\s*60fps|\s+60fps)?$/i.test(label.trim());
+const frameRateLabel = (fps: number): string => `${Math.round(fps)}fps`;
+
+const isResolutionQualityLabel = (label: string): boolean => /^(?:8K|4K|\d{3,4}p)(?:\s*\/?\s*\d{2,3}fps|\s+\d{2,3}fps)?$/i.test(label.trim());
 
 const heightFromResolutionQualityLabel = (label: string): number | null => {
   const normalized = label.trim();
@@ -139,7 +150,14 @@ const formatVideoQuality = (video: TrackVideo | null, emptyLabel: string): strin
     return emptyLabel;
   }
 
-  return video.fps && video.fps >= 55 && !/\b60\s*fps\b/i.test(baseLabel) ? `${baseLabel} / 60fps` : baseLabel;
+  if (!video.fps || video.fps < 55) {
+    return baseLabel;
+  }
+
+  const fpsLabel = frameRateLabel(video.fps);
+  return new RegExp(`\\b${fpsLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(baseLabel)
+    ? baseLabel
+    : `${baseLabel} / ${fpsLabel}`;
 };
 
 const videoToCandidate = (video: TrackVideo): MvMatchCandidate => ({
@@ -1151,6 +1169,20 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <button
                 type="button"
                 className="mv-source-toggle mv-auto-apply-toggle"
+                aria-pressed={settings.preferHighestViewCount === true}
+                onClick={() => void patchSettings({ preferHighestViewCount: !(settings.preferHighestViewCount === true) })}
+              >
+                <span className="mv-switch-track" aria-hidden="true">
+                  <span />
+                </span>
+                <span className="mv-toggle-copy">
+                  <strong>{t('mvSettings.network.preferHighestViewCount')}</strong>
+                  <em>{t('mvSettings.network.preferHighestViewCountDescription')}</em>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="mv-source-toggle mv-auto-apply-toggle"
                 aria-pressed={followMusicProgress}
                 onClick={() => void patchSettings({ restartAudioOnLoad: !followMusicProgress })}
               >
@@ -1162,6 +1194,26 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                   <em>{t('mvSettings.network.restartAudioOnLoadDescription')}</em>
                 </span>
               </button>
+              {followMusicProgress ? (
+                <div className="mv-sync-mode-control">
+                  <span className="mv-threshold-copy">
+                    <strong>{t('mvSettings.network.syncMode')}</strong>
+                    <em>{t('mvSettings.network.syncModeDescription')}</em>
+                  </span>
+                  <div className="mv-sync-mode-buttons" role="group" aria-label={t('mvSettings.network.syncMode')}>
+                    {mvSyncModes.map((mode) => (
+                      <button
+                        type="button"
+                        key={mode}
+                        aria-pressed={(settings.syncMode ?? 'balanced') === mode}
+                        onClick={() => void patchSettings({ syncMode: mode })}
+                      >
+                        {t(mvSyncModeLabels[mode])}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <button
                 type="button"
                 className="mv-source-toggle mv-auto-apply-toggle"

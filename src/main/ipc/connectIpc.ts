@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import { getAppSettings } from '../app/appSettings';
 import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getConnectReceiverService } from '../connect/ConnectReceiverService';
 import { getConnectService, normalizeConnectStartRequest } from '../connect/ConnectService';
@@ -39,6 +40,18 @@ const normalizeVolume = (value: unknown): number => {
   return Number.isFinite(next) ? Math.max(0, Math.min(100, next)) : 100;
 };
 
+const startConfiguredReceivers = (
+  receiverService: ReturnType<typeof getConnectReceiverService>,
+  airPlayReceiverService: ReturnType<typeof getAirPlayReceiverSpikeService>,
+): void => {
+  if (getAppSettings().connectAutoStartReceiversEnabled !== true) {
+    return;
+  }
+
+  void receiverService.setEnabled(true).catch(() => undefined);
+  void airPlayReceiverService.setEnabled(true).catch(() => undefined);
+};
+
 export const registerConnectIpc = (): void => {
   const service = getConnectService();
   const receiverService = getConnectReceiverService();
@@ -75,4 +88,5 @@ export const registerConnectIpc = (): void => {
   ipcMain.handle(IpcChannels.ConnectAirPlayReceiverStopPlayback, (): Promise<AirPlayReceiverStatus> =>
     airPlayReceiverService.stopPlayback(),
   );
+  startConfiguredReceivers(receiverService, airPlayReceiverService);
 };

@@ -350,6 +350,180 @@ describe('MvPanel', () => {
     await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/remote-video-1'));
   });
 
+  it('auto-loads MV for AirPlay receiver streams', async () => {
+    const airPlayTrack = makeRemoteTrack({
+      id: 'airplay-receiver:session-1',
+      path: 'airplay-receiver:session-1',
+      isTemporary: true,
+      title: 'Air Song',
+      artist: 'Air Artist',
+      fieldSources: { title: 'airplay', artist: 'airplay' },
+    });
+    const selectedAfterSearch = makeVideo({
+      id: 'airplay-video-1',
+      trackId: airPlayTrack.id,
+      provider: 'bilibili',
+      sourceType: 'stream',
+      sourceId: 'bilibili:BVairplay',
+      title: 'Air Song MV',
+      artist: 'Air Artist',
+      mediaUrl: 'echo-video://mv/airplay-video-1',
+      playableInApp: true,
+    });
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(null),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([
+          {
+            id: 'bilibili:BVairplay',
+            trackId: airPlayTrack.id,
+            provider: 'bilibili',
+            sourceType: 'search',
+            sourceId: 'BVairplay',
+            title: 'Air Song MV',
+            artist: 'Air Artist',
+            filePath: null,
+            url: 'https://www.bilibili.com/video/BVairplay',
+            providerUrl: 'https://www.bilibili.com/video/BVairplay',
+            thumbnailUrl: null,
+            uploader: 'Air Channel',
+            availableQualities: [],
+            durationSeconds: 180,
+            score: 0.94,
+            playableInApp: true,
+            reasons: ['Bilibili search'],
+          },
+        ]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: selectedAfterSearch, variants: [] }),
+        setQuality: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn().mockResolvedValue(selectedAfterSearch),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId={airPlayTrack.id}
+        currentTrack={airPlayTrack}
+        title={airPlayTrack.title}
+        artist={airPlayTrack.artist}
+        coverUrl={airPlayTrack.coverThumb}
+        isAudioPlaying
+        audioClock={makeAudioClock(12, 1, { durationSeconds: null })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: airPlayTrack.id,
+          title: 'Air Song',
+          artist: 'Air Artist',
+          mediaType: 'remote',
+          query: 'Air Song Air Artist',
+        }),
+      ),
+    );
+    await waitFor(() => expect(window.echo.mv.selectVideo).toHaveBeenCalledWith(airPlayTrack.id, 'bilibili:BVairplay'));
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/airplay-video-1'));
+  });
+
+  it('auto-searches and applies AirPlay MVs from receiver metadata before a queue snapshot exists', async () => {
+    const selectedAfterSearch = makeVideo({
+      id: 'airplay-video-2',
+      trackId: 'airplay-receiver:source-1',
+      provider: 'bilibili',
+      sourceType: 'stream',
+      sourceId: 'bilibili:BVairplay2',
+      title: 'Air Song MV',
+      artist: 'Air Artist',
+      mediaUrl: 'echo-video://mv/airplay-video-2',
+      playableInApp: true,
+    });
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(null),
+        getSettings: vi.fn().mockResolvedValue({
+          ...defaultMvSettings,
+          autoSearch: true,
+          autoPreload: false,
+        }),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([
+          {
+            id: 'bilibili:BVairplay2',
+            provider: 'bilibili',
+            sourceType: 'search_candidate',
+            title: 'Air Song MV',
+            artist: 'Air Artist',
+            filePath: null,
+            url: 'https://www.bilibili.com/video/BVairplay2',
+            providerUrl: 'https://www.bilibili.com/video/BVairplay2',
+            thumbnailUrl: null,
+            uploader: 'Air Channel',
+            availableQualities: [],
+            durationSeconds: 180,
+            score: 0.94,
+            playableInApp: true,
+            reasons: ['Bilibili search'],
+          },
+        ]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: selectedAfterSearch, variants: [] }),
+        setQuality: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn().mockResolvedValue(selectedAfterSearch),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId="airplay-receiver:source-1"
+        currentTrack={null}
+        title="Air Song"
+        artist="Air Artist"
+        coverUrl={null}
+        isAudioPlaying={false}
+        audioClock={makeAudioClock(12, 1, { durationSeconds: 180, state: 'paused' })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'airplay-receiver:source-1',
+          title: 'Air Song',
+          artist: 'Air Artist',
+          mediaType: 'remote',
+          query: 'Air Song Air Artist',
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(window.echo.mv.selectVideo).toHaveBeenCalledWith('airplay-receiver:source-1', 'bilibili:BVairplay2'),
+    );
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/airplay-video-2'));
+  });
+
   it('shows a video for playable selected MV', async () => {
     const { container } = renderPanel(makeVideo());
 
@@ -820,6 +994,38 @@ describe('MvPanel', () => {
     );
 
     expect(video.currentTime).toBeCloseTo(10.2, 3);
+  });
+
+  it('uses video playback-rate nudging for medium MV drift instead of seeking immediately', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const { container, rerender } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(10, 3));
+
+    video.currentTime = 10;
+    nowSpy.mockReturnValue(2500);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(11.4)}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(10, 3);
+    expect(video.playbackRate).toBeGreaterThan(1);
+    expect(window.echo.playback.seek).not.toHaveBeenCalled();
   });
 
   it('force-syncs MV when audio resumes from pause', async () => {

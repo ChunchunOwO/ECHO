@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Cast, Loader2, Pause, Play, Power, RefreshCw, Smartphone, Square, Unplug, Volume2, Wifi } from 'lucide-react';
+import type { AppSettings } from '../../shared/types/appSettings';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
@@ -41,6 +42,7 @@ const defaultAirPlayReceiverStatus: AirPlayReceiverStatus = {
   currentSourceId: null,
   currentClient: null,
   metadata: null,
+  currentLyricLine: null,
   artworkUrl: null,
   positionSeconds: 0,
   durationSeconds: 0,
@@ -123,6 +125,8 @@ export const ConnectPage = (): JSX.Element => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReceiverBusy, setIsReceiverBusy] = useState(false);
   const [isAirPlayReceiverBusy, setIsAirPlayReceiverBusy] = useState(false);
+  const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
+  const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
@@ -222,6 +226,11 @@ export const ConnectPage = (): JSX.Element => {
         }
       }).catch(() => undefined);
     }
+    void window.echo?.app?.getSettings?.().then((settings: AppSettings) => {
+      if (!disposed) {
+        setAutoStartReceiversEnabled(settings.connectAutoStartReceiversEnabled === true);
+      }
+    }).catch(() => undefined);
     void refreshDevices();
     const unsubscribe = connect.onStatus((nextStatus) => {
       setStatus(nextStatus);
@@ -249,6 +258,27 @@ export const ConnectPage = (): JSX.Element => {
       unsubscribeAirPlayReceiver();
     };
   }, [refreshDevices]);
+
+  const toggleAutoStartReceivers = useCallback(async (): Promise<void> => {
+    const app = window.echo?.app;
+    if (!app?.setSettings) {
+      setError('Desktop bridge unavailable. 请在 Electron 桌面端保存 Connect 设置。');
+      return;
+    }
+
+    const connectAutoStartReceiversEnabled = !autoStartReceiversEnabled;
+    setIsAutoStartBusy(true);
+    setError(null);
+    try {
+      const settings = await app.setSettings({ connectAutoStartReceiversEnabled });
+      setAutoStartReceiversEnabled(settings.connectAutoStartReceiversEnabled === true);
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: { connectAutoStartReceiversEnabled } }));
+    } catch (settingsError) {
+      setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
+    } finally {
+      setIsAutoStartBusy(false);
+    }
+  }, [autoStartReceiversEnabled]);
 
   const toggleReceiver = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -397,10 +427,25 @@ export const ConnectPage = (): JSX.Element => {
           <h1>Connect</h1>
           <p>DLNA 稳定投送优先；AirPlay 在元数据验收通过前保持实验不可用。</p>
         </div>
-        <button className="settings-action-button" type="button" onClick={() => void refreshDevices()} disabled={isRefreshing}>
-          {isRefreshing ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
-          刷新设备
-        </button>
+        <div className="connect-header-actions">
+          <div className="settings-inline-toggle connect-autostart-toggle">
+            <span>启动时自动开启 AirPlay / DLNA</span>
+            <button
+              aria-label="启动时自动开启 AirPlay / DLNA"
+              aria-pressed={autoStartReceiversEnabled}
+              className={`toggle-btn ${autoStartReceiversEnabled ? 'active' : ''}`}
+              disabled={isAutoStartBusy}
+              type="button"
+              onClick={() => void toggleAutoStartReceivers()}
+            >
+              <span />
+            </button>
+          </div>
+          <button className="settings-action-button" type="button" onClick={() => void refreshDevices()} disabled={isRefreshing}>
+            {isRefreshing ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
+            刷新设备
+          </button>
+        </div>
       </header>
 
       {error ? (
@@ -512,6 +557,7 @@ export const ConnectPage = (): JSX.Element => {
                 ? 'RAOP 后端已加载'
                 : airPlayReceiverStatus.error ?? '需要可用的 AirPlay 原生后端'}
             </small>
+            <small>使用 AirPlay 后进度条将被锁定</small>
           </div>
           <button
             className="settings-action-button"

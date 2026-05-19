@@ -1164,8 +1164,17 @@
 
 .playlist-detail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 18px;
+}
+
+.playlist-detail > .track-list-shell {
+  grid-row: 3;
+  min-height: 0;
+}
+
+.playlist-detail > .list-footer {
+  grid-row: 4;
 }
 
 .playlist-detail-header {
@@ -1270,6 +1279,67 @@
   flex-wrap: wrap;
   min-width: 0;
   width: 100%;
+}
+
+.playlist-download-progress {
+  display: grid;
+  grid-row: 2;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 58px;
+  padding: 10px 12px;
+  color: var(--theme-muted-text);
+  border: 1px solid rgba(47, 109, 168, 0.14);
+  border-radius: 8px;
+  background: var(--theme-panel-bg);
+  box-shadow: 0 8px 20px rgba(35, 52, 75, 0.06);
+}
+
+.playlist-download-progress-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.playlist-download-progress-copy svg {
+  flex: 0 0 auto;
+  color: #2f6da8;
+}
+
+.playlist-download-progress-copy span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--echo-heading-text);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-download-progress-copy strong,
+.playlist-download-progress small {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.playlist-download-progress-track {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(47, 109, 168, 0.12);
+}
+
+.playlist-download-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f6da8;
+  transition: width 180ms ease;
 }
 
 .playlist-menu-wrap {
@@ -3231,6 +3301,15 @@
     flex-wrap: wrap;
   }
 
+  .playlist-download-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .playlist-download-progress small,
+  .playlist-download-progress-copy strong {
+    white-space: normal;
+  }
+
   .playlist-detail-copy h2 {
     font-size: 22px;
   }
@@ -3532,6 +3611,7 @@ html[data-theme="dark"] .playlist-search,
 html[data-theme="dark"] .playlist-quality-control,
 html[data-theme="dark"] .playlist-quality-menu,
 html[data-theme="dark"] .secondary-action,
+html[data-theme="dark"] .playlist-download-progress,
 html[data-theme="dark"] .playlist-action-menu,
 html[data-theme="dark"] .playlist-action-menu-item,
 html[data-theme="dark"] .playlist-cover-button,
@@ -3572,6 +3652,7 @@ html[data-theme="dark"] .playlist-list-item[data-active="true"] {
 html[data-theme="dark"] .playlist-list-item strong,
 html[data-theme="dark"] .playlist-daily-recommend strong,
 html[data-theme="dark"] .playlist-detail-copy h2,
+html[data-theme="dark"] .playlist-download-progress-copy span,
 html[data-theme="dark"] .streaming-section span,
 html[data-theme="dark"] .playlist-import-box input,
 html[data-theme="dark"] .playlist-search input,
@@ -3589,6 +3670,9 @@ html[data-theme="dark"] .streaming-section h2,
 html[data-theme="dark"] .streaming-section em,
 html[data-theme="dark"] .playlist-detail-copy p,
 html[data-theme="dark"] .playlist-detail-copy small,
+html[data-theme="dark"] .playlist-download-progress,
+html[data-theme="dark"] .playlist-download-progress small,
+html[data-theme="dark"] .playlist-download-progress-copy strong,
 html[data-theme="dark"] .playlist-quality-control,
 html[data-theme="dark"] .playlist-quality-control span,
 html[data-theme="dark"] .playlist-quality-control > button svg,
@@ -3619,6 +3703,14 @@ html[data-theme="dark"] .playlist-cover {
     linear-gradient(145deg, #202733, #111821),
     #151c26;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] .playlist-download-progress-track {
+  background: rgba(100, 181, 255, 0.16);
+}
+
+html[data-theme="dark"] .playlist-download-progress-track span {
+  background: var(--theme-accent-solid-bg);
 }
 
 html[data-theme="dark"] .primary-action {

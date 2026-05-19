@@ -91,6 +91,7 @@ export type AirPlayReceiverStatus = {
   currentSourceId: string | null;
   currentClient: ConnectReceiverClient | null;
   metadata: ConnectMetadata | null;
+  currentLyricLine: string | null;
   artworkUrl: string | null;
   positionSeconds: number;
   durationSeconds: number;

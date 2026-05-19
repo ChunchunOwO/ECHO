@@ -438,6 +438,18 @@ const nativeValues = (metadata: IAudioMetadata, keys: string[]): unknown[] => {
 const firstNativeText = (metadata: IAudioMetadata, keys: string[]): string | null =>
   firstText(nativeValues(metadata, keys));
 
+const preferHigherQualityText = (primary: string | null, candidate: string | null): string | null => {
+  if (!candidate) {
+    return primary;
+  }
+
+  if (!primary) {
+    return candidate;
+  }
+
+  return textQualityScore(candidate) >= textQualityScore(primary) + 4 ? candidate : primary;
+};
+
 const firstNativeNumber = (metadata: IAudioMetadata, keys: string[]): number | null => {
   for (const value of nativeValues(metadata, keys)) {
     const parsed = firstNumber(value);
@@ -842,10 +854,15 @@ export class TsMetadataReader implements MetadataReader {
       return value;
     };
 
-    const embeddedTitle = cleanText(common.title) ?? cleanText(waveInfoTags.INAM) ?? firstNativeText(metadata, ['TITLE', 'TIT2']);
+    const commonTitle = cleanText(common.title);
+    const commonArtist = cleanText(common.artist) ?? cleanTextList(common.artists);
+    const commonAlbum = cleanText(common.album);
+    const embeddedTitle =
+      preferHigherQualityText(commonTitle, cleanText(waveInfoTags.INAM)) ?? firstNativeText(metadata, ['TITLE', 'TIT2']);
     const embeddedArtist =
-      cleanText(common.artist) ?? cleanTextList(common.artists) ?? cleanText(waveInfoTags.IART) ?? firstNativeText(metadata, ['ARTIST', 'TPE1']);
-    const embeddedAlbum = cleanText(common.album) ?? cleanText(waveInfoTags.IPRD) ?? firstNativeText(metadata, ['ALBUM', 'TALB']);
+      preferHigherQualityText(commonArtist, cleanText(waveInfoTags.IART)) ?? firstNativeText(metadata, ['ARTIST', 'TPE1']);
+    const embeddedAlbum =
+      preferHigherQualityText(commonAlbum, cleanText(waveInfoTags.IPRD)) ?? firstNativeText(metadata, ['ALBUM', 'TALB']);
     const embeddedAlbumArtist = cleanTextList(common.albumartist) ?? firstNativeText(metadata, ['ALBUMARTIST', 'ALBUM ARTIST', 'ALBUM_ARTIST', 'TPE2']);
     const embeddedGenre = cleanTextList(common.genre) ?? cleanText(waveInfoTags.IGNR) ?? firstNativeText(metadata, ['GENRE', 'TCON']);
     const embeddedTrackNo = numberOrNull(common.track?.no) ?? numberOrNull(waveInfoTags.ITRK) ?? firstNativeNumber(metadata, ['TRACKNUMBER', 'TRACK', 'TRCK']);

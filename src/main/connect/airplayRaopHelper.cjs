@@ -2,6 +2,7 @@ const readline = require('node:readline');
 
 let raop = null;
 let receiverHandle = null;
+let forwardPcmEvents = true;
 
 const send = (payload) => {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -16,6 +17,7 @@ const stopReceiver = () => {
     }
   }
   receiverHandle = null;
+  forwardPcmEvents = true;
 };
 
 process.on('uncaughtException', (error) => {
@@ -59,6 +61,16 @@ rl.on('line', (line) => {
     if (message.type === 'start') {
       stopReceiver();
       receiverHandle = raop.startReceiver(message.options, (event) => {
+        if (event && event.type === 'stream' && event.port) {
+          forwardPcmEvents = false;
+          send({ type: 'event', event });
+          return;
+        }
+
+        if (event && event.type === 'pcm' && !forwardPcmEvents) {
+          return;
+        }
+
         send({ type: 'event', event });
       });
       send({ type: 'started', requestId: message.requestId, handle: receiverHandle });
@@ -76,6 +88,12 @@ rl.on('line', (line) => {
         ? raop.sendRemoteCommand(receiverHandle, message.command)
         : false;
       send({ type: 'remote-result', requestId: message.requestId, ok });
+      return;
+    }
+
+    if (message.type === 'pcm-forwarding') {
+      forwardPcmEvents = message.enabled !== false;
+      send({ type: 'pcm-forwarding', requestId: message.requestId, ok: true });
       return;
     }
   } catch (error) {

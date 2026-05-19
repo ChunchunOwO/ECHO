@@ -3,7 +3,7 @@ import { Download, Import, Loader2 } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
-import type { ConnectReceiverStatus } from '../../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
@@ -41,6 +41,8 @@ const seekAnchorMaxAgeSeconds = 3;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
+const isReceiverTrackId = (value: string | null | undefined): value is string =>
+  Boolean(value?.startsWith('dlna-receiver:') || value?.startsWith('airplay-receiver:'));
 const activeDownloadStatuses = new Set<DownloadJobStatus>([
   'queued',
   'probing',
@@ -86,6 +88,13 @@ type PlayerDownloadNotice = {
   title: string;
   detail: string;
   progress: number | null;
+};
+
+type ReceiverPlaybackStatus = {
+  state: ConnectReceiverStatus['state'] | AirPlayReceiverStatus['state'];
+  metadata: ConnectMetadata | null;
+  positionSeconds: number;
+  durationSeconds: number;
 };
 
 const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: string): string | null => {
@@ -218,7 +227,7 @@ const isAudioStatusForPlayback = (audioStatus: AudioStatus, playbackStatus: Play
 const isSpotifyPlaybackStatus = (status: PlaybackStatus | null | undefined): boolean =>
   typeof status?.filePath === 'string' && status.filePath.startsWith('streaming:spotify:');
 
-const receiverStateToPlaybackState = (status: ConnectReceiverStatus): AudioStatus['state'] => {
+const receiverStateToPlaybackState = (status: ReceiverPlaybackStatus): AudioStatus['state'] => {
   switch (status.state) {
     case 'loading':
     case 'playing':
@@ -373,6 +382,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
+  const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
   const [openPopover, setOpenPopover] = useState<'volume' | 'speed' | null>(null);
@@ -529,9 +539,28 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
         currentPlaybackStatus?.filePath === receiverCurrentUri ||
         !currentTrack),
   );
-  const receiverPlaybackState = receiverStatus ? receiverStateToPlaybackState(receiverStatus) : 'idle';
-  const state = isReceiverPlaybackActive ? receiverPlaybackState : baseState;
-  const visualState = isReceiverPlaybackActive ? receiverPlaybackState : baseVisualState;
+  const airPlayReceiverCurrentSourceId = airPlayReceiverStatus?.currentSourceId ?? null;
+  const airPlayReceiverHasCurrentMedia = Boolean(
+    airPlayReceiverCurrentSourceId && airPlayReceiverStatus && ['ready', 'playing', 'paused', 'stopped'].includes(airPlayReceiverStatus.state),
+  );
+  const isAirPlayReceiverPlaybackActive = Boolean(
+    airPlayReceiverHasCurrentMedia &&
+      (playbackAudioStatus?.currentFilePath === airPlayReceiverCurrentSourceId ||
+        playbackAudioStatus?.currentTrackId === airPlayReceiverCurrentSourceId ||
+        currentPlaybackStatus?.filePath === airPlayReceiverCurrentSourceId ||
+        currentPlaybackStatus?.currentTrackId === airPlayReceiverCurrentSourceId ||
+        currentTrack?.id === airPlayReceiverCurrentSourceId ||
+        currentTrack?.path === airPlayReceiverCurrentSourceId ||
+        !currentTrack),
+  );
+  const activeReceiverStatus: ReceiverPlaybackStatus | null = isAirPlayReceiverPlaybackActive
+    ? airPlayReceiverStatus
+    : isReceiverPlaybackActive
+      ? receiverStatus
+      : null;
+  const receiverPlaybackState = activeReceiverStatus ? receiverStateToPlaybackState(activeReceiverStatus) : 'idle';
+  const state = activeReceiverStatus ? receiverPlaybackState : baseState;
+  const visualState = activeReceiverStatus ? receiverPlaybackState : baseVisualState;
   const isPlaying = visualState === 'playing';
   const endedStatusTrackId =
     playbackAudioStatus?.state === 'ended'
@@ -545,20 +574,24 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       : currentPlaybackStatus?.state === 'ended'
         ? currentPlaybackStatus.filePath
         : null;
-  const sourcePositionSeconds = isReceiverPlaybackActive
-    ? receiverStatus?.positionSeconds ?? playbackAudioStatus?.positionSeconds ?? (currentPlaybackStatus?.positionMs ?? 0) / 1000
+  const sourcePositionSeconds = activeReceiverStatus
+    ? activeReceiverStatus.positionSeconds ?? playbackAudioStatus?.positionSeconds ?? (currentPlaybackStatus?.positionMs ?? 0) / 1000
     : playbackAudioStatus?.positionSeconds ?? (currentPlaybackStatus?.positionMs ?? 0) / 1000;
   const currentTrackDurationMs = Math.round(Math.max(0, currentTrack?.duration ?? 0) * 1000);
-  const durationSeconds = isReceiverPlaybackActive
-    ? Math.max(receiverStatus?.durationSeconds ?? 0, playbackAudioStatus?.durationSeconds ?? 0, (currentPlaybackStatus?.durationMs ?? 0) / 1000)
+  const durationSeconds = activeReceiverStatus
+    ? Math.max(activeReceiverStatus.durationSeconds ?? 0, playbackAudioStatus?.durationSeconds ?? 0, (currentPlaybackStatus?.durationMs ?? 0) / 1000)
     : playbackAudioStatus?.durationSeconds ?? (currentPlaybackStatus?.durationMs ?? currentTrackDurationMs) / 1000;
   const [realtimePositionSeconds, setRealtimePositionSeconds] = useState(sourcePositionSeconds);
   const playbackProgressKey = trackId ?? filePath ?? null;
   const realtimePositionMatchesPlayback = progressClockRef.current.trackKey === playbackProgressKey;
   const positionSeconds = seekPreviewSeconds ?? (realtimePositionMatchesPlayback ? realtimePositionSeconds : sourcePositionSeconds);
-  const receiverMetadata = isReceiverPlaybackActive ? receiverStatus?.metadata ?? null : null;
+  const receiverMetadata = activeReceiverStatus ? activeReceiverStatus.metadata ?? null : null;
   const title = receiverMetadata?.title ?? currentTrack?.title ?? titleFromPath(filePath);
-  const artist = receiverMetadata?.artist ?? currentTrack?.artist ?? currentTrack?.albumArtist ?? (filePath ? 'DLNA stream' : 'Ready');
+  const artist =
+    receiverMetadata?.artist ??
+    currentTrack?.artist ??
+    currentTrack?.albumArtist ??
+    (filePath ? (isAirPlayReceiverPlaybackActive ? 'AirPlay stream' : 'DLNA stream') : 'Ready');
   const artworkUrl = receiverMetadata?.coverHttpUrl || playerArtworkUrl(currentTrack);
   const isLibraryCurrentTrack = Boolean(currentTrack && !currentTrack.isTemporary && currentTrack.mediaType !== 'streaming');
   const streamingTrackId = currentTrack?.id ?? null;
@@ -1210,7 +1243,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           }
 
           if (
-            (currentTrack?.isTemporary || trackId.startsWith('dlna-receiver:') || trackId.startsWith('airplay-receiver:')) &&
+            (currentTrack?.isTemporary || isReceiverTrackId(trackId)) &&
             mv.searchNetworkCandidatesForSnapshot
           ) {
             await mv.searchNetworkCandidatesForSnapshot({
@@ -1315,6 +1348,26 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     };
   }, [setQueueCurrentTrackId]);
 
+  useEffect(() => {
+    let disposed = false;
+    const connect = window.echo?.connect;
+    const receiverStatusPromise = connect?.getAirPlayReceiverStatus?.();
+    void receiverStatusPromise?.then((status) => {
+      if (!disposed) {
+        setAirPlayReceiverStatus(status);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribe = connect?.onAirPlayReceiverStatus?.((status) => {
+      setAirPlayReceiverStatus(status);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
+
   const runPlaybackAction = useCallback(
     async (action: () => Promise<PlaybackStatus | null>): Promise<void> => {
       try {
@@ -1371,10 +1424,14 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     }
 
     await runPlaybackAction(async () => {
+      if (activeReceiverStatus) {
+        return visualState === 'playing' || visualState === 'loading' ? playback.pause() : playback.play();
+      }
+
       const latestStatus = await playback.getStatus();
       return latestStatus.state === 'playing' || latestStatus.state === 'loading' ? playback.pause() : playback.play();
     });
-  }, [currentTrack, isSpotifyCurrentTrack, runPlaybackAction, visualState]);
+  }, [activeReceiverStatus, currentTrack, isSpotifyCurrentTrack, runPlaybackAction, visualState]);
 
   const handlePrevious = useCallback((): void => {
     void runPlaybackAction(queue.playPrevious);
@@ -1639,7 +1696,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
         />
         <PlayerProgress
-          disabled={!filePath && !isSpotifyCurrentTrack}
+          disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
           durationSeconds={durationSeconds}
           positionSeconds={positionSeconds}
           onCommit={(nextPositionSeconds) => void commitSeek(nextPositionSeconds)}

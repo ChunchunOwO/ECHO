@@ -5127,6 +5127,35 @@
   text-align: right;
 }
 
+.mv-sync-mode-control {
+  display: grid;
+  gap: 10px;
+  padding: 4px 12px 12px;
+}
+
+.mv-sync-mode-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mv-sync-mode-buttons button {
+  min-height: 30px;
+  color: var(--audio-drawer-soft-text);
+  border: 1px solid var(--theme-glass-bg);
+  border-radius: 8px;
+  background: var(--theme-glass-bg-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.mv-sync-mode-buttons button[aria-pressed="true"] {
+  color: #10251f;
+  border-color: rgba(143, 207, 189, 0.72);
+  background: #8fcfbd;
+}
+
 .mv-immersive-controls {
   display: grid;
   gap: 8px;
@@ -9175,6 +9204,18 @@ html[data-theme="dark"] .history-play-count {
   align-items: flex-end;
 }
 
+.connect-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.connect-autostart-toggle {
+  white-space: nowrap;
+}
+
 .connect-header h1,
 .connect-header p,
 .connect-section-title h2 {
@@ -9552,9 +9593,23 @@ html[data-theme="dark"] .history-play-count {
   }
 
   .connect-header .settings-action-button,
+  .connect-header-actions,
   .connect-device-row .settings-action-button,
   .connect-receiver-body .settings-action-button {
     width: 100%;
+  }
+
+  .connect-header-actions {
+    justify-content: stretch;
+  }
+
+  .connect-autostart-toggle {
+    width: 100%;
+    justify-content: space-between;
+    white-space: normal;
+  }
+
+  .connect-header .settings-action-button {
     justify-content: center;
   }
 

@@ -2,7 +2,7 @@ import type { AudioDsdOutputMode, AudioLatencyProfile, AudioOutputMode, AudioSha
 import type { DuplicateTrackMode } from './library';
 import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
-import type { MvMaxQuality, NetworkMvProviderId } from './mv';
+import type { MvMaxQuality, MvSyncMode, NetworkMvProviderId } from './mv';
 import type { GlobalShortcutSettings } from './globalShortcuts';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
@@ -123,6 +123,7 @@ export type AppSettings = {
   autoAccountCheckOnStartup?: boolean;
   suppressAccountExpiryNotices?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;
+  connectAutoStartReceiversEnabled?: boolean;
   playlistBackupsEnabled?: boolean;
   coverCacheDir: string | null;
   hideToTrayOnClose: boolean;
@@ -183,6 +184,7 @@ export type AppSettings = {
   mvAutoSearch: boolean;
   mvAutoPreload?: boolean;
   mvAutoApplyThreshold?: number;
+  mvPreferHighestViewCount?: boolean;
   mvImmersiveBackground?: boolean;
   mvImmersiveBackgroundScalePercent?: number;
   mvImmersiveBackgroundOffsetXPercent?: number;
@@ -192,6 +194,7 @@ export type AppSettings = {
   mvImmersiveBackgroundOverlayOpacityPercent?: number;
   mvLyricsReadabilityEnhanced?: boolean;
   mvRestartAudioOnLoad?: boolean;
+  mvSyncMode?: MvSyncMode;
   mvReplayAudioOnChange?: boolean;
   mvMaxQuality: MvMaxQuality;
   mvAllow60fps: boolean;

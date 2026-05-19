@@ -408,6 +408,22 @@ const airPlayStatusToPlaybackState = (status: AirPlayReceiverStatus): AudioPlayb
   }
 };
 
+const hashSnapshotText = (value: string): string => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
+};
+
+const receiverSnapshotIdentity = (metadata: { title?: string | null; artist?: string | null; album?: string | null } | null, durationSeconds: number): string =>
+  hashSnapshotText([
+    metadata?.title?.trim().toLocaleLowerCase() ?? '',
+    metadata?.artist?.trim().toLocaleLowerCase() ?? '',
+    metadata?.album?.trim().toLocaleLowerCase() ?? '',
+    durationSeconds > 0 ? Math.round(durationSeconds).toString() : '',
+  ].join('|'));
+
 const createReceiverTrackSnapshot = (status: ConnectReceiverStatus): LibraryTrack | null => {
   if (!status.currentUri || !status.metadata) {
     return null;
@@ -452,9 +468,11 @@ const createAirPlayTrackSnapshot = (status: AirPlayReceiverStatus): LibraryTrack
   }
 
   const sourceId = status.currentSourceId ?? `${airPlayReceiverTrackIdPrefix}${status.updatedAt}`;
+  const duration = status.durationSeconds || status.metadata.durationSeconds || 0;
+  const snapshotId = `${sourceId}:${receiverSnapshotIdentity(status.metadata, duration)}`;
   const path = sourceId;
   return {
-    id: sourceId,
+    id: snapshotId,
     mediaType: 'remote',
     isTemporary: true,
     path,
@@ -469,7 +487,7 @@ const createAirPlayTrackSnapshot = (status: AirPlayReceiverStatus): LibraryTrack
     discNo: null,
     year: null,
     genre: null,
-    duration: status.durationSeconds || status.metadata.durationSeconds || 0,
+    duration,
     codec: null,
     sampleRate: null,
     bitDepth: null,

@@ -32,6 +32,78 @@ const streamingQualityOptions: Array<{ value: StreamingAudioQuality; label: stri
 ];
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const runningDownloadStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
+const failedDownloadStatuses = new Set<DownloadJobStatus>(['failed', 'cancelled']);
+
+type PlaylistDownloadSession = {
+  runId: number;
+  playlistId: string;
+  playlistName: string;
+  total: number;
+  enqueued: number;
+  failedToQueue: number;
+  jobIds: string[];
+  active: boolean;
+};
+
+type CreateTrackDownloadOptions = {
+  outputSubdirectory?: string | null;
+};
+
+type PlaylistDownloadMemory = {
+  session: PlaylistDownloadSession | null;
+  downloadJobIdsByTrackId: Record<string, string>;
+};
+
+const yieldToUi = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
+const playlistDownloadMemoryKey = 'echo-next.playlist-download-session.v1';
+
+const emptyPlaylistDownloadMemory = (): PlaylistDownloadMemory => ({
+  session: null,
+  downloadJobIdsByTrackId: {},
+});
+
+const readPlaylistDownloadMemory = (): PlaylistDownloadMemory => {
+  try {
+    const raw = window.localStorage.getItem(playlistDownloadMemoryKey);
+    if (!raw) {
+      return emptyPlaylistDownloadMemory();
+    }
+
+    const parsed = JSON.parse(raw) as PlaylistDownloadMemory;
+    const session = parsed.session;
+    const downloadJobIdsByTrackId =
+      parsed.downloadJobIdsByTrackId && typeof parsed.downloadJobIdsByTrackId === 'object' ? parsed.downloadJobIdsByTrackId : {};
+    return {
+      session:
+        session &&
+        typeof session.playlistId === 'string' &&
+        typeof session.playlistName === 'string' &&
+        Array.isArray(session.jobIds)
+          ? {
+              runId: Number.isFinite(session.runId) ? session.runId : 0,
+              playlistId: session.playlistId,
+              playlistName: session.playlistName,
+              total: Number.isFinite(session.total) ? session.total : session.jobIds.length,
+              enqueued: Number.isFinite(session.enqueued) ? session.enqueued : session.jobIds.length,
+              failedToQueue: Number.isFinite(session.failedToQueue) ? session.failedToQueue : 0,
+              jobIds: session.jobIds.filter((jobId): jobId is string => typeof jobId === 'string'),
+              active: Boolean(session.active),
+            }
+          : null,
+      downloadJobIdsByTrackId,
+    };
+  } catch {
+    return emptyPlaylistDownloadMemory();
+  }
+};
+
+const writePlaylistDownloadMemory = (memory: PlaylistDownloadMemory): void => {
+  try {
+    window.localStorage.setItem(playlistDownloadMemoryKey, JSON.stringify(memory));
+  } catch {
+    // The download service is the source of truth; this only keeps the playlist page UI warm across navigation.
+  }
+};
 
 const isLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
   provider === 'netease' || provider === 'qqmusic';
@@ -180,7 +252,8 @@ export const PlaylistsPage = (): JSX.Element => {
   const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
-  const [downloadJobIdsByTrackId, setDownloadJobIdsByTrackId] = useState<Record<string, string>>({});
+  const [downloadJobIdsByTrackId, setDownloadJobIdsByTrackId] = useState<Record<string, string>>(() => readPlaylistDownloadMemory().downloadJobIdsByTrackId);
+  const [playlistDownloadSession, setPlaylistDownloadSession] = useState<PlaylistDownloadSession | null>(() => readPlaylistDownloadMemory().session);
   const [streamingQuality, setStreamingQuality] = useState<StreamingAudioQuality>('hires');
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
@@ -188,6 +261,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [error, setError] = useState<string | null>(null);
   const [trackMenu, setTrackMenu] = useState<{ track: LibraryTrack; position: { x: number; y: number } } | null>(null);
   const requestIdRef = useRef(0);
+  const playlistDownloadRunIdRef = useRef(0);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
   const newPlaylistInputRef = useRef<HTMLInputElement>(null);
   const qualityMenuRef = useRef<HTMLDivElement | null>(null);
@@ -203,6 +277,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const isSelectedPlaylistRemote = Boolean(selectedPlaylist && selectedPlaylist.sourceProvider !== 'local');
   const selectedStreamingPlaylistUrl = selectedPlaylist ? streamingPlaylistUrl(selectedPlaylist) : null;
   const currentStreamingQuality = streamingQualityOptions.find((option) => option.value === streamingQuality) ?? streamingQualityOptions[0];
+  const canDownloadSelectedPlaylist = selectedPlaylist?.sourceProvider === 'netease' || selectedPlaylist?.sourceProvider === 'qqmusic';
   const displayTracks = useMemo(
     () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
     [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
@@ -231,6 +306,33 @@ export const PlaylistsPage = (): JSX.Element => {
     }
     return result;
   }, [displayTracks, downloadJobIdsByTrackId, downloadJobs, downloadingTrackId]);
+  const playlistDownloadSummary = useMemo(() => {
+    if (!playlistDownloadSession || playlistDownloadSession.playlistId !== selectedPlaylist?.id) {
+      return null;
+    }
+
+    const jobsById = new Map(downloadJobs.map((job) => [job.id, job]));
+    const sessionJobs = playlistDownloadSession.jobIds.map((jobId) => jobsById.get(jobId)).filter((job): job is DownloadJob => Boolean(job));
+    const completed = sessionJobs.filter((job) => job.status === 'completed').length;
+    const failed = sessionJobs.filter((job) => failedDownloadStatuses.has(job.status)).length + playlistDownloadSession.failedToQueue;
+    const running = sessionJobs.some((job) => runningDownloadStatuses.has(job.status));
+    const progressTotal = sessionJobs.reduce((total, job) => total + Math.max(0, Math.min(100, job.progress)), playlistDownloadSession.failedToQueue * 100);
+    const total = Math.max(playlistDownloadSession.total, 1);
+    const progress = Math.max(0, Math.min(100, Math.round(progressTotal / total)));
+    const finished = completed + failed;
+    const isActive = playlistDownloadSession.active || running || finished < playlistDownloadSession.total;
+
+    return {
+      completed,
+      enqueued: playlistDownloadSession.enqueued,
+      failed,
+      finished,
+      isActive,
+      playlistName: playlistDownloadSession.playlistName,
+      progress,
+      total: playlistDownloadSession.total,
+    };
+  }, [downloadJobs, playlistDownloadSession, selectedPlaylist?.id]);
   const queueSource = useMemo(
     () => ({ type: 'manual' as const, label: selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist' }),
     [selectedPlaylist],
@@ -304,7 +406,15 @@ export const PlaylistsPage = (): JSX.Element => {
 
   useEffect(() => {
     const downloads = getDownloadsBridge();
-    if (!downloads?.onJobsUpdated) {
+    if (!downloads) {
+      return undefined;
+    }
+
+    void downloads.getJobs?.()
+      .then((nextJobs) => setDownloadJobs(nextJobs))
+      .catch(() => undefined);
+
+    if (!downloads.onJobsUpdated) {
       return undefined;
     }
 
@@ -327,6 +437,13 @@ export const PlaylistsPage = (): JSX.Element => {
       }
     });
   }, [displayTracks, downloadJobIdsByTrackId]);
+
+  useEffect(() => {
+    writePlaylistDownloadMemory({
+      session: playlistDownloadSession,
+      downloadJobIdsByTrackId,
+    });
+  }, [downloadJobIdsByTrackId, playlistDownloadSession]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -587,72 +704,70 @@ export const PlaylistsPage = (): JSX.Element => {
     setStatusMessage(`已添加 ${playableTracks.length} 首可用歌曲到队列`);
   };
 
-  const handleDownloadTrack = useCallback(
-    async (track: LibraryTrack): Promise<void> => {
+  const createDownloadJobForTrack = useCallback(
+    async (track: LibraryTrack, options: CreateTrackDownloadOptions = {}): Promise<DownloadJob> => {
       const provider = streamingProviderFromTrack(track);
       if (track.mediaType !== 'streaming' || !provider || !track.providerTrackId) {
-        setError('只有网络歌单中的流媒体歌曲可以直接下载。');
-        setStatusMessage(null);
-        return;
+        throw new Error('只有网络歌单中的流媒体歌曲可以直接下载。');
       }
 
       if (provider === 'spotify') {
-        setError('Spotify 由官方播放器播放，下载功能不适用于 Spotify。');
-        setStatusMessage(null);
-        return;
+        throw new Error('Spotify 由官方播放器播放，下载功能不适用于 Spotify。');
       }
 
       const webpageUrl = streamingTrackWebUrl(track);
       if (!webpageUrl) {
-        setError('这个平台暂不支持从网络歌单直接下载。');
-        setStatusMessage(null);
-        return;
+        throw new Error('这个平台暂不支持从网络歌单直接下载。');
       }
 
       const downloads = getDownloadsBridge();
       if (!downloads?.createUrlJob) {
-        setError('桌面下载服务不可用。');
-        setStatusMessage(null);
-        return;
+        throw new Error('桌面下载服务不可用。');
       }
 
       const streaming = getStreamingBridge();
       if (!streaming?.resolvePlayback) {
-        setError('桌面流媒体服务不可用，无法解析下载地址。');
-        setStatusMessage(null);
-        return;
+        throw new Error('桌面流媒体服务不可用，无法解析下载地址。');
       }
 
+      const [source, detailTrack] = await Promise.all([
+        streaming.resolvePlayback({
+          provider,
+          providerTrackId: track.providerTrackId,
+          quality: track.streamingQuality ?? streamingQuality,
+        }),
+        streaming.getTrack
+          ? streaming.getTrack({ provider, providerTrackId: track.providerTrackId }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      return downloads.createUrlJob(source.url, {
+        title: detailTrack?.title ?? track.title,
+        artist: detailTrack?.artist ?? track.artist,
+        album: detailTrack?.album ?? track.album,
+        albumArtist: (detailTrack?.albumArtist ?? track.albumArtist) || track.artist,
+        coverUrl: detailTrack?.coverUrl ?? detailTrack?.coverThumb ?? track.coverThumb,
+        webpageUrl,
+        outputSubdirectory: options.outputSubdirectory,
+        bindMvAfterImport: false,
+        requestHeaders: source.headers,
+        directAudio: true,
+        directAudioMimeType: source.mimeType,
+        directAudioExtension: source.codec,
+        streamingProvider: provider,
+        streamingProviderTrackId: track.providerTrackId,
+        streamingStableKey: track.stableKey ?? undefined,
+      });
+    },
+    [streamingQuality],
+  );
+
+  const handleDownloadTrack = useCallback(
+    async (track: LibraryTrack): Promise<void> => {
       setDownloadingTrackId(track.id);
       setError(null);
       setStatusMessage(null);
       try {
-        const [source, detailTrack] = await Promise.all([
-          streaming.resolvePlayback({
-            provider,
-            providerTrackId: track.providerTrackId,
-            quality: track.streamingQuality ?? streamingQuality,
-          }),
-          streaming.getTrack
-            ? streaming.getTrack({ provider, providerTrackId: track.providerTrackId }).catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        const job = await downloads.createUrlJob(source.url, {
-          title: detailTrack?.title ?? track.title,
-          artist: detailTrack?.artist ?? track.artist,
-          album: detailTrack?.album ?? track.album,
-          albumArtist: (detailTrack?.albumArtist ?? track.albumArtist) || track.artist,
-          coverUrl: detailTrack?.coverUrl ?? detailTrack?.coverThumb ?? track.coverThumb,
-          webpageUrl,
-          bindMvAfterImport: false,
-          requestHeaders: source.headers,
-          directAudio: true,
-          directAudioMimeType: source.mimeType,
-          directAudioExtension: source.codec,
-          streamingProvider: provider,
-          streamingProviderTrackId: track.providerTrackId,
-          streamingStableKey: track.stableKey ?? undefined,
-        });
+        const job = await createDownloadJobForTrack(track);
         setDownloadJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]));
         setDownloadJobIdsByTrackId((current) => ({ ...current, [track.id]: job.id }));
         setStatusMessage(`已加入下载队列：${track.title}`);
@@ -663,8 +778,147 @@ export const PlaylistsPage = (): JSX.Element => {
         setDownloadingTrackId((current) => (current === track.id ? null : current));
       }
     },
+    [createDownloadJobForTrack],
+  );
+
+  const loadTracksForPlaylistDownload = useCallback(
+    async (playlistId: string): Promise<LibraryTrack[]> => {
+      const library = window.echo?.library;
+      if (!library?.getPlaylistItems) {
+        throw new Error('桌面歌单服务不可用。');
+      }
+
+      const tracks: LibraryTrack[] = [];
+      let nextPage = 1;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await library.getPlaylistItems(playlistId, { page: nextPage, pageSize, search: '' });
+        tracks.push(...result.items.map((item) => itemToTrack(item, streamingQuality)).filter((track) => !track.unavailable));
+        hasMore = result.hasMore;
+        nextPage += 1;
+        await yieldToUi();
+      }
+
+      return tracks;
+    },
     [streamingQuality],
   );
+
+  const handleDownloadPlaylist = useCallback(async (): Promise<void> => {
+    if (!selectedPlaylist) {
+      return;
+    }
+
+    if (!canDownloadSelectedPlaylist) {
+      setError('只有可下载的网络歌单支持整歌单下载。');
+      setStatusMessage(null);
+      return;
+    }
+
+    const downloads = getDownloadsBridge();
+    if (!downloads?.createUrlJob) {
+      setError('桌面下载服务不可用。');
+      setStatusMessage(null);
+      return;
+    }
+
+    try {
+      const settings = downloads.getSettings ? await downloads.getSettings() : null;
+      if (!settings?.outputDirectory) {
+        setError('请先在下载页选择下载文件夹。');
+        setStatusMessage(null);
+        return;
+      }
+
+      const runId = Date.now();
+      playlistDownloadRunIdRef.current = runId;
+      setError(null);
+      setStatusMessage(`正在按歌单顺序加入下载队列：${selectedPlaylist.name}`);
+      setPlaylistDownloadSession({
+        runId,
+        playlistId: selectedPlaylist.id,
+        playlistName: selectedPlaylist.name,
+        total: Math.max(itemsPage.total, playableTracks.length),
+        enqueued: 0,
+        failedToQueue: 0,
+        jobIds: [],
+        active: true,
+      });
+
+      const tracks = (await loadTracksForPlaylistDownload(selectedPlaylist.id)).filter((track) => streamingProviderFromTrack(track) !== null);
+      if (playlistDownloadRunIdRef.current !== runId) {
+        return;
+      }
+
+      if (tracks.length === 0) {
+        setPlaylistDownloadSession((current) => current && current.runId === runId ? { ...current, total: 0, active: false } : current);
+        setStatusMessage(null);
+        setError('这个歌单里没有可下载的网络歌曲。');
+        return;
+      }
+
+      setPlaylistDownloadSession((current) => current && current.runId === runId ? { ...current, total: tracks.length } : current);
+
+      let enqueued = 0;
+      let failedToQueue = 0;
+      for (const track of tracks) {
+        if (playlistDownloadRunIdRef.current !== runId) {
+          break;
+        }
+
+        setDownloadingTrackId(track.id);
+        try {
+          const job = await createDownloadJobForTrack(track, { outputSubdirectory: selectedPlaylist.name });
+          enqueued += 1;
+          setDownloadJobs((current) => (current.some((item) => item.id === job.id) ? current : [job, ...current]));
+          setDownloadJobIdsByTrackId((current) => ({ ...current, [track.id]: job.id }));
+          setPlaylistDownloadSession((current) =>
+            current && current.runId === runId
+              ? {
+                  ...current,
+                  enqueued,
+                  jobIds: current.jobIds.includes(job.id) ? current.jobIds : [...current.jobIds, job.id],
+                }
+              : current,
+          );
+        } catch {
+          failedToQueue += 1;
+          setPlaylistDownloadSession((current) =>
+            current && current.runId === runId
+              ? {
+                  ...current,
+                  failedToQueue,
+                }
+              : current,
+          );
+        } finally {
+          setDownloadingTrackId((current) => (current === track.id ? null : current));
+        }
+
+        await yieldToUi();
+      }
+
+      setPlaylistDownloadSession((current) => current && current.runId === runId ? { ...current, active: false } : current);
+      setStatusMessage(
+        failedToQueue > 0
+          ? `已按歌单顺序加入下载队列：${enqueued} 首，${failedToQueue} 首未能解析。`
+          : `已按歌单顺序加入下载队列：${enqueued} 首`,
+      );
+    } catch (downloadPlaylistError) {
+      setPlaylistDownloadSession((current) => current ? { ...current, active: false } : current);
+      setError(downloadPlaylistError instanceof Error ? downloadPlaylistError.message : '添加歌单下载任务失败');
+      setStatusMessage(null);
+    } finally {
+      setDownloadingTrackId(null);
+    }
+  }, [
+    createDownloadJobForTrack,
+    canDownloadSelectedPlaylist,
+    itemsPage.total,
+    loadTracksForPlaylistDownload,
+    playableTracks.length,
+    selectedPlaylist,
+  ]);
 
   const handleImportStreamingPlaylist = async (): Promise<void> => {
     const streaming = window.echo?.streaming;
@@ -1221,6 +1475,17 @@ export const PlaylistsPage = (): JSX.Element => {
                   <ListPlus size={16} />
                   <span>添加到队列</span>
                 </button>
+                {canDownloadSelectedPlaylist ? (
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    disabled={itemsPage.total === 0 || playlistDownloadSummary?.isActive === true}
+                    onClick={() => void handleDownloadPlaylist()}
+                  >
+                    {playlistDownloadSummary?.isActive ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
+                    <span>{playlistDownloadSummary?.isActive ? '下载中' : '下载歌单'}</span>
+                  </button>
+                ) : null}
                 {!isSelectedPlaylistProtected && !isSelectedPlaylistRemote ? (
                   <button className="secondary-action" type="button" disabled={isAddingLocalFiles} onClick={() => void handleAddLocalFilesToPlaylist()}>
                     {isAddingLocalFiles ? <Loader2 className="spinning-icon" size={16} /> : <FilePlus2 size={16} />}
@@ -1309,13 +1574,44 @@ export const PlaylistsPage = (): JSX.Element => {
               </div>
             </header>
 
+            {playlistDownloadSummary ? (
+              <div className="playlist-download-progress" role="status" data-active={playlistDownloadSummary.isActive ? 'true' : undefined}>
+                <div className="playlist-download-progress-copy">
+                  <Download size={15} />
+                  <span title={playlistDownloadSummary.playlistName}>下载歌单：{playlistDownloadSummary.playlistName}</span>
+                  <strong>
+                    {playlistDownloadSession?.active && playlistDownloadSummary.enqueued < playlistDownloadSummary.total
+                      ? `加入队列 ${playlistDownloadSummary.enqueued}/${playlistDownloadSummary.total}`
+                      : `完成 ${playlistDownloadSummary.completed}/${playlistDownloadSummary.total}`}
+                  </strong>
+                </div>
+                <div
+                  className="playlist-download-progress-track"
+                  role="progressbar"
+                  aria-label="歌单下载进度"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={playlistDownloadSummary.progress}
+                >
+                  <span style={{ width: `${playlistDownloadSummary.progress}%` }} />
+                </div>
+                <small>
+                  {playlistDownloadSummary.failed > 0
+                    ? `${playlistDownloadSummary.failed} 首失败或跳过`
+                    : playlistDownloadSummary.isActive
+                      ? '后台下载中，播放不受影响'
+                      : '歌单下载任务已完成'}
+                </small>
+              </div>
+            ) : null}
+
             <TrackList
               tracks={displayTracks}
               currentTrackId={currentTrackId}
               canLoadMore={itemsPage.hasMore && !isLoading}
               onEndReached={handleLoadMore}
               onAddToQueue={handleAddTrackToQueue}
-              onDownload={isSelectedPlaylistRemote && selectedPlaylist?.sourceProvider !== 'spotify' ? handleDownloadTrack : undefined}
+              onDownload={canDownloadSelectedPlaylist ? handleDownloadTrack : undefined}
               downloadingTrackIds={downloadingTrackIds}
               downloadProgressByTrackId={downloadProgressByTrackId}
               likedTrackIds={likedTrackIds}

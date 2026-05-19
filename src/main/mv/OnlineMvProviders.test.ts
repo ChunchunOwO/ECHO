@@ -214,6 +214,40 @@ describe('BilibiliMvProvider', () => {
     expect(candidates[1]!.score).toBeGreaterThan(candidates[2]!.score);
   });
 
+  it('sorts Bilibili search results by play count first when popularity matching is enabled', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        data: {
+          result: [
+            {
+              bvid: 'BV1accurate',
+              title: 'Echo Song Official MV',
+              author: 'Echo Channel',
+              pic: '//i.example/accurate.jpg',
+              play: 1200,
+            },
+            {
+              bvid: 'BV1popular',
+              title: 'Popular unrelated video',
+              author: 'Echo Channel',
+              pic: '//i.example/popular.jpg',
+              play: 250000,
+            },
+          ],
+        },
+      }),
+    ) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const candidates = await provider.search(track, { ...settings, preferHighestViewCount: true }, 'Echo Song Echo Artist');
+
+    expect(candidates.map((candidate) => candidate.id)).toEqual(['bilibili:BV1popular', 'bilibili:BV1accurate']);
+    expect(candidates.map((candidate) => candidate.viewCount)).toEqual([250000, 1200]);
+  });
+
   it('resolves direct MP4 stream variants within the quality cap', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
@@ -489,6 +523,61 @@ describe('BilibiliMvProvider', () => {
       height: 2160,
       fps: 60,
       url: 'https://upos.example/4k-video-only.m4s',
+    });
+  });
+
+  it('keeps 4K 120fps DASH streams as distinct playable variants', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('qn=120')) {
+        return jsonResponse({
+          data: {
+            quality: 120,
+            dash: {
+              video: [
+                {
+                  id: 120,
+                  baseUrl: 'https://upos.example/4k-60.m4s',
+                  width: 3840,
+                  height: 2160,
+                  frameRate: '60',
+                  codecs: 'hev1.1.6.L153.90',
+                },
+                {
+                  id: 120,
+                  baseUrl: 'https://upos.example/4k-120.m4s',
+                  width: 3840,
+                  height: 2160,
+                  frameRate: '120',
+                  codecs: 'hev1.1.6.L153.90',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili', cookie: 'SESSDATA=secret' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: '2160p', allow60fps: true });
+
+    expect(variants.map((variant) => variant.id)).toContain('bilibili-qn-120');
+    expect(variants.map((variant) => variant.id)).toContain('bilibili-qn-120-120fps');
+    expect(variants.find((variant) => variant.id === 'bilibili-qn-120-120fps')).toMatchObject({
+      label: '4K 120fps',
+      qualityTier: '2160p',
+      width: 3840,
+      height: 2160,
+      fps: 120,
+      url: 'https://upos.example/4k-120.m4s',
     });
   });
 

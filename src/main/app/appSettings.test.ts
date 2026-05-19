@@ -31,6 +31,7 @@ describe('app settings normalization', () => {
     expect(settings.artistImageFetchPaused).toBe(false);
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
+    expect(settings.connectAutoStartReceiversEnabled).toBe(false);
     expect(settings.playlistBackupsEnabled).toBe(true);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
@@ -87,6 +88,7 @@ describe('app settings normalization', () => {
     expect(settings.mvProviderOrder).toEqual(['bilibili', 'youtube']);
     expect(settings.mvAutoSearch).toBe(true);
     expect(settings.mvAutoApplyThreshold).toBe(0.7);
+    expect(settings.mvPreferHighestViewCount).toBe(false);
     expect(settings.mvImmersiveBackground).toBe(true);
     expect(settings.mvImmersiveBackgroundScalePercent).toBe(115);
     expect(settings.mvImmersiveBackgroundOffsetXPercent).toBe(50);
@@ -289,6 +291,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ spotifyAutoLaunchOfficialPlayer: 'no' as never }).spotifyAutoLaunchOfficialPlayer).toBe(true);
   });
 
+  it('keeps Connect receiver autostart disabled until explicitly enabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).connectAutoStartReceiversEnabled).toBe(false);
+    expect(normalizeSettings({ connectAutoStartReceiversEnabled: true }).connectAutoStartReceiversEnabled).toBe(true);
+    expect(normalizeSettings({ connectAutoStartReceiversEnabled: false }).connectAutoStartReceiversEnabled).toBe(false);
+    expect(normalizeSettings({ connectAutoStartReceiversEnabled: 'yes' as never }).connectAutoStartReceiversEnabled).toBe(false);
+  });
+
   it('normalizes remembered window size settings', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -396,6 +407,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'low' }).scanPerformanceMode).toBe('low');
     expect(normalizeSettings({ scanPerformanceMode: 'performance' }).scanPerformanceMode).toBe('performance');
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
+  });
+
+  it('normalizes MV sync mode', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).mvSyncMode).toBe('balanced');
+    expect(normalizeSettings({ mvSyncMode: 'stable' }).mvSyncMode).toBe('stable');
+    expect(normalizeSettings({ mvSyncMode: 'precise' }).mvSyncMode).toBe('precise');
+    expect(normalizeSettings({ mvSyncMode: 'strict' as never }).mvSyncMode).toBe('balanced');
   });
 
   it('migrates the legacy background space pause setting to disabled', async () => {
@@ -769,6 +789,7 @@ describe('app settings normalization', () => {
         mvProviderOrder: ['youtube'] as never,
         mvAutoSearch: false,
         mvAutoApplyThreshold: 0.82,
+        mvPreferHighestViewCount: true,
         mvImmersiveBackground: false,
         mvImmersiveBackgroundScalePercent: 180,
         mvImmersiveBackgroundOffsetXPercent: 18,
@@ -787,6 +808,7 @@ describe('app settings normalization', () => {
       mvProviderOrder: ['youtube', 'bilibili'],
       mvAutoSearch: false,
       mvAutoApplyThreshold: 0.82,
+      mvPreferHighestViewCount: true,
       mvImmersiveBackground: false,
       mvImmersiveBackgroundScalePercent: 180,
       mvImmersiveBackgroundOffsetXPercent: 18,
@@ -811,10 +833,12 @@ describe('app settings normalization', () => {
         mvImmersiveBackgroundBrightnessPercent: 12,
         mvImmersiveBackgroundOverlayOpacityPercent: -10,
         mvLyricsReadabilityEnhanced: 'yes' as never,
+        mvPreferHighestViewCount: 'yes' as never,
       }),
     ).toMatchObject({
       mvAutoSearch: true,
       mvAutoApplyThreshold: 0.3,
+      mvPreferHighestViewCount: false,
       mvImmersiveBackground: true,
       mvImmersiveBackgroundScalePercent: 220,
       mvImmersiveBackgroundOffsetXPercent: 0,

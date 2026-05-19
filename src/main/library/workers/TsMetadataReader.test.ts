@@ -373,6 +373,44 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fieldSources.trackNo).toBe('embedded');
   });
 
+  it('prefers decoded GBK WAV INFO text over lossy common WAV tags', async () => {
+    const root = makeTempRoot();
+    const wavePath = join(root, '02-\u6708\u5915\u5f15.wav');
+    writeWaveWithRawInfo(wavePath, {
+      IART: iconv.encode('\u6d77\u9c9c\u9762\0', 'gbk'),
+      ITRK: Buffer.from('2\0', 'utf8'),
+      IPRD: iconv.encode('\u6d77\u5ba2\u8c08\0', 'gbk'),
+      INAM: iconv.encode('\u6708\u5915\u5f15\0', 'gbk'),
+      IGNR: Buffer.from('Hard Rock\0', 'utf8'),
+    });
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      common: {
+        title: 'TBO&R}',
+        artist: ':#OJCf',
+        album: ':#?ML8',
+        track: { no: 2, of: null },
+        genre: ['Hard Rock'],
+      },
+      format: {
+        duration: 206.64,
+        codec: 'PCM',
+      },
+    }));
+
+    const result = await new TsMetadataReader().read(wavePath);
+
+    expect(result.fields).toMatchObject({
+      title: '\u6708\u5915\u5f15',
+      artist: '\u6d77\u9c9c\u9762',
+      album: '\u6d77\u5ba2\u8c08',
+      trackNo: 2,
+      genre: 'Hard Rock',
+    });
+    expect(result.fieldSources.title).toBe('embedded');
+    expect(result.fieldSources.artist).toBe('embedded');
+    expect(result.fieldSources.album).toBe('embedded');
+  });
+
   it('prefers valid ID3/common WAV tags over corrupted RIFF INFO text', async () => {
     const root = makeTempRoot();
     const wavePath = join(root, '10 \u5c71\u6d77.wav');

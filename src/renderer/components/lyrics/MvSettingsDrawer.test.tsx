@@ -275,6 +275,22 @@ describe('MvSettingsDrawer', () => {
     expect(await screen.findByText('Bilibili / 1080p 60fps')).toBeTruthy();
   });
 
+  it('shows 4K 120fps quality without downgrading the label to 60fps', async () => {
+    renderDrawer(defaultMvSettings, {
+      ...makeVideo(),
+      provider: 'bilibili',
+      width: 3840,
+      height: 2160,
+      qualityLabel: '4K 120fps',
+      fps: 120,
+    });
+
+    const engineMeter = within(await screen.findByLabelText('MV engine status'));
+    expect(engineMeter.getByText('4K 120fps')).toBeTruthy();
+    expect(engineMeter.queryByText('4K / 60fps')).toBeNull();
+    expect(await screen.findByText('Bilibili / 4K 120fps')).toBeTruthy();
+  });
+
   it('contains the MV choose action and omits the local search shortcut', async () => {
     renderDrawer();
 
@@ -360,10 +376,12 @@ describe('MvSettingsDrawer', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Preload MV/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Follow music progress/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Precise' }));
     fireEvent.click(await screen.findByRole('button', { name: /Replay music after switching MV/ }));
 
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ autoPreload: false }));
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ restartAudioOnLoad: true }));
+    await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ syncMode: 'precise' }));
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ replayAudioOnChange: false }));
   });
 

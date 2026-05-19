@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { DownloadJob } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack } from '../../shared/types/library';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { PlaylistsPage } from './PlaylistsPage';
@@ -124,6 +125,30 @@ const page = (items: LibraryPlaylistItem[]): LibraryPage<LibraryPlaylistItem> =>
   hasMore: false,
 });
 
+const downloadJob = (overrides: Partial<DownloadJob> = {}): DownloadJob => ({
+  id: 'job-1',
+  sourceUrl: 'https://cdn.example/song.mp3',
+  provider: 'unknown' as const,
+  audioStrategy: 'best_available' as const,
+  status: 'queued' as const,
+  title: 'Remote Song',
+  durationSeconds: null,
+  thumbnailUrl: null,
+  webpageUrl: null,
+  outputPath: null,
+  downloadedBytes: null,
+  totalBytes: null,
+  speedBytesPerSecond: null,
+  etaSeconds: null,
+  importedTrackId: null,
+  progress: 0,
+  error: null,
+  createdAt: '2026-05-19T00:00:00.000Z',
+  updatedAt: '2026-05-19T00:00:00.000Z',
+  completedAt: null,
+  ...overrides,
+});
+
 const renderPlaylistsPage = () =>
   render(
     <PlaybackQueueProvider>
@@ -133,6 +158,7 @@ const renderPlaylistsPage = () =>
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -426,5 +452,116 @@ describe('PlaylistsPage actions menu', () => {
       expect(importPlaylistFromUrl).toHaveBeenCalledWith('https://y.qq.com/n/ryqq/playlist/778899'),
     );
     expect(await screen.findByText('已刷新歌单：QQ Mix，共 2 首')).toBeTruthy();
+  });
+
+  it('queues a remote playlist download in playlist order and uses the playlist folder', async () => {
+    const remotePlaylist = playlist({
+      sourceProvider: 'netease',
+      sourcePlaylistId: 'playlist-123',
+      name: 'Daily Mix',
+      itemCount: 2,
+    });
+    const firstItem = item({
+      id: 'item-1',
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:track-1',
+      sourceProvider: 'netease',
+      sourceItemId: 'track-1',
+      titleSnapshot: 'First Remote',
+      artistSnapshot: 'Artist A',
+      track: null,
+      position: 0,
+    });
+    const secondItem = item({
+      id: 'item-2',
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:track-2',
+      sourceProvider: 'netease',
+      sourceItemId: 'track-2',
+      titleSnapshot: 'Second Remote',
+      artistSnapshot: 'Artist B',
+      track: null,
+      position: 1,
+    });
+    const resolvePlayback = vi.fn(async ({ providerTrackId }: { providerTrackId: string }) => ({
+      url: `https://cdn.example/${providerTrackId}.mp3`,
+      headers: { Referer: 'https://music.163.com/' },
+      mimeType: 'audio/mpeg',
+      codec: 'mp3',
+    }));
+    const createUrlJob = vi.fn(async (url: string, options: Record<string, unknown>) =>
+      downloadJob({
+        id: `job-${String(options.streamingProviderTrackId)}`,
+        sourceUrl: url,
+        title: String(options.title),
+      }),
+    );
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([remotePlaylist]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([firstItem, secondItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      streaming: {
+        resolvePlayback,
+        getTrack: vi.fn(async ({ providerTrackId }: { providerTrackId: string }) => ({
+          id: providerTrackId,
+          provider: 'netease',
+          providerTrackId,
+          title: providerTrackId === 'track-1' ? 'First Remote' : 'Second Remote',
+          artist: providerTrackId === 'track-1' ? 'Artist A' : 'Artist B',
+          album: 'Daily Album',
+          albumArtist: 'Daily Artists',
+          duration: 180,
+          coverUrl: null,
+          coverThumb: null,
+          liked: false,
+        })),
+      },
+      downloads: {
+        getSettings: vi.fn().mockResolvedValue({
+          audioStrategy: 'best_available',
+          importToLibrary: true,
+          bindMvAfterImport: true,
+          outputDirectory: 'D:\\Downloads',
+        }),
+        getJobs: vi.fn().mockResolvedValue([]),
+        createUrlJob,
+        onJobsUpdated: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '下载歌单' }));
+
+    await waitFor(() => expect(createUrlJob).toHaveBeenCalledTimes(2));
+    expect(createUrlJob.mock.calls.map((call) => call[0])).toEqual([
+      'https://cdn.example/track-1.mp3',
+      'https://cdn.example/track-2.mp3',
+    ]);
+    expect(createUrlJob.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        outputSubdirectory: 'Daily Mix',
+        streamingProvider: 'netease',
+        streamingProviderTrackId: 'track-1',
+      }),
+    );
+    expect(createUrlJob.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        outputSubdirectory: 'Daily Mix',
+        streamingProviderTrackId: 'track-2',
+      }),
+    );
+    expect(await screen.findByText('已按歌单顺序加入下载队列：2 首')).toBeTruthy();
+    expect(await screen.findByText('下载歌单：Daily Mix')).toBeTruthy();
+
+    cleanup();
+    renderPlaylistsPage();
+
+    expect(await screen.findByText('下载歌单：Daily Mix')).toBeTruthy();
   });
 });

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { AudioStatus } from '../../shared/types/audio';
-import { AirPlayReceiverSpikeService, convertS16leToF32le } from './AirPlayReceiverSpikeService';
+import { AirPlayReceiverSpikeService, convertS16leToF32le, resolveAirPlayHelperNodePath } from './AirPlayReceiverSpikeService';
 
 const audioStatus = (overrides: Partial<AudioStatus> = {}): AudioStatus => ({
   host: 'ready',
@@ -90,6 +90,28 @@ class FakeAudioSession extends EventEmitter {
 }
 
 describe('AirPlayReceiverSpikeService', () => {
+  it('uses the current Electron executable for the AirPlay helper in packaged builds', () => {
+    const nodePath = resolveAirPlayHelperNodePath({
+      isPackaged: true,
+      processExecPath: 'C:\\Program Files\\ECHO NEXT\\ECHO NEXT.exe',
+      npmNodeExecPath: 'C:\\Program Files\\ECHO Next\\ECHO NEXT.exe',
+      nodeEnvPath: 'C:\\stale\\node.exe',
+    });
+
+    expect(nodePath).toBe('C:\\Program Files\\ECHO NEXT\\ECHO NEXT.exe');
+  });
+
+  it('keeps explicit Node runtimes available for AirPlay helper development runs', () => {
+    const nodePath = resolveAirPlayHelperNodePath({
+      isPackaged: false,
+      processExecPath: 'C:\\Electron\\electron.exe',
+      npmNodeExecPath: 'C:\\Node\\node.exe',
+      nodeEnvPath: null,
+    });
+
+    expect(nodePath).toBe('C:\\Node\\node.exe');
+  });
+
   it('converts signed 16-bit PCM to float32 PCM', () => {
     const input = Buffer.alloc(8);
     input.writeInt16LE(-32768, 0);
@@ -166,6 +188,132 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(status.metadata?.coverHttpUrl).toMatch(/^data:image\/png;base64,/u);
   });
 
+  it('falls back to direct PCM events when AirPlay HTTP PCM has not produced audio', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 13;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({ type: 'stream', port: 9, remoteAddress: '192.168.1.51' });
+    const pcm = Buffer.alloc(4);
+    pcm.writeInt16LE(32767, 0);
+    pcm.writeInt16LE(-32768, 2);
+    harness.handler?.({ type: 'pcm', data: pcm, sampleRate: 48000, channels: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(audio.playPcmStream).toHaveBeenCalledTimes(2);
+    expect(audio.playPcmStream).toHaveBeenLastCalledWith(expect.objectContaining({
+      sourceId: expect.stringMatching(/^airplay-receiver:/u),
+      sampleRate: 48000,
+      channels: 2,
+    }));
+    expect(service.getStatus().state).toBe('playing');
+  });
+
+  it('sends AirPlay remote commands for computer transport controls', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const sendRemoteCommand = vi.fn(() => true);
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 15;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand,
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({ type: 'stream', remoteAddress: '192.168.1.50' });
+    harness.handler?.({ type: 'pcm', data: Buffer.from([0, 0]), sampleRate: 44100, channels: 2 });
+    await Promise.resolve();
+
+    const sourceId = service.getStatus().currentSourceId;
+    expect(service.isCurrentSource(sourceId)).toBe(true);
+    expect(service.isCurrentSource('local.flac')).toBe(false);
+
+    await service.pausePlayback();
+    expect(sendRemoteCommand).toHaveBeenCalledWith(15, 'pause');
+    expect(audio.pause).not.toHaveBeenCalled();
+    expect(service.getStatus().state).toBe('paused');
+
+    await service.playPlayback();
+    expect(sendRemoteCommand).toHaveBeenCalledWith(15, 'play');
+    expect(service.getStatus().state).toBe('playing');
+  });
+
+  it('does not fake AirPlay seek state when the native backend cannot seek the sender', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 16;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({ type: 'stream', remoteAddress: '192.168.1.50' });
+    harness.handler?.({ type: 'metadata', title: 'Air Song', artist: 'Singer', durationMs: 180_000 });
+    harness.handler?.({ type: 'pcm', data: Buffer.from([0, 0]), sampleRate: 44100, channels: 2 });
+    await Promise.resolve();
+
+    const status = await service.seekPlayback(42);
+
+    expect(status.positionSeconds).toBe(0);
+    expect(audio.status.positionSeconds).toBe(0);
+  });
+
+  it('resets the AirPlay song clock when metadata switches to a new track', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 17;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({ type: 'stream', remoteAddress: '192.168.1.50' });
+    harness.handler?.({ type: 'metadata', title: 'First Song', artist: 'Singer', durationMs: 180_000, elapsedMs: 30_000 });
+    expect(service.getStatus().positionSeconds).toBe(30);
+
+    harness.handler?.({ type: 'metadata', title: 'Second Song', artist: 'Singer', durationMs: 200_000 });
+
+    const status = service.getStatus();
+    expect(status.metadata?.title).toBe('Second Song');
+    expect(status.positionSeconds).toBe(0);
+    expect(status.durationSeconds).toBe(200);
+  });
+
   it('uses album metadata when AirPlay sends a generic instrumental title', async () => {
     const audio = new FakeAudioSession();
     const harness: { handler?: (event: Record<string, unknown>) => void } = {};
@@ -227,6 +375,77 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(status.metadata?.title).toBe('Shelter');
     expect(status.metadata?.artist).toBe('Porter Robinson / Madeon');
     expect(status.metadata?.album).toBe('Shelter');
+  });
+
+  it('keeps stable song metadata when AirPlay sends lyric lines as title updates', async () => {
+    const audio = new FakeAudioSession();
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 14;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({
+      type: 'metadata',
+      title: 'Shelter',
+      artist: 'Porter Robinson / Madeon',
+      album: 'Shelter',
+      durationMs: 219_000,
+    });
+    harness.handler?.({
+      type: 'metadata',
+      title: "And I know, I'm not alone",
+      artist: 'Porter Robinson / Madeon',
+      album: 'Shelter',
+      durationMs: 219_000,
+      elapsedMs: 30_000,
+    });
+
+    const status = service.getStatus();
+    expect(status.metadata?.title).toBe('Shelter');
+    expect(status.metadata?.artist).toBe('Porter Robinson / Madeon');
+    expect(status.currentLyricLine).toBe("And I know, I'm not alone");
+    expect(status.positionSeconds).toBe(30);
+  });
+
+  it('lets an incoming AirPlay stream preempt stale local playback status', async () => {
+    const audio = new FakeAudioSession();
+    audio.status = audioStatus({ state: 'playing', currentFilePath: 'local.flac', currentTrackId: 'local-track' });
+    const harness: { handler?: (event: Record<string, unknown>) => void } = {};
+    const sendRemoteCommand = vi.fn(() => true);
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: audio as never,
+      loadRaopModule: async () => ({
+        startReceiver: (_options, nextHandler) => {
+          harness.handler = nextHandler;
+          return 10;
+        },
+        stopReceiver: vi.fn(),
+        sendRemoteCommand,
+      }),
+      now: () => 1_000,
+    });
+
+    await service.setEnabled(true);
+    harness.handler?.({ type: 'stream', remoteAddress: '192.168.1.50' });
+    audio.emit('status', audio.status);
+    harness.handler?.({ type: 'pcm', data: Buffer.from([0, 0]), sampleRate: 44100, channels: 2 });
+    await Promise.resolve();
+
+    expect(sendRemoteCommand).not.toHaveBeenCalledWith(10, 'stop');
+    expect(audio.playPcmStream).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceId: expect.stringMatching(/^airplay-receiver:/u) }),
+    );
+    expect(service.getStatus().state).toBe('playing');
   });
 
   it('releases the AirPlay session when local playback takes over', async () => {

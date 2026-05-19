@@ -199,6 +199,7 @@ export const defaultSettings: AppSettings = {
   autoAccountCheckOnStartup: true,
   suppressAccountExpiryNotices: false,
   spotifyAutoLaunchOfficialPlayer: true,
+  connectAutoStartReceiversEnabled: false,
   playlistBackupsEnabled: true,
   coverCacheDir: null,
   hideToTrayOnClose: false,
@@ -259,6 +260,7 @@ export const defaultSettings: AppSettings = {
   mvAutoSearch: true,
   mvAutoPreload: true,
   mvAutoApplyThreshold: 0.7,
+  mvPreferHighestViewCount: false,
   mvImmersiveBackground: true,
   mvImmersiveBackgroundScalePercent: 115,
   mvImmersiveBackgroundOffsetXPercent: 50,
@@ -268,6 +270,7 @@ export const defaultSettings: AppSettings = {
   mvImmersiveBackgroundOverlayOpacityPercent: 0,
   mvLyricsReadabilityEnhanced: false,
   mvRestartAudioOnLoad: false,
+  mvSyncMode: 'balanced',
   mvReplayAudioOnChange: true,
   mvMaxQuality: 'max',
   mvAllow60fps: true,
@@ -599,6 +602,9 @@ const normalizeLyricsProviderList = (value: unknown, fallback: LyricsProviderId[
 const normalizeMvMaxQuality = (value: unknown): MvSettings['maxQuality'] =>
   value === '720p' || value === '1080p' || value === '1440p' || value === '2160p' || value === 'max' ? value : defaultSettings.mvMaxQuality;
 
+const normalizeMvSyncMode = (value: unknown): MvSettings['syncMode'] =>
+  value === 'stable' || value === 'precise' || value === 'balanced' ? value : defaultSettings.mvSyncMode;
+
 const normalizeWallpaperPath = (value: unknown, directory: string): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -749,6 +755,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
     suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices === true,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
+    connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
     coverCacheDir: normalizeCoverCacheDir(settings.coverCacheDir),
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
@@ -857,6 +864,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     mvAutoApplyThreshold: Number.isFinite(mvAutoApplyThreshold)
       ? clamp(mvAutoApplyThreshold, 0.3, 1)
       : defaultSettings.mvAutoApplyThreshold,
+    mvPreferHighestViewCount: settings.mvPreferHighestViewCount === true,
     mvImmersiveBackground: settings.mvImmersiveBackground !== false,
     mvImmersiveBackgroundScalePercent: Number.isFinite(mvImmersiveBackgroundScalePercent)
       ? Math.round(clamp(mvImmersiveBackgroundScalePercent, 100, 220))
@@ -878,6 +886,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.mvImmersiveBackgroundOverlayOpacityPercent,
     mvLyricsReadabilityEnhanced: settings.mvLyricsReadabilityEnhanced === true,
     mvRestartAudioOnLoad: settings.mvRestartAudioOnLoad === true,
+    mvSyncMode: normalizeMvSyncMode(settings.mvSyncMode),
     mvReplayAudioOnChange: settings.mvReplayAudioOnChange !== false,
     mvMaxQuality: normalizeMvMaxQuality(settings.mvMaxQuality),
     mvAllow60fps: settings.mvAllow60fps !== false,

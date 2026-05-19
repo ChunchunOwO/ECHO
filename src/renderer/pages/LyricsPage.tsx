@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, DragEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   FastForward,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { AudioStatus } from "../../shared/types/audio";
 import type { AppSettings } from "../../shared/types/appSettings";
+import type { AirPlayReceiverStatus } from "../../shared/types/connect";
 import type { LibraryTrack } from "../../shared/types/library";
 import type {
   LyricsProviderId,
@@ -45,6 +46,50 @@ import { openAlbumDetailForTrack } from "../utils/albumNavigation";
 type LyricsPageProps = {
   initialLyrics?: LyricLine[];
 };
+
+type LyricsMvPanelBoundaryProps = {
+  children: ReactNode;
+  resetKey: string;
+};
+
+type LyricsMvPanelBoundaryState = {
+  failed: boolean;
+};
+
+class LyricsMvPanelBoundary extends Component<LyricsMvPanelBoundaryProps, LyricsMvPanelBoundaryState> {
+  state: LyricsMvPanelBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): LyricsMvPanelBoundaryState {
+    return { failed: true };
+  }
+
+  componentDidUpdate(previousProps: LyricsMvPanelBoundaryProps): void {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.failed) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render(): ReactNode {
+    if (this.state.failed) {
+      return (
+        <section
+          className="lyrics-mv-panel lyrics-mv-panel--fallback"
+          aria-label="MV"
+          data-mv-enabled="false"
+          data-view-mode="mv"
+          data-mv-crashed="true"
+        >
+          <div className="lyrics-mv-fallback">
+            <strong>MV temporarily unavailable</strong>
+            <span>Lyrics remain available for the current playback.</span>
+          </div>
+        </section>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 type TrackWithLargeCover = LibraryTrack & {
   coverLarge?: string | null;
@@ -176,8 +221,55 @@ const isStreamingTrack = (
 const isSnapshotTrackId = (trackId: string | null | undefined): boolean =>
   Boolean(trackId?.startsWith("dlna-receiver:") || trackId?.startsWith("airplay-receiver:"));
 
+const snapshotProtocol = (trackId: string | null | undefined): "dlna" | "airplay" | null => {
+  if (trackId?.startsWith("dlna-receiver:")) {
+    return "dlna";
+  }
+  if (trackId?.startsWith("airplay-receiver:")) {
+    return "airplay";
+  }
+  return null;
+};
+
 const isSnapshotLyricsTrack = (track: LibraryTrack | null, trackId: string | null): track is LibraryTrack =>
   Boolean(track?.isTemporary || isSnapshotTrackId(trackId) || isSnapshotTrackId(track?.id));
+
+const airPlaySingleLineLyrics = (line: string | null): LyricsState | null => {
+  const text = line?.trim();
+  if (!text) {
+    return null;
+  }
+
+  return {
+    kind: "plain",
+    source: "placeholder",
+    lines: [{ timeMs: -1, text }],
+    offsetMs: 0,
+  };
+};
+
+const airPlayReceiverSourceId = (status: AirPlayReceiverStatus | null): string | null => {
+  const sourceId = status?.currentSourceId?.trim();
+  return sourceId && status?.enabled ? sourceId : null;
+};
+
+const airPlayReceiverPlaybackState = (status: AirPlayReceiverStatus | null): "playing" | "paused" | "idle" | null => {
+  if (!airPlayReceiverSourceId(status)) {
+    return null;
+  }
+
+  return status?.state === "playing" || status?.state === "paused" ? status.state : "idle";
+};
+
+const airPlayReceiverDurationSeconds = (status: AirPlayReceiverStatus | null): number | null => {
+  const duration = Number(status?.durationSeconds ?? status?.metadata?.durationSeconds);
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
+};
+
+const airPlayReceiverPositionSeconds = (status: AirPlayReceiverStatus | null): number => {
+  const position = Number(status?.positionSeconds);
+  return Number.isFinite(position) && position > 0 ? position : 0;
+};
 
 const streamingLyricsToState = (
   result: StreamingLyricsResult,
@@ -369,6 +461,16 @@ const shouldUseAudioStatusForCurrentPlayback = (
 
   if (isAudioStatusForPlayback(audioStatus, playbackStatus)) {
     return true;
+  }
+
+  const playbackSnapshotProtocol = snapshotProtocol(playbackStatus?.currentTrackId ?? playbackStatus?.filePath);
+  if (playbackSnapshotProtocol) {
+    const audioSnapshotProtocol = snapshotProtocol(audioStatus.currentTrackId ?? audioStatus.currentFilePath);
+    return audioSnapshotProtocol === playbackSnapshotProtocol;
+  }
+
+  if (isSnapshotTrackId(playbackStatus?.currentTrackId)) {
+    return false;
   }
 
   if (!audioStatus.currentTrackId && !audioStatus.currentFilePath) {
@@ -833,6 +935,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       ? syncedLyrics(initialLyrics, 0)
       : emptyLyrics(0),
   );
+  const [airPlayReceiverStatus, setAirPlayReceiverStatus] =
+    useState<AirPlayReceiverStatus | null>(null);
   const [lyricsDisplaySettings, setLyricsDisplaySettings] =
     useState<LyricsDisplaySettings>(fallbackLyricsDisplaySettings);
   const [isLyricsDisplaySettingsReady, setIsLyricsDisplaySettingsReady] =
@@ -875,7 +979,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   )
     ? audioStatus
     : null;
-  const state = activeAudioStatus?.state ?? playbackStatus?.state ?? "idle";
+  const airPlaySourceId = airPlayReceiverSourceId(airPlayReceiverStatus);
+  const airPlayPlaybackState = airPlayReceiverPlaybackState(airPlayReceiverStatus);
+  const state = airPlayPlaybackState ?? activeAudioStatus?.state ?? playbackStatus?.state ?? "idle";
   const statusTrackId =
     activeAudioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
   const shouldPreferAudioTrackId =
@@ -886,7 +992,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const trackId =
     shouldPreferAudioTrackId
       ? statusTrackId
-      : queue.currentTrackId ?? statusTrackId;
+      : queue.currentTrackId ?? statusTrackId ?? airPlaySourceId;
   const queuedCurrentTrack =
     !trackId || queue.currentTrack?.id === trackId ? queue.currentTrack : null;
   const currentTrack =
@@ -911,38 +1017,66 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     currentTrack?.path ??
     audioStatus?.currentFilePath ??
     playbackStatus?.filePath ??
+    airPlaySourceId ??
     null;
-  const title = currentTrack?.title ?? titleFromPath(filePath);
+  const airPlayMetadata = airPlayReceiverStatus?.metadata ?? null;
+  const airPlayDurationSeconds = airPlayReceiverDurationSeconds(airPlayReceiverStatus);
+  const airPlayArtworkUrl =
+    airPlayReceiverStatus?.artworkUrl ||
+    airPlayMetadata?.coverHttpUrl ||
+    null;
+  const title =
+    currentTrack?.title ??
+    airPlayMetadata?.title?.trim() ??
+    titleFromPath(filePath);
   const artist =
     currentTrack?.artist ||
     currentTrack?.albumArtist ||
+    airPlayMetadata?.artist?.trim() ||
+    airPlayMetadata?.albumArtist?.trim() ||
     (filePath ? "Local file" : "Ready");
-  const album = currentTrack?.album?.trim() || null;
-  const coverUrl = safeCoverUrl(currentTrack);
-  const headerCoverUrl = safeOriginalCoverUrl(currentTrack);
-  const backgroundCoverUrl = safeOriginalCoverUrl(currentTrack);
+  const album = currentTrack?.album?.trim() || airPlayMetadata?.album?.trim() || null;
+  const coverUrl = safeCoverUrl(currentTrack) ?? airPlayArtworkUrl;
+  const headerCoverUrl = safeOriginalCoverUrl(currentTrack) ?? airPlayArtworkUrl;
+  const backgroundCoverUrl = safeOriginalCoverUrl(currentTrack) ?? airPlayArtworkUrl;
   const lyricsSnapshotRequest = useMemo<LyricsTrackSnapshotRequest | null>(() => {
     if (!trackId || !isSnapshotLyricsTrack(currentTrack, trackId)) {
       return null;
     }
 
+    const snapshotTrackId = currentTrack?.id ?? trackId;
     return {
-      trackId: currentTrack.id,
-      title: currentTrack.title?.trim() || title || "DLNA stream",
-      artist: currentTrack.artist?.trim() || currentTrack.albumArtist?.trim() || artist || "Unknown Artist",
-      album: currentTrack.album?.trim() || null,
-      albumArtist: currentTrack.albumArtist?.trim() || null,
-      durationSeconds: currentTrack.duration > 0 ? currentTrack.duration : null,
-      mediaType: currentTrack.mediaType ?? "remote",
-      sourceId: currentTrack.sourceId ?? null,
-      stableKey: currentTrack.stableKey ?? currentTrack.id,
+      trackId: snapshotTrackId,
+      title: currentTrack?.title?.trim() || title || "AirPlay stream",
+      artist: currentTrack?.artist?.trim() || currentTrack?.albumArtist?.trim() || artist || "Unknown Artist",
+      album: currentTrack?.album?.trim() || album,
+      albumArtist: currentTrack?.albumArtist?.trim() || airPlayMetadata?.albumArtist?.trim() || null,
+      durationSeconds: currentTrack?.duration && currentTrack.duration > 0 ? currentTrack.duration : airPlayDurationSeconds,
+      mediaType: currentTrack?.mediaType ?? "remote",
+      sourceId: currentTrack?.sourceId ?? airPlaySourceId,
+      stableKey: currentTrack?.stableKey ?? snapshotTrackId,
     };
   }, [
+    airPlayDurationSeconds,
+    airPlayMetadata?.albumArtist,
+    airPlaySourceId,
+    album,
     artist,
     currentTrack,
     title,
     trackId,
   ]);
+  const isCurrentAirPlayReceiverTrack =
+    Boolean(airPlaySourceId) ||
+    snapshotProtocol(trackId) === "airplay" ||
+    snapshotProtocol(currentTrack?.id) === "airplay" ||
+    snapshotProtocol(currentTrack?.path) === "airplay" ||
+    snapshotProtocol(playbackStatus?.filePath) === "airplay";
+  const liveAirPlayLyrics = useMemo(
+    () => (isCurrentAirPlayReceiverTrack ? airPlaySingleLineLyrics(airPlayReceiverStatus?.currentLyricLine ?? null) : null),
+    [airPlayReceiverStatus?.currentLyricLine, isCurrentAirPlayReceiverTrack],
+  );
+  const displayedLyrics = liveAirPlayLyrics ?? lyrics;
   const shouldRequestNetworkBackgroundCover =
     lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true &&
     lyricsDisplaySettings.lyricsBackgroundMode === "cover" &&
@@ -1189,10 +1323,34 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     [],
   );
 
-  const { audioClock: mvAudioClock } = useLyricsDisplayPosition(
+  const { audioClock: baseMvAudioClock } = useLyricsDisplayPosition(
     audioStatus,
     playbackStatus,
   );
+  const displayDurationSeconds =
+    airPlayDurationSeconds ??
+    audioStatus?.durationSeconds ??
+    currentTrack?.duration ??
+    0;
+  const mvAudioClock = useMemo<MvAudioClock>(() => {
+    if (!airPlaySourceId) {
+      return baseMvAudioClock;
+    }
+
+    return {
+      durationSeconds: airPlayDurationSeconds,
+      playbackRate: 1,
+      positionSeconds: airPlayReceiverPositionSeconds(airPlayReceiverStatus),
+      state: airPlayPlaybackState ?? "idle",
+      updatedAtMs: performance.now(),
+    };
+  }, [
+    airPlayDurationSeconds,
+    airPlayPlaybackState,
+    airPlayReceiverStatus,
+    airPlaySourceId,
+    baseMvAudioClock,
+  ]);
   const lyricsPositionSeconds = seekPreviewSeconds ?? mvAudioClock.positionSeconds;
   const activeSearchProviders = useMemo<LyricsProviderId[]>(() => {
     const enabled = (lyricsDisplaySettings.lyricsEnabledProviders?.length
@@ -1327,6 +1485,27 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const refreshStatus = useCallback(async (): Promise<void> => {
     applySharedPlaybackStatus(await refreshPlaybackStatus());
   }, [applySharedPlaybackStatus]);
+
+  useEffect(() => {
+    let disposed = false;
+    const connect = window.echo?.connect;
+    void connect?.getAirPlayReceiverStatus?.()
+      .then((status) => {
+        if (!disposed) {
+          setAirPlayReceiverStatus(status);
+        }
+      })
+      .catch(() => undefined);
+
+    const unsubscribe = connect?.onAirPlayReceiverStatus?.((status) => {
+      setAirPlayReceiverStatus(status);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   const loadLyricsDisplaySettings = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
@@ -2469,6 +2648,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       data-album-transition={isAlbumNavigating ? "true" : undefined}
       data-custom-lrc-dragging={isCustomLyricsDragging}
       data-view-mode={lyricsViewMode}
+      data-airplay-receiver={isCurrentAirPlayReceiverTrack ? "true" : undefined}
       data-window-maximized={isWindowMaximized}
       style={lyricsPageStyle}
       onDragLeave={handleLyricsDragLeave}
@@ -2530,9 +2710,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         {lyricsOffsetControls}
         {lyricsDisplaySettings.lyricsEnabled ? (
           <LyricsView
-            durationMs={(audioStatus?.durationSeconds ?? currentTrack?.duration ?? 0) * 1000}
-            hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden}
-            lyrics={lyrics}
+            durationMs={displayDurationSeconds * 1000}
+            hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden && !isCurrentAirPlayReceiverTrack}
+            lyrics={displayedLyrics}
             positionMs={lyricsPositionSeconds * 1000 + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs}
             playbackRate={mvAudioClock.playbackRate}
             playbackState={seekPreviewSeconds === null ? mvAudioClock.state : "paused"}
@@ -2546,21 +2726,23 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       </section>
 
       {lyricsViewMode === "mv" ? (
-        <MvPanel
-          trackId={trackId ?? null}
-          currentTrack={currentTrack}
-          streamingTarget={streamingTarget}
-          title={title}
-          artist={artist}
-          coverUrl={coverUrl}
-          hideFallbackTrackInfo={
-            lyricsDisplaySettings.lyricsHeaderHidden &&
-            lyricsDisplaySettings.lyricsMvAutoShowTrackInfoDisabled
-          }
-          smartReadableColorsEnabled={lyricsSmartReadableEnabled}
-          isAudioPlaying={state === "playing"}
-          audioClock={mvAudioClock}
-        />
+        <LyricsMvPanelBoundary resetKey={`${trackId ?? "none"}:${title}:${artist}`}>
+          <MvPanel
+            trackId={trackId ?? null}
+            currentTrack={currentTrack}
+            streamingTarget={streamingTarget}
+            title={title}
+            artist={artist}
+            coverUrl={coverUrl}
+            hideFallbackTrackInfo={
+              lyricsDisplaySettings.lyricsHeaderHidden &&
+              lyricsDisplaySettings.lyricsMvAutoShowTrackInfoDisabled
+            }
+            smartReadableColorsEnabled={lyricsSmartReadableEnabled}
+            isAudioPlaying={state === "playing"}
+            audioClock={mvAudioClock}
+          />
+        </LyricsMvPanelBoundary>
       ) : (
         <section
           className="lyrics-mv-panel"

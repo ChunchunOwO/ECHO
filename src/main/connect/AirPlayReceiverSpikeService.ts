@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { request as httpRequest, type ClientRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import readline from 'node:readline';
 import { PassThrough, Transform } from 'node:stream';
 import { app } from 'electron';
@@ -45,6 +45,7 @@ type RaopModule = {
   startReceiver: (options: RaopReceiverOptions, handler: (event: RaopEvent) => void) => number | Promise<number>;
   stopReceiver: (handle: number) => void | Promise<void>;
   sendRemoteCommand?: (handle: number, command: 'play' | 'pause' | 'stop' | 'next' | 'prev' | 'previous') => boolean | Promise<boolean>;
+  setPcmForwarding?: (enabled: boolean) => boolean | Promise<boolean>;
   setLogHandler?: (handler: ((event: unknown) => void) | null, level?: string, raopLevel?: string, utilLevel?: string) => void;
 };
 
@@ -81,6 +82,13 @@ type AirPlayReceiverDependencies = {
   now?: () => number;
 };
 
+type AirPlayHelperRuntimeOptions = {
+  isPackaged: boolean;
+  processExecPath: string;
+  npmNodeExecPath?: string | null;
+  nodeEnvPath?: string | null;
+};
+
 const defaultAdvertisedName = (): string =>
   process.env.ELECTRON_RENDERER_URL ? 'ECHO Next Dev (AirPlay)' : 'ECHO Next (AirPlay)';
 const defaultTitle = 'AirPlay stream';
@@ -92,6 +100,7 @@ const airPlayModel = 'ECHO-Next-AirPlay-Spike';
 const airPlayPcmHighWaterMark = 4 * 1024 * 1024;
 const airPlayOutputSampleRate = 48_000;
 const airPlayOutputBufferFrames = 8192;
+const airPlayHttpPcmFallbackMs = 1_500;
 
 type AirPlayAdvertiseInterface = {
   address: string;
@@ -100,6 +109,23 @@ type AirPlayAdvertiseInterface = {
 
 const loadDefaultRaopModule = async (): Promise<RaopModule> => {
   return new AirPlayRaopHelperModule();
+};
+
+export const resolveAirPlayHelperNodePath = (options: AirPlayHelperRuntimeOptions): string => {
+  if (options.isPackaged) {
+    return options.processExecPath;
+  }
+
+  const explicitRuntime = [
+    options.npmNodeExecPath,
+    options.nodeEnvPath,
+  ].filter((value): value is string => Boolean(value));
+  return explicitRuntime[0] ?? options.processExecPath;
+};
+
+const prependNodePaths = (env: NodeJS.ProcessEnv, nodePaths: string[]): void => {
+  const existing = env.NODE_PATH ? [env.NODE_PATH] : [];
+  env.NODE_PATH = [...nodePaths, ...existing].join(delimiter);
 };
 
 const trimText = (value: unknown): string | null => {
@@ -138,7 +164,19 @@ const isAlbumLikeArtistPart = (part: string | null, album: string | null): boole
 };
 
 const looksLikeAirPlayLyricLine = (title: string | null): boolean =>
-  Boolean(title && title.length >= 16 && /\s/u.test(title) && /[,'"!?，。！？]/u.test(title));
+  Boolean(
+    title &&
+      title.length >= 8 &&
+      (/\s/u.test(title) || /[,'"!?，。！？、…]/u.test(title) || /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(title)),
+  );
+
+const shouldKeepCurrentMetadataForLyricLine = (title: string | null, current: ConnectMetadata | null): boolean =>
+  Boolean(
+    current?.title &&
+      !isGenericAirPlayTitle(current.title) &&
+      looksLikeAirPlayLyricLine(title) &&
+      !sameText(title, current.title),
+  );
 
 const normalizeAirPlayMetadataText = (
   title: string | null,
@@ -266,6 +304,14 @@ class AirPlayRaopHelperModule implements RaopModule {
     return Boolean((response as { ok?: unknown }).ok);
   }
 
+  async setPcmForwarding(enabled: boolean): Promise<boolean> {
+    if (!this.child) {
+      return false;
+    }
+    const response = await this.sendRequest('pcm-forwarding', { enabled }).catch(() => ({ ok: false }));
+    return Boolean((response as { ok?: unknown }).ok);
+  }
+
   private async ensureHelper(): Promise<void> {
     if (this.readyPromise) {
       await this.readyPromise;
@@ -283,9 +329,15 @@ class AirPlayRaopHelperModule implements RaopModule {
     } else {
       delete env.ELECTRON_RUN_AS_NODE;
     }
+    if (app.isPackaged) {
+      prependNodePaths(env, [
+        join(process.resourcesPath, 'app.asar.unpacked', 'node_modules'),
+        join(app.getAppPath(), 'node_modules'),
+      ]);
+    }
 
     this.child = spawn(nodePath, [helperPath], {
-      cwd: app.getAppPath(),
+      cwd: dirname(helperPath),
       env,
       stdio: 'pipe',
       windowsHide: true,
@@ -433,11 +485,12 @@ class AirPlayRaopHelperModule implements RaopModule {
   }
 
   private resolveNodePath(): string {
-    const explicitRuntime = [
-      process.env.npm_node_execpath,
-      process.env.NODE,
-    ].filter((value): value is string => Boolean(value));
-    return explicitRuntime[0] ?? process.execPath;
+    return resolveAirPlayHelperNodePath({
+      isPackaged: app.isPackaged,
+      processExecPath: process.execPath,
+      npmNodeExecPath: process.env.npm_node_execpath,
+      nodeEnvPath: process.env.NODE,
+    });
   }
 
   private shouldRunAsNode(nodePath: string): boolean {
@@ -472,18 +525,48 @@ const createAirPlayOutputSettings = (): NonNullable<Parameters<AirPlayAudioSessi
   bufferSizeFrames: airPlayOutputBufferFrames,
 });
 
+const airPlayStateFromAudioStatus = (audioStatus: AudioStatus, currentState: AirPlayReceiverStatus['state']): AirPlayReceiverStatus['state'] => {
+  if (currentState === 'playing' && audioStatus.state === 'paused') {
+    return currentState;
+  }
+  if (currentState === 'paused' && audioStatus.state === 'playing') {
+    return currentState;
+  }
+  return audioStatus.state === 'playing' || audioStatus.state === 'paused' || audioStatus.state === 'stopped' || audioStatus.state === 'error'
+    ? audioStatus.state
+    : currentState;
+};
+
+const metadataIdentityKey = (metadata: ConnectMetadata | null): string | null => {
+  if (!metadata) {
+    return null;
+  }
+  return [
+    comparableAirPlayText(metadata.title),
+    comparableAirPlayText(metadata.artist),
+    comparableAirPlayText(metadata.album),
+    metadata.durationSeconds > 0 ? Math.round(metadata.durationSeconds).toString() : '',
+  ].join('|');
+};
+
 const metadataFromEvent = (event: RaopEvent, current: ConnectMetadata | null, artworkUrl: string | null): ConnectMetadata => {
   const durationSeconds = Number(event.durationMs);
-  const title = trimText(event.title) ?? current?.title ?? null;
-  const artist = trimText(event.artist) ?? current?.artist ?? null;
-  const album = trimText(event.album) ?? current?.album ?? null;
+  const eventDurationSeconds = Number.isFinite(durationSeconds) && durationSeconds > 0 ? Math.round(durationSeconds / 1000) : 0;
+  const currentDurationSeconds = current?.durationSeconds ?? 0;
+  const eventTitle = trimText(event.title);
+  const keepCurrentMetadata =
+    shouldKeepCurrentMetadataForLyricLine(eventTitle, current) &&
+    (!eventDurationSeconds || !currentDurationSeconds || Math.abs(eventDurationSeconds - currentDurationSeconds) <= 2);
+  const title = keepCurrentMetadata ? current?.title ?? null : eventTitle ?? current?.title ?? null;
+  const artist = keepCurrentMetadata ? current?.artist ?? null : trimText(event.artist) ?? current?.artist ?? null;
+  const album = keepCurrentMetadata ? current?.album ?? null : trimText(event.album) ?? current?.album ?? null;
   const normalized = normalizeAirPlayMetadataText(title, artist, album);
   return {
     title: normalized.title ?? defaultTitle,
     artist: normalized.artist ?? unknownArtist,
     album: normalized.album,
     albumArtist: current?.albumArtist ?? normalized.artist ?? unknownArtist,
-    durationSeconds: Number.isFinite(durationSeconds) && durationSeconds > 0 ? Math.round(durationSeconds / 1000) : current?.durationSeconds ?? 0,
+    durationSeconds: eventDurationSeconds || (current?.durationSeconds ?? 0),
     coverHttpUrl: artworkUrl ?? current?.coverHttpUrl ?? '',
   };
 };
@@ -500,9 +583,15 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private pcmStream: PassThrough | null = null;
   private httpPcmRequest: ClientRequest | null = null;
   private httpPcmTransform: Transform | null = null;
+  private httpPcmFallbackTimer: NodeJS.Timeout | null = null;
+  private httpPcmBytesReceived = 0;
   private pcmPlaybackStarted = false;
   private currentSourceId: string | null = null;
   private ignorePcmUntilNextStream = false;
+  private audioSessionClaimedCurrentSource = false;
+  private currentMetadataIdentityKey: string | null = null;
+  private positionAnchorSeconds = 0;
+  private positionAnchorUpdatedAtMs = 0;
   private sessionCounter = 0;
   private status: AirPlayReceiverStatus;
 
@@ -546,10 +635,34 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       currentSourceId: null,
       currentClient: null,
       metadata: null,
+      currentLyricLine: null,
       artworkUrl: null,
       positionSeconds: 0,
       durationSeconds: 0,
     });
+    return this.getStatus();
+  }
+
+  isCurrentSource(sourceId: string | null | undefined): boolean {
+    return Boolean(sourceId && this.currentSourceId === sourceId);
+  }
+
+  async playPlayback(): Promise<AirPlayReceiverStatus> {
+    this.sendRemoteCommand('play');
+    this.setPositionAnchor(this.estimatePosition(this.status));
+    this.setStatus({ state: 'playing' });
+    return this.getStatus();
+  }
+
+  async pausePlayback(): Promise<AirPlayReceiverStatus> {
+    this.sendRemoteCommand('pause');
+    this.setPositionAnchor(this.estimatePosition(this.status));
+    this.setStatus({ state: 'paused' });
+    return this.getStatus();
+  }
+
+  async seekPlayback(_positionSeconds: number): Promise<AirPlayReceiverStatus> {
+    this.addDebugEvent('seek', 'AirPlay receiver seek is not supported by the native backend');
     return this.getStatus();
   }
 
@@ -568,6 +681,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       currentSourceId: null,
       currentClient: null,
       metadata: null,
+      currentLyricLine: null,
       artworkUrl: null,
       positionSeconds: 0,
       durationSeconds: 0,
@@ -697,6 +811,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       currentClient: null,
       currentSourceId: null,
       metadata: null,
+      currentLyricLine: null,
       artworkUrl: null,
       positionSeconds: 0,
       durationSeconds: 0,
@@ -723,11 +838,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         this.handlePcmEvent(event);
         break;
       case 'play':
+        this.setPositionAnchor(this.estimatePosition(this.status));
         this.setStatus({ state: 'playing' });
         break;
       case 'pause':
       case 'flush':
-        void Promise.resolve(this.audioSession.pause()).catch(() => undefined);
+        this.setPositionAnchor(this.estimatePosition(this.status));
         this.setStatus({ state: 'paused' });
         break;
       case 'stop':
@@ -749,6 +865,8 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.currentSourceId = `airplay-receiver:${this.now().toString(36)}-${this.sessionCounter.toString(36)}`;
     this.pcmStream = new PassThrough({ highWaterMark: airPlayPcmHighWaterMark });
     this.pcmPlaybackStarted = false;
+    this.audioSessionClaimedCurrentSource = false;
+    this.setPositionAnchor(0);
     const address = eventAddress(event);
     const client: ConnectReceiverClient | null = address
       ? {
@@ -757,11 +875,14 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
           lastSeenAt: new Date(this.now()).toISOString(),
         }
       : null;
+    const metadata = metadataFromEvent(event, this.status.metadata, this.status.artworkUrl);
+    this.currentMetadataIdentityKey = metadataIdentityKey(metadata);
     this.setStatus({
       state: 'ready',
       currentClient: client,
       currentSourceId: this.currentSourceId,
-      metadata: metadataFromEvent(event, this.status.metadata, this.status.artworkUrl),
+      metadata,
+      currentLyricLine: null,
       positionSeconds: 0,
       durationSeconds: 0,
       error: null,
@@ -769,12 +890,26 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   }
 
   private applyMetadataEvent(event: RaopEvent): void {
+    const eventTitle = trimText(event.title);
     const metadata = metadataFromEvent(event, this.status.metadata, this.status.artworkUrl);
     const elapsedMs = Number(event.elapsedMs);
+    const nextMetadataIdentityKey = metadataIdentityKey(metadata);
+    const metadataChanged = Boolean(nextMetadataIdentityKey && nextMetadataIdentityKey !== this.currentMetadataIdentityKey);
+    const nextLyricLine =
+      !metadataChanged && shouldKeepCurrentMetadataForLyricLine(eventTitle, this.status.metadata) ? eventTitle : null;
+    const nextPositionSeconds =
+      Number.isFinite(elapsedMs) && elapsedMs >= 0
+        ? elapsedMs / 1000
+        : metadataChanged
+          ? 0
+          : this.estimatePosition(this.status);
+    this.currentMetadataIdentityKey = nextMetadataIdentityKey;
+    this.setPositionAnchor(nextPositionSeconds, metadata.durationSeconds);
     this.setStatus({
       metadata,
+      currentLyricLine: nextLyricLine ?? (metadataChanged ? null : this.status.currentLyricLine),
       durationSeconds: metadata.durationSeconds,
-      positionSeconds: Number.isFinite(elapsedMs) && elapsedMs > 0 ? elapsedMs / 1000 : this.status.positionSeconds,
+      positionSeconds: nextPositionSeconds,
     });
   }
 
@@ -796,7 +931,13 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
   private handlePcmEvent(event: RaopEvent): void {
     if (this.httpPcmRequest || this.httpPcmTransform) {
-      return;
+      if (this.httpPcmBytesReceived > 0) {
+        return;
+      }
+      this.addDebugEvent('pcm', 'fallback to direct PCM events before HTTP audio arrived');
+      this.destroyHttpPcmPlayback();
+      this.pcmStream = null;
+      this.pcmPlaybackStarted = false;
     }
 
     const data = Buffer.isBuffer(event.data) ? event.data : null;
@@ -866,10 +1007,17 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     const stream = this.createHttpPcmTransform();
     this.pcmStream = stream;
     this.pcmPlaybackStarted = true;
+    this.httpPcmBytesReceived = 0;
     const host = this.advertisedInterface?.address ?? '127.0.0.1';
 
     this.setStatus({ state: 'ready', error: null });
     this.addDebugEvent('stream', `pull PCM from http://${host}:${port}/`);
+    this.httpPcmFallbackTimer = setTimeout(() => {
+      if (this.currentSourceId !== sourceId || this.httpPcmBytesReceived > 0) {
+        return;
+      }
+      this.enableDirectPcmFallback(sourceId, 'HTTP PCM produced no audio');
+    }, airPlayHttpPcmFallbackMs);
 
     const request = httpRequest(
       {
@@ -900,7 +1048,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     });
     request.once('error', (error) => {
       if (this.currentSourceId === sourceId) {
-        this.setStatus({ state: 'error', error: `AirPlay PCM HTTP failed: ${error.message}` });
+        this.enableDirectPcmFallback(sourceId, `AirPlay PCM HTTP failed: ${error.message}`);
       }
       stream.destroy(error);
     });
@@ -946,6 +1094,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         const evenLength = input.length - (input.length % 2);
         carry = evenLength === input.length ? null : input.subarray(evenLength);
         if (evenLength > 0) {
+          const hadAudio = this.httpPcmBytesReceived > 0;
+          this.httpPcmBytesReceived += evenLength;
+          if (!hadAudio) {
+            this.clearHttpPcmFallbackTimer();
+            this.addDebugEvent('pcm', 'HTTP PCM started');
+          }
           transform.push(convertS16leToF32le(input.subarray(0, evenLength)));
         }
         callback();
@@ -959,7 +1113,28 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     return transform;
   }
 
+  private clearHttpPcmFallbackTimer(): void {
+    if (this.httpPcmFallbackTimer) {
+      clearTimeout(this.httpPcmFallbackTimer);
+      this.httpPcmFallbackTimer = null;
+    }
+  }
+
+  private enableDirectPcmFallback(sourceId: string, reason: string): void {
+    if (this.currentSourceId !== sourceId) {
+      return;
+    }
+    this.addDebugEvent('pcm', `${reason}; switching to direct PCM events`);
+    this.destroyHttpPcmPlayback();
+    this.pcmStream = null;
+    this.pcmPlaybackStarted = false;
+    void Promise.resolve(this.raopModule?.setPcmForwarding?.(true)).catch((error) => {
+      this.addDebugEvent('pcm', error instanceof Error ? error.message : String(error));
+    });
+  }
+
   private destroyHttpPcmPlayback(): void {
+    this.clearHttpPcmFallbackTimer();
     if (this.httpPcmRequest) {
       this.httpPcmRequest.destroy();
     }
@@ -968,6 +1143,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       this.httpPcmTransform.destroy();
     }
     this.httpPcmTransform = null;
+    this.httpPcmBytesReceived = 0;
   }
 
   private clearCurrentSession(reason: string): void {
@@ -978,6 +1154,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.pcmStream = null;
     this.pcmPlaybackStarted = false;
     this.currentSourceId = null;
+    this.audioSessionClaimedCurrentSource = false;
+    this.currentMetadataIdentityKey = null;
+    this.setPositionAnchor(0);
     if (reason) {
       this.addDebugEvent('clear', reason);
     }
@@ -998,15 +1177,18 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private withAudioPosition(status: AirPlayReceiverStatus): AirPlayReceiverStatus {
     const audioStatus = this.audioSession.getStatus();
     if (!this.currentSourceId || audioStatus.currentFilePath !== this.currentSourceId) {
-      return status;
+      return {
+        ...status,
+        positionSeconds: this.estimatePosition(status),
+        updatedAt: new Date(this.now()).toISOString(),
+      };
     }
 
+    const nextState = airPlayStateFromAudioStatus(audioStatus, status.state);
     return {
       ...status,
-      state: audioStatus.state === 'playing' || audioStatus.state === 'paused' || audioStatus.state === 'stopped'
-        ? audioStatus.state
-        : status.state,
-      positionSeconds: audioStatus.positionSeconds,
+      state: nextState,
+      positionSeconds: this.estimatePosition({ ...status, state: nextState }),
       durationSeconds: audioStatus.durationSeconds || status.durationSeconds,
       volume: Math.round(audioStatus.volume * 100),
       updatedAt: new Date(this.now()).toISOString(),
@@ -1018,7 +1200,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       return;
     }
 
+    if (audioStatus.currentFilePath === this.currentSourceId) {
+      this.audioSessionClaimedCurrentSource = true;
+    }
+
     if (
+      this.audioSessionClaimedCurrentSource &&
       audioStatus.currentFilePath &&
       audioStatus.currentFilePath !== this.currentSourceId &&
       (audioStatus.state === 'loading' || audioStatus.state === 'playing')
@@ -1031,6 +1218,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         currentClient: null,
         currentSourceId: null,
         metadata: null,
+        currentLyricLine: null,
         artworkUrl: null,
         positionSeconds: 0,
         durationSeconds: 0,
@@ -1042,18 +1230,27 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       return;
     }
 
-    const state =
-      audioStatus.state === 'playing' || audioStatus.state === 'paused' || audioStatus.state === 'stopped' || audioStatus.state === 'error'
-        ? audioStatus.state
-        : this.status.state;
+    const nextState = airPlayStateFromAudioStatus(audioStatus, this.status.state);
     this.setStatus({
-      state,
-      positionSeconds: audioStatus.positionSeconds,
+      state: nextState,
+      positionSeconds: this.estimatePosition({ ...this.status, state: nextState }),
       durationSeconds: audioStatus.durationSeconds || this.status.durationSeconds,
       volume: Math.round(audioStatus.volume * 100),
       error: audioStatus.error ?? this.status.error,
     });
   };
+
+  private setPositionAnchor(positionSeconds: number, durationSeconds = this.status.durationSeconds): void {
+    const safePositionSeconds = Math.max(0, Number.isFinite(positionSeconds) ? positionSeconds : 0);
+    this.positionAnchorSeconds = durationSeconds > 0 ? Math.min(durationSeconds, safePositionSeconds) : safePositionSeconds;
+    this.positionAnchorUpdatedAtMs = this.now();
+  }
+
+  private estimatePosition(status: Pick<AirPlayReceiverStatus, 'durationSeconds' | 'state'>): number {
+    const durationSeconds = status.durationSeconds > 0 ? status.durationSeconds : Number.POSITIVE_INFINITY;
+    const elapsedSeconds = status.state === 'playing' ? Math.max(0, (this.now() - this.positionAnchorUpdatedAtMs) / 1000) : 0;
+    return Math.min(durationSeconds, Math.max(0, this.positionAnchorSeconds + elapsedSeconds));
+  }
 
   private setStatus(next: Partial<AirPlayReceiverStatus>): void {
     this.status = {

@@ -8,6 +8,7 @@ export type NetworkMvProviderId = Extract<MvProviderId, 'bilibili' | 'youtube'>;
 
 export type MvQualityTier = 'auto' | '720p' | '1080p' | '1440p' | '2160p' | '4320p';
 export type MvMaxQuality = Exclude<MvQualityTier, 'auto' | '4320p'> | 'max';
+export type MvSyncMode = 'stable' | 'balanced' | 'precise';
 
 export type MvStreamProtocol = 'direct' | 'dash' | 'hls' | 'external';
 
@@ -32,6 +33,7 @@ export type MvSettings = {
   autoSearch: boolean;
   autoPreload: boolean;
   autoApplyThreshold?: number;
+  preferHighestViewCount?: boolean;
   immersiveBackground?: boolean;
   immersiveBackgroundScalePercent?: number;
   immersiveBackgroundOffsetXPercent?: number;
@@ -41,6 +43,7 @@ export type MvSettings = {
   immersiveBackgroundOverlayOpacityPercent?: number;
   lyricsReadabilityEnhanced?: boolean;
   restartAudioOnLoad: boolean;
+  syncMode?: MvSyncMode;
   replayAudioOnChange?: boolean;
   enabledProviders: NetworkMvProviderId[];
   providerOrder: NetworkMvProviderId[];

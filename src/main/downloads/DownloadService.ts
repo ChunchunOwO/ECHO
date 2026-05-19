@@ -163,6 +163,7 @@ type YtDlpProbeResult = {
 };
 
 type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>> & {
+  outputDirectory: string;
   requestHeaders: Record<string, string>;
   suggestedTitle: string | null;
   suggestedArtist: string | null;
@@ -177,6 +178,16 @@ type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'b
   streamingProvider: StreamingProviderName | null;
   streamingProviderTrackId: string | null;
   streamingStableKey: string | null;
+};
+
+type PersistedDownloadJobOptions = Omit<DownloadJobOptions, 'suggestedCoverData'> & {
+  suggestedCoverData: null;
+};
+
+type PersistedDownloadState = {
+  version: 1;
+  jobs: DownloadJob[];
+  jobOptions: Record<string, PersistedDownloadJobOptions>;
 };
 
 type DownloadServiceDependencies = {
@@ -200,6 +211,8 @@ type DownloadServiceDependencies = {
   fetch?: typeof fetch;
   loadSettings?: () => Partial<DownloadSettings> | null;
   saveSettings?: (settings: DownloadSettings) => void;
+  loadJobs?: () => PersistedDownloadState | null;
+  saveJobs?: (state: PersistedDownloadState) => void;
   getAccountCredentials?: (provider: AccountProvider) => AccountCredentials;
   writeEmbeddedTrackTags?: typeof writeEmbeddedTrackTags;
 };
@@ -328,6 +341,9 @@ const sanitizeFilePart = (value: string): string => {
   return (cleaned || 'Untitled download').slice(0, 160);
 };
 
+const sanitizeOutputSubdirectory = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() ? sanitizeFilePart(value) : null;
+
 const sanitizeExtension = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -399,9 +415,31 @@ const mimeTypeForCoverUrl = (url: string): string => {
 const hasHeader = (headers: Record<string, string>, name: string): boolean =>
   Object.keys(headers).some((headerName) => headerName.toLocaleLowerCase() === name.toLocaleLowerCase());
 
+const parseContentRangeTotal = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/\/(\d+)\s*$/u);
+  if (!match) {
+    return null;
+  }
+
+  const total = Number(match[1]);
+  return Number.isFinite(total) && total > 0 ? total : null;
+};
+
 const getDownloadsSettingsPath = (): string | null => {
   try {
     return join(app.getPath('userData'), 'echo-download-settings.json');
+  } catch {
+    return null;
+  }
+};
+
+const getDownloadsJobsPath = (): string | null => {
+  try {
+    return join(app.getPath('userData'), 'echo-download-jobs.json');
   } catch {
     return null;
   }
@@ -428,6 +466,32 @@ const saveDownloadSettings = (settings: DownloadSettings): void => {
 
   mkdirSync(dirname(settingsPath), { recursive: true });
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+};
+
+const loadPersistedDownloadState = (): PersistedDownloadState | null => {
+  const jobsPath = getDownloadsJobsPath();
+  if (!jobsPath || !existsSync(jobsPath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(jobsPath, 'utf8')) as PersistedDownloadState;
+    return parsed?.version === 1 && Array.isArray(parsed.jobs) && parsed.jobOptions && typeof parsed.jobOptions === 'object'
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const savePersistedDownloadState = (state: PersistedDownloadState): void => {
+  const jobsPath = getDownloadsJobsPath();
+  if (!jobsPath) {
+    return;
+  }
+
+  mkdirSync(dirname(jobsPath), { recursive: true });
+  writeFileSync(jobsPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
 };
 
 const runCommand: CommandRunner = (command, args) => runStreamingCommand(command, args, {});
@@ -528,6 +592,7 @@ export class DownloadService extends EventEmitter {
     super();
     this.settings = sanitizeSettings(this.dependencies.loadSettings?.() ?? loadDownloadSettings(), defaultSettings);
     this.ensureOutputDirectoryInLibrary(this.settings.outputDirectory);
+    this.restorePersistedJobs();
   }
 
   getJobs(): DownloadJob[] {
@@ -545,15 +610,16 @@ export class DownloadService extends EventEmitter {
       throw new Error(playbackOnlyDownloadBlockedMessage);
     }
 
-    const outputDirectory = this.settings.outputDirectory;
-    if (!outputDirectory) {
+    const baseOutputDirectory = this.settings.outputDirectory;
+    if (!baseOutputDirectory) {
       throw new Error('请选择下载文件夹');
     }
 
-    const outputStat = existsSync(outputDirectory) ? statSync(outputDirectory) : null;
+    const outputStat = existsSync(baseOutputDirectory) ? statSync(baseOutputDirectory) : null;
     if (!outputStat?.isDirectory()) {
-      throw new Error(`涓嬭浇鏂囦欢澶逛笉鍙敤: ${outputDirectory}`);
+      throw new Error(`涓嬭浇鏂囦欢澶逛笉鍙敤: ${baseOutputDirectory}`);
     }
+    const outputDirectory = this.prepareJobOutputDirectory(baseOutputDirectory, options.outputSubdirectory);
 
     const requestHeaders = sanitizeRequestHeaders(options.requestHeaders);
     const suggestedTitle = sanitizeTextOption(options.title, 180);
@@ -595,6 +661,7 @@ export class DownloadService extends EventEmitter {
     this.jobOptions.set(job.id, {
       importToLibrary: options.importToLibrary ?? this.settings.importToLibrary,
       bindMvAfterImport: provider === 'osu' ? false : (options.bindMvAfterImport ?? this.settings.bindMvAfterImport),
+      outputDirectory,
       requestHeaders,
       suggestedTitle,
       suggestedArtist,
@@ -650,7 +717,11 @@ export class DownloadService extends EventEmitter {
       }
     }
 
+    const removedJobs = this.jobs.filter((job) => terminalStatuses.has(job.status));
     this.jobs = this.jobs.filter((job) => !terminalStatuses.has(job.status));
+    for (const job of removedJobs) {
+      this.jobOptions.delete(job.id);
+    }
     this.emitJobsNow();
     return this.getJobs();
   }
@@ -1115,6 +1186,52 @@ export class DownloadService extends EventEmitter {
     });
   }
 
+  private restorePersistedJobs(): void {
+    const state = this.dependencies.loadJobs?.() ?? loadPersistedDownloadState();
+    if (!state) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const restoredJobs: DownloadJob[] = [];
+    for (const rawJob of state.jobs) {
+      if (!rawJob || typeof rawJob.id !== 'string' || typeof rawJob.sourceUrl !== 'string') {
+        continue;
+      }
+
+      const isTerminal = terminalStatuses.has(rawJob.status);
+      const job: DownloadJob = {
+        ...rawJob,
+        status: isTerminal ? rawJob.status : 'queued',
+        progress: isTerminal ? rawJob.progress : Math.min(95, Math.max(0, rawJob.progress ?? 0)),
+        error: isTerminal ? rawJob.error : null,
+        updatedAt: now,
+        completedAt: isTerminal ? rawJob.completedAt : null,
+      };
+      restoredJobs.push(job);
+
+      const options = state.jobOptions[rawJob.id];
+      if (options?.outputDirectory) {
+        this.jobOptions.set(rawJob.id, {
+          ...options,
+          requestHeaders: sanitizeRequestHeaders(options.requestHeaders),
+          suggestedCoverData: null,
+        });
+      }
+    }
+
+    this.jobs = restoredJobs;
+    this.queuedJobIds = restoredJobs
+      .filter((job) => !terminalStatuses.has(job.status) && this.jobOptions.has(job.id))
+      .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+      .map((job) => job.id);
+
+    this.persistJobs();
+    if (this.queuedJobIds.length > 0) {
+      queueMicrotask(() => this.startNextJob());
+    }
+  }
+
   private async runJob(jobId: string): Promise<void> {
     try {
       const job = this.requireJob(jobId);
@@ -1197,7 +1314,7 @@ export class DownloadService extends EventEmitter {
     const ytDlpPath = this.ytDlpPathResolver();
     const ffmpegToolchain = this.getFfmpegToolchain();
     const ffmpegPath = ffmpegToolchain.path;
-    const outputDirectory = this.settings.outputDirectory;
+    const outputDirectory = this.getJobOutputDirectory(jobId);
 
     if (!ytDlpPath || !existsSync(ytDlpPath)) {
       throw new Error('yt-dlp is not installed with the application');
@@ -1215,6 +1332,7 @@ export class DownloadService extends EventEmitter {
       '--newline',
       '--no-playlist',
       '--no-mtime',
+      '--continue',
       ...this.headerArgs(this.ytDlpRequestHeaders(job, this.jobOptions.get(jobId)?.requestHeaders ?? {})),
       '-f',
       'bestaudio/best',
@@ -1273,7 +1391,7 @@ export class DownloadService extends EventEmitter {
 
   private async downloadOsuBeatmapAudio(jobId: string): Promise<void> {
     const job = this.requireJob(jobId);
-    const outputDirectory = this.settings.outputDirectory;
+    const outputDirectory = this.getJobOutputDirectory(jobId);
     const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
     const beatmapsetId = parseOsuBeatmapsetId(job.sourceUrl);
 
@@ -1613,7 +1731,7 @@ export class DownloadService extends EventEmitter {
 
   private async downloadDirectAudio(jobId: string, options: DownloadJobOptions): Promise<void> {
     const job = this.requireJob(jobId);
-    const outputDirectory = this.settings.outputDirectory;
+    const outputDirectory = this.getJobOutputDirectory(jobId);
     const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
     const requestHeaders = this.directAudioRequestHeaders(job, options);
 
@@ -1626,23 +1744,42 @@ export class DownloadService extends EventEmitter {
     }
 
     this.updateJob(jobId, { status: 'downloading', progress: Math.max(job.progress, 1) });
-    const response = await fetchRunner(job.sourceUrl, { headers: requestHeaders });
+    let outputPath = job.outputPath && existsSync(dirname(job.outputPath)) ? job.outputPath : null;
+    let existingBytes = outputPath && existsSync(outputPath) ? (this.safeFileSize(outputPath) ?? 0) : 0;
+    const resumableHeaders = { ...requestHeaders };
+    if (outputPath && existingBytes > 0 && !hasHeader(resumableHeaders, 'Range')) {
+      resumableHeaders.Range = `bytes=${existingBytes}-`;
+    }
+
+    const response = await fetchRunner(job.sourceUrl, { headers: resumableHeaders });
     if (!response.ok) {
       throw new Error(`Direct audio download failed: HTTP ${response.status}`);
+    }
+    const shouldAppend = Boolean(outputPath && existingBytes > 0 && response.status === 206);
+    if (!shouldAppend) {
+      existingBytes = 0;
     }
 
     const contentType = response.headers.get('content-type');
     const extension =
       options.directAudioExtension ?? extensionFromMimeType(options.directAudioMimeType) ?? extensionFromMimeType(contentType) ?? extensionFromUrl(job.sourceUrl) ?? 'mp3';
     const outputName = [options.suggestedArtist, options.suggestedTitle ?? job.title].filter(Boolean).join(' - ') || 'Streaming audio';
-    const outputPath = this.uniqueOutputPath(outputDirectory, `${sanitizeFilePart(outputName)}.${extension}`);
-    const totalBytes = Number(response.headers.get('content-length'));
+    outputPath ??= this.uniqueOutputPath(outputDirectory, `${sanitizeFilePart(outputName)}.${extension}`);
+    const contentLength = Number(response.headers.get('content-length'));
+    const totalBytes =
+      parseContentRangeTotal(response.headers.get('content-range')) ??
+      (Number.isFinite(contentLength) && contentLength > 0 ? contentLength + existingBytes : null);
     this.updateJob(jobId, {
       outputPath,
-      totalBytes: Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : null,
+      downloadedBytes: existingBytes > 0 ? existingBytes : null,
+      totalBytes: totalBytes && totalBytes > 0 ? totalBytes : null,
     });
 
-    await this.writeResponseBodyToFile(jobId, response, outputPath);
+    await this.writeResponseBodyToFile(jobId, response, outputPath, {
+      append: shouldAppend,
+      initialBytes: existingBytes,
+      totalBytesOverride: totalBytes,
+    });
     const decodedOutputPath = await getNcmConverter().convertIfNeeded(outputPath);
     this.updateJob(jobId, {
       status: 'extracting_audio',
@@ -1727,17 +1864,32 @@ export class DownloadService extends EventEmitter {
     };
   }
 
-  private async writeResponseBodyToFile(jobId: string, response: Response, outputPath: string): Promise<void> {
-    const writer = createWriteStream(outputPath);
-    let downloadedBytes = 0;
-    const totalBytes = Number(response.headers.get('content-length'));
+  private async writeResponseBodyToFile(
+    jobId: string,
+    response: Response,
+    outputPath: string,
+    options: { append?: boolean; initialBytes?: number; totalBytesOverride?: number | null } = {},
+  ): Promise<void> {
+    const writer = createWriteStream(outputPath, { flags: options.append ? 'a' : 'w' });
+    let downloadedBytes = options.initialBytes ?? 0;
+    const totalBytes = options.totalBytesOverride ?? Number(response.headers.get('content-length'));
     const safeTotalBytes = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : null;
 
     try {
       if (!response.body) {
         const buffer = Buffer.from(await response.arrayBuffer());
         writer.write(buffer);
-        downloadedBytes = buffer.byteLength;
+        downloadedBytes += buffer.byteLength;
+        this.updateJob(
+          jobId,
+          {
+            status: 'downloading',
+            progress: safeTotalBytes ? Math.min(95, Math.max(1, (downloadedBytes / safeTotalBytes) * 95)) : Math.max(1, this.requireJob(jobId).progress),
+            downloadedBytes,
+            totalBytes: safeTotalBytes,
+          },
+          false,
+        );
       } else {
         const reader = response.body.getReader();
         try {
@@ -1866,6 +2018,7 @@ export class DownloadService extends EventEmitter {
     const options = this.jobOptions.get(jobId) ?? {
       importToLibrary: this.settings.importToLibrary,
       bindMvAfterImport: this.settings.bindMvAfterImport,
+      outputDirectory: this.settings.outputDirectory ?? (job.outputPath ? dirname(job.outputPath) : ''),
       requestHeaders: {},
       suggestedTitle: null,
       suggestedArtist: null,
@@ -1893,7 +2046,7 @@ export class DownloadService extends EventEmitter {
     if (emitProgress) {
       this.updateJob(jobId, { status: 'importing', progress: 98 });
     }
-    const importFolderPath = this.settings.outputDirectory ?? dirname(job.outputPath);
+    const importFolderPath = options.outputDirectory || dirname(job.outputPath);
     this.ensureOutputDirectoryInLibrary(importFolderPath);
     const importAudioFile = this.dependencies.importAudioFile ?? ((filePath, importOptions) => getLibraryService().importAudioFile(filePath, importOptions));
     const hasSuggestedMetadata =
@@ -2001,7 +2154,28 @@ export class DownloadService extends EventEmitter {
   }
 
   private emitJobsNow(): void {
+    this.persistJobs();
     this.emit('jobs-updated', this.getJobs());
+  }
+
+  private persistJobs(): void {
+    const jobOptions: Record<string, PersistedDownloadJobOptions> = {};
+    for (const [jobId, options] of this.jobOptions.entries()) {
+      jobOptions[jobId] = {
+        ...options,
+        suggestedCoverData: null,
+      };
+    }
+
+    try {
+      (this.dependencies.saveJobs ?? savePersistedDownloadState)({
+        version: 1,
+        jobs: this.getJobs(),
+        jobOptions,
+      });
+    } catch {
+      // Download progress must keep flowing even if the small resume-state file is temporarily unavailable.
+    }
   }
 
   private clearCommand(jobId: string): void {
@@ -2025,6 +2199,10 @@ export class DownloadService extends EventEmitter {
     }
 
     return job;
+  }
+
+  private getJobOutputDirectory(jobId: string): string | null {
+    return this.jobOptions.get(jobId)?.outputDirectory ?? this.settings.outputDirectory;
   }
 
   private parseProbeResult(stdout: string): Pick<DownloadJob, 'title' | 'durationSeconds' | 'thumbnailUrl' | 'webpageUrl'> {
@@ -2194,6 +2372,27 @@ export class DownloadService extends EventEmitter {
     }
   }
 
+  private prepareJobOutputDirectory(baseOutputDirectory: string, outputSubdirectory: unknown): string {
+    const folderName = sanitizeOutputSubdirectory(outputSubdirectory);
+    if (!folderName) {
+      return baseOutputDirectory;
+    }
+
+    const normalizedBase = resolve(baseOutputDirectory);
+    const outputDirectory = resolve(normalizedBase, folderName);
+    const relativePath = relative(normalizedBase, outputDirectory);
+    if (relativePath === '..' || relativePath.startsWith('..\\') || relativePath.startsWith('../') || relativePath === '') {
+      throw new Error(`Invalid download subfolder: ${folderName}`);
+    }
+
+    mkdirSync(outputDirectory, { recursive: true });
+    if (!statSync(outputDirectory).isDirectory()) {
+      throw new Error(`Download subfolder is not available: ${outputDirectory}`);
+    }
+
+    return outputDirectory;
+  }
+
   private safeFileSize(filePath: string): number | null {
     try {
       return statSync(filePath).size;
@@ -2203,7 +2402,7 @@ export class DownloadService extends EventEmitter {
   }
 
   private cleanupPartialFiles(job: DownloadJob): void {
-    const outputDirectory = this.settings.outputDirectory;
+    const outputDirectory = this.jobOptions.get(job.id)?.outputDirectory ?? this.settings.outputDirectory;
     if (!outputDirectory || !existsSync(outputDirectory)) {
       return;
     }

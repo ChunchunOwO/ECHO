@@ -2192,6 +2192,42 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
   padding-bottom: clamp(48px, 12vh, 120px);
 }
 
+.lyrics-page[data-airplay-receiver="true"] .lyrics-left-panel,
+.lyrics-page[data-airplay-receiver="true"] .lyrics-scroll,
+.lyrics-page[data-airplay-receiver="true"] .lyrics-empty {
+  opacity: 1;
+  visibility: visible;
+}
+
+.lyrics-mv-panel--fallback {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  color: var(--theme-heading-text);
+}
+
+.lyrics-mv-fallback {
+  display: grid;
+  gap: 8px;
+  width: min(420px, 100%);
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-surface) 86%, transparent);
+  box-shadow: 0 18px 40px rgba(31, 36, 56, 0.12);
+}
+
+.lyrics-mv-fallback strong {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.lyrics-mv-fallback span {
+  color: var(--theme-muted-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .app-shell:not(.app-shell--lyrics-player-drawer) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) {
   --lyrics-mv-off-player-space: clamp(28px, 4.2vh, 46px);
 }

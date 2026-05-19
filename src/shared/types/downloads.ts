@@ -57,6 +57,7 @@ export type CreateDownloadUrlJobOptions = Partial<Pick<DownloadSettings, 'import
   coverUrl?: string | null;
   webpageUrl?: string;
   requestHeaders?: Record<string, string>;
+  outputSubdirectory?: string | null;
   directAudio?: boolean;
   directAudioMimeType?: string | null;
   directAudioExtension?: string | null;

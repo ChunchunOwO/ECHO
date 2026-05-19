@@ -291,6 +291,7 @@ const mvProviderLabels: Record<NetworkMvProviderId, string> = {
   youtube: 'YouTube',
 };
 const mvQualityCaps: MvSettings['maxQuality'][] = ['720p', '1080p', '1440p', '2160p', 'max'];
+const mvSyncModes = ['stable', 'balanced', 'precise'] satisfies Array<NonNullable<MvSettings['syncMode']>>;
 const mvImmersiveBackgroundDefaults = {
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
@@ -333,6 +334,9 @@ const appSettingsPatchFromMvSettingsPatch = (patch: Partial<MvSettings>): Partia
   if (hasOwn(patch, 'autoApplyThreshold')) {
     appPatch.mvAutoApplyThreshold = patch.autoApplyThreshold;
   }
+  if (hasOwn(patch, 'preferHighestViewCount')) {
+    appPatch.mvPreferHighestViewCount = patch.preferHighestViewCount;
+  }
   if (hasOwn(patch, 'immersiveBackground')) {
     appPatch.mvImmersiveBackground = patch.immersiveBackground;
   }
@@ -359,6 +363,9 @@ const appSettingsPatchFromMvSettingsPatch = (patch: Partial<MvSettings>): Partia
   }
   if (hasOwn(patch, 'restartAudioOnLoad')) {
     appPatch.mvRestartAudioOnLoad = patch.restartAudioOnLoad;
+  }
+  if (hasOwn(patch, 'syncMode')) {
+    appPatch.mvSyncMode = patch.syncMode;
   }
   if (hasOwn(patch, 'replayAudioOnChange')) {
     appPatch.mvReplayAudioOnChange = patch.replayAudioOnChange;
@@ -6344,6 +6351,14 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </div>
                     <div className="settings-inline-toggle">
+                      <span>{t('mvSettings.network.preferHighestViewCount')}</span>
+                      <ToggleButton
+                        active={appSettings?.mvPreferHighestViewCount === true}
+                        disabled={!appSettings}
+                        onClick={() => patchMvSettings({ preferHighestViewCount: !(appSettings?.mvPreferHighestViewCount === true) })}
+                      />
+                    </div>
+                    <div className="settings-inline-toggle">
                       <span>{t('mvSettings.network.restartAudioOnLoad')}</span>
                       <ToggleButton
                         active={appSettings?.mvRestartAudioOnLoad === true}
@@ -6351,6 +6366,27 @@ export const SettingsPage = (): JSX.Element => {
                         onClick={() => patchMvSettings({ restartAudioOnLoad: !(appSettings?.mvRestartAudioOnLoad === true) })}
                       />
                     </div>
+                    {appSettings?.mvRestartAudioOnLoad === true ? (
+                      <div className="settings-chip-row settings-chip-row--left">
+                        {mvSyncModes.map((mode) => (
+                          <ChipButton
+                            active={(appSettings?.mvSyncMode ?? 'balanced') === mode}
+                            key={mode}
+                            onClick={() => {
+                              if (appSettings) {
+                                patchMvSettings({ syncMode: mode });
+                              }
+                            }}
+                          >
+                            {{
+                              stable: t('mvSettings.network.syncMode.stable'),
+                              balanced: t('mvSettings.network.syncMode.balanced'),
+                              precise: t('mvSettings.network.syncMode.precise'),
+                            }[mode]}
+                          </ChipButton>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="settings-inline-toggle">
                       <span>{t('mvSettings.network.replayAudioOnChange')}</span>
                       <ToggleButton

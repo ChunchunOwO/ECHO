@@ -450,6 +450,14 @@ describe("LyricsPage", () => {
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: var\(--lyrics-color\);/);
   });
 
+  it("keeps the lyrics surface visible if MV fails while AirPlay is active", () => {
+    const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
+
+    expect(css).toContain('.lyrics-page[data-airplay-receiver="true"] .lyrics-left-panel');
+    expect(css).toContain(".lyrics-mv-panel--fallback");
+    expect(css).toContain(".lyrics-mv-fallback");
+  });
+
   it("keeps dark immersive track info and player tags readable", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
     const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
@@ -554,6 +562,168 @@ describe("LyricsPage", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("Test Artist").length).toBeGreaterThan(0);
     expect(screen.queryByText(/FLAC \/ 2400 kbps \/ 96 kHz/)).toBeNull();
+  });
+
+  it("uses the live AirPlay lyric line instead of matching whole-song lyrics", async () => {
+    const track = makeTrack({
+      id: "airplay-receiver:source-1:air-song",
+      path: "airplay-receiver:source-1",
+      mediaType: "remote",
+      isTemporary: true,
+      title: "Air Song",
+      artist: "Air Artist",
+      duration: 180,
+      fieldSources: { title: "airplay", artist: "airplay" },
+    });
+    mockEcho(track, 12);
+    window.echo = {
+      ...window.echo,
+      connect: {
+        getAirPlayReceiverStatus: vi.fn().mockResolvedValue({
+          enabled: true,
+          state: "playing",
+          advertisedName: "ECHO Next",
+          nativeAvailable: true,
+          currentSourceId: "airplay-receiver:source-1",
+          currentClient: null,
+          metadata: {
+            title: "Air Song",
+            artist: "Air Artist",
+            album: null,
+            albumArtist: "Air Artist",
+            durationSeconds: 180,
+            coverHttpUrl: "",
+          },
+          currentLyricLine: "AirPlay live lyric line",
+          artworkUrl: null,
+          positionSeconds: 12,
+          durationSeconds: 180,
+          volume: 100,
+          error: null,
+          debugEvents: [],
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        }),
+        onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window["echo"];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
+    expect(screen.queryByText("Second line")).toBeNull();
+  });
+
+  it("keeps AirPlay lyrics visible when the lyrics page opens in MV mode", async () => {
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
+    const track = makeTrack({
+      id: "airplay-receiver:source-1:air-song",
+      path: "airplay-receiver:source-1",
+      mediaType: "remote",
+      isTemporary: true,
+      title: "Air Song",
+      artist: "Air Artist",
+      duration: 180,
+      fieldSources: { title: "airplay", artist: "airplay" },
+    });
+    mockEcho(track, 12, { lyricsHeaderHidden: true, lyricsEmptyStateHidden: true });
+    window.echo = {
+      ...window.echo,
+      connect: {
+        getAirPlayReceiverStatus: vi.fn().mockResolvedValue({
+          enabled: true,
+          state: "playing",
+          advertisedName: "ECHO Next",
+          nativeAvailable: true,
+          currentSourceId: "airplay-receiver:source-1",
+          currentClient: null,
+          metadata: {
+            title: "Air Song",
+            artist: "Air Artist",
+            album: null,
+            albumArtist: "Air Artist",
+            durationSeconds: 180,
+            coverHttpUrl: "",
+          },
+          currentLyricLine: "AirPlay live lyric line",
+          artworkUrl: null,
+          positionSeconds: 12,
+          durationSeconds: 180,
+          volume: 100,
+          error: null,
+          debugEvents: [],
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        }),
+        onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window["echo"];
+    attachMvBridge(makeTrackVideo({ trackId: track.id, title: "Air Song MV" }));
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
+    expect(container.querySelector('.lyrics-page[data-view-mode="mv"][data-airplay-receiver="true"]')).toBeTruthy();
+    expect(container.querySelector(".lyrics-left-panel")).toBeTruthy();
+    expect(container.querySelector(".lyrics-mv-panel")).toBeTruthy();
+  });
+
+  it("renders AirPlay receiver metadata even before the playback queue snapshot arrives", async () => {
+    window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
+    mockEcho(null, 0, { lyricsHeaderHidden: false, lyricsEmptyStateHidden: true });
+    window.echo = {
+      ...window.echo,
+      connect: {
+        getAirPlayReceiverStatus: vi.fn().mockResolvedValue({
+          enabled: true,
+          state: "playing",
+          advertisedName: "ECHO Next",
+          nativeAvailable: true,
+          currentSourceId: "airplay-receiver:source-1",
+          currentClient: null,
+          metadata: {
+            title: "Air Song",
+            artist: "Air Artist",
+            album: null,
+            albumArtist: "Air Artist",
+            durationSeconds: 180,
+            coverHttpUrl: "",
+          },
+          currentLyricLine: "AirPlay live lyric line",
+          artworkUrl: null,
+          positionSeconds: 12,
+          durationSeconds: 180,
+          volume: 100,
+          error: null,
+          debugEvents: [],
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        }),
+        onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window["echo"];
+    attachMvBridge(null);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <LyricsPage initialLyrics={lyrics} />
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Air Song" })).toBeTruthy();
+    expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
+    expect(container.querySelector(".lyrics-page--empty")).toBeNull();
+    expect(container.querySelector('.lyrics-page[data-view-mode="mv"][data-airplay-receiver="true"]')).toBeTruthy();
   });
 
   it("opens the current track album detail from the lyrics header", async () => {

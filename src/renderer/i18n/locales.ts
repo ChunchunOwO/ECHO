@@ -440,10 +440,17 @@ export type TranslationKey =
   | 'mvSettings.network.autoPreload'
   | 'mvSettings.network.autoPreloadDescription'
   | 'mvSettings.network.maxQuality'
+  | 'mvSettings.network.preferHighestViewCount'
+  | 'mvSettings.network.preferHighestViewCountDescription'
   | 'mvSettings.network.replayAudioOnChange'
   | 'mvSettings.network.replayAudioOnChangeDescription'
   | 'mvSettings.network.restartAudioOnLoad'
   | 'mvSettings.network.restartAudioOnLoadDescription'
+  | 'mvSettings.network.syncMode'
+  | 'mvSettings.network.syncMode.balanced'
+  | 'mvSettings.network.syncMode.precise'
+  | 'mvSettings.network.syncMode.stable'
+  | 'mvSettings.network.syncModeDescription'
   | 'mvSettings.network.title'
   | 'mvSettings.offset.aria'
   | 'mvSettings.offset.description'
@@ -1429,10 +1436,17 @@ const zhCN: TranslationMap = {
   'mvSettings.network.autoPreload': '是否预加载MV',
   'mvSettings.network.autoPreloadDescription': '开启后，只要播放歌曲就会尝试提前查找并准备当前歌曲的 MV。',
   'mvSettings.network.maxQuality': '最高画质',
+  'mvSettings.network.preferHighestViewCount': '按播放量匹配',
+  'mvSettings.network.preferHighestViewCountDescription': '开启后自动搜索只用歌名和歌手，并优先选择播放量最高的可播放 MV。',
   'mvSettings.network.replayAudioOnChange': '切换MV后自动重播音乐',
   'mvSettings.network.replayAudioOnChangeDescription': '开启后，手动选择或绑定新的 MV 会重新播放当前歌曲，让新 MV 立即生效。',
   'mvSettings.network.restartAudioOnLoad': 'MV 跟随音乐进度',
   'mvSettings.network.restartAudioOnLoadDescription': '开启后，只校准 MV 视频时间，不会 seek 或重启音频；歌词同步偏移不会影响 MV。',
+  'mvSettings.network.syncMode': '同步模式',
+  'mvSettings.network.syncModeDescription': '轻微偏差用变速追平，大偏差才跳转视频。',
+  'mvSettings.network.syncMode.stable': '稳定',
+  'mvSettings.network.syncMode.balanced': '均衡',
+  'mvSettings.network.syncMode.precise': '精准',
   'mvSettings.network.title': '网络来源',
   'mvSettings.offset.aria': 'MV 同步延迟',
   'mvSettings.offset.description': '只保存到当前这首歌的 MV；换歌后不会影响其他歌曲。',
@@ -2344,10 +2358,17 @@ const zhTW: TranslationMap = {
   'mvSettings.network.autoPreload': '是否預載 MV',
   'mvSettings.network.autoPreloadDescription': '開啟後，只要播放歌曲就會嘗試提前查找並準備目前歌曲的 MV。',
   'mvSettings.network.maxQuality': '最高畫質',
+  'mvSettings.network.preferHighestViewCount': '按播放量匹配',
+  'mvSettings.network.preferHighestViewCountDescription': '開啟後自動搜尋只用歌名和歌手，並優先選擇播放量最高的可播放 MV。',
   'mvSettings.network.replayAudioOnChange': '切換 MV 後自動重播音樂',
   'mvSettings.network.replayAudioOnChangeDescription': '開啟後，手動選擇或綁定新的 MV 會重新播放目前歌曲，讓新 MV 立即生效。',
   'mvSettings.network.restartAudioOnLoad': 'MV 跟隨音樂進度',
   'mvSettings.network.restartAudioOnLoadDescription': '開啟後，只校準 MV 影片時間，不會 seek 或重啟音訊；歌詞同步偏移不會影響 MV。',
+  'mvSettings.network.syncMode': '同步模式',
+  'mvSettings.network.syncModeDescription': '輕微偏差用變速追平，大偏差才跳轉影片。',
+  'mvSettings.network.syncMode.stable': '穩定',
+  'mvSettings.network.syncMode.balanced': '均衡',
+  'mvSettings.network.syncMode.precise': '精準',
   'mvSettings.network.title': '網路來源',
   'mvSettings.offset.aria': 'MV 同步延遲',
   'mvSettings.offset.description': '只儲存到目前這首歌的 MV；換歌後不會影響其他歌曲。',
@@ -3074,10 +3095,17 @@ const jaJP: TranslationMap = {
   'mvSettings.network.autoPreload': 'MV をプリロード',
   'mvSettings.network.autoPreloadDescription': 'オンにすると、曲の再生時に現在の曲の MV を事前に検索して準備します。',
   'mvSettings.network.maxQuality': '最大画質',
+  'mvSettings.network.preferHighestViewCount': '再生数でマッチ',
+  'mvSettings.network.preferHighestViewCountDescription': 'オンにすると自動検索は曲名とアーティストだけを使い、再生数が最も多い再生可能な MV を優先します。',
   'mvSettings.network.replayAudioOnChange': 'MV 切り替え後に音楽を自動再生',
   'mvSettings.network.replayAudioOnChangeDescription': 'オンにすると、MV を手動で選択または紐付けた後、現在の曲を再生し直して新しい MV をすぐ反映します。',
   'mvSettings.network.restartAudioOnLoad': 'MV を音楽の進行に追従',
   'mvSettings.network.restartAudioOnLoadDescription': 'オンにすると MV の映像時間だけを補正し、音声のシークや再起動は行いません。歌詞同期オフセットの影響も受けません。',
+  'mvSettings.network.syncMode': '同期モード',
+  'mvSettings.network.syncModeDescription': '小さなズレは再生速度で追従し、大きなズレだけ映像をシークします。',
+  'mvSettings.network.syncMode.stable': '安定',
+  'mvSettings.network.syncMode.balanced': 'バランス',
+  'mvSettings.network.syncMode.precise': '高精度',
   'mvSettings.network.title': 'ネットワークソース',
   'mvSettings.offset.aria': 'MV 同期遅延',
   'mvSettings.offset.description': '現在の曲の MV だけに保存され、別の曲には影響しません。',
@@ -3870,10 +3898,17 @@ const enUS: TranslationMap = {
   'mvSettings.network.autoPreload': 'Preload MV',
   'mvSettings.network.autoPreloadDescription': 'When enabled, playing a song will look up and prepare its MV ahead of time.',
   'mvSettings.network.maxQuality': 'Max quality',
+  'mvSettings.network.preferHighestViewCount': 'Match by views',
+  'mvSettings.network.preferHighestViewCountDescription': 'When enabled, auto search uses only the song and artist, then prefers the playable MV with the highest view count.',
   'mvSettings.network.replayAudioOnChange': 'Replay music after switching MV',
   'mvSettings.network.replayAudioOnChangeDescription': 'When enabled, manually selecting or binding a new MV replays the current song so the MV applies immediately.',
   'mvSettings.network.restartAudioOnLoad': 'Follow music progress',
   'mvSettings.network.restartAudioOnLoadDescription': 'When enabled, only the MV video time is corrected. Audio is not seeked or restarted, and lyrics sync offsets do not affect the MV.',
+  'mvSettings.network.syncMode': 'Sync mode',
+  'mvSettings.network.syncModeDescription': 'Small drift is corrected by video speed; large drift seeks the video.',
+  'mvSettings.network.syncMode.stable': 'Stable',
+  'mvSettings.network.syncMode.balanced': 'Balanced',
+  'mvSettings.network.syncMode.precise': 'Precise',
   'mvSettings.network.title': 'Network Sources',
   'mvSettings.offset.aria': 'MV sync offset',
   'mvSettings.offset.description': 'Saved only for this song MV; other songs are unaffected.',

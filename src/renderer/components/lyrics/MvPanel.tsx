@@ -48,6 +48,7 @@ const fallbackMvSettings: MvSettings = {
   autoSearch: true,
   autoPreload: true,
   autoApplyThreshold: 0.7,
+  preferHighestViewCount: false,
   immersiveBackground: true,
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
@@ -57,6 +58,7 @@ const fallbackMvSettings: MvSettings = {
   immersiveBackgroundOverlayOpacityPercent: 0,
   lyricsReadabilityEnhanced: false,
   restartAudioOnLoad: false,
+  syncMode: 'balanced',
   replayAudioOnChange: true,
   enabledProviders: ['bilibili', 'youtube'],
   providerOrder: ['bilibili', 'youtube'],
@@ -129,22 +131,45 @@ const getUnavailableReason = ({
   return 'MV 不可用';
 };
 
-const mvSyncDriftThresholdSeconds = 0.8;
 const mvSyncCorrectionCooldownMs = 1000;
+const mvSyncProfiles: Record<NonNullable<MvSettings['syncMode']>, { toleranceSeconds: number; hardSeekSeconds: number; maxRateDelta: number }> = {
+  stable: { toleranceSeconds: 1.2, hardSeekSeconds: 4, maxRateDelta: 0.06 },
+  balanced: { toleranceSeconds: 0.7, hardSeekSeconds: 2.5, maxRateDelta: 0.1 },
+  precise: { toleranceSeconds: 0.3, hardSeekSeconds: 1.2, maxRateDelta: 0.15 },
+};
 const playbackSeekedEvent = 'playback:seeked';
 const mvEndedBeforeAudioEvent = 'mv:ended-before-audio';
 const lyricsSmartReadableVideoSampleEvent = 'lyrics:smart-readable-video-sample';
 const isReceiverTrackId = (value: string | null | undefined): value is string =>
   Boolean(value?.startsWith('dlna-receiver:') || value?.startsWith('airplay-receiver:'));
 const shouldUseSnapshotMvSearch = (track: LibraryTrack | null | undefined, trackId: string | null | undefined): boolean =>
-  Boolean(track?.isTemporary || track?.mediaType === 'remote' || isReceiverTrackId(trackId));
+  Boolean(isReceiverTrackId(trackId) || track?.isTemporary || track?.mediaType === 'remote');
 const bestMvCandidate = (candidates: MvMatchCandidate[]): MvMatchCandidate | null =>
   candidates.find((entry) => entry.playableInApp) ?? candidates[0] ?? null;
+const shouldAutoSearchForTrack = (
+  settings: MvSettings,
+  currentTrack: LibraryTrack | null | undefined,
+  trackId: string | null | undefined,
+  isAudioPlaying: boolean,
+): boolean => {
+  if (!trackId) {
+    return false;
+  }
+
+  const autoSearchEnabled = settings.autoSearch !== false;
+  const autoPreloadEnabled = settings.autoPreload !== false;
+  if (!autoSearchEnabled && !autoPreloadEnabled) {
+    return false;
+  }
+
+  return isAudioPlaying || shouldUseSnapshotMvSearch(currentTrack, trackId);
+};
 const mvSettingsKeys = [
   'enabled',
   'autoSearch',
   'autoPreload',
   'autoApplyThreshold',
+  'preferHighestViewCount',
   'immersiveBackground',
   'immersiveBackgroundScalePercent',
   'immersiveBackgroundOffsetXPercent',
@@ -154,6 +179,7 @@ const mvSettingsKeys = [
   'immersiveBackgroundOverlayOpacityPercent',
   'lyricsReadabilityEnhanced',
   'restartAudioOnLoad',
+  'syncMode',
   'replayAudioOnChange',
   'enabledProviders',
   'providerOrder',
@@ -164,6 +190,7 @@ const mvReloadSettingsKeys = [
   'enabled',
   'autoSearch',
   'autoPreload',
+  'preferHighestViewCount',
   'enabledProviders',
   'providerOrder',
   'maxQuality',
@@ -240,18 +267,6 @@ const targetVideoTimeForAudio = (video: HTMLVideoElement, audioClock: MvAudioClo
   return offsetPosition;
 };
 
-const getVideoDriftSeconds = (video: HTMLVideoElement, targetTime: number): number => {
-  const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-  const rawDrift = Math.abs(currentTime - targetTime);
-  const duration = Number(video.duration);
-
-  if (video.loop && Number.isFinite(duration) && duration > 0) {
-    return Math.min(rawDrift, Math.abs(duration - rawDrift));
-  }
-
-  return rawDrift;
-};
-
 const playVideo = (video: HTMLVideoElement): void => {
   try {
     const result = video.play();
@@ -302,6 +317,25 @@ const snapshotSearchRequestForTrack = ({
     query: [searchTitle, searchArtist].filter(Boolean).join(' '),
   };
 };
+
+const getVideoSignedDriftSeconds = (video: HTMLVideoElement, targetTime: number): number => {
+  const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  let drift = targetTime - currentTime;
+  const duration = Number(video.duration);
+
+  if (video.loop && Number.isFinite(duration) && duration > 0) {
+    if (drift > duration / 2) {
+      drift -= duration;
+    } else if (drift < -duration / 2) {
+      drift += duration;
+    }
+  }
+
+  return drift;
+};
+
+const syncProfileForSettings = (settings: MvSettings): (typeof mvSyncProfiles)[keyof typeof mvSyncProfiles] =>
+  mvSyncProfiles[settings.syncMode ?? 'balanced'] ?? mvSyncProfiles.balanced;
 
 const uniqueCoverUrls = (...urls: Array<string | null | undefined>): string[] =>
   Array.from(new Set(urls.map((url) => url?.trim()).filter((url): url is string => Boolean(url))));
@@ -561,15 +595,18 @@ export const MvPanel = ({
         return;
       }
       let video = await window.echo.mv.getSelected(trackId);
-      if (!video && nextSettings.autoPreload && isAudioPlayingRef.current && preloadAttemptRef.current !== trackId) {
+      if (
+        !video &&
+        shouldAutoSearchForTrack(nextSettings, currentTrack, trackId, isAudioPlayingRef.current) &&
+        preloadAttemptRef.current !== trackId
+      ) {
         preloadAttemptRef.current = trackId;
         video = (await searchCandidatesForActiveTrack()) ?? (await window.echo.mv.getSelected(trackId));
       }
       let resolvedVideo = await resolveNetworkVideo(video);
       if (
         isUnplayableSearchCandidate(resolvedVideo) &&
-        nextSettings.autoPreload &&
-        isAudioPlayingRef.current &&
+        shouldAutoSearchForTrack(nextSettings, currentTrack, trackId, isAudioPlayingRef.current) &&
         preloadAttemptRef.current !== trackId
       ) {
         preloadAttemptRef.current = trackId;
@@ -851,10 +888,13 @@ export const MvPanel = ({
     }
 
     const targetTime = targetVideoTimeForAudio(video, audioClockRef.current, selectedVideo?.offsetMs ?? 0);
-    const drift = getVideoDriftSeconds(video, targetTime);
+    const signedDrift = getVideoSignedDriftSeconds(video, targetTime);
+    const drift = Math.abs(signedDrift);
+    const syncProfile = syncProfileForSettings(settingsRef.current);
     const now = Date.now();
 
-    if (!options.force && drift <= mvSyncDriftThresholdSeconds) {
+    if (!options.force && drift <= syncProfile.toleranceSeconds) {
+      applyVideoPlaybackRate(video);
       return false;
     }
 
@@ -862,8 +902,19 @@ export const MvPanel = ({
       return false;
     }
 
+    if (!options.force && drift < syncProfile.hardSeekSeconds) {
+      const correction = Math.max(-syncProfile.maxRateDelta, Math.min(syncProfile.maxRateDelta, signedDrift / syncProfile.hardSeekSeconds));
+      try {
+        video.playbackRate = audioClockRef.current.playbackRate * (1 + correction);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     try {
       video.currentTime = targetTime;
+      applyVideoPlaybackRate(video);
       if (options.recordCooldown !== false) {
         lastVideoSyncAtRef.current = now;
       }

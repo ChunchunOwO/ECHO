@@ -311,6 +311,43 @@ const candidateTitle = (filePath: string): string => basename(filePath, extname(
 const sourceIdForCandidate = (candidate: MvMatchCandidate): string =>
   candidate.id.startsWith(`${candidate.provider}:`) ? candidate.id.slice(candidate.provider.length + 1) : candidate.id;
 
+const directTrackSearchQuery = (track: Pick<LibraryTrack, 'title' | 'artist' | 'albumArtist'>): string | undefined => {
+  const query = [track.title, track.artist || track.albumArtist]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+  return query || undefined;
+};
+
+const networkSearchQueryOverride = (
+  track: Pick<LibraryTrack, 'title' | 'artist' | 'albumArtist'>,
+  settings: MvSettings,
+  query?: string | null,
+): string | undefined => {
+  const explicitQuery = query?.trim();
+  if (explicitQuery) {
+    return explicitQuery;
+  }
+
+  return settings.preferHighestViewCount ? directTrackSearchQuery(track) : undefined;
+};
+
+const compareNetworkCandidates = (settings: MvSettings) => (left: MvMatchCandidate, right: MvMatchCandidate): number => {
+  if (settings.preferHighestViewCount) {
+    const viewDelta = (right.viewCount ?? -1) - (left.viewCount ?? -1);
+    if (viewDelta !== 0) {
+      return viewDelta;
+    }
+  }
+
+  const scoreDelta = right.score - left.score;
+  if (scoreDelta !== 0) {
+    return scoreDelta;
+  }
+
+  return (right.viewCount ?? -1) - (left.viewCount ?? -1);
+};
+
 const customMvFromUrl = (value: string): { provider: NetworkMvProviderId; sourceId: string; providerUrl: string; title: string } => {
   const trimmed = value.trim();
   if (/^BV[0-9A-Za-z]+$/.test(trimmed)) {
@@ -413,6 +450,10 @@ const normalizeSettingsPatch = (patch: Partial<MvSettings>): Partial<MvSettings>
     normalized.autoApplyThreshold = normalizeAutoApplyThreshold(patch.autoApplyThreshold);
   }
 
+  if (typeof patch.preferHighestViewCount === 'boolean') {
+    normalized.preferHighestViewCount = patch.preferHighestViewCount;
+  }
+
   if (typeof patch.immersiveBackground === 'boolean') {
     normalized.immersiveBackground = patch.immersiveBackground;
   }
@@ -449,6 +490,10 @@ const normalizeSettingsPatch = (patch: Partial<MvSettings>): Partial<MvSettings>
     normalized.restartAudioOnLoad = patch.restartAudioOnLoad;
   }
 
+  if (patch.syncMode === 'stable' || patch.syncMode === 'balanced' || patch.syncMode === 'precise') {
+    normalized.syncMode = patch.syncMode;
+  }
+
   if (typeof patch.replayAudioOnChange === 'boolean') {
     normalized.replayAudioOnChange = patch.replayAudioOnChange;
   }
@@ -463,6 +508,7 @@ const appSettingsToMvSettings = (): MvSettings => {
     autoSearch: settings.mvAutoSearch,
     autoPreload: settings.mvAutoPreload !== false,
     autoApplyThreshold: normalizeAutoApplyThreshold(settings.mvAutoApplyThreshold),
+    preferHighestViewCount: settings.mvPreferHighestViewCount === true,
     immersiveBackground: settings.mvImmersiveBackground !== false,
     immersiveBackgroundScalePercent: normalizePercent(settings.mvImmersiveBackgroundScalePercent, 115, 100, 220),
     immersiveBackgroundOffsetXPercent: normalizePercent(settings.mvImmersiveBackgroundOffsetXPercent, 50, 0, 100),
@@ -472,6 +518,7 @@ const appSettingsToMvSettings = (): MvSettings => {
     immersiveBackgroundOverlayOpacityPercent: normalizePercent(settings.mvImmersiveBackgroundOverlayOpacityPercent, 0, 0, 100),
     lyricsReadabilityEnhanced: settings.mvLyricsReadabilityEnhanced === true,
     restartAudioOnLoad: settings.mvRestartAudioOnLoad === true,
+    syncMode: settings.mvSyncMode ?? 'balanced',
     replayAudioOnChange: settings.mvReplayAudioOnChange !== false,
     enabledProviders: settings.mvEnabledProviders,
     providerOrder: settings.mvProviderOrder,
@@ -548,6 +595,9 @@ export class MvService {
     if (typeof normalized.autoApplyThreshold === 'number') {
       appSettingsPatch.mvAutoApplyThreshold = normalized.autoApplyThreshold;
     }
+    if (typeof normalized.preferHighestViewCount === 'boolean') {
+      appSettingsPatch.mvPreferHighestViewCount = normalized.preferHighestViewCount;
+    }
     if (typeof normalized.immersiveBackground === 'boolean') {
       appSettingsPatch.mvImmersiveBackground = normalized.immersiveBackground;
     }
@@ -574,6 +624,9 @@ export class MvService {
     }
     if (typeof normalized.restartAudioOnLoad === 'boolean') {
       appSettingsPatch.mvRestartAudioOnLoad = normalized.restartAudioOnLoad;
+    }
+    if (normalized.syncMode) {
+      appSettingsPatch.mvSyncMode = normalized.syncMode;
     }
     if (typeof normalized.replayAudioOnChange === 'boolean') {
       appSettingsPatch.mvReplayAudioOnChange = normalized.replayAudioOnChange;
@@ -633,7 +686,7 @@ export class MvService {
       return [];
     }
 
-    const queryOverride = query?.trim() || undefined;
+    const queryOverride = networkSearchQueryOverride(track, settings, query);
     const enabled = new Set(settings.enabledProviders);
     const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
     const providerResults = await Promise.all(
@@ -650,15 +703,7 @@ export class MvService {
         }
       }),
     );
-    const candidates = providerResults
-      .flat()
-      .sort((left, right) => {
-        const scoreDelta = right.score - left.score;
-        if (scoreDelta !== 0) {
-          return scoreDelta;
-        }
-        return (right.viewCount ?? -1) - (left.viewCount ?? -1);
-      });
+    const candidates = providerResults.flat().sort(compareNetworkCandidates(settings));
     const normalizedCandidates =
       track.mediaType === 'remote'
         ? candidates.map((candidate) => ({
@@ -677,7 +722,7 @@ export class MvService {
     }
 
     const track = this.trackSnapshotToLibraryTrack(request);
-    const queryOverride = request.query?.trim() || undefined;
+    const queryOverride = networkSearchQueryOverride(track, settings, request.query);
     const enabled = new Set(settings.enabledProviders);
     const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
     const providerResults = await Promise.all(
@@ -696,13 +741,7 @@ export class MvService {
     );
     const candidates = providerResults
       .flat()
-      .sort((left, right) => {
-        const scoreDelta = right.score - left.score;
-        if (scoreDelta !== 0) {
-          return scoreDelta;
-        }
-        return (right.viewCount ?? -1) - (left.viewCount ?? -1);
-      })
+      .sort(compareNetworkCandidates(settings))
       .map((candidate) => ({
         ...candidate,
         filePath: null,
@@ -718,7 +757,7 @@ export class MvService {
     }
 
     const track = this.trackSnapshotToLibraryTrack(request);
-    const queryOverride = request.query?.trim() || undefined;
+    const queryOverride = networkSearchQueryOverride(track, settings, request.query);
     const enabled = new Set(settings.enabledProviders);
     const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
     const providerResults = await Promise.all(
@@ -737,13 +776,7 @@ export class MvService {
     );
     const candidates = providerResults
       .flat()
-      .sort((left, right) => {
-        const scoreDelta = right.score - left.score;
-        if (scoreDelta !== 0) {
-          return scoreDelta;
-        }
-        return (right.viewCount ?? -1) - (left.viewCount ?? -1);
-      })
+      .sort(compareNetworkCandidates(settings))
       .map((candidate) => ({
         ...candidate,
         filePath: null,
@@ -1759,8 +1792,8 @@ export class MvService {
     const hasCurrentResolver = variants.some((variant) => {
       const raw = recordFromJson(variant.raw_json);
       return Boolean(
-        raw &&
-          raw.resolver === 'bilibili-dash-video-v3' &&
+          raw &&
+          raw.resolver === 'bilibili-dash-video-v4' &&
           Number.isFinite(Number(raw.qualityRank)),
       );
     });
@@ -1799,8 +1832,15 @@ export class MvService {
     return [...candidates]
       .filter((candidate) => candidate.provider === 'local' || enabledProviders.has(candidate.provider as NetworkMvProviderId))
       .filter((candidate) => candidate.playableInApp)
-      .filter((candidate) => candidate.score >= normalizeAutoApplyThreshold(settings.autoApplyThreshold))
+      .filter((candidate) => settings.preferHighestViewCount || candidate.score >= normalizeAutoApplyThreshold(settings.autoApplyThreshold))
       .sort((left, right) => {
+        if (settings.preferHighestViewCount) {
+          const viewDelta = (right.viewCount ?? -1) - (left.viewCount ?? -1);
+          if (viewDelta !== 0) {
+            return viewDelta;
+          }
+        }
+
         const scoreDelta = right.score - left.score;
         if (scoreDelta !== 0) {
           return scoreDelta;

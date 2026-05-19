@@ -852,6 +852,145 @@ describe('DownloadService', () => {
     expect(existsSync(completedJob.outputPath!)).toBe(true);
   });
 
+  it('downloads direct streaming audio into a playlist subfolder', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const importAudioFile = vi.fn(async () => ({ id: 'track-playlist' }));
+    const fetchRunner = vi.fn(async () => {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: {
+          'content-length': '4',
+          'content-type': 'audio/mpeg',
+        },
+      });
+    });
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => ytDlpPath,
+      {
+        fetch: fetchRunner,
+        importAudioFile,
+        getAccountCredentials: (provider) => ({ provider }),
+        writeEmbeddedTrackTags: vi.fn(async () => undefined),
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: false });
+
+    const job = service.createUrlJob('https://m801.music.126.net/audio.mp3', {
+      title: 'Playlist Song',
+      artist: 'Playlist Artist',
+      outputSubdirectory: 'Daily Mix: 01',
+      directAudio: true,
+      directAudioMimeType: 'audio/mpeg',
+      directAudioExtension: 'mp3',
+    });
+    const completedJob = await waitForJob(service, job.id);
+    const playlistFolder = join(outputDirectory, 'Daily Mix 01');
+
+    expect(completedJob.status).toBe('completed');
+    expect(existsSync(playlistFolder)).toBe(true);
+    expect(completedJob.outputPath).toContain(playlistFolder);
+    expect(importAudioFile).toHaveBeenCalledWith(
+      completedJob.outputPath,
+      expect.objectContaining({
+        folderPath: playlistFolder,
+      }),
+    );
+  });
+
+  it('restores unfinished direct audio jobs and resumes from the partial file', async () => {
+    const outputDirectory = makeTempRoot();
+    const outputPath = join(outputDirectory, 'Artist - Resume Song.mp3');
+    writeFileSync(outputPath, Buffer.from([1, 2]));
+    const saveJobs = vi.fn();
+    const fetchRunner = vi.fn(async () => {
+      return new Response(new Uint8Array([3, 4]), {
+        status: 206,
+        headers: {
+          'content-range': 'bytes 2-3/4',
+          'content-length': '2',
+          'content-type': 'audio/mpeg',
+        },
+      });
+    });
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => null,
+      {
+        fetch: fetchRunner,
+        loadJobs: () => ({
+          version: 1,
+          jobs: [
+            {
+              id: 'job-resume',
+              sourceUrl: 'https://cdn.example/resume.mp3',
+              provider: 'unknown',
+              audioStrategy: 'best_available',
+              status: 'downloading',
+              title: 'Resume Song',
+              durationSeconds: null,
+              thumbnailUrl: null,
+              webpageUrl: null,
+              outputPath,
+              downloadedBytes: 2,
+              totalBytes: 4,
+              speedBytesPerSecond: null,
+              etaSeconds: null,
+              importedTrackId: null,
+              progress: 50,
+              error: null,
+              createdAt: '2026-05-19T00:00:00.000Z',
+              updatedAt: '2026-05-19T00:00:01.000Z',
+              completedAt: null,
+            },
+          ],
+          jobOptions: {
+            'job-resume': {
+              outputDirectory,
+              importToLibrary: false,
+              bindMvAfterImport: false,
+              requestHeaders: {},
+              suggestedTitle: 'Resume Song',
+              suggestedArtist: 'Artist',
+              suggestedAlbum: null,
+              suggestedAlbumArtist: null,
+              suggestedCoverUrl: null,
+              suggestedCoverData: null,
+              webpageUrl: null,
+              directAudio: true,
+              directAudioMimeType: 'audio/mpeg',
+              directAudioExtension: 'mp3',
+              streamingProvider: null,
+              streamingProviderTrackId: null,
+              streamingStableKey: null,
+            },
+          },
+        }),
+        saveJobs,
+        writeEmbeddedTrackTags: vi.fn(async () => undefined),
+      },
+    );
+
+    const completedJob = await waitForJob(service, 'job-resume');
+
+    expect(fetchRunner).toHaveBeenCalledWith(
+      'https://cdn.example/resume.mp3',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Range: 'bytes=2-' }),
+      }),
+    );
+    expect([...readFileSync(outputPath)]).toEqual([1, 2, 3, 4]);
+    expect(completedJob.status).toBe('completed');
+    expect(saveJobs).toHaveBeenCalled();
+  });
+
   it('adds provider auth headers to direct NetEase audio downloads in the main process', async () => {
     const ytDlpPath = makeToolPath();
     const outputDirectory = makeTempRoot();

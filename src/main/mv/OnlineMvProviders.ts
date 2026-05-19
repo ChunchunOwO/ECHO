@@ -235,13 +235,34 @@ const numericArray = (value: unknown): number[] =>
 const fpsFromDashStream = (stream: Record<string, unknown>, label: string): number | null => {
   const frameRate = text(stream.frameRate ?? stream.frame_rate);
   if (frameRate) {
-    const numericRate = Number(frameRate.replace(/fps$/i, ''));
+    const normalizedRate = frameRate.replace(/fps$/i, '').trim();
+    const ratioMatch = normalizedRate.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+    const numericRate = ratioMatch
+      ? Number(ratioMatch[1]) / Number(ratioMatch[2])
+      : Number(normalizedRate);
     if (Number.isFinite(numericRate) && numericRate > 0) {
       return Math.round(numericRate);
     }
   }
 
-  return label.includes('60fps') ? 60 : null;
+  const labelFrameRate = label.match(/\b(\d{2,3})\s*fps\b/i);
+  return labelFrameRate ? Number(labelFrameRate[1]) : null;
+};
+
+const frameRateLabel = (fps: number): string => `${Math.round(fps)}fps`;
+
+const labelWithFrameRate = (label: string, fps: number | null): string => {
+  if (!fps || fps < 55) {
+    return label;
+  }
+
+  const suffix = frameRateLabel(fps);
+  return new RegExp(`\\b${suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(label) ? label : `${label} ${suffix}`;
+};
+
+const bilibiliStreamVariantId = (streamQn: number, fps: number | null): string => {
+  const highFrameRate = fps && fps >= 100 ? `-${frameRateLabel(fps).toLowerCase()}` : '';
+  return `bilibili-qn-${streamQn}${highFrameRate}`;
 };
 
 const qualityFromHeight = (
@@ -407,7 +428,7 @@ class ProviderBase {
 export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProvider {
   readonly id = 'bilibili' as const;
 
-  async search(track: LibraryTrack, _settings: MvSettings, queryOverride?: string): Promise<MvMatchCandidate[]> {
+  async search(track: LibraryTrack, settings: MvSettings, queryOverride?: string): Promise<MvMatchCandidate[]> {
     const query = queryOverride?.trim() || [track.title, track.artist || track.albumArtist, 'MV'].filter(Boolean).join(' ');
     const headers = bilibiliSearchHeaders(query, this.cookieHeaders(this.id));
     const wbiMixinKey = await this.bilibiliWbiMixinKey(headers);
@@ -465,6 +486,13 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       ];
     })
       .sort((left, right) => {
+        if (settings.preferHighestViewCount) {
+          const viewDelta = (right.viewCount ?? -1) - (left.viewCount ?? -1);
+          if (viewDelta !== 0) {
+            return viewDelta;
+          }
+        }
+
         const scoreDelta = right.score - left.score;
         if (scoreDelta !== 0) {
           return scoreDelta;
@@ -540,7 +568,8 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
           const streamQn = number(stream.id) ?? actualQn ?? (source === 'durl' && qn > 120 ? 120 : qn);
           const streamQuality = bilibiliQualityMap[streamQn] ?? inferredQuality;
           const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
-          const streamId = `bilibili-qn-${streamQn}`;
+          const variantFps = fpsFromDashStream(stream, streamQuality.label);
+          const streamId = bilibiliStreamVariantId(streamQn, variantFps);
 
           if (!streamUrl || variants.some((variant) => variant.id === streamId || variant.url === streamUrl)) {
             continue;
@@ -548,12 +577,11 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
 
           const variantHeight = streamHeight ?? qualityHeight[streamQuality.tier];
           const streamWidth = nullableNumber(stream.width);
-          const variantFps = fpsFromDashStream(stream, streamQuality.label);
           if (variantFps && variantFps >= 55 && settings.allow60fps === false) {
             continue;
           }
 
-          const label = variantFps && variantFps >= 55 && !/\b60\s*fps\b/i.test(streamQuality.label) ? `${streamQuality.label} 60fps` : streamQuality.label;
+          const label = labelWithFrameRate(streamQuality.label, variantFps);
 
           variants.push({
             ...makeQualityVariant(streamId, label, streamQuality.tier, {
@@ -576,7 +604,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
             },
             rawProviderJson: {
               provider: this.id,
-              resolver: 'bilibili-dash-video-v3',
+              resolver: 'bilibili-dash-video-v4',
               source,
               endpoint: wbiMixinKey ? 'wbi-playurl' : 'playurl',
               requestedQn: qn,

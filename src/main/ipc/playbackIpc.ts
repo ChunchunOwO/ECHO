@@ -13,6 +13,7 @@ import type {
   PlaybackStatus,
 } from '../../shared/types/playback';
 import type { LibraryTrack } from '../../shared/types/library';
+import type { AirPlayReceiverState, AirPlayReceiverStatus } from '../../shared/types/connect';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
 import { streamingProviderNames, type StreamingAudioQuality, type StreamingProviderName } from '../../shared/types/streaming';
 import type { AudioSessionAutomixRequest } from '../audio/audioTypes';
@@ -23,6 +24,7 @@ import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { getAppSettings } from '../app/appSettings';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
+import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getStreamingService } from '../streaming/StreamingService';
 import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 import { normalizePlaybackFilePath } from './playbackPath';
@@ -762,6 +764,39 @@ const toPlaybackStatus = (): PlaybackStatus => {
   };
 };
 
+const receiverStateToPlaybackState = (state: AirPlayReceiverState): PlaybackStatus['state'] => {
+  switch (state) {
+    case 'playing':
+    case 'paused':
+    case 'stopped':
+    case 'error':
+      return state;
+    case 'ready':
+      return 'stopped';
+    default:
+      return 'idle';
+  }
+};
+
+const airPlayReceiverStatusToPlaybackStatus = (status: AirPlayReceiverStatus): PlaybackStatus => ({
+  state: receiverStateToPlaybackState(status.state),
+  currentTrackId: status.currentSourceId,
+  positionMs: Math.round(status.positionSeconds * 1000),
+  durationMs: Math.round(status.durationSeconds * 1000),
+  filePath: status.currentSourceId,
+});
+
+const isAirPlayReceiverSourceId = (value: string | null | undefined): boolean => Boolean(value?.startsWith('airplay-receiver:'));
+
+const getActiveAirPlayReceiverService = (): ReturnType<typeof getAirPlayReceiverSpikeService> | null => {
+  const audioStatus = getAudioSession().getStatus();
+  if (!isAirPlayReceiverSourceId(audioStatus.currentFilePath) && !isAirPlayReceiverSourceId(audioStatus.currentTrackId)) {
+    return null;
+  }
+  const service = getAirPlayReceiverSpikeService();
+  return service.isCurrentSource(audioStatus.currentFilePath) || service.isCurrentSource(audioStatus.currentTrackId) ? service : null;
+};
+
 const enqueuePlaybackStatusCommand = async (fn: () => Promise<PlaybackStatus> | PlaybackStatus): Promise<PlaybackStatus> => {
   try {
     return await enqueueAudioCommand(fn);
@@ -1072,6 +1107,14 @@ export const registerPlaybackIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     try {
+      const airPlayReceiver = getActiveAirPlayReceiverService();
+      if (airPlayReceiver) {
+        const status = await airPlayReceiver.playPlayback();
+        savePlaybackMemoryNow();
+        void syncSmtcStatus();
+        return airPlayReceiverStatusToPlaybackStatus(status);
+      }
+
       await getAudioSession().play();
       savePlaybackMemoryNow();
       void syncSmtcStatus();
@@ -1086,6 +1129,14 @@ export const registerPlaybackIpc = (): void => {
     }
   }));
   ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
+    const airPlayReceiver = getActiveAirPlayReceiverService();
+    if (airPlayReceiver) {
+      const status = await airPlayReceiver.pausePlayback();
+      savePlaybackMemoryNow();
+      void syncSmtcStatus();
+      return airPlayReceiverStatusToPlaybackStatus(status);
+    }
+
     await getAudioSession().pause();
     savePlaybackMemoryNow();
     void syncSmtcStatus();
@@ -1102,7 +1153,16 @@ export const registerPlaybackIpc = (): void => {
   }));
   ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     try {
-      await getAudioSession().seek(optionalNonNegativeNumber(positionSeconds) ?? 0);
+      const seekSeconds = optionalNonNegativeNumber(positionSeconds) ?? 0;
+      const airPlayReceiver = getActiveAirPlayReceiverService();
+      if (airPlayReceiver) {
+        const status = await airPlayReceiver.seekPlayback(seekSeconds);
+        savePlaybackMemoryNow();
+        void syncSmtcStatus();
+        return airPlayReceiverStatusToPlaybackStatus(status);
+      }
+
+      await getAudioSession().seek(seekSeconds);
       savePlaybackMemoryNow();
       void syncSmtcStatus();
       return toPlaybackStatus();

@@ -39,8 +39,22 @@ const parseRange = (rangeHeader: string | null, size: number): { start: number; 
     return null;
   }
 
-  const start = match[1] ? Number(match[1]) : 0;
-  const end = match[2] ? Number(match[2]) : size - 1;
+  const rawStart = match[1];
+  const rawEnd = match[2];
+  if (!rawStart && !rawEnd) {
+    return null;
+  }
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0 || size <= 0) {
+      return null;
+    }
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+
+  const start = Number(rawStart);
+  const end = rawEnd ? Number(rawEnd) : size - 1;
   if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) {
     return null;
   }
@@ -144,6 +158,12 @@ export const registerAudioProtocolHandler = (): void => {
           headers.set('Range', range);
         }
         const upstream = await fetch(source.url, { headers, redirect: 'follow' });
+        if (upstream.status === 416) {
+          return new Response('', {
+            status: 416,
+            headers: passthroughHeaders(upstream, guessAudioMimeType(source.url, source.mimeType)),
+          });
+        }
         if (!upstream.ok && upstream.status !== 206) {
           return new Response('', { status: 502 });
         }
@@ -161,12 +181,18 @@ export const registerAudioProtocolHandler = (): void => {
         return new Response('', { status: 404 });
       }
 
-      const range = parseRange(request.headers.get('range'), fileStat.size);
+      const rangeHeader = request.headers.get('range');
+      const range = parseRange(rangeHeader, fileStat.size);
       const headers = new Headers({
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-store',
         'Content-Type': guessAudioMimeType(source.url, source.mimeType),
       });
+      if (rangeHeader && !range) {
+        headers.set('Content-Length', '0');
+        headers.set('Content-Range', `bytes */${fileStat.size}`);
+        return new Response('', { status: 416, headers });
+      }
       if (range) {
         headers.set('Content-Length', String(range.end - range.start + 1));
         headers.set('Content-Range', `bytes ${range.start}-${range.end}/${fileStat.size}`);

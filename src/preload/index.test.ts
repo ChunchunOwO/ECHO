@@ -7,6 +7,7 @@ const listeners = new Map<string, (...args: unknown[]) => void>();
 let exposedApi: EchoApi | null = null;
 let fakeAudioInstances: FakeAudio[] = [];
 let queuedAudioPlayFailures: Error[] = [];
+let ignoreAudioCurrentTimeWrites = false;
 
 const createTestLocalStorage = (): Storage => {
   const values = new Map<string, string>();
@@ -27,11 +28,11 @@ class FakeAudio {
   src = '';
   volume = 1;
   playbackRate = 1;
-  currentTime = 0;
   duration = 12;
   networkState = 1;
   readyState = 0;
   error: MediaError | null = null;
+  private currentTimeValue = 0;
   readonly play = vi.fn(async () => {
     const failure = queuedAudioPlayFailures.shift();
     if (failure) {
@@ -52,10 +53,25 @@ class FakeAudio {
     fakeAudioInstances.push(this);
   }
 
+  get currentTime(): number {
+    return this.currentTimeValue;
+  }
+
+  set currentTime(value: number) {
+    if (!ignoreAudioCurrentTimeWrites) {
+      this.currentTimeValue = value;
+    }
+    this.emit('seeking');
+  }
+
   addEventListener(event: string, listener: () => void): void {
     const listenersForEvent = this.eventListeners.get(event) ?? new Set<() => void>();
     listenersForEvent.add(listener);
     this.eventListeners.set(event, listenersForEvent);
+  }
+
+  removeEventListener(event: string, listener: () => void): void {
+    this.eventListeners.get(event)?.delete(listener);
   }
 
   removeAttribute(name: string): void {
@@ -105,6 +121,7 @@ describe('preload SMTC API', () => {
     listeners.clear();
     fakeAudioInstances = [];
     queuedAudioPlayFailures = [];
+    ignoreAudioCurrentTimeWrites = false;
     exposedApi = null;
     vi.stubGlobal('window', {
       localStorage: createTestLocalStorage(),
@@ -298,6 +315,40 @@ describe('preload SMTC API', () => {
       replayGainEnabled: true,
       replayGainMode: 'track',
       replayGainAppliedDb: -6,
+    });
+  });
+
+  it('rejects a system audio seek when HTMLAudio stays at the old position', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/seek-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.mp3',
+      trackId: 'track-seek',
+      probe: { durationSeconds: 10 },
+    });
+    fakeAudioInstances[0].currentTime = 2;
+    ignoreAudioCurrentTimeWrites = true;
+
+    const seekPromise = exposedApi!.playback.seek(8);
+    const seekAssertion = expect(seekPromise).rejects.toThrow('system_audio_seek_timeout');
+    await vi.advanceTimersByTimeAsync(2600);
+
+    await seekAssertion;
+    await expect(exposedApi!.audio.getStatus()).resolves.toMatchObject({
+      outputMode: 'system',
+      error: 'system_audio_seek_timeout',
+      positionSeconds: 2,
     });
   });
 

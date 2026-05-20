@@ -32,6 +32,9 @@ const rgbFromCss = (value: string | undefined): { r: number; g: number; b: numbe
   };
 };
 
+const channelSpread = (rgb: { r: number; g: number; b: number }): number =>
+  Math.max(rgb.r, rgb.g, rgb.b) - Math.min(rgb.r, rgb.g, rgb.b);
+
 describe('lyricsReadableColor', () => {
   it('uses dark readable text on white and light pink backgrounds', () => {
     const whiteSample = sampleFromRgb({ r: 252, g: 252, b: 250 });
@@ -46,6 +49,16 @@ describe('lyricsReadableColor', () => {
     }
   });
 
+  it('keeps bright-background smart colors tinted instead of collapsing to black', () => {
+    const pinkSample = sampleFromRgb({ r: 255, g: 214, b: 236 }, { saturation: 0.4, complexity: 0.24 });
+    const vars = createReadableLyricsColorVars({ sample: pinkSample, userColor: '#FFFFFF', themeMode: 'light' });
+    const primary = rgbFromCss(vars['--lyrics-smart-primary-color']);
+
+    expect(relativeLuminance(primary)).toBeLessThan(0.16);
+    expect(channelSpread(primary)).toBeGreaterThan(24);
+    expect(contrastRatio(primary, pinkSample.luminance)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('uses light readable text on black and deep blue backgrounds', () => {
     const blackSample = sampleFromRgb({ r: 5, g: 6, b: 8 });
     const blueSample = sampleFromRgb({ r: 14, g: 31, b: 62 }, { saturation: 0.6, complexity: 0.28 });
@@ -54,9 +67,19 @@ describe('lyricsReadableColor', () => {
       const vars = createReadableLyricsColorVars({ sample, userColor: '#314054', themeMode: 'dark' });
       const primary = rgbFromCss(vars['--lyrics-smart-primary-color']);
 
-      expect(relativeLuminance(primary)).toBeGreaterThan(0.78);
+      expect(relativeLuminance(primary)).toBeGreaterThan(0.68);
       expect(contrastRatio(primary, sample.luminance)).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it('keeps dark-background smart colors softly tinted instead of pure white', () => {
+    const blueSample = sampleFromRgb({ r: 14, g: 31, b: 62 }, { saturation: 0.6, complexity: 0.28 });
+    const vars = createReadableLyricsColorVars({ sample: blueSample, userColor: '#FFFFFF', themeMode: 'dark' });
+    const primary = rgbFromCss(vars['--lyrics-smart-primary-color']);
+
+    expect(relativeLuminance(primary)).toBeGreaterThan(0.68);
+    expect(channelSpread(primary)).toBeGreaterThan(12);
+    expect(contrastRatio(primary, blueSample.luminance)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('raises shadow and scrim assistance on high-saturation complex backgrounds', () => {

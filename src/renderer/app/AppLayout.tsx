@@ -367,19 +367,42 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   useEffect(() => {
     let cancelled = false;
 
-    void window.echo?.app?.getSettings?.()
-      .then((settings) => {
-        if (cancelled) {
-          return;
-        }
+    const applyFirstRunSettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'onboardingCompleted')) {
+        return;
+      }
 
-        setFirstRunSettings(settings);
-        setIsFirstRunWizardOpen(settings.onboardingCompleted === false);
-      })
-      .catch(() => undefined);
+      setFirstRunSettings((current) => ({ ...(current ?? {}), ...settings }) as AppSettings);
+      setIsFirstRunWizardOpen(settings.onboardingCompleted === false);
+    };
+
+    const loadFirstRunSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            applyFirstRunSettings(settings);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent && event.detail && typeof event.detail === 'object') {
+        applyFirstRunSettings(event.detail as Partial<AppSettings>);
+        return;
+      }
+
+      if (!cancelled) {
+        loadFirstRunSettings();
+      }
+    };
+
+    loadFirstRunSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
     };
   }, []);
 

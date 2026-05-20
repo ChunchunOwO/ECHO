@@ -17,6 +17,19 @@ const getLibraryServiceMock = vi.fn();
 const ensureCoverCacheDirectoryMock = vi.fn();
 const fromWebContentsMock = vi.fn();
 const refreshGlobalShortcutRegistrationMock = vi.fn(() => null);
+const refreshDataBackupSchedulerMock = vi.fn();
+const getDataBackupStatusMock = vi.fn(() => ({
+  enabled: false,
+  directory: null,
+  intervalDays: 7,
+  lastBackupAt: null,
+  lastBackupPath: null,
+  lastError: null,
+  nextBackupAt: null,
+  running: false,
+}));
+const runDataBackupNowMock = vi.fn();
+const importEchoUserDataBackupMock = vi.fn();
 const validateGlobalShortcutMock = vi.fn(() => ({
   accelerator: 'Ctrl+Alt+Space',
   available: true,
@@ -140,6 +153,13 @@ vi.mock('../app/backgroundPlaybackShortcuts', () => ({
   validateGlobalShortcut: validateGlobalShortcutMock,
 }));
 
+vi.mock('../app/dataBackup', () => ({
+  getDataBackupStatus: getDataBackupStatusMock,
+  importEchoUserDataBackup: importEchoUserDataBackupMock,
+  refreshDataBackupScheduler: refreshDataBackupSchedulerMock,
+  runDataBackupNow: runDataBackupNowMock,
+}));
+
 vi.mock('../network/proxySettings', () => ({
   applyNetworkProxySettings: applyNetworkProxySettingsMock,
   testNetworkProxyConnection: testNetworkProxyConnectionMock,
@@ -238,6 +258,10 @@ describe('app IPC cover cache directory', () => {
     ensureCoverCacheDirectoryMock.mockReset();
     fromWebContentsMock.mockReset();
     refreshGlobalShortcutRegistrationMock.mockClear();
+    refreshDataBackupSchedulerMock.mockClear();
+    getDataBackupStatusMock.mockClear();
+    runDataBackupNowMock.mockReset();
+    importEchoUserDataBackupMock.mockReset();
     validateGlobalShortcutMock.mockClear();
     applyNetworkProxySettingsMock.mockClear();
     testNetworkProxyConnectionMock.mockClear();
@@ -453,6 +477,94 @@ describe('app IPC cover cache directory', () => {
     expect(setAppSettingsMock).toHaveBeenCalledWith(expect.objectContaining({ locale: 'en-US' }));
     expect(service.setCoverCacheDir).toHaveBeenCalledWith('D:\\Echo\\cover-cache');
     rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('chooses an automatic data backup directory', async () => {
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: ['D:\\EchoBackups'] });
+
+    const result = await handlers[IpcChannels.AppChooseDataBackupDirectory]!();
+
+    expect(result).toBe('D:\\EchoBackups');
+    expect(showOpenDialogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: ['openDirectory', 'createDirectory'],
+      }),
+    );
+  });
+
+  it('runs a manual data backup through the configured service', async () => {
+    runDataBackupNowMock.mockResolvedValue({
+      filePath: 'D:\\EchoBackups\\ECHO-NEXT-backup.zip',
+      exportedAt: '2026-05-20T00:00:00.000Z',
+      reason: 'manual',
+      snapshotPath: 'D:\\Echo\\snapshot',
+      includedEntries: [],
+      skippedEntries: [],
+      warnings: [],
+      sizeBytes: 1024,
+    });
+
+    const result = await handlers[IpcChannels.AppRunDataBackupNow]!();
+
+    expect(runDataBackupNowMock).toHaveBeenCalledWith('manual');
+    expect(result).toMatchObject({ filePath: 'D:\\EchoBackups\\ECHO-NEXT-backup.zip' });
+  });
+
+  it('imports a data backup and applies restored settings with side effects', async () => {
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: ['D:\\EchoBackups\\backup.zip'] });
+    getAppSettingsMock.mockReturnValue({
+      locale: 'zh-CN',
+      coverCacheDir: null,
+      hideToTrayOnClose: false,
+      autoDataBackupEnabled: true,
+      autoDataBackupDirectory: 'D:\\CurrentBackups',
+      autoDataBackupIntervalDays: 3,
+      autoDataBackupLastRunAt: '2026-05-19T00:00:00.000Z',
+      autoDataBackupLastPath: 'D:\\CurrentBackups\\last.zip',
+    });
+    importEchoUserDataBackupMock.mockResolvedValue({
+      importedAt: '2026-05-20T00:00:00.000Z',
+      importedPath: 'D:\\EchoBackups\\backup.zip',
+      rollbackBackupPath: 'D:\\Echo\\rollback.zip',
+      restoredEntries: ['user-data/echo-library.sqlite'],
+      skippedEntries: [],
+      warnings: [],
+      settings: {
+        locale: 'en-US',
+        coverCacheDir: null,
+        hideToTrayOnClose: false,
+        autoDataBackupEnabled: true,
+        autoDataBackupDirectory: 'D:\\OldMachineBackups',
+        autoDataBackupIntervalDays: 30,
+      },
+    });
+    const service = {
+      hasRunningJobs: () => false,
+      getDefaultCoverCacheDir: () => 'D:\\Echo\\cover-cache',
+      setCoverCacheDir: vi.fn(),
+      syncLiveLibraryWatcherFromSettings: vi.fn(),
+    };
+    getLibraryServiceMock.mockReturnValue(service);
+    setAppSettingsMock.mockImplementation((patch) => ({ coverCacheDir: null, hideToTrayOnClose: false, ...(patch as Record<string, unknown>) }));
+
+    const result = (await handlers[IpcChannels.AppImportDataBackup]!()) as {
+      settings: { locale: string; autoDataBackupDirectory?: string | null };
+      rollbackBackupPath: string;
+      warnings: string[];
+    };
+
+    expect(importEchoUserDataBackupMock).toHaveBeenCalledWith('D:\\EchoBackups\\backup.zip');
+    expect(setAppSettingsMock).toHaveBeenCalledWith(expect.objectContaining({
+      locale: 'en-US',
+      autoDataBackupEnabled: true,
+      autoDataBackupDirectory: 'D:\\CurrentBackups',
+      autoDataBackupIntervalDays: 3,
+      autoDataBackupLastPath: 'D:\\CurrentBackups\\last.zip',
+    }));
+    expect(result.settings.locale).toBe('en-US');
+    expect(result.settings.autoDataBackupDirectory).toBe('D:\\CurrentBackups');
+    expect(result.warnings).toContain('已保留当前设备的自动备份目录，未使用备份文件里的旧目录。');
+    expect(result.rollbackBackupPath).toBe('D:\\Echo\\rollback.zip');
   });
 
   it('refreshes global shortcuts when shortcut settings change', async () => {

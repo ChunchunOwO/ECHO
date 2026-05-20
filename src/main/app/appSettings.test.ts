@@ -35,6 +35,8 @@ describe('app settings normalization', () => {
     expect(settings.appearanceTheme).toBe('dark');
     expect(settings.appearanceThemePreset).toBe('classic');
     expect(settings.appearanceThemePresetOverrides).toEqual({});
+    expect(settings.appearanceCustomThemes).toEqual([]);
+    expect(settings.appearanceThemeCustomId).toBeNull();
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
@@ -45,6 +47,12 @@ describe('app settings normalization', () => {
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.connectAutoStartReceiversEnabled).toBe(false);
     expect(settings.playlistBackupsEnabled).toBe(true);
+    expect(settings.autoDataBackupEnabled).toBe(false);
+    expect(settings.autoDataBackupDirectory).toBeNull();
+    expect(settings.autoDataBackupIntervalDays).toBe(7);
+    expect(settings.autoDataBackupLastRunAt).toBeNull();
+    expect(settings.autoDataBackupLastPath).toBeNull();
+    expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
@@ -129,6 +137,29 @@ describe('app settings normalization', () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({ coverCacheDir: '   ' }).coverCacheDir).toBeNull();
+  });
+
+  it('normalizes automatic data backup settings safely', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    const settings = normalizeSettings({
+      autoDataBackupEnabled: true,
+      autoDataBackupDirectory: '  D:\\Echo Backups  ',
+      autoDataBackupIntervalDays: 30,
+      autoDataBackupLastRunAt: '2026-05-20T00:00:00.000Z',
+      autoDataBackupLastPath: '  D:\\Echo Backups\\backup.zip  ',
+      autoDataBackupLastError: 'failed\r\nagain',
+    });
+
+    expect(settings.autoDataBackupEnabled).toBe(true);
+    expect(settings.autoDataBackupDirectory).toBe(resolve('D:\\Echo Backups'));
+    expect(settings.autoDataBackupIntervalDays).toBe(30);
+    expect(settings.autoDataBackupLastRunAt).toBe('2026-05-20T00:00:00.000Z');
+    expect(settings.autoDataBackupLastPath).toBe(resolve('D:\\Echo Backups\\backup.zip'));
+    expect(settings.autoDataBackupLastError).toBe('failed again');
+
+    expect(normalizeSettings({ autoDataBackupIntervalDays: 14 }).autoDataBackupIntervalDays).toBe(7);
+    expect(normalizeSettings({ autoDataBackupLastRunAt: 'not-a-date' }).autoDataBackupLastRunAt).toBeNull();
   });
 
   it('normalizes network proxy settings conservatively', async () => {
@@ -256,6 +287,69 @@ describe('app settings normalization', () => {
         },
       },
     });
+  });
+
+  it('normalizes custom appearance themes with safe colors, clamped numbers, and a count limit', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    const manyThemes = Array.from({ length: 30 }, (_item, index) => ({
+      id: `theme-${index}`,
+      name: `Theme ${index}`,
+      basePreset: index === 0 ? 'nyanCat' : 'unknown',
+      light: {
+        titlebar: '#AABBCC',
+        player: 'not-a-color',
+        cornerRadiusPx: 99,
+        panelBlurPx: -1,
+        saturationPercent: 42,
+        motionEnabled: false,
+        motionSpeedSeconds: 99,
+        motionIntensityPercent: 222,
+      },
+      dark: {
+        danger: '#ff0011',
+        success: '#00aa77',
+        warning: '#FFCC00',
+      },
+      createdAt: '2026-05-20T00:00:00.000Z',
+      updatedAt: '2026-05-20T01:00:00.000Z',
+    }));
+
+    const normalized = normalizeSettings({
+      appearanceCustomThemes: [
+        ...manyThemes,
+        { id: 'theme-0', name: 'Duplicate', basePreset: 'classic' },
+        { id: 'bad id', name: 'Bad', basePreset: 'classic' },
+      ],
+      appearanceThemeCustomId: 'theme-0',
+    } as never);
+
+    expect(normalized.appearanceCustomThemes).toHaveLength(24);
+    expect(normalized.appearanceThemeCustomId).toBe('theme-0');
+    expect(normalized.appearanceThemePreset).toBe('nyanCat');
+    expect(normalized.appearanceCustomThemes?.[0]).toEqual({
+      id: 'theme-0',
+      name: 'Theme 0',
+      basePreset: 'nyanCat',
+      light: {
+        titlebar: '#aabbcc',
+        cornerRadiusPx: 28,
+        panelBlurPx: 0,
+        saturationPercent: 60,
+        motionEnabled: false,
+        motionSpeedSeconds: 8,
+        motionIntensityPercent: 160,
+      },
+      dark: {
+        danger: '#ff0011',
+        success: '#00aa77',
+        warning: '#ffcc00',
+      },
+      createdAt: '2026-05-20T00:00:00.000Z',
+      updatedAt: '2026-05-20T01:00:00.000Z',
+    });
+    expect(normalized.appearanceCustomThemes?.[1]?.basePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceCustomThemes: manyThemes, appearanceThemeCustomId: 'missing' } as never).appearanceThemeCustomId).toBeNull();
   });
 
   it('resolves a custom coverCacheDir to an absolute path', async () => {
@@ -561,6 +655,17 @@ describe('app settings normalization', () => {
     expect(shortcuts?.seekBackward).toEqual({ enabled: false, accelerator: null });
   });
 
+  it('defaults users without remembered audio output to system audio', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).rememberedAudioOutput).toMatchObject({
+      enabled: true,
+      outputMode: 'system',
+      sharedBackend: 'auto',
+      latencyProfile: 'balanced',
+    });
+  });
+
   it('preserves valid remembered audio output latency profiles', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -582,6 +687,16 @@ describe('app settings normalization', () => {
       outputMode: 'shared',
       sharedBackend: 'directsound',
       latencyProfile: 'stable',
+    });
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: { enabled: false, outputMode: 'shared', sharedBackend: 'auto', latencyProfile: 'balanced' },
+      }).rememberedAudioOutput,
+    ).toMatchObject({
+      enabled: false,
+      outputMode: 'shared',
+      sharedBackend: 'auto',
+      latencyProfile: 'balanced',
     });
     expect(
       normalizeSettings({

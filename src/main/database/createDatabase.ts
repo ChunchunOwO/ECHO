@@ -11,6 +11,25 @@ type CreateDatabaseOptions = {
   corruptionPolicy?: DatabaseCorruptionPolicy;
 };
 
+export const SQLITE_RUNTIME_PRAGMA_PROFILE = 'safe-performance-v1';
+
+const SQLITE_RUNTIME_PRAGMAS = [
+  'busy_timeout = 5000',
+  'journal_mode = WAL',
+  'synchronous = FULL',
+  'cache_size = -32768',
+  'temp_store = MEMORY',
+  'mmap_size = 268435456',
+] as const;
+
+const applyRuntimePragmas = (database: EchoDatabase): void => {
+  database.exec('PRAGMA foreign_keys = ON');
+
+  for (const pragma of SQLITE_RUNTIME_PRAGMAS) {
+    database.pragma(pragma);
+  }
+};
+
 const quarantineTimestamp = (): string => new Date().toISOString().replace(/[:.]/g, '-');
 
 const quarantinePathFor = (sourcePath: string, timestamp: string): string =>
@@ -81,9 +100,7 @@ export const createDatabase = (databasePath: string, options: CreateDatabaseOpti
   }
 
   const database = new Database(databasePath);
-  database.pragma('busy_timeout = 5000');
-  database.exec('PRAGMA foreign_keys = ON');
-  database.exec('PRAGMA journal_mode = WAL');
+  applyRuntimePragmas(database);
   try {
     runMigrations(database);
     assertOpenedDatabaseHealthy(database, databasePath);

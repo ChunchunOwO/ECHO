@@ -85,6 +85,7 @@ const sortValues = new Set<LibrarySort>([
   'album',
   'recent',
 ]);
+const duplicateTrackModes = new Set<DuplicateTrackMode>(['strict', 'balanced', 'aggressive']);
 const sourceProviderValues = new Set(['local', 'netease', 'qqmusic', 'spotify', 'remote', 'm3u8']);
 const libraryQualityIssueKinds = new Set<LibraryQualityIssueKind>([
   'missing_cover',
@@ -233,12 +234,16 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
     query.sourceProvider = input.sourceProvider as LibraryPageQuery['sourceProvider'];
   }
 
+  if (typeof input.sourceId === 'string' && input.sourceId.trim().length > 0) {
+    query.sourceId = input.sourceId.trim();
+  }
+
   if (typeof input.hideDuplicates === 'boolean') {
     query.hideDuplicates = input.hideDuplicates;
   }
 
-  if (input.duplicateMode === 'strict') {
-    query.duplicateMode = 'strict';
+  if (typeof input.duplicateMode === 'string' && duplicateTrackModes.has(input.duplicateMode as DuplicateTrackMode)) {
+    query.duplicateMode = input.duplicateMode as DuplicateTrackMode;
   }
 
   if (typeof input.prioritizeArtistAvatars === 'boolean') {
@@ -466,7 +471,8 @@ const normalizeArtistImageBackfillOptions = (value: unknown): { force?: boolean;
   };
 };
 
-const normalizeDuplicateMode = (value: unknown): DuplicateTrackMode => (value === 'strict' ? 'strict' : 'strict');
+const normalizeDuplicateMode = (value: unknown): DuplicateTrackMode =>
+  typeof value === 'string' && duplicateTrackModes.has(value as DuplicateTrackMode) ? (value as DuplicateTrackMode) : 'strict';
 
 const emptyDuplicateIndexSummary = (mode: DuplicateTrackMode): DuplicateTrackIndexSummary => ({
   mode,

@@ -25,6 +25,14 @@ export const formatAudioHostError = (error: string | null | undefined): string |
     return null;
   }
 
+  if (/\bsystem_audio_seek_timeout\b|\bsystem_audio_range_(?:not_supported|not_satisfiable)\b/u.test(error)) {
+    return '系统音频无法跳转到该位置，可能是文件或网络源不支持拖动';
+  }
+
+  if (/\bsystem_audio_playback_failed\b|\bsystem_audio_source_empty\b|\bMEDIA_ERR_\w+\b|\bHTMLMediaElement\b|\bNotSupportedError\b/u.test(error)) {
+    return '系统音频播放失败，请尝试重新播放或切换到兼容输出';
+  }
+
   if (/\bdevice_initialize_timeout\b/u.test(error)) {
     return '设备驱动响应过慢,可能是 USB DAC 异常。建议重新插拔 USB,或在设置里点"重启音频引擎"。';
   }

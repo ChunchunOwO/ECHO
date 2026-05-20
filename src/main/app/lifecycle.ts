@@ -13,6 +13,7 @@ import { savePlaybackMemoryNow } from '../ipc/playbackIpc';
 import { dispatchLocalAudioFilesOpened, parseLocalAudioFileArguments } from './localFileOpen';
 import { initializeAutoUpdater } from './autoUpdater';
 import { getAppSettings } from './appSettings';
+import { disposeDataBackupScheduler, initializeDataBackupScheduler } from './dataBackup';
 import { ensureDataProtection } from './dataProtection';
 import { disposeBackgroundPlaybackShortcuts, initializeBackgroundPlaybackShortcuts } from './backgroundPlaybackShortcuts';
 import { getAccountService } from '../accounts/AccountService';
@@ -163,6 +164,7 @@ export const registerAppLifecycle = (): void => {
       void refreshPreviouslyLoggedInAccountsOnStartup().catch(() => undefined);
     }
     initializeAutoUpdater(appSettings.autoUpdateEnabled !== false);
+    initializeDataBackupScheduler();
     dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(process.argv));
 
     app.on('activate', () => {
@@ -189,6 +191,7 @@ export const registerAppLifecycle = (): void => {
     await disposeConnectService();
     await disposeSmtcIntegration();
     await disposeDefaultAudioSessionGracefully('app-quit');
+    disposeDataBackupScheduler();
     disposeBackgroundPlaybackShortcuts();
     closeDefaultLyricsService();
     closeDefaultMvService();

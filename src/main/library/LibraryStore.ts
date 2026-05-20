@@ -305,7 +305,7 @@ const sanitizeTrackWrite = (track: TrackWrite): TrackWrite => {
   };
 };
 
-const pageFromQuery = (query?: LibraryPageQuery): { page: number; pageSize: number; search: string; sort: string; sourceProvider: string | null } => ({
+const pageFromQuery = (query?: LibraryPageQuery): { page: number; pageSize: number; search: string; sort: string; sourceProvider: string | null; sourceId: string | null } => ({
   page: Math.max(1, Math.floor(Number(query?.page ?? 1))),
   pageSize: Math.min(maxPageSize, Math.max(1, Math.floor(Number(query?.pageSize ?? defaultPageSize)))),
   search: typeof query?.search === 'string' ? query.search.trim() : '',
@@ -318,6 +318,7 @@ const pageFromQuery = (query?: LibraryPageQuery): { page: number; pageSize: numb
     query?.sourceProvider === 'remote'
       ? query.sourceProvider
       : null,
+  sourceId: typeof query?.sourceId === 'string' && query.sourceId.trim().length > 0 ? query.sourceId.trim() : null,
 });
 
 const libraryMediaTypeFromSourceProvider = (sourceProvider: string | null): 'local' | 'remote' | null =>
@@ -3381,7 +3382,7 @@ export class LibraryStore {
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
     const startedAt = performance.now();
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort, sourceProvider, sourceId } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const mediaTypeFilter = libraryMediaTypeFromSourceProvider(sourceProvider);
@@ -3411,14 +3412,19 @@ export class LibraryStore {
       ? "WHERE remote_tracks.availability != 'missing' AND remote_sources.status = 'enabled' AND remote_tracks_fts MATCH ?"
       : "WHERE remote_tracks.availability != 'missing' AND remote_sources.status = 'enabled'";
     const allParams = [...baseParams, ...(searchQuery ? [searchQuery] : [])];
-    const mediaTypeWhereSql = mediaTypeFilter ? 'WHERE media_type = ?' : '';
-    const pageParams = [...allParams, ...(mediaTypeFilter ? [mediaTypeFilter] : [])];
+    const libraryWhereParts = [
+      mediaTypeFilter ? 'media_type = ?' : '',
+      sourceId ? 'source_id = ?' : '',
+    ].filter(Boolean);
+    const mediaTypeWhereSql = libraryWhereParts.length > 0 ? `WHERE ${libraryWhereParts.join(' AND ')}` : '';
+    const pageParams = [...allParams, ...(mediaTypeFilter ? [mediaTypeFilter] : []), ...(sourceId ? [sourceId] : [])];
     const unifiedTracksSql = `WITH library_tracks AS (
       SELECT
         tracks.id,
         'local' AS media_type,
         tracks.path,
         NULL AS source_id,
+        NULL AS source_display_name,
         NULL AS provider,
         NULL AS remote_path,
         NULL AS stable_key,
@@ -3464,6 +3470,7 @@ export class LibraryStore {
         'remote' AS media_type,
         'remote://' || remote_tracks.source_id || remote_tracks.remote_path AS path,
         remote_tracks.source_id,
+        remote_sources.display_name AS source_display_name,
         remote_tracks.provider,
         remote_tracks.remote_path,
         remote_tracks.stable_key,
@@ -3596,7 +3603,7 @@ export class LibraryStore {
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {
     const startedAt = performance.now();
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort, sourceProvider, sourceId } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const mediaTypeFilter = libraryMediaTypeFromSourceProvider(sourceProvider);
@@ -3609,16 +3616,17 @@ export class LibraryStore {
     const whereParts = [
       searchFilter.sql,
       mediaTypeFilter ? 'library_albums.media_type = ?' : '',
+      sourceId ? 'library_albums.source_id = ?' : '',
     ].filter(Boolean);
     const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const whereParams = [...searchFilter.params, ...(mediaTypeFilter ? [mediaTypeFilter] : [])];
+    const whereParams = [...searchFilter.params, ...(mediaTypeFilter ? [mediaTypeFilter] : []), ...(sourceId ? [sourceId] : [])];
     const orderSql = this.unifiedAlbumOrderSql(sort);
     const albumsSql = this.unifiedAlbumsSql();
     const totalRow = this.getRow(`${albumsSql} SELECT COUNT(*) AS total FROM library_albums ${whereSql}`, ...whereParams);
     const rows = this.allRows(
       `${albumsSql}
       SELECT
-        id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+        id, media_type, source_id, source_display_name, provider, album_key, title, album_artist, year, track_count,
         duration, cover_id
       FROM library_albums
       ${whereSql}
@@ -3652,6 +3660,7 @@ export class LibraryStore {
     return `WITH remote_album_rows AS (
       SELECT
         remote_tracks.*,
+        remote_sources.display_name AS source_display_name,
         'remote-album:' || lower(hex(${remoteAlbumIdentity})) AS album_id,
         ${this.remoteArtistIdSql('remote_tracks')} AS artist_id,
         COALESCE(NULLIF(TRIM(remote_tracks.album), ''), 'Unknown Album') AS album_title,
@@ -3667,6 +3676,7 @@ export class LibraryStore {
         albums.id,
         'local' AS media_type,
         NULL AS source_id,
+        NULL AS source_display_name,
         NULL AS provider,
         albums.album_key,
         albums.title,
@@ -3698,6 +3708,7 @@ export class LibraryStore {
         album_id AS id,
         'remote' AS media_type,
         source_id,
+        MIN(source_display_name) AS source_display_name,
         provider,
         album_id AS album_key,
         MIN(album_title) AS title,
@@ -3763,6 +3774,7 @@ export class LibraryStore {
     return `WITH remote_artist_rows AS (
       SELECT
         remote_tracks.*,
+        remote_sources.display_name AS source_display_name,
         ${this.remoteArtistIdSql('remote_tracks')} AS artist_id,
         lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist'))) AS artist_key,
         COALESCE(NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist') AS artist_name,
@@ -3777,6 +3789,7 @@ export class LibraryStore {
         artists.id,
         'local' AS media_type,
         NULL AS source_id,
+        NULL AS source_display_name,
         NULL AS provider,
         artists.artist_key,
         artists.name,
@@ -3799,6 +3812,7 @@ export class LibraryStore {
         remote_artist_rows.artist_id AS id,
         'remote' AS media_type,
         remote_artist_rows.source_id,
+        MIN(remote_artist_rows.source_display_name) AS source_display_name,
         remote_artist_rows.provider,
         remote_artist_rows.artist_key,
         MIN(remote_artist_rows.artist_name) AS name,
@@ -3861,7 +3875,7 @@ export class LibraryStore {
     const row = this.getRow(
       `${this.unifiedAlbumsSql()}
       SELECT
-        id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+        id, media_type, source_id, source_display_name, provider, album_key, title, album_artist, year, track_count,
         duration, cover_id
       FROM library_albums
       WHERE id = ?`,
@@ -3892,7 +3906,7 @@ export class LibraryStore {
     const remoteRow = this.getRow(
       `${this.unifiedAlbumsSql()}
        SELECT
-        library_albums.id, library_albums.media_type, library_albums.source_id, library_albums.provider,
+        library_albums.id, library_albums.media_type, library_albums.source_id, library_albums.source_display_name, library_albums.provider,
         library_albums.album_key, library_albums.title, library_albums.album_artist, library_albums.year,
         library_albums.track_count, library_albums.duration, library_albums.cover_id
        FROM remote_album_rows
@@ -3906,7 +3920,7 @@ export class LibraryStore {
   }
 
   getArtists(query?: LibraryPageQuery): LibraryPage<LibraryArtist> {
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort, sourceProvider, sourceId } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const mediaTypeFilter = libraryMediaTypeFromSourceProvider(sourceProvider);
@@ -3917,16 +3931,17 @@ export class LibraryStore {
     const whereParts = [
       searchFilter.sql,
       mediaTypeFilter ? 'library_artists.media_type = ?' : '',
+      sourceId ? 'library_artists.source_id = ?' : '',
     ].filter(Boolean);
     const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const whereParams = [...searchFilter.params, ...(mediaTypeFilter ? [mediaTypeFilter] : [])];
+    const whereParams = [...searchFilter.params, ...(mediaTypeFilter ? [mediaTypeFilter] : []), ...(sourceId ? [sourceId] : [])];
     const orderSql = this.unifiedArtistOrderSql(sort, query?.prioritizeArtistAvatars === true);
     const artistsSql = this.unifiedArtistsSql();
     const totalRow = this.getRow(`${artistsSql} SELECT COUNT(*) AS total FROM library_artists ${whereSql}`, ...whereParams);
     const rows = this.allRows(
       `${artistsSql}
       SELECT
-        id, media_type, source_id, provider, artist_key, name, sort_name, role,
+        id, media_type, source_id, source_display_name, provider, artist_key, name, sort_name, role,
         track_count, album_count, cover_id, avatar_status, avatar_provider,
         avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
@@ -3952,7 +3967,7 @@ export class LibraryStore {
     const row = this.getRow(
       `${this.unifiedArtistsSql()}
        SELECT
-        id, media_type, source_id, provider, artist_key, name, sort_name, role,
+        id, media_type, source_id, source_display_name, provider, artist_key, name, sort_name, role,
         track_count, album_count, cover_id, avatar_status, avatar_provider,
         avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
@@ -4150,6 +4165,7 @@ export class LibraryStore {
           'remote' AS media_type,
           'remote://' || remote_artist_rows.source_id || remote_artist_rows.remote_path AS path,
           remote_artist_rows.source_id,
+          remote_artist_rows.source_display_name,
           remote_artist_rows.provider,
           remote_artist_rows.remote_path,
           remote_artist_rows.stable_key,
@@ -4307,7 +4323,7 @@ export class LibraryStore {
       const rows = this.allRows(
         `${albumsSql}
          SELECT
-          id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+          id, media_type, source_id, source_display_name, provider, album_key, title, album_artist, year, track_count,
           duration, cover_id
          FROM library_albums
          WHERE media_type = 'remote'
@@ -4403,6 +4419,7 @@ export class LibraryStore {
           'remote' AS media_type,
           'remote://' || remote_album_rows.source_id || remote_album_rows.remote_path AS path,
           remote_album_rows.source_id,
+          remote_album_rows.source_display_name,
           remote_album_rows.provider,
           remote_album_rows.remote_path,
           remote_album_rows.stable_key,
@@ -6555,6 +6572,7 @@ export class LibraryStore {
       mediaType,
       path,
       sourceId: textOrNull(row.source_id),
+      sourceDisplayName: textOrNull(row.source_display_name),
       provider: textOrNull(row.provider),
       remotePath: textOrNull(row.remote_path),
       stableKey: textOrNull(row.stable_key),
@@ -6611,6 +6629,7 @@ export class LibraryStore {
       id: String(row.id),
       mediaType: row.media_type === 'remote' ? 'remote' : 'local',
       sourceId: textOrNull(row.source_id),
+      sourceDisplayName: textOrNull(row.source_display_name),
       provider: textOrNull(row.provider),
       name: sanitizeLibraryText(row.name, unknownArtist),
       sortName: sanitizeLibraryText(row.sort_name ?? row.name, sanitizeLibraryText(row.name, unknownArtist)),
@@ -6695,6 +6714,7 @@ export class LibraryStore {
       id: String(row.id),
       mediaType: row.media_type === 'remote' ? 'remote' : 'local',
       sourceId: textOrNull(row.source_id),
+      sourceDisplayName: textOrNull(row.source_display_name),
       provider: textOrNull(row.provider),
       albumKey: String(row.album_key),
       title,

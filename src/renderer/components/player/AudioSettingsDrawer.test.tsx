@@ -52,6 +52,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.signal.dsdDop': 'DSF bitstream -> DoP',
   'audioDrawer.signal.dsdDopFallback': 'DSD DoP fallback',
   'audioDrawer.signal.dsdDopStandby': 'DSD DoP not used',
+  'audioDrawer.device.systemAudio': 'Standard Output (Recommended)',
+  'audioDrawer.device.systemAudioDescription': 'Most stable for headphones, Bluetooth, and computer speakers',
 };
 
 vi.mock('../../i18n/I18nProvider', () => ({
@@ -257,6 +259,19 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     expect(screen.getByRole('button', { name: /TEAC ASIO/ })).toBeTruthy();
   });
 
+  it('labels system audio as the recommended standard output', () => {
+    renderDrawer({
+      ...baseStatus,
+      outputMode: 'system',
+      outputBackend: 'windows-system-audio',
+    });
+
+    expect(screen.getAllByRole('button', { name: /Standard Output \(Recommended\)/ }).some((button) =>
+      button.className.includes('audio-device-pill'),
+    )).toBe(true);
+    expect(screen.getByText('Most stable for headphones, Bluetooth, and computer speakers')).toBeTruthy();
+  });
+
   it('keeps advanced output collapsed by default and remembers when opened', () => {
     renderDrawer(baseStatus);
 
@@ -424,8 +439,8 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: /DSD DoP Direct Pilot/ }));
 
-    await waitFor(() => expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ audioDsdOutputMode: 'dop' }));
-    await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ dsdOutputMode: 'dop' }));
+    await waitFor(() => expect(window.echo?.app?.setSettings).toHaveBeenCalledWith(expect.objectContaining({ audioDsdOutputMode: 'dop' })));
+    await waitFor(() => expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({ dsdOutputMode: 'dop' })));
   });
 
   it('persists release-exclusive-on-pause experiment enablement', async () => {

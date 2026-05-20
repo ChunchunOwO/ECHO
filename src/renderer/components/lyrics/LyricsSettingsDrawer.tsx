@@ -5,6 +5,7 @@ import {
   Check,
   Database,
   EyeOff,
+  FolderOpen,
   Globe2,
   GripVertical,
   Image as ImageIcon,
@@ -245,6 +246,70 @@ const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
 const thresholdFromPercent = (value: string): number => Math.max(30, Math.min(100, Math.round(Number(value)))) / 100;
 const sanitizeFontFamily = (value: string): string => value.replace(/[\r\n;]/g, '').trim();
 
+const LyricsFontPickerModal = ({
+  currentFont,
+  fonts,
+  isBusy,
+  onChooseFile,
+  onClose,
+  onSelect,
+  query,
+  setQuery,
+}: {
+  currentFont: string;
+  fonts: string[];
+  isBusy: boolean;
+  onChooseFile: () => void;
+  onClose: () => void;
+  onSelect: (fontFamily: string) => void;
+  query: string;
+  setQuery: (query: string) => void;
+}): JSX.Element => {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredFonts = normalizedQuery ? fonts.filter((font) => font.toLowerCase().includes(normalizedQuery)) : fonts;
+
+  return (
+    <div className="settings-modal-backdrop lyrics-font-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="settings-font-modal lyrics-font-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="选择歌词字体"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="settings-font-modal-header">
+          <h3>选择歌词字体</h3>
+          <button className="settings-icon-button" type="button" onClick={onClose} aria-label="关闭歌词字体选择">
+            <X size={15} />
+          </button>
+        </header>
+        <label className="settings-font-search">
+          <Search size={15} aria-hidden="true" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder="搜索已安装字体" />
+        </label>
+        <button className="settings-font-file-button" type="button" disabled={isBusy} onClick={onChooseFile}>
+          <FolderOpen size={15} aria-hidden="true" />
+          从文件选择字体
+        </button>
+        <div className="settings-font-list">
+          {filteredFonts.map((font) => (
+            <button
+              className={`settings-font-option ${font === currentFont ? 'active' : ''}`}
+              key={font}
+              type="button"
+              style={{ fontFamily: `"${font}", var(--echo-font-family)` }}
+              onClick={() => onSelect(font)}
+            >
+              <span>{font}</span>
+              <em>歌词字体预览 Aa 你好</em>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+};
+
 const riskLabel = (risk: LyricsSearchCandidate['risk']): string => {
   if (risk === 'low') return '精准匹配';
   if (risk === 'medium') return '可能匹配';
@@ -326,7 +391,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(true);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackLyricsFontFamilies);
-  const [fontFamilyDraft, setFontFamilyDraft] = useState<string>(fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei');
+  const [isFontPickerOpen, setIsFontPickerOpen] = useState(false);
+  const [fontPickerQuery, setFontPickerQuery] = useState('');
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
   const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
@@ -427,10 +493,6 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         : lyricsCandidates.filter((candidate) => sourceFilterKey(candidate) === activeLyricsCandidateSource),
     [activeLyricsCandidateSource, lyricsCandidates],
   );
-
-  useEffect(() => {
-    setFontFamilyDraft(lyricsFontFamily);
-  }, [lyricsFontFamily]);
 
   useEffect(() => {
     if (!showPersistentControls || !isLyricsStyleControlsOpen) {
@@ -714,11 +776,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const applyLyricsFontFamily = useCallback((value: string): void => {
     const fontFamily = sanitizeFontFamily(value);
     if (!fontFamily || fontFamily === lyricsFontFamily) {
-      setFontFamilyDraft(lyricsFontFamily);
+      setIsFontPickerOpen(false);
       return;
     }
 
     setFontFamilies((current) => Array.from(new Set([...current, fontFamily])).sort((a, b) => a.localeCompare(b)));
+    setIsFontPickerOpen(false);
     void patchSettings({ lyricsFontFamily: fontFamily, lyricsFontFilePath: null });
   }, [lyricsFontFamily, patchSettings]);
 
@@ -738,7 +801,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       const fontFamily = await registerAppearanceFontFile('lyrics', fontFile);
       setFontFamilies((current) => Array.from(new Set([...current, fontFamily])).sort((a, b) => a.localeCompare(b)));
-      setFontFamilyDraft(fontFamily);
+      setIsFontPickerOpen(false);
       await patchSettings({ lyricsFontFamily: fontFamily, lyricsFontFilePath: fontFile.path });
     } catch (fontError) {
       setError(fontError instanceof Error ? fontError.message : String(fontError));
@@ -1435,34 +1498,34 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 {effectiveSettings.lyricsFontFilePath ? '自定义字体' : '系统字体'}
               </em>
             </div>
-            <label className="lyrics-font-family-field">
-              <input
-                list="lyrics-font-family-options"
-                value={fontFamilyDraft}
-                disabled={isBusy}
-                onChange={(event) => setFontFamilyDraft(event.currentTarget.value)}
-                onBlur={(event) => applyLyricsFontFamily(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.currentTarget.blur();
-                  }
-                }}
-                style={{ fontFamily: `"${lyricsFontFamily}", var(--echo-font-family)` }}
-              />
-              <datalist id="lyrics-font-family-options">
-                {fontFamilies.map((fontFamily) => (
-                  <option value={fontFamily} key={fontFamily} />
-                ))}
-              </datalist>
-            </label>
+            <button
+              className="lyrics-font-picker-button"
+              type="button"
+              disabled={isBusy}
+              onClick={() => {
+                setFontPickerQuery('');
+                setIsFontPickerOpen(true);
+              }}
+            >
+              <span style={{ fontFamily: `"${lyricsFontFamily}", var(--echo-font-family)` }}>{lyricsFontFamily}</span>
+              <em>选择已安装字体</em>
+            </button>
             <div className="lyrics-font-actions">
-              <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => applyLyricsFontFamily(fontFamilyDraft)}>
+              <button
+                className="audio-device-pill"
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  setFontPickerQuery('');
+                  setIsFontPickerOpen(true);
+                }}
+              >
                 <Check size={15} />
                 <span>
                   <strong>应用系统字体</strong>
                   <small>只影响歌词页和歌词行</small>
                 </span>
-                <em>Apply</em>
+                <em>Fonts</em>
               </button>
               <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => void chooseLyricsFontFile()}>
                 <Upload size={15} />
@@ -1478,7 +1541,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 disabled={isBusy}
                 onClick={() => {
                   const fallbackFontFamily = fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei';
-                  setFontFamilyDraft(fallbackFontFamily);
+                  setIsFontPickerOpen(false);
                   void patchSettings({
                     lyricsFontFamily: fallbackFontFamily,
                     lyricsFontFilePath: fallbackSettings.lyricsFontFilePath,
@@ -2028,6 +2091,19 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <em>Reset</em>
           </button>
         </section>
+        ) : null}
+
+        {isFontPickerOpen ? (
+          <LyricsFontPickerModal
+            currentFont={lyricsFontFamily}
+            fonts={fontFamilies}
+            isBusy={isBusy}
+            onChooseFile={() => void chooseLyricsFontFile()}
+            onClose={() => setIsFontPickerOpen(false)}
+            onSelect={applyLyricsFontFamily}
+            query={fontPickerQuery}
+            setQuery={setFontPickerQuery}
+          />
         ) : null}
 
         {error ? <p className="audio-drawer-error">{error}</p> : null}

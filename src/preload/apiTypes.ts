@@ -8,7 +8,13 @@ import type {
 } from '../shared/types/audio';
 import type { AppSettings, NetworkProxyTestResult } from '../shared/types/appSettings';
 import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
-import type { DataPackageExportResult, SettingsImportResult } from '../shared/types/settingsBackup';
+import type {
+  DataBackupExportResult,
+  DataBackupImportResult,
+  DataBackupStatus,
+  DataPackageExportResult,
+  SettingsImportResult,
+} from '../shared/types/settingsBackup';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
@@ -140,7 +146,10 @@ import type {
   RemoteBackgroundJobStatus,
   RemoteRuntimeLimits,
   RemoteSource,
+  RemoteSourceIssueItem,
+  RemoteSourceIssueKind,
   RemoteSourceInput,
+  RemoteSourceOverview,
   RemoteSourceUpdate,
   RemoteStreamUrlResult,
   RemoteSyncStatus,
@@ -191,6 +200,11 @@ export type EchoApi = {
     exportSettings: () => Promise<string | null>;
     importSettings: () => Promise<SettingsImportResult | null>;
     exportDataPackage: () => Promise<DataPackageExportResult | null>;
+    chooseDataBackupDirectory: () => Promise<string | null>;
+    getDataBackupStatus: () => Promise<DataBackupStatus>;
+    runDataBackupNow: () => Promise<DataBackupExportResult>;
+    importDataBackup: () => Promise<DataBackupImportResult | null>;
+    openDataBackupDirectory: () => Promise<void>;
     chooseFontFile: () => Promise<FontFileAsset | null>;
     chooseLyricsWallpaper: () => Promise<string | null>;
     chooseAppWallpaper: () => Promise<string | null>;
@@ -393,6 +407,8 @@ export type EchoApi = {
   };
   remoteSources: {
     list: () => Promise<RemoteSource[]>;
+    getOverview: (sourceId?: string | null) => Promise<RemoteSourceOverview>;
+    listIssues: (sourceId: string, kind: RemoteSourceIssueKind, limit?: number) => Promise<RemoteSourceIssueItem[]>;
     create: (input: RemoteSourceInput) => Promise<RemoteSource>;
     update: (input: RemoteSourceUpdate) => Promise<RemoteSource>;
     delete: (sourceId: string) => Promise<void>;

@@ -10,6 +10,9 @@ import type {
   RemoteBackgroundGlobalStatus,
   RemoteBackgroundJobStatus,
   RemoteLibraryTrack,
+  RemoteSourceIssueItem,
+  RemoteSourceIssueKind,
+  RemoteSourceOverview,
   RemoteRuntimeLimits,
   RemoteSource,
   RemoteSourceInput,
@@ -43,6 +46,7 @@ export class RemoteSourceService {
   private readonly proxy: RemoteStreamProxyService;
   private readonly backgroundQueue: RemoteBackgroundJobQueue;
   private readonly syncService: RemoteLibrarySyncService;
+  private readonly coverService: CoverService | null;
 
   constructor(
     private readonly database: EchoDatabase,
@@ -51,6 +55,7 @@ export class RemoteSourceService {
   ) {
     this.store = new RemoteLibraryStore(database);
     this.proxy = new RemoteStreamProxyService((provider) => this.getAdapter(provider));
+    this.coverService = coverCacheDir ? new CoverService(database, coverCacheDir) : null;
     for (const adapter of [this.webdavAdapter, this.jellyfinAdapter, this.embyAdapter, this.subsonicAdapter, this.smbAdapter, this.sshfsAdapter]) {
       adapter.setStreamUrlResolver((input) =>
         this.proxy.createStreamUrl(input.source, input.remotePath, input.stableKey, input.expiresInSeconds),
@@ -59,7 +64,7 @@ export class RemoteSourceService {
     this.backgroundQueue = new RemoteBackgroundJobQueue(
       this.store,
       (provider) => this.getAdapter(provider),
-      coverCacheDir ? new CoverService(database, coverCacheDir) : null,
+      this.coverService,
     );
     this.syncService = new RemoteLibrarySyncService(this.store, (provider) => this.getAdapter(provider), (_sourceId, tracks) => {
       this.backgroundQueue.enqueueTrackWrites(tracks, ['metadata', 'duration-backfill']);
@@ -70,6 +75,14 @@ export class RemoteSourceService {
 
   listSources(): RemoteSource[] {
     return this.store.listSources();
+  }
+
+  getOverview(sourceId?: string | null): RemoteSourceOverview {
+    return this.store.getOverview(sourceId);
+  }
+
+  listIssues(sourceId: string, kind: RemoteSourceIssueKind, limit?: number): RemoteSourceIssueItem[] {
+    return this.store.listIssues(sourceId, kind, limit);
   }
 
   createSource(input: RemoteSourceInput): RemoteSource {
@@ -225,6 +238,7 @@ export class RemoteSourceService {
   }
 
   close(): void {
+    this.coverService?.close();
     void this.proxy.close();
     this.closeDatabase();
   }

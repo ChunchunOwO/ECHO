@@ -237,6 +237,16 @@ export const appRoutes: AppRoute[] = [
     element: <LikedPage />,
   },
   {
+    id: 'settings',
+    label: 'Settings',
+    labelKey: 'route.settings.label',
+    description: 'Application settings.',
+    descriptionKey: 'route.settings.description',
+    icon: EchoSettingsIcon,
+    placement: 'utility',
+    element: <SettingsPage />,
+  },
+  {
     id: 'audio-settings',
     label: 'Audio Settings',
     labelKey: 'route.audioSettings.label',
@@ -275,15 +285,5 @@ export const appRoutes: AppRoute[] = [
     icon: EchoImportFileIcon,
     placement: 'utility',
     element: <PlaceholderPage icon={EchoImportFileIcon} title="Import File" description="Single-file import will reuse the same metadata pipeline." />,
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    labelKey: 'route.settings.label',
-    description: 'Application settings.',
-    descriptionKey: 'route.settings.description',
-    icon: EchoSettingsIcon,
-    placement: 'utility',
-    element: <SettingsPage />,
   },
 ];

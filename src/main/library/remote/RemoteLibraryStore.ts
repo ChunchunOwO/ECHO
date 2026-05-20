@@ -4,6 +4,10 @@ import type { LibraryTrack } from '../../../shared/types/library';
 import type {
   RemoteBackgroundJobKind,
   RemoteLibraryTrack,
+  RemoteSourceIssueItem,
+  RemoteSourceIssueKind,
+  RemoteSourceOverview,
+  RemoteSourceOverviewItem,
   RemoteSource,
   RemoteSourceAuthType,
   RemoteSourceInput,
@@ -50,6 +54,28 @@ const syncModeOrIndex = (value: unknown): RemoteSourceSyncMode =>
 const remoteTrackStatusOrPending = (value: unknown) =>
   value === 'searching' || value === 'partial' || value === 'ok' || value === 'not_found' || value === 'error' ? value : 'pending';
 
+const remoteStatusKeys = ['pending', 'searching', 'partial', 'ok', 'not_found', 'error'] as const;
+
+const emptyTrackStatusCounts = (): Record<typeof remoteStatusKeys[number], number> => ({
+  pending: 0,
+  searching: 0,
+  partial: 0,
+  ok: 0,
+  not_found: 0,
+  error: 0,
+});
+
+const addTrackStatusCounts = (
+  left: Record<typeof remoteStatusKeys[number], number>,
+  right: Record<typeof remoteStatusKeys[number], number>,
+): Record<typeof remoteStatusKeys[number], number> => {
+  const next = emptyTrackStatusCounts();
+  for (const key of remoteStatusKeys) {
+    next[key] = left[key] + right[key];
+  }
+  return next;
+};
+
 export class RemoteLibraryStore {
   constructor(
     private readonly database: EchoDatabase,
@@ -66,6 +92,123 @@ export class RemoteLibraryStore {
       )
       .all()
       .map((row) => this.mapSource(row));
+  }
+
+  getOverview(sourceId?: string | null): RemoteSourceOverview {
+    const sourceFilter = textOrNull(sourceId) ? 'WHERE remote_sources.id = ?' : '';
+    const params = textOrNull(sourceId) ? [textOrNull(sourceId)] : [];
+    const rows = this.database
+      .prepare<unknown[], DbRow>(
+        `SELECT
+          remote_sources.id,
+          remote_sources.provider,
+          remote_sources.display_name,
+          remote_sources.status,
+          remote_sources.sync_mode,
+          remote_sources.last_sync_at,
+          remote_sources.last_error,
+          COUNT(CASE WHEN remote_tracks.id IS NOT NULL AND remote_tracks.availability != 'missing' THEN 1 END) AS track_count,
+          COUNT(DISTINCT CASE
+            WHEN remote_tracks.id IS NOT NULL AND remote_tracks.availability != 'missing' THEN
+              lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.album_artist), ''), NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist'))) || char(31) ||
+              lower(trim(CASE WHEN TRIM(COALESCE(remote_tracks.album, '')) = '' THEN remote_tracks.id ELSE remote_tracks.album END)) || char(31) ||
+              COALESCE(CAST(remote_tracks.year AS TEXT), '')
+          END) AS album_count,
+          COUNT(DISTINCT CASE
+            WHEN remote_tracks.id IS NOT NULL AND remote_tracks.availability != 'missing' THEN
+              lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist')))
+          END) AS artist_count,
+          COALESCE(SUM(CASE WHEN remote_tracks.availability != 'missing' THEN COALESCE(remote_tracks.size_bytes, 0) ELSE 0 END), 0) AS total_size_bytes,
+          COUNT(CASE WHEN remote_tracks.availability = 'missing' THEN 1 END) AS missing_track_count,
+          ${this.statusCountSql('metadata_status', 'metadata')},
+          ${this.statusCountSql('cover_status', 'cover')},
+          ${this.statusCountSql('lyrics_status', 'lyrics')},
+          ${this.statusCountSql('mv_status', 'mv')}
+         FROM remote_sources
+         LEFT JOIN remote_tracks ON remote_tracks.source_id = remote_sources.id
+         ${sourceFilter}
+         GROUP BY remote_sources.id
+         ORDER BY remote_sources.created_at DESC`,
+      )
+      .all(...params);
+
+    const sources = rows.map((row) => this.mapOverviewItem(row));
+    const summary = sources.reduce(
+      (current, source) => ({
+        totalSources: current.totalSources + 1,
+        enabledSources: current.enabledSources + (source.status === 'enabled' ? 1 : 0),
+        disabledSources: current.disabledSources + (source.status === 'disabled' ? 1 : 0),
+        errorSources: current.errorSources + (source.status === 'error' ? 1 : 0),
+        trackCount: current.trackCount + source.trackCount,
+        albumCount: current.albumCount + source.albumCount,
+        artistCount: current.artistCount + source.artistCount,
+        totalSizeBytes: current.totalSizeBytes + source.totalSizeBytes,
+        missingTrackCount: current.missingTrackCount + source.missingTrackCount,
+        metadata: addTrackStatusCounts(current.metadata, source.metadata),
+        cover: addTrackStatusCounts(current.cover, source.cover),
+        lyrics: addTrackStatusCounts(current.lyrics, source.lyrics),
+        mv: addTrackStatusCounts(current.mv, source.mv),
+      }),
+      {
+        totalSources: 0,
+        enabledSources: 0,
+        disabledSources: 0,
+        errorSources: 0,
+        trackCount: 0,
+        albumCount: 0,
+        artistCount: 0,
+        totalSizeBytes: 0,
+        missingTrackCount: 0,
+        metadata: emptyTrackStatusCounts(),
+        cover: emptyTrackStatusCounts(),
+        lyrics: emptyTrackStatusCounts(),
+        mv: emptyTrackStatusCounts(),
+      },
+    );
+
+    return { ...summary, sources };
+  }
+
+  listIssues(sourceId: string, kind: RemoteSourceIssueKind, limit = 50): RemoteSourceIssueItem[] {
+    const source = this.getSource(sourceId);
+    if (!source) {
+      throw new Error(`Unknown remote source ${sourceId}`);
+    }
+
+    const normalizedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.round(limit))) : 50;
+    const statusColumn = kind === 'metadata'
+      ? 'metadata_status'
+      : kind === 'cover'
+        ? 'cover_status'
+        : kind === 'lyrics'
+          ? 'lyrics_status'
+          : 'mv_status';
+    const whereSql = kind === 'missing'
+      ? "remote_tracks.availability = 'missing'"
+      : `remote_tracks.availability != 'missing' AND remote_tracks.${statusColumn} IN ('partial', 'not_found', 'error')`;
+    const statusSql = kind === 'missing' ? 'remote_tracks.availability' : `remote_tracks.${statusColumn}`;
+
+    return this.database
+      .prepare<[string, number], DbRow>(
+        `SELECT
+          remote_tracks.id,
+          remote_tracks.source_id,
+          remote_tracks.provider,
+          ${statusSql} AS status,
+          remote_tracks.title,
+          remote_tracks.artist,
+          remote_tracks.album,
+          remote_tracks.remote_path,
+          remote_tracks.size_bytes,
+          remote_tracks.updated_at
+         FROM remote_tracks
+         WHERE remote_tracks.source_id = ?
+           AND ${whereSql}
+         ORDER BY remote_tracks.updated_at DESC
+         LIMIT ?`,
+      )
+      .all(sourceId, normalizedLimit)
+      .map((row) => this.mapIssue(row, kind));
   }
 
   getSource(id: string): RemoteSource | null {
@@ -581,6 +724,12 @@ export class RemoteLibraryStore {
     return row?.encrypted_secret ?? null;
   }
 
+  private statusCountSql(column: string, prefix: string): string {
+    return remoteStatusKeys
+      .map((status) => `COUNT(CASE WHEN remote_tracks.availability != 'missing' AND remote_tracks.${column} = '${status}' THEN 1 END) AS ${prefix}_${status}_count`)
+      .join(',\n          ');
+  }
+
   private mapSource(row: DbRow): RemoteSource {
     return {
       id: String(row.id),
@@ -597,6 +746,53 @@ export class RemoteLibraryStore {
       lastError: textOrNull(row.last_error),
       indexedTrackCount: Number(row.indexed_track_count ?? 0),
       createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private mapStatusCounts(row: DbRow, prefix: string): Record<typeof remoteStatusKeys[number], number> {
+    const counts = emptyTrackStatusCounts();
+    for (const status of remoteStatusKeys) {
+      counts[status] = Number(row[`${prefix}_${status}_count`] ?? 0);
+    }
+    return counts;
+  }
+
+  private mapOverviewItem(row: DbRow): RemoteSourceOverviewItem {
+    return {
+      sourceId: String(row.id),
+      provider: providerOrWebdav(row.provider),
+      displayName: String(row.display_name),
+      status: statusOrEnabled(row.status),
+      syncMode: syncModeOrIndex(row.sync_mode),
+      trackCount: Number(row.track_count ?? 0),
+      albumCount: Number(row.album_count ?? 0),
+      artistCount: Number(row.artist_count ?? 0),
+      totalSizeBytes: Number(row.total_size_bytes ?? 0),
+      missingTrackCount: Number(row.missing_track_count ?? 0),
+      metadata: this.mapStatusCounts(row, 'metadata'),
+      cover: this.mapStatusCounts(row, 'cover'),
+      lyrics: this.mapStatusCounts(row, 'lyrics'),
+      mv: this.mapStatusCounts(row, 'mv'),
+      lastSyncAt: textOrNull(row.last_sync_at),
+      lastError: textOrNull(row.last_error),
+    };
+  }
+
+  private mapIssue(row: DbRow, kind: RemoteSourceIssueKind): RemoteSourceIssueItem {
+    return {
+      id: String(row.id),
+      sourceId: String(row.source_id),
+      provider: providerOrWebdav(row.provider),
+      kind,
+      status: kind === 'missing'
+        ? (row.status === 'available' || row.status === 'missing' ? row.status : 'unknown')
+        : remoteTrackStatusOrPending(row.status),
+      title: String(row.title),
+      artist: String(row.artist),
+      album: String(row.album),
+      remotePath: String(row.remote_path),
+      sizeBytes: numberOrNull(row.size_bytes),
       updatedAt: String(row.updated_at),
     };
   }

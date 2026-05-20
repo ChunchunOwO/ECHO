@@ -491,6 +491,7 @@ afterEach(() => {
   delete document.documentElement.dataset.themeMode;
   delete document.documentElement.dataset.themePreset;
   delete document.documentElement.dataset.themeCustom;
+  delete document.documentElement.dataset.themeCustomId;
   delete (window as { echo?: Window['echo'] }).echo;
 });
 
@@ -527,6 +528,26 @@ describe('SettingsPage', () => {
 
     expect(searchInput.value).toBe('');
     expect(screen.getByText('settings.appearance.theme.title')).toBeTruthy();
+  });
+
+  it('marks onboarding incomplete from the general settings guide toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, onboardingCompleted: false };
+    const settingsChanged = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    window.addEventListener('settings:changed', settingsChanged, { once: true });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('首次启动指引').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ onboardingCompleted: false }));
+    expect(settingsChanged).toHaveBeenCalledWith(expect.objectContaining({ detail: nextSettings }));
   });
 
   it('opens community links through the desktop external-url bridge', async () => {
@@ -899,6 +920,141 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon' }));
     expect(presetButton.className).toContain('active');
     expect(document.documentElement.dataset.themePreset).toBe('darkSideMoon');
+  });
+
+  it('creates a custom theme, saves a color, and clears it when a built-in preset is selected', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    let currentSettings: AppSettings = { ...settings, appearanceThemePreset: 'classic', appearanceCustomThemes: [], appearanceThemeCustomId: null };
+    getSettingsMock.mockResolvedValue(currentSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...patch };
+      return currentSettings;
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.create/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceThemeCustomId: expect.any(String),
+          appearanceThemePreset: 'classic',
+          appearanceCustomThemes: expect.arrayContaining([
+            expect.objectContaining({
+              basePreset: 'classic',
+              name: '我的主题 1',
+            }),
+          ]),
+        }),
+      ),
+    );
+
+    fireEvent.change(screen.getByLabelText('settings.appearance.themeCustom.field.accent'), { target: { value: '#123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.save/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceCustomThemes: expect.arrayContaining([
+            expect.objectContaining({
+              light: expect.objectContaining({ accent: '#123456' }),
+            }),
+          ]),
+        }),
+      ),
+    );
+
+    const presetButton = screen.getByText('settings.appearance.themePreset.darkSideMoon').closest('button') as HTMLButtonElement;
+    fireEvent.click(presetButton);
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon', appearanceThemeCustomId: null }));
+  });
+
+  it('keeps advanced theme customization fields folded by default', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    const titlebarInput = screen.getByLabelText('settings.appearance.themeCustom.field.titlebar') as HTMLInputElement;
+    expect(titlebarInput.closest('[hidden]')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.advanced\.show/ }));
+
+    await waitFor(() => expect(titlebarInput.closest('[hidden]')).toBeNull());
+  });
+
+  it('switches, renames, duplicates, and deletes a custom theme', async () => {
+    const customTheme = {
+      id: 'theme-safe',
+      name: 'Safe Theme',
+      basePreset: 'nyanCat' as const,
+      light: { accent: '#ff66aa' },
+      createdAt: '2026-05-20T00:00:00.000Z',
+      updatedAt: '2026-05-20T00:00:00.000Z',
+    };
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.spyOn(window, 'prompt').mockReturnValue('Renamed Theme');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let currentSettings: AppSettings = {
+      ...settings,
+      appearanceThemePreset: 'classic',
+      appearanceCustomThemes: [customTheme],
+      appearanceThemeCustomId: null,
+    };
+    getSettingsMock.mockResolvedValue(currentSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...patch };
+      return currentSettings;
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /Safe Theme/ }));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'nyanCat', appearanceThemeCustomId: 'theme-safe' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.rename/ }));
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appearanceCustomThemes: expect.arrayContaining([expect.objectContaining({ id: 'theme-safe', name: 'Renamed Theme' })]),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.duplicate/ }));
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceThemePreset: 'nyanCat',
+          appearanceThemeCustomId: expect.any(String),
+          appearanceCustomThemes: expect.arrayContaining([expect.objectContaining({ name: expect.stringContaining('Copy') })]),
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.delete/ }));
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceThemeCustomId: null,
+          appearanceThemePreset: 'nyanCat',
+        }),
+      ),
+    );
   });
 
   it('saves the artist wall album artwork setting and announces settings changes', async () => {

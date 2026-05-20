@@ -7,11 +7,14 @@ import type {
   RemoteBackgroundJobKind,
   RemoteBackgroundJobStatus,
   RemoteSource,
+  RemoteSourceOverview,
   RemoteSyncStatus,
 } from '../../../shared/types/remoteSources';
 
 const remoteApiMocks = vi.hoisted(() => ({
   list: vi.fn(),
+  getOverview: vi.fn(),
+  listIssues: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
@@ -102,6 +105,46 @@ const globalStatus = (overrides: GlobalStatusOverrides = {}): RemoteBackgroundGl
   updatedAt: overrides.updatedAt ?? null,
 });
 
+const emptyStatusCounts = () => ({ pending: 0, searching: 0, partial: 0, ok: 0, not_found: 0, error: 0 });
+
+const overviewFor = (items: RemoteSource[]): RemoteSourceOverview => {
+  const overviewItems = items.map((source) => ({
+    sourceId: source.id,
+    provider: source.provider,
+    displayName: source.displayName,
+    status: source.status,
+    syncMode: source.syncMode,
+    trackCount: source.indexedTrackCount,
+    albumCount: source.indexedTrackCount > 0 ? 1 : 0,
+    artistCount: source.indexedTrackCount > 0 ? 1 : 0,
+    totalSizeBytes: source.indexedTrackCount * 1024,
+    missingTrackCount: 0,
+    metadata: { ...emptyStatusCounts(), ok: source.indexedTrackCount },
+    cover: { ...emptyStatusCounts(), ok: source.indexedTrackCount },
+    lyrics: { ...emptyStatusCounts(), ok: source.indexedTrackCount },
+    mv: emptyStatusCounts(),
+    lastSyncAt: source.lastSyncAt,
+    lastError: source.lastError,
+  }));
+
+  return {
+    totalSources: overviewItems.length,
+    enabledSources: overviewItems.filter((source) => source.status === 'enabled').length,
+    disabledSources: overviewItems.filter((source) => source.status === 'disabled').length,
+    errorSources: overviewItems.filter((source) => source.status === 'error').length,
+    trackCount: overviewItems.reduce((total, source) => total + source.trackCount, 0),
+    albumCount: overviewItems.reduce((total, source) => total + source.albumCount, 0),
+    artistCount: overviewItems.reduce((total, source) => total + source.artistCount, 0),
+    totalSizeBytes: overviewItems.reduce((total, source) => total + source.totalSizeBytes, 0),
+    missingTrackCount: overviewItems.reduce((total, source) => total + source.missingTrackCount, 0),
+    metadata: { ...emptyStatusCounts(), ok: overviewItems.reduce((total, source) => total + source.metadata.ok, 0) },
+    cover: { ...emptyStatusCounts(), ok: overviewItems.reduce((total, source) => total + source.cover.ok, 0) },
+    lyrics: { ...emptyStatusCounts(), ok: overviewItems.reduce((total, source) => total + source.lyrics.ok, 0) },
+    mv: emptyStatusCounts(),
+    sources: overviewItems,
+  };
+};
+
 describe('RemoteSourcesPanel', () => {
   let sources: RemoteSource[] = [];
 
@@ -111,6 +154,8 @@ describe('RemoteSourcesPanel', () => {
       mock.mockReset();
     }
     remoteApiMocks.list.mockImplementation(() => Promise.resolve(sources));
+    remoteApiMocks.getOverview.mockImplementation(() => Promise.resolve(overviewFor(sources)));
+    remoteApiMocks.listIssues.mockResolvedValue([]);
     remoteApiMocks.create.mockImplementation(async (input) => {
       const source = remoteSource({
         id: 'created-source',
@@ -290,6 +335,54 @@ describe('RemoteSourcesPanel', () => {
 
     await waitFor(() => expect(remoteApiMocks.startBackgroundJobs).toHaveBeenCalledWith('source-1', ['cover']));
     await screen.findByText('\u5df2\u52a0\u5165\u7f3a\u5931\u5c01\u9762\u4efb\u52a1\uff1b\u64ad\u653e\u4e2d\u4f1a\u4fdd\u6301\u4f4e\u8d1f\u8f7d\uff0c\u7a7a\u95f2\u540e\u7ee7\u7eed\u5904\u7406\u3002');
+  });
+
+  it('shows remote overview, source recommendations, and issue previews', async () => {
+    sources = [remoteSource({ indexedTrackCount: 8 })];
+    remoteApiMocks.getOverview.mockResolvedValue({
+      ...overviewFor(sources),
+      trackCount: 8,
+      albumCount: 2,
+      artistCount: 3,
+      totalSizeBytes: 4096,
+      metadata: { ...emptyStatusCounts(), ok: 6, error: 2 },
+      sources: [
+        {
+          ...overviewFor(sources).sources[0],
+          trackCount: 8,
+          albumCount: 2,
+          artistCount: 3,
+          totalSizeBytes: 4096,
+          metadata: { ...emptyStatusCounts(), ok: 6, error: 2 },
+        },
+      ],
+    });
+    remoteApiMocks.listIssues.mockResolvedValue([
+      {
+        id: 'remote-track-1',
+        sourceId: 'source-1',
+        provider: 'webdav',
+        kind: 'metadata',
+        status: 'error',
+        title: 'Echo Song',
+        artist: 'Echo Artist',
+        album: 'Echo Album',
+        remotePath: '/music/Echo Song.flac',
+        sizeBytes: 4096,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    render(<RemoteSourcesPanel />);
+
+    await screen.findByText('Mock AList');
+    expect(screen.getAllByText('已索引歌曲').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/8/u).length).toBeGreaterThan(0);
+    expect(screen.getByText(/有 2 首元数据异常/u)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /查看元数据问题/u }));
+    await waitFor(() => expect(remoteApiMocks.listIssues).toHaveBeenCalledWith('source-1', 'metadata', 6));
+    await screen.findByText('Echo Song');
   });
 
   it('keeps remote matching and retry actions lightweight', async () => {

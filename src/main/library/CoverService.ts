@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
+import type { WorkerOptions } from 'node:worker_threads';
 import type { EchoDatabase } from '../database/createDatabase';
 import { COVER_CACHE_VERSION } from './libraryTypes';
 import type { CoverResult, CoverSource, ParsedTrackMetadata } from './libraryTypes';
@@ -62,14 +63,14 @@ const writeIfMissing = async (filePath, data) => {
   }
 };
 
-(async () => {
-  const data = Buffer.from(workerData.data);
+const processTask = async (task) => {
+  const data = Buffer.from(task.data);
   const sourceHash = hashBytes(data);
-  const coverDirectory = join(workerData.cacheRoot, sourceHash.slice(0, 2), sourceHash);
+  const coverDirectory = join(task.cacheRoot, sourceHash.slice(0, 2), sourceHash);
   const thumbPath = join(coverDirectory, 'thumb.webp');
   const albumPath = join(coverDirectory, 'album.webp');
   const largePath = join(coverDirectory, 'large.webp');
-  const originalRef = join(coverDirectory, 'original' + extensionForMimeType(workerData.mimeType));
+  const originalRef = join(coverDirectory, 'original' + extensionForMimeType(task.mimeType));
   const metaPath = join(coverDirectory, 'meta.json');
 
   sharp.concurrency(Math.max(1, Math.min(2, workerData.sharpConcurrency || 1)));
@@ -77,7 +78,7 @@ const writeIfMissing = async (filePath, data) => {
   await writeIfMissing(originalRef, data);
 
   const meta = await readMeta(metaPath);
-  const current = Boolean(meta && meta.version === workerData.cacheVersion && meta.sourceHash === sourceHash);
+  const current = Boolean(meta && meta.version === task.cacheVersion && meta.sourceHash === sourceHash);
   const missingThumb = !current || !existsSync(thumbPath);
   const missingAlbum = !current || !existsSync(albumPath);
   const missingLarge = !current || !existsSync(largePath);
@@ -94,42 +95,292 @@ const writeIfMissing = async (filePath, data) => {
 
   if (!current || !existsSync(metaPath)) {
     await writeFile(metaPath, JSON.stringify({
-      version: workerData.cacheVersion,
+      version: task.cacheVersion,
       sourceHash,
       source: 'embedded',
-      mimeType: workerData.mimeType,
+      mimeType: task.mimeType,
     }, null, 2) + '\n');
   }
 
-  parentPort.postMessage({
-    ok: true,
-    result: {
-      source: 'embedded',
-      thumbPath,
-      albumPath,
-      largePath,
-      originalRef,
-      sourceHash,
-      mimeType: workerData.mimeType,
-      warnings: workerData.warnings || [],
-      errors: workerData.errors || [],
-    },
-  });
-})().catch((error) => {
-  parentPort.postMessage({
-    ok: false,
-    message: error instanceof Error ? error.message : String(error),
+  return {
+    source: 'embedded',
+    thumbPath,
+    albumPath,
+    largePath,
+    originalRef,
+    sourceHash,
+    mimeType: task.mimeType,
+    warnings: task.warnings || [],
+    errors: task.errors || [],
+  };
+};
+
+parentPort.on('message', (task) => {
+  void processTask(task).then((result) => {
+    parentPort.postMessage({
+      requestId: task.requestId,
+      ok: true,
+      result,
+    });
+  }).catch((error) => {
+    parentPort.postMessage({
+      requestId: task.requestId,
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+    });
   });
 });
 `;
 
+type RemoteCoverWorkerMessage = {
+  requestId?: number;
+  ok?: boolean;
+  result?: CoverResult;
+  message?: string;
+};
+
+type RemoteCoverWorkerLike = {
+  postMessage(message: unknown): void;
+  terminate(): Promise<number> | number;
+  on(event: 'message', listener: (message: RemoteCoverWorkerMessage) => void): RemoteCoverWorkerLike;
+  on(event: 'error', listener: (error: Error) => void): RemoteCoverWorkerLike;
+  on(event: 'exit', listener: (code: number) => void): RemoteCoverWorkerLike;
+};
+
+type RemoteCoverWorkerFactory = (source: string, options: WorkerOptions) => RemoteCoverWorkerLike;
+
+type RemoteCoverTaskInput = {
+  data: Uint8Array;
+  mimeType: string | null;
+  warnings: string[];
+  errors: string[];
+};
+
+type QueuedRemoteCoverTask = RemoteCoverTaskInput & {
+  requestId: number;
+  resolve: (result: CoverResult) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout | null;
+};
+
+type RemoteCoverWorkerSlot = {
+  worker: RemoteCoverWorkerLike;
+  currentTask: QueuedRemoteCoverTask | null;
+  retired: boolean;
+};
+
+export type CoverServiceOptions = {
+  remoteCoverPoolSize?: number;
+  remoteCoverTaskTimeoutMs?: number;
+  remoteCoverWorkerFactory?: RemoteCoverWorkerFactory;
+};
+
+const defaultRemoteCoverPoolSize = 4;
+const defaultRemoteCoverTaskTimeoutMs = 30_000;
+
+const normalizeRemoteCoverPoolSize = (value: unknown): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return defaultRemoteCoverPoolSize;
+  }
+  return Math.max(1, Math.min(8, Math.round(numeric)));
+};
+
+class RemoteCoverWorkerPool {
+  private readonly poolSize: number;
+  private readonly taskTimeoutMs: number;
+  private readonly workerFactory: RemoteCoverWorkerFactory;
+  private readonly workers: RemoteCoverWorkerSlot[] = [];
+  private readonly queue: QueuedRemoteCoverTask[] = [];
+  private nextRequestId = 1;
+  private closed = false;
+  private started = false;
+
+  constructor(
+    private readonly cacheRoot: string,
+    options: CoverServiceOptions = {},
+  ) {
+    this.poolSize = normalizeRemoteCoverPoolSize(options.remoteCoverPoolSize);
+    this.taskTimeoutMs = Math.max(1, Math.round(options.remoteCoverTaskTimeoutMs ?? defaultRemoteCoverTaskTimeoutMs));
+    this.workerFactory =
+      options.remoteCoverWorkerFactory ??
+      ((source, workerOptions) => new Worker(source, workerOptions) as RemoteCoverWorkerLike);
+  }
+
+  run(input: RemoteCoverTaskInput): Promise<CoverResult> {
+    if (this.closed) {
+      return Promise.reject(new Error('Remote cover worker pool is closed'));
+    }
+
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        ...input,
+        requestId: this.nextRequestId++,
+        resolve,
+        reject,
+        timeout: null,
+      });
+      this.ensureStarted();
+      this.pump();
+    });
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    const closeError = new Error('Remote cover worker pool is closed');
+    for (const task of this.queue.splice(0)) {
+      task.reject(closeError);
+    }
+
+    for (const slot of [...this.workers]) {
+      this.retireWorker(slot, closeError);
+    }
+  }
+
+  private ensureStarted(): void {
+    if (this.started || this.closed) {
+      return;
+    }
+
+    this.started = true;
+    while (this.workers.length < this.poolSize) {
+      this.createWorker();
+    }
+  }
+
+  private createWorker(): void {
+    if (this.closed) {
+      return;
+    }
+
+    const slot: RemoteCoverWorkerSlot = {
+      worker: this.workerFactory(remoteCoverWorkerSource, {
+        eval: true,
+        workerData: {
+          sharpConcurrency: 1,
+        },
+      }),
+      currentTask: null,
+      retired: false,
+    };
+
+    slot.worker.on('message', (message) => this.handleMessage(slot, message));
+    slot.worker.on('error', (error) => this.handleWorkerFailure(slot, error));
+    slot.worker.on('exit', (code) => {
+      if (!slot.retired && !this.closed) {
+        this.handleWorkerFailure(slot, new Error(`Remote cover worker exited with code ${code}`));
+      }
+    });
+
+    this.workers.push(slot);
+  }
+
+  private pump(): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.ensureStarted();
+    for (const slot of this.workers) {
+      if (!slot.currentTask && this.queue.length > 0) {
+        this.dispatch(slot, this.queue.shift()!);
+      }
+    }
+  }
+
+  private dispatch(slot: RemoteCoverWorkerSlot, task: QueuedRemoteCoverTask): void {
+    slot.currentTask = task;
+    task.timeout = setTimeout(() => {
+      this.handleWorkerFailure(slot, new Error(`Remote cover worker task timed out after ${this.taskTimeoutMs}ms`));
+    }, this.taskTimeoutMs);
+    task.timeout.unref?.();
+
+    try {
+      slot.worker.postMessage({
+        requestId: task.requestId,
+        cacheRoot: this.cacheRoot,
+        cacheVersion: COVER_CACHE_VERSION,
+        data: task.data,
+        mimeType: task.mimeType,
+        warnings: task.warnings,
+        errors: task.errors,
+      });
+    } catch (error) {
+      this.handleWorkerFailure(slot, error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  private handleMessage(slot: RemoteCoverWorkerSlot, message: RemoteCoverWorkerMessage): void {
+    const task = slot.currentTask;
+    if (!task || message.requestId !== task.requestId) {
+      return;
+    }
+
+    this.clearTaskTimeout(task);
+    slot.currentTask = null;
+
+    if (message.ok && message.result) {
+      task.resolve(message.result);
+    } else {
+      task.reject(new Error(message.message ?? 'Remote cover worker failed'));
+    }
+
+    this.pump();
+  }
+
+  private handleWorkerFailure(slot: RemoteCoverWorkerSlot, error: Error): void {
+    if (slot.retired) {
+      return;
+    }
+
+    this.retireWorker(slot, error);
+
+    if (!this.closed) {
+      this.createWorker();
+      this.pump();
+    }
+  }
+
+  private retireWorker(slot: RemoteCoverWorkerSlot, error: Error): void {
+    slot.retired = true;
+    const index = this.workers.indexOf(slot);
+    if (index >= 0) {
+      this.workers.splice(index, 1);
+    }
+
+    const task = slot.currentTask;
+    slot.currentTask = null;
+    if (task) {
+      this.clearTaskTimeout(task);
+      task.reject(error);
+    }
+
+    void Promise.resolve(slot.worker.terminate()).catch(() => undefined);
+  }
+
+  private clearTaskTimeout(task: QueuedRemoteCoverTask): void {
+    if (task.timeout) {
+      clearTimeout(task.timeout);
+      task.timeout = null;
+    }
+  }
+}
+
 export class CoverService {
   private readonly extractor = new TsCoverExtractor();
+  private readonly remoteCoverWorkerPool: RemoteCoverWorkerPool;
 
   constructor(
     private readonly database: EchoDatabase,
     private readonly cacheRoot: string,
-  ) {}
+    options: CoverServiceOptions = {},
+  ) {
+    this.remoteCoverWorkerPool = new RemoteCoverWorkerPool(cacheRoot, options);
+  }
 
   async ensureCover(filePath: string, metadata: ParsedTrackMetadata, now = new Date().toISOString()): Promise<string | null> {
     const result =
@@ -145,34 +396,21 @@ export class CoverService {
   }
 
   private extractRemoteCover(metadata: ParsedTrackMetadata): Promise<CoverResult> {
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(remoteCoverWorkerSource, {
-        eval: true,
-        workerData: {
-          cacheRoot: this.cacheRoot,
-          cacheVersion: COVER_CACHE_VERSION,
-          data: metadata.embeddedCover?.data,
-          mimeType: metadata.embeddedCover?.mimeType ?? null,
-          warnings: metadata.warnings,
-          errors: metadata.errors,
-          sharpConcurrency: 1,
-        },
-      });
+    const data = metadata.embeddedCover?.data;
+    if (!data) {
+      return Promise.reject(new Error('Remote cover data is missing'));
+    }
 
-      worker.once('message', (message: { ok: boolean; result?: CoverResult; message?: string }) => {
-        if (message.ok && message.result) {
-          resolve(message.result);
-        } else {
-          reject(new Error(message.message ?? 'Remote cover worker failed'));
-        }
-      });
-      worker.once('error', reject);
-      worker.once('exit', (code) => {
-        if (code !== 0) {
-          reject(new Error(`Remote cover worker exited with code ${code}`));
-        }
-      });
+    return this.remoteCoverWorkerPool.run({
+      data,
+      mimeType: metadata.embeddedCover?.mimeType ?? null,
+      warnings: metadata.warnings ?? [],
+      errors: metadata.errors ?? [],
     });
+  }
+
+  close(): void {
+    this.remoteCoverWorkerPool.close();
   }
 
   private upsertCover(result: CoverResult, now: string): string | null {

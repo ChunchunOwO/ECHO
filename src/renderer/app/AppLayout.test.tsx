@@ -222,6 +222,30 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(screen.getByText('Plugin manager page')).toBeTruthy());
   });
 
+  it('reopens the first-run wizard when settings mark onboarding incomplete', async () => {
+    const getSettings = vi.fn().mockResolvedValue({ onboardingCompleted: true, smtcEnabled: true });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: { onboardingCompleted: false } }));
+    });
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
   it('notifies the library views when a download is imported', async () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();

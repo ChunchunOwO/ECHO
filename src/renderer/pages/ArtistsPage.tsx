@@ -5,6 +5,7 @@ import type { LibraryArtist, LibrarySort } from '../../shared/types/library';
 import { ArtistDetailView } from '../components/artist/ArtistDetailView';
 import { artistMark } from '../components/artist/artistVisual';
 import { LibrarySourceSwitch } from '../components/library/LibrarySourceSwitch';
+import { RemoteSourceFilter } from '../components/library/RemoteSourceFilter';
 import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '../components/ui/InfiniteScrollSentinel';
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/ui/MediaWallScrollSpacer';
 import { useI18n } from '../i18n/I18nProvider';
@@ -55,6 +56,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>('default');
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
+  const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
   const [prioritizeArtistAvatars, setPrioritizeArtistAvatars] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -141,6 +143,7 @@ export const ArtistsPage = (): JSX.Element => {
           search,
           sort,
           sourceProvider: sourceMode,
+          ...(sourceMode === 'remote' && remoteSourceId ? { sourceId: remoteSourceId } : {}),
           ...(prioritizeArtistAvatars ? { prioritizeArtistAvatars: true } : {}),
         });
 
@@ -170,11 +173,14 @@ export const ArtistsPage = (): JSX.Element => {
         }
       }
     },
-    [prioritizeArtistAvatars, search, sort, sourceMode, t],
+    [prioritizeArtistAvatars, remoteSourceId, search, sort, sourceMode, t],
   );
 
   const setSourceMode = useCallback((mode: LibrarySourceMode): void => {
     setSourceModeState(mode);
+    if (mode !== 'remote') {
+      setRemoteSourceId(null);
+    }
     writeStoredLibrarySourceMode(mode);
   }, []);
 
@@ -472,6 +478,7 @@ export const ArtistsPage = (): JSX.Element => {
           </button>
 
           <LibrarySourceSwitch value={sourceMode} onChange={setSourceMode} />
+          {sourceMode === 'remote' ? <RemoteSourceFilter value={remoteSourceId} onChange={setRemoteSourceId} /> : null}
 
           <div className="sort-select" ref={sortMenuRef}>
             <button
@@ -578,6 +585,7 @@ export const ArtistsPage = (): JSX.Element => {
                 ) : null}
                 <div className="artist-copy">
                   <strong>{artist.name}</strong>
+                  {artist.mediaType === 'remote' ? <small className="remote-media-source">{artist.sourceDisplayName ?? artist.provider ?? '网盘'}</small> : null}
                   <small>{artistMeta(artist, t)}</small>
                 </div>
                 <span className="artist-card-action" aria-hidden="true">

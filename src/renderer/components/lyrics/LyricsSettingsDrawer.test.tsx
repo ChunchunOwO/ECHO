@@ -146,6 +146,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  delete (navigator as Navigator & { queryLocalFonts?: unknown }).queryLocalFonts;
 });
 
 describe('LyricsSettingsDrawer', () => {
@@ -806,6 +807,30 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
 
     expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeTruthy();
+  });
+
+  it('lets users pick an installed system font for lyrics', async () => {
+    const queryLocalFonts = vi.fn().mockResolvedValue([{ family: 'HarmonyOS Sans SC' }, { family: 'Microsoft YaHei' }]);
+    Object.defineProperty(navigator, 'queryLocalFonts', {
+      configurable: true,
+      value: queryLocalFonts,
+    });
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(queryLocalFonts).toHaveBeenCalled());
+    fireEvent.click(container.querySelector('.lyrics-font-picker-button') as HTMLButtonElement);
+    fireEvent.click(await screen.findByRole('button', { name: /HarmonyOS Sans SC/ }));
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsFontFamily: 'HarmonyOS Sans SC', lyricsFontFilePath: null }));
   });
 
   it('toggles lyrics readability enhancement from the lyrics background section', async () => {

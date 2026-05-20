@@ -39,6 +39,7 @@ import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS }
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
 import type {
   AppSettings,
+  AppThemeCustomTheme,
   AppThemeMode,
   AppThemePreset,
   AppThemePresetOverrides,
@@ -59,6 +60,7 @@ import type { AppCacheInventory, CoverCacheMigrationResult } from '../../shared/
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
+import type { DataBackupStatus } from '../../shared/types/settingsBackup';
 import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type {
@@ -93,9 +95,14 @@ import {
   applyThemeMode,
   defaultThemeMode,
   defaultThemePreset,
+  normalizeThemeCustomId,
+  normalizeThemeCustomTheme,
+  normalizeThemeCustomThemes,
   normalizeThemeHexColor,
   normalizeThemePreset,
   normalizeThemePresetOverrides,
+  readThemeCustomId,
+  readThemeCustomThemes,
   readThemePreset,
   readThemePresetOverrides,
   updateThemePreferences,
@@ -279,7 +286,7 @@ const findDuplicateGlobalShortcutAction = (
 const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
   value === 'windows' || value === 'directsound' ? value : 'auto';
 
-const playbackOutputModes: AudioOutputMode[] = ['shared', 'exclusive', 'asio', 'system'];
+const playbackOutputModes: AudioOutputMode[] = ['system', 'shared', 'exclusive', 'asio'];
 
 const getPlaybackOutputModeLabel = (mode: AudioOutputMode, translate: (key: TranslationKey) => string): string =>
   translate(`settings.playback.outputMode.${mode}` as TranslationKey);
@@ -632,7 +639,7 @@ const readInitialSettingsSection = (): SettingsNavKey => {
 };
 
 const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
-  general: ['general', 'language', 'locale', 'tray', 'window size', 'backup', 'settings backup', '通用', '语言', '简繁', '繁简', '托盘', '窗口尺寸', '备份'],
+  general: ['general', 'language', 'locale', 'tray', 'window size', 'backup', 'settings backup', 'data backup', 'auto backup', 'restore backup', '通用', '语言', '简繁', '繁简', '托盘', '窗口尺寸', '备份', '自动备份', '数据备份', '导入备份'],
   playback: [
     'playback',
     'audio',
@@ -1262,19 +1269,132 @@ const themePresetOptions: Array<{
 type ThemeTone = 'light' | 'dark';
 type ThemeColorField = keyof Pick<
   AppThemeToneOverride,
-  'appBg' | 'appBg2' | 'appBg3' | 'panel' | 'panelSoft' | 'accent' | 'accentStrong' | 'secondary' | 'heading' | 'text' | 'muted' | 'border' | 'onAccent' | 'buttonText'
+  | 'appBg'
+  | 'appBg2'
+  | 'appBg3'
+  | 'panel'
+  | 'panelSoft'
+  | 'accent'
+  | 'accentStrong'
+  | 'secondary'
+  | 'heading'
+  | 'text'
+  | 'muted'
+  | 'border'
+  | 'onAccent'
+  | 'buttonText'
+  | 'titlebar'
+  | 'sidebar'
+  | 'player'
+  | 'field'
+  | 'row'
+  | 'rowHover'
+  | 'rowActive'
+  | 'chip'
+  | 'focus'
+  | 'danger'
+  | 'success'
+  | 'warning'
 >;
-type ThemePercentField = keyof Pick<AppThemeToneOverride, 'panelOpacityPercent' | 'glassPercent' | 'shadowPercent'>;
-type ThemeEditorDefaults = Required<Pick<AppThemeToneOverride, ThemeColorField | ThemePercentField>>;
-type ThemeExportPayload = {
+type ThemeNumberField = keyof Pick<
+  AppThemeToneOverride,
+  'panelOpacityPercent' | 'glassPercent' | 'shadowPercent' | 'cornerRadiusPx' | 'panelBlurPx' | 'saturationPercent' | 'motionSpeedSeconds' | 'motionIntensityPercent'
+>;
+type ThemeBooleanField = keyof Pick<AppThemeToneOverride, 'motionEnabled'>;
+type ThemeEditorDefaults = Required<Pick<AppThemeToneOverride, ThemeColorField | ThemeNumberField | ThemeBooleanField>>;
+type ThemeLegacyExportPayload = {
   exportedAt: string;
   overrides: AppThemePresetOverrides;
   preset: AppThemePreset;
   schema: 'echo-next.theme-preset';
   version: 1;
 };
+type ThemeCustomExportPayload = {
+  exportedAt: string;
+  schema: 'echo-next.custom-theme';
+  theme: AppThemeCustomTheme;
+  version: 2;
+};
+type ThemeExportPayload = ThemeLegacyExportPayload | ThemeCustomExportPayload;
 
-const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, ThemeEditorDefaults>> = {
+const baseThemeEditorDefaults: Record<ThemeTone, ThemeEditorDefaults> = {
+  light: {
+    appBg: '#f8fbfd',
+    appBg2: '#eef3f7',
+    appBg3: '#dfe8f2',
+    panel: '#ffffff',
+    panelSoft: '#eff5fc',
+    accent: '#2f6da8',
+    accentStrong: '#164b7d',
+    secondary: '#42b3a8',
+    heading: '#1c2735',
+    text: '#32455d',
+    muted: '#65758a',
+    border: '#283e58',
+    onAccent: '#ffffff',
+    buttonText: '#32455d',
+    titlebar: '#ffffff',
+    sidebar: '#eff5fc',
+    player: '#ffffff',
+    field: '#ffffff',
+    row: '#ffffff',
+    rowHover: '#f3f7fb',
+    rowActive: '#2f6da8',
+    chip: '#ffffff',
+    focus: '#2f6da8',
+    danger: '#d64545',
+    success: '#2f8f72',
+    warning: '#c98a16',
+    panelOpacityPercent: 72,
+    glassPercent: 18,
+    shadowPercent: 100,
+    cornerRadiusPx: 14,
+    panelBlurPx: 15,
+    saturationPercent: 100,
+    motionEnabled: true,
+    motionSpeedSeconds: 0.22,
+    motionIntensityPercent: 100,
+  },
+  dark: {
+    appBg: '#101318',
+    appBg2: '#151a22',
+    appBg3: '#111827',
+    panel: '#1c222b',
+    panelSoft: '#161b23',
+    accent: '#75b7ff',
+    accentStrong: '#cce6ff',
+    secondary: '#7dd7cb',
+    heading: '#f8fbff',
+    text: '#d8e0ea',
+    muted: '#a8b5c4',
+    border: '#647c96',
+    onAccent: '#0f1720',
+    buttonText: '#d8e0ea',
+    titlebar: '#1c222b',
+    sidebar: '#161b23',
+    player: '#1c222b',
+    field: '#1c222b',
+    row: '#1c222b',
+    rowHover: '#253040',
+    rowActive: '#75b7ff',
+    chip: '#1c222b',
+    focus: '#75b7ff',
+    danger: '#ff7575',
+    success: '#7dd7a4',
+    warning: '#f0b84a',
+    panelOpacityPercent: 86,
+    glassPercent: 22,
+    shadowPercent: 100,
+    cornerRadiusPx: 14,
+    panelBlurPx: 16,
+    saturationPercent: 100,
+    motionEnabled: true,
+    motionSpeedSeconds: 0.22,
+    motionIntensityPercent: 100,
+  },
+};
+
+const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, Partial<ThemeEditorDefaults>>> = {
   classic: {
     light: {
       appBg: '#f8fbfd',
@@ -2420,10 +2540,33 @@ const advancedThemeColorFields: Array<{ field: ThemeColorField; labelKey: Transl
   { field: 'buttonText', labelKey: 'settings.appearance.themeCustom.field.buttonText', descriptionKey: 'settings.appearance.themeCustom.field.buttonText.description' },
 ];
 
-const percentThemeFields: Array<{ field: ThemePercentField; labelKey: TranslationKey; descriptionKey: TranslationKey; min: number; max: number }> = [
-  { field: 'panelOpacityPercent', labelKey: 'settings.appearance.themeCustom.field.panelOpacity', descriptionKey: 'settings.appearance.themeCustom.field.panelOpacity.description', min: 40, max: 100 },
-  { field: 'glassPercent', labelKey: 'settings.appearance.themeCustom.field.glass', descriptionKey: 'settings.appearance.themeCustom.field.glass.description', min: 0, max: 80 },
-  { field: 'shadowPercent', labelKey: 'settings.appearance.themeCustom.field.shadow', descriptionKey: 'settings.appearance.themeCustom.field.shadow.description', min: 0, max: 100 },
+const surfaceThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { field: 'titlebar', labelKey: 'settings.appearance.themeCustom.field.titlebar', descriptionKey: 'settings.appearance.themeCustom.field.titlebar.description' },
+  { field: 'sidebar', labelKey: 'settings.appearance.themeCustom.field.sidebar', descriptionKey: 'settings.appearance.themeCustom.field.sidebar.description' },
+  { field: 'player', labelKey: 'settings.appearance.themeCustom.field.player', descriptionKey: 'settings.appearance.themeCustom.field.player.description' },
+  { field: 'field', labelKey: 'settings.appearance.themeCustom.field.field', descriptionKey: 'settings.appearance.themeCustom.field.field.description' },
+  { field: 'row', labelKey: 'settings.appearance.themeCustom.field.row', descriptionKey: 'settings.appearance.themeCustom.field.row.description' },
+  { field: 'rowHover', labelKey: 'settings.appearance.themeCustom.field.rowHover', descriptionKey: 'settings.appearance.themeCustom.field.rowHover.description' },
+  { field: 'rowActive', labelKey: 'settings.appearance.themeCustom.field.rowActive', descriptionKey: 'settings.appearance.themeCustom.field.rowActive.description' },
+  { field: 'chip', labelKey: 'settings.appearance.themeCustom.field.chip', descriptionKey: 'settings.appearance.themeCustom.field.chip.description' },
+];
+
+const stateThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { field: 'success', labelKey: 'settings.appearance.themeCustom.field.success', descriptionKey: 'settings.appearance.themeCustom.field.success.description' },
+  { field: 'warning', labelKey: 'settings.appearance.themeCustom.field.warning', descriptionKey: 'settings.appearance.themeCustom.field.warning.description' },
+  { field: 'danger', labelKey: 'settings.appearance.themeCustom.field.danger', descriptionKey: 'settings.appearance.themeCustom.field.danger.description' },
+  { field: 'focus', labelKey: 'settings.appearance.themeCustom.field.focus', descriptionKey: 'settings.appearance.themeCustom.field.focus.description' },
+];
+
+const numberThemeFields: Array<{ field: ThemeNumberField; labelKey: TranslationKey; descriptionKey: TranslationKey; min: number; max: number; step?: number; suffix: string }> = [
+  { field: 'panelOpacityPercent', labelKey: 'settings.appearance.themeCustom.field.panelOpacity', descriptionKey: 'settings.appearance.themeCustom.field.panelOpacity.description', min: 40, max: 100, suffix: '%' },
+  { field: 'glassPercent', labelKey: 'settings.appearance.themeCustom.field.glass', descriptionKey: 'settings.appearance.themeCustom.field.glass.description', min: 0, max: 80, suffix: '%' },
+  { field: 'shadowPercent', labelKey: 'settings.appearance.themeCustom.field.shadow', descriptionKey: 'settings.appearance.themeCustom.field.shadow.description', min: 0, max: 100, suffix: '%' },
+  { field: 'cornerRadiusPx', labelKey: 'settings.appearance.themeCustom.field.cornerRadius', descriptionKey: 'settings.appearance.themeCustom.field.cornerRadius.description', min: 0, max: 28, suffix: 'px' },
+  { field: 'panelBlurPx', labelKey: 'settings.appearance.themeCustom.field.panelBlur', descriptionKey: 'settings.appearance.themeCustom.field.panelBlur.description', min: 0, max: 32, suffix: 'px' },
+  { field: 'saturationPercent', labelKey: 'settings.appearance.themeCustom.field.saturation', descriptionKey: 'settings.appearance.themeCustom.field.saturation.description', min: 60, max: 140, suffix: '%' },
+  { field: 'motionSpeedSeconds', labelKey: 'settings.appearance.themeCustom.field.motionSpeed', descriptionKey: 'settings.appearance.themeCustom.field.motionSpeed.description', min: 0.12, max: 8, step: 0.01, suffix: 's' },
+  { field: 'motionIntensityPercent', labelKey: 'settings.appearance.themeCustom.field.motionIntensity', descriptionKey: 'settings.appearance.themeCustom.field.motionIntensity.description', min: 0, max: 160, suffix: '%' },
 ];
 
 const hexToRgb = (value: string): { r: number; g: number; b: number } | null => {
@@ -2463,8 +2606,13 @@ const getContrastRatio = (foreground: string, background: string): number => {
 
 const bestReadableColor = (background: string): string => (getContrastRatio('#ffffff', background) >= getContrastRatio('#241a17', background) ? '#ffffff' : '#241a17');
 
+const getThemeEditorDefaults = (preset: AppThemePreset, tone: ThemeTone): ThemeEditorDefaults => ({
+  ...baseThemeEditorDefaults[tone],
+  ...(themeEditorDefaults[preset]?.[tone] ?? {}),
+});
+
 const mergeThemeToneValues = (preset: AppThemePreset, tone: ThemeTone, draft: AppThemeToneOverride): ThemeEditorDefaults => ({
-  ...themeEditorDefaults[preset][tone],
+  ...getThemeEditorDefaults(preset, tone),
   ...draft,
 });
 
@@ -2500,6 +2648,109 @@ const readThemeExportPreset = (value: unknown): AppThemePreset | null => {
     return null;
   }
   return normalizeThemePreset(value);
+};
+
+const createThemeCustomId = (): string => `theme-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const getNextThemeCustomName = (themes: AppThemeCustomTheme[]): string => {
+  const usedNames = new Set(themes.map((theme) => theme.name));
+  let index = themes.length + 1;
+  while (usedNames.has(`我的主题 ${index}`)) {
+    index += 1;
+  }
+  return `我的主题 ${index}`;
+};
+
+const buildThemeCustomTheme = (
+  themes: AppThemeCustomTheme[],
+  basePreset: AppThemePreset,
+  tone: ThemeTone,
+  draft: AppThemeToneOverride = {},
+  name = getNextThemeCustomName(themes),
+): AppThemeCustomTheme => {
+  const timestamp = new Date().toISOString();
+  const theme: AppThemeCustomTheme = {
+    id: createThemeCustomId(),
+    name,
+    basePreset,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  if (Object.keys(draft).length > 0) {
+    theme[tone] = draft;
+  }
+
+  return theme;
+};
+
+const updateThemeCustomThemeTone = (
+  themes: AppThemeCustomTheme[],
+  themeId: string,
+  tone: ThemeTone,
+  draft: AppThemeToneOverride | null,
+): AppThemeCustomTheme[] => {
+  const timestamp = new Date().toISOString();
+  return normalizeThemeCustomThemes(
+    themes.map((theme) => {
+      if (theme.id !== themeId) {
+        return theme;
+      }
+
+      const next: AppThemeCustomTheme = { ...theme, updatedAt: timestamp };
+      if (!draft || Object.keys(draft).length === 0) {
+        delete next[tone];
+      } else {
+        next[tone] = draft;
+      }
+      return next;
+    }),
+  );
+};
+
+const renameThemeCustomTheme = (themes: AppThemeCustomTheme[], themeId: string, name: string): AppThemeCustomTheme[] => {
+  const normalized = name.replace(/[\r\n;]/g, '').trim().slice(0, 48);
+  if (!normalized) {
+    return themes;
+  }
+
+  const timestamp = new Date().toISOString();
+  return normalizeThemeCustomThemes(themes.map((theme) => (theme.id === themeId ? { ...theme, name: normalized, updatedAt: timestamp } : theme)));
+};
+
+const duplicateThemeCustomTheme = (themes: AppThemeCustomTheme[], themeId: string): AppThemeCustomTheme[] => {
+  const source = themes.find((theme) => theme.id === themeId);
+  if (!source) {
+    return themes;
+  }
+
+  const timestamp = new Date().toISOString();
+  return normalizeThemeCustomThemes([
+    ...themes,
+    {
+      ...source,
+      id: createThemeCustomId(),
+      name: `${source.name} Copy`.slice(0, 48),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]);
+};
+
+const createThemeExportPayload = (
+  themes: AppThemeCustomTheme[],
+  selectedTheme: AppThemeCustomTheme | undefined,
+  selectedPreset: AppThemePreset,
+  tone: ThemeTone,
+  draft: AppThemeToneOverride,
+): ThemeCustomExportPayload => {
+  const theme = selectedTheme ?? buildThemeCustomTheme(themes, selectedPreset, tone, draft, getNextThemeCustomName(themes));
+  return {
+    exportedAt: new Date().toISOString(),
+    schema: 'echo-next.custom-theme',
+    theme,
+    version: 2,
+  };
 };
 
 const downloadTextFile = (filename: string, content: string): void => {
@@ -2964,10 +3215,14 @@ export const SettingsPage = (): JSX.Element => {
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [selectedThemePreset, setSelectedThemePreset] = useState<AppThemePreset>(() => readThemePreset());
+  const [themeCustomThemes, setThemeCustomThemes] = useState<AppThemeCustomTheme[]>(() => readThemeCustomThemes());
+  const [activeThemeCustomId, setActiveThemeCustomId] = useState<string | null>(() => readThemeCustomId());
   const [themeCustomTone, setThemeCustomTone] = useState<ThemeTone>('light');
   const [themeCustomDraft, setThemeCustomDraft] = useState<AppThemeToneOverride>({});
   const [themeCustomAdvancedOpen, setThemeCustomAdvancedOpen] = useState(false);
   const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
+  const pendingThemeCopyDraftRef = useRef<{ draft: AppThemeToneOverride; tone: ThemeTone } | null>(null);
+  const skipNextThemePreviewRef = useRef(false);
   const wallpaperPersistTimerRef = useRef<number | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
   const [taskbarPlaybackStatus, setTaskbarPlaybackStatus] = useState<TaskbarPlaybackStatus | null>(null);
@@ -3029,6 +3284,9 @@ export const SettingsPage = (): JSX.Element => {
   const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
   const [settingsBackupBusy, setSettingsBackupBusy] = useState<'export' | 'import' | 'dataPackage' | null>(null);
   const [settingsBackupMessage, setSettingsBackupMessage] = useState<string | null>(null);
+  const [dataBackupStatus, setDataBackupStatus] = useState<DataBackupStatus | null>(null);
+  const [dataBackupBusy, setDataBackupBusy] = useState<'choose' | 'run' | 'import' | 'open' | null>(null);
+  const [dataBackupMessage, setDataBackupMessage] = useState<string | null>(null);
   const [pluginSettingsMessage, setPluginSettingsMessage] = useState<string | null>(null);
   const [recordingShortcutAction, setRecordingShortcutAction] = useState<GlobalShortcutAction | null>(null);
   const [shortcutMessages, setShortcutMessages] = useState<Partial<Record<GlobalShortcutAction, string | null>>>({});
@@ -3086,6 +3344,22 @@ export const SettingsPage = (): JSX.Element => {
       description: string;
       terms: string[];
     }> = [
+      {
+        id: 'row-first-run-wizard',
+        sectionKey: 'general',
+        targetId: 'settings-row-first-run-wizard',
+        title: '首次启动指引',
+        description: '重新打开首次启动向导，检查音乐文件夹、缓存位置、扫描模式和标准输出（系统音频）。',
+        terms: ['首次启动指引', '新手指引', '新手引导', '向导', '引导', '标准输出', '系统音频', 'guide', 'onboarding', 'first run', 'welcome', 'system audio'],
+      },
+      {
+        id: 'row-data-backup',
+        sectionKey: 'general',
+        targetId: 'settings-row-data-backup',
+        title: '自动数据备份',
+        description: '设置备份目录、备份周期，并导入完整数据备份。',
+        terms: ['自动数据备份', '自动备份', '数据备份', '备份目录', '备份周期', '导入备份', '恢复备份', 'backup', 'auto backup', 'data backup', 'restore backup'],
+      },
       {
         id: 'row-plugins',
         sectionKey: 'plugins',
@@ -3601,17 +3875,38 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshDataBackupStatus = useCallback(async () => {
+    const app = getAppBridge();
+    if (!app?.getDataBackupStatus) {
+      setDataBackupStatus(null);
+      return;
+    }
+
+    try {
+      setDataBackupStatus(await app.getDataBackupStatus());
+    } catch {
+      setDataBackupStatus(null);
+    }
+  }, []);
+
   useEffect(() => {
     const app = getAppBridge();
     void app?.getSettings().then((settings) => {
       setAppSettings(settings);
-      setSelectedThemePreset(settings.appearanceThemePreset ?? defaultThemePreset);
+      const customThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes ?? []);
+      const customThemeId = normalizeThemeCustomId(settings.appearanceThemeCustomId ?? null, customThemes);
+      const activeCustomTheme = customThemes.find((theme) => theme.id === customThemeId);
+      const basePreset = activeCustomTheme?.basePreset ?? settings.appearanceThemePreset ?? defaultThemePreset;
+      setThemeCustomThemes(customThemes);
+      setActiveThemeCustomId(customThemeId);
+      setSelectedThemePreset(basePreset);
       updateThemePreferences(
         settings.appearanceTheme ?? defaultThemeMode,
-        settings.appearanceThemePreset ?? defaultThemePreset,
+        basePreset,
         settings.appearanceThemePresetOverrides ?? {},
+        { customThemeId, customThemes },
       );
-      setThemeCustomDraft(settings.appearanceThemePresetOverrides?.[settings.appearanceThemePreset ?? defaultThemePreset]?.light ?? {});
+      setThemeCustomDraft(activeCustomTheme?.light ?? settings.appearanceThemePresetOverrides?.[basePreset]?.light ?? {});
       if (settings.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
       }
@@ -3620,6 +3915,7 @@ export const SettingsPage = (): JSX.Element => {
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
+    void app?.getDataBackupStatus?.().then(setDataBackupStatus).catch(() => undefined);
     const unsubscribeUpdateStatus = app?.onUpdateStatus?.((status) => {
       setUpdateStatus(status);
       if (status.state === 'downloading' || status.state === 'downloaded') {
@@ -3738,7 +4034,12 @@ export const SettingsPage = (): JSX.Element => {
 
   useEffect(() => {
     if (activeSection === 'appearance') {
-      setSelectedThemePreset(readThemePreset());
+      const localThemes = readThemeCustomThemes();
+      const localCustomId = readThemeCustomId();
+      const localCustomTheme = localThemes.find((theme) => theme.id === localCustomId);
+      setThemeCustomThemes(localThemes);
+      setActiveThemeCustomId(localCustomId);
+      setSelectedThemePreset(localCustomTheme?.basePreset ?? readThemePreset());
     }
   }, [activeSection]);
 
@@ -3746,20 +4047,52 @@ export const SettingsPage = (): JSX.Element => {
     () => appSettings?.appearanceThemePresetOverrides ?? readThemePresetOverrides(),
     [appSettings?.appearanceThemePresetOverrides],
   );
+  const savedThemeCustomThemes = useMemo<AppThemeCustomTheme[]>(
+    () => normalizeThemeCustomThemes(appSettings?.appearanceCustomThemes ?? themeCustomThemes),
+    [appSettings?.appearanceCustomThemes, themeCustomThemes],
+  );
+  const savedThemeCustomId = useMemo<string | null>(
+    () => normalizeThemeCustomId(appSettings?.appearanceThemeCustomId ?? activeThemeCustomId, savedThemeCustomThemes),
+    [activeThemeCustomId, appSettings?.appearanceThemeCustomId, savedThemeCustomThemes],
+  );
+  const activeThemeCustom = useMemo(
+    () => savedThemeCustomThemes.find((theme) => theme.id === savedThemeCustomId),
+    [savedThemeCustomId, savedThemeCustomThemes],
+  );
 
   useEffect(() => {
-    setThemeCustomDraft(savedThemePresetOverrides[selectedThemePreset]?.[themeCustomTone] ?? {});
+    const pendingCopy = pendingThemeCopyDraftRef.current;
+    if (pendingCopy?.tone === themeCustomTone) {
+      setThemeCustomDraft(pendingCopy.draft);
+      pendingThemeCopyDraftRef.current = null;
+      setThemeCustomMessage(null);
+      return;
+    }
+
+    setThemeCustomDraft(activeThemeCustom?.[themeCustomTone] ?? savedThemePresetOverrides[selectedThemePreset]?.[themeCustomTone] ?? {});
     setThemeCustomMessage(null);
-  }, [savedThemePresetOverrides, selectedThemePreset, themeCustomTone]);
+  }, [activeThemeCustom, savedThemePresetOverrides, selectedThemePreset, themeCustomTone]);
 
   useEffect(() => {
     if (activeSection !== 'appearance') {
       return;
     }
+    if (skipNextThemePreviewRef.current) {
+      skipNextThemePreviewRef.current = false;
+      return;
+    }
 
-    const previewOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
-    applyThemeMode(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, previewOverrides);
-  }, [activeSection, appSettings?.appearanceTheme, savedThemePresetOverrides, selectedThemePreset, themeCustomDraft, themeCustomTone]);
+    const previewOverrides = activeThemeCustom
+      ? savedThemePresetOverrides
+      : buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    const previewThemes = activeThemeCustom
+      ? updateThemeCustomThemeTone(savedThemeCustomThemes, activeThemeCustom.id, themeCustomTone, themeCustomDraft)
+      : savedThemeCustomThemes;
+    applyThemeMode(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, previewOverrides, {
+      customThemeId: activeThemeCustom?.id ?? null,
+      customThemes: previewThemes,
+    });
+  }, [activeSection, activeThemeCustom, appSettings?.appearanceTheme, savedThemeCustomThemes, savedThemePresetOverrides, selectedThemePreset, themeCustomDraft, themeCustomTone]);
 
   useEffect(() => {
     const handleSettingsChanged = (event: Event): void => {
@@ -3771,12 +4104,29 @@ export const SettingsPage = (): JSX.Element => {
 
       setAppSettings((current) => {
         const nextSettings = current ? { ...current, ...appPatch } : current;
-        if (appPatch.appearanceTheme || appPatch.appearanceThemePreset) {
+        if (appPatch.appearanceCustomThemes || Object.prototype.hasOwnProperty.call(appPatch, 'appearanceThemeCustomId')) {
+          const customThemes = normalizeThemeCustomThemes(nextSettings?.appearanceCustomThemes ?? appPatch.appearanceCustomThemes ?? []);
+          const customThemeId = normalizeThemeCustomId(nextSettings?.appearanceThemeCustomId ?? appPatch.appearanceThemeCustomId ?? null, customThemes);
+          const activeCustomTheme = customThemes.find((theme) => theme.id === customThemeId);
+          setThemeCustomThemes(customThemes);
+          setActiveThemeCustomId(customThemeId);
+          setSelectedThemePreset(activeCustomTheme?.basePreset ?? nextSettings?.appearanceThemePreset ?? defaultThemePreset);
+          updateThemePreferences(
+            nextSettings?.appearanceTheme ?? appPatch.appearanceTheme ?? defaultThemeMode,
+            activeCustomTheme?.basePreset ?? nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset,
+            nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides ?? {},
+            { customThemeId, customThemes },
+          );
+        } else if (appPatch.appearanceTheme || appPatch.appearanceThemePreset) {
           setSelectedThemePreset(nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset);
           updateThemePreferences(
             nextSettings?.appearanceTheme ?? appPatch.appearanceTheme ?? defaultThemeMode,
             nextSettings?.appearanceThemePreset ?? appPatch.appearanceThemePreset ?? defaultThemePreset,
             nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides ?? {},
+            {
+              customThemeId: nextSettings?.appearanceThemeCustomId ?? null,
+              customThemes: nextSettings?.appearanceCustomThemes ?? [],
+            },
           );
         }
         if (appPatch.appearanceThemePresetOverrides) {
@@ -3784,6 +4134,10 @@ export const SettingsPage = (): JSX.Element => {
             nextSettings?.appearanceThemePresetOverrides ?? appPatch.appearanceThemePresetOverrides,
             nextSettings?.appearanceTheme ?? defaultThemeMode,
             nextSettings?.appearanceThemePreset ?? defaultThemePreset,
+            {
+              customThemeId: nextSettings?.appearanceThemeCustomId ?? null,
+              customThemes: nextSettings?.appearanceCustomThemes ?? [],
+            },
           );
         }
         return nextSettings;
@@ -4287,16 +4641,36 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeModeChange = (appearanceTheme: AppThemeMode): void => {
-    updateThemePreferences(appearanceTheme, selectedThemePreset, savedThemePresetOverrides, { animate: true });
+    skipNextThemePreviewRef.current = true;
+    updateThemePreferences(appearanceTheme, selectedThemePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: activeThemeCustom?.id ?? null,
+      customThemes: savedThemeCustomThemes,
+    });
     setAppSettings((current) => (current ? { ...current, appearanceTheme } : current));
     patchAppSettings({ appearanceTheme });
   };
 
   const handleThemePresetChange = (appearanceThemePreset: AppThemePreset): void => {
-    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, appearanceThemePreset, savedThemePresetOverrides, { animate: true });
+    const nextCustomId = activeThemeCustom ? null : savedThemeCustomId;
+    skipNextThemePreviewRef.current = true;
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, appearanceThemePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: nextCustomId,
+      customThemes: savedThemeCustomThemes,
+    });
     setSelectedThemePreset(appearanceThemePreset);
-    setAppSettings((current) => (current ? { ...current, appearanceThemePreset } : current));
-    patchAppSettings({ appearanceThemePreset });
+    setActiveThemeCustomId(nextCustomId);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset,
+            appearanceThemeCustomId: nextCustomId,
+          }
+        : current,
+    );
+    patchAppSettings(activeThemeCustom ? { appearanceThemePreset, appearanceThemeCustomId: null } : { appearanceThemePreset });
   };
 
   const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
@@ -4314,7 +4688,7 @@ export const SettingsPage = (): JSX.Element => {
     setThemeCustomMessage(null);
     setThemeCustomDraft((current) => {
       const next = { ...current };
-      if (color === themeEditorDefaults[selectedThemePreset][themeCustomTone][field]) {
+      if (color === getThemeEditorDefaults(selectedThemePreset, themeCustomTone)[field]) {
         delete next[field];
       } else {
         next[field] = color;
@@ -4323,20 +4697,34 @@ export const SettingsPage = (): JSX.Element => {
     });
   };
 
-  const updateThemeCustomPercent = (field: ThemePercentField, value: number): void => {
-    const spec = percentThemeFields.find((option) => option.field === field);
+  const updateThemeCustomPercent = (field: ThemeNumberField, value: number): void => {
+    const spec = numberThemeFields.find((option) => option.field === field);
     if (!spec) {
       return;
     }
 
-    const normalized = Math.round(Math.min(spec.max, Math.max(spec.min, value)));
+    const factor = 1 / (spec.step ?? 1);
+    const normalized = Math.round(Math.min(spec.max, Math.max(spec.min, value)) * factor) / factor;
     setThemeCustomMessage(null);
     setThemeCustomDraft((current) => {
       const next = { ...current };
-      if (normalized === themeEditorDefaults[selectedThemePreset][themeCustomTone][field]) {
+      if (normalized === getThemeEditorDefaults(selectedThemePreset, themeCustomTone)[field]) {
         delete next[field];
       } else {
         next[field] = normalized;
+      }
+      return next;
+    });
+  };
+
+  const updateThemeCustomMotionEnabled = (enabled: boolean): void => {
+    setThemeCustomMessage(null);
+    setThemeCustomDraft((current) => {
+      const next = { ...current };
+      if (enabled === getThemeEditorDefaults(selectedThemePreset, themeCustomTone).motionEnabled) {
+        delete next.motionEnabled;
+      } else {
+        next.motionEnabled = enabled;
       }
       return next;
     });
@@ -4365,33 +4753,56 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
-    const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
-    updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
-    setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
-    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
+    const currentTheme = activeThemeCustom;
+    const nextThemes = currentTheme
+      ? updateThemeCustomThemeTone(savedThemeCustomThemes, currentTheme.id, themeCustomTone, themeCustomDraft)
+      : normalizeThemeCustomThemes([...savedThemeCustomThemes, buildThemeCustomTheme(savedThemeCustomThemes, selectedThemePreset, themeCustomTone, themeCustomDraft)]);
+    const nextThemeId = currentTheme?.id ?? nextThemes[nextThemes.length - 1]?.id ?? null;
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: nextThemeId,
+      customThemes: nextThemes,
+    });
+    setThemeCustomThemes(nextThemes);
+    setActiveThemeCustomId(nextThemeId);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: selectedThemePreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: nextThemeId,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: nextThemeId });
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.saved'));
   };
 
   const handleThemeCustomReset = (): void => {
-    const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, null);
     setThemeCustomDraft({});
-    updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
-    setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
-    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
+    if (activeThemeCustom) {
+      const nextThemes = updateThemeCustomThemeTone(savedThemeCustomThemes, activeThemeCustom.id, themeCustomTone, null);
+      updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, savedThemePresetOverrides, {
+        animate: true,
+        customThemeId: activeThemeCustom.id,
+        customThemes: nextThemes,
+      });
+      setThemeCustomThemes(nextThemes);
+      setAppSettings((current) => (current ? { ...current, appearanceCustomThemes: nextThemes } : current));
+      patchAppSettings({ appearanceCustomThemes: nextThemes });
+    } else {
+      const nextOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, null);
+      updateThemePresetOverrides(nextOverrides, appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, { animate: true });
+      setAppSettings((current) => (current ? { ...current, appearanceThemePresetOverrides: nextOverrides } : current));
+      patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceThemePresetOverrides: nextOverrides });
+    }
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.reset'));
   };
 
   const handleThemeCustomExport = (): void => {
-    const currentOverrides = buildThemePresetOverrides(savedThemePresetOverrides, selectedThemePreset, themeCustomTone, themeCustomDraft);
-    const presetOverride = currentOverrides[selectedThemePreset];
-    const payload: ThemeExportPayload = {
-      exportedAt: new Date().toISOString(),
-      overrides: presetOverride ? { [selectedThemePreset]: presetOverride } : {},
-      preset: selectedThemePreset,
-      schema: 'echo-next.theme-preset',
-      version: 1,
-    };
-    downloadTextFile(`echo-theme-${selectedThemePreset}.echo-theme.json`, `${JSON.stringify(payload, null, 2)}\n`);
+    const payload = createThemeExportPayload(savedThemeCustomThemes, activeThemeCustom, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    downloadTextFile(`echo-theme-${payload.theme.name}.echo-theme.json`, `${JSON.stringify(payload, null, 2)}\n`);
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.exported'));
   };
 
@@ -4413,38 +4824,188 @@ export const SettingsPage = (): JSX.Element => {
             throw new Error('Invalid theme payload');
           }
 
-          const importedPreset = readThemeExportPreset(parsed.preset);
-          if (!importedPreset) {
-            throw new Error('Invalid theme preset');
+          let importedTheme: AppThemeCustomTheme | undefined;
+          if (parsed.version === 2 && parsed.schema === 'echo-next.custom-theme') {
+            importedTheme = normalizeThemeCustomTheme(parsed.theme);
+          } else if (parsed.version === 1 && parsed.schema === 'echo-next.theme-preset') {
+            const importedPreset = readThemeExportPreset(parsed.preset);
+            if (!importedPreset) {
+              throw new Error('Invalid theme preset');
+            }
+            const normalizedOverrides = normalizeThemePresetOverrides(parsed.overrides);
+            const importedOverride = normalizedOverrides[importedPreset];
+            importedTheme = normalizeThemeCustomTheme({
+              ...buildThemeCustomTheme(savedThemeCustomThemes, importedPreset, themeCustomTone, importedOverride?.[themeCustomTone] ?? {}, '导入主题'),
+              light: importedOverride?.light,
+              dark: importedOverride?.dark,
+            });
           }
 
-          const normalizedOverrides = normalizeThemePresetOverrides(parsed.overrides);
-          const importedOverride = normalizedOverrides[importedPreset];
-          const nextOverrides: AppThemePresetOverrides = { ...savedThemePresetOverrides };
-          if (importedOverride) {
-            nextOverrides[importedPreset] = importedOverride;
-          } else {
-            delete nextOverrides[importedPreset];
+          if (!importedTheme) {
+            throw new Error('Invalid theme payload');
           }
 
-          setSelectedThemePreset(importedPreset);
-          setThemeCustomDraft(nextOverrides[importedPreset]?.[themeCustomTone] ?? {});
-          updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, importedPreset, nextOverrides, { animate: true });
+          const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes.filter((theme) => theme.id !== importedTheme.id), importedTheme]);
+          setThemeCustomThemes(nextThemes);
+          setActiveThemeCustomId(importedTheme.id);
+          setSelectedThemePreset(importedTheme.basePreset);
+          setThemeCustomDraft(importedTheme[themeCustomTone] ?? {});
+          updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, importedTheme.basePreset, savedThemePresetOverrides, {
+            animate: true,
+            customThemeId: importedTheme.id,
+            customThemes: nextThemes,
+          });
           setAppSettings((current) =>
             current
               ? {
                   ...current,
-                  appearanceThemePreset: importedPreset,
-                  appearanceThemePresetOverrides: nextOverrides,
+                  appearanceThemePreset: importedTheme.basePreset,
+                  appearanceCustomThemes: nextThemes,
+                  appearanceThemeCustomId: importedTheme.id,
                 }
               : current,
           );
-          patchAppSettings({ appearanceThemePreset: importedPreset, appearanceThemePresetOverrides: nextOverrides });
+          patchAppSettings({
+            appearanceThemePreset: importedTheme.basePreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: importedTheme.id,
+          });
           setThemeCustomMessage(t('settings.appearance.themeCustom.message.imported'));
         })
         .catch(() => setThemeCustomMessage(t('settings.appearance.themeCustom.message.importFailed')));
     };
     input.click();
+  };
+
+  const handleThemeCustomCreate = (): void => {
+    const nextTheme = buildThemeCustomTheme(savedThemeCustomThemes, selectedThemePreset, themeCustomTone, themeCustomDraft);
+    const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes, nextTheme]);
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: nextTheme.id,
+      customThemes: nextThemes,
+    });
+    setThemeCustomThemes(nextThemes);
+    setActiveThemeCustomId(nextTheme.id);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: selectedThemePreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: nextTheme.id,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: nextTheme.id });
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.created'));
+  };
+
+  const handleThemeCustomSelect = (theme: AppThemeCustomTheme): void => {
+    skipNextThemePreviewRef.current = true;
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, theme.basePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: theme.id,
+      customThemes: savedThemeCustomThemes,
+    });
+    setActiveThemeCustomId(theme.id);
+    setSelectedThemePreset(theme.basePreset);
+    setThemeCustomDraft(theme[themeCustomTone] ?? {});
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: theme.basePreset,
+            appearanceThemeCustomId: theme.id,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: theme.basePreset, appearanceThemeCustomId: theme.id });
+  };
+
+  const handleThemeCustomRename = (): void => {
+    if (!activeThemeCustom) {
+      return;
+    }
+    const nextName = window.prompt(t('settings.appearance.themeCustom.action.rename'), activeThemeCustom.name);
+    if (nextName === null) {
+      return;
+    }
+
+    const nextThemes = renameThemeCustomTheme(savedThemeCustomThemes, activeThemeCustom.id, nextName);
+    setThemeCustomThemes(nextThemes);
+    setAppSettings((current) => (current ? { ...current, appearanceCustomThemes: nextThemes } : current));
+    patchAppSettings({ appearanceCustomThemes: nextThemes });
+  };
+
+  const handleThemeCustomDuplicate = (): void => {
+    if (!activeThemeCustom) {
+      return;
+    }
+
+    const nextThemes = duplicateThemeCustomTheme(savedThemeCustomThemes, activeThemeCustom.id);
+    const nextTheme = nextThemes[nextThemes.length - 1];
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, nextTheme.basePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: nextTheme.id,
+      customThemes: nextThemes,
+    });
+    setThemeCustomThemes(nextThemes);
+    setActiveThemeCustomId(nextTheme.id);
+    setSelectedThemePreset(nextTheme.basePreset);
+    setThemeCustomDraft(nextTheme[themeCustomTone] ?? {});
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: nextTheme.basePreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: nextTheme.id,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: nextTheme.basePreset, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: nextTheme.id });
+  };
+
+  const handleThemeCustomDelete = (): void => {
+    if (!activeThemeCustom) {
+      return;
+    }
+    if (!window.confirm(t('settings.appearance.themeCustom.action.delete'))) {
+      return;
+    }
+
+    const fallbackPreset = activeThemeCustom.basePreset;
+    const nextThemes = savedThemeCustomThemes.filter((theme) => theme.id !== activeThemeCustom.id);
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, fallbackPreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: null,
+      customThemes: nextThemes,
+    });
+    setThemeCustomThemes(nextThemes);
+    setActiveThemeCustomId(null);
+    setSelectedThemePreset(fallbackPreset);
+    setThemeCustomDraft(savedThemePresetOverrides[fallbackPreset]?.[themeCustomTone] ?? {});
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: fallbackPreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: null,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: fallbackPreset, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: null });
+  };
+
+  const handleThemeCustomCopyTone = (fromTone: ThemeTone, toTone: ThemeTone): void => {
+    const source = fromTone === themeCustomTone ? themeCustomDraft : activeThemeCustom?.[fromTone] ?? savedThemePresetOverrides[selectedThemePreset]?.[fromTone] ?? {};
+    const draft = { ...source };
+    pendingThemeCopyDraftRef.current = { draft, tone: toTone };
+    setThemeCustomTone(toTone);
+    setThemeCustomDraft(draft);
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.copied'));
   };
 
   const dispatchSettingsChanged = useCallback((patch: Partial<AppSettings> | Partial<MvSettings>): void => {
@@ -4466,6 +5027,13 @@ export const SettingsPage = (): JSX.Element => {
         if (Object.prototype.hasOwnProperty.call(patch, 'taskbarPlaybackControlsEnabled')) {
           void refreshTaskbarPlaybackStatus();
         }
+        if (
+          Object.prototype.hasOwnProperty.call(patch, 'autoDataBackupEnabled') ||
+          Object.prototype.hasOwnProperty.call(patch, 'autoDataBackupDirectory') ||
+          Object.prototype.hasOwnProperty.call(patch, 'autoDataBackupIntervalDays')
+        ) {
+          void refreshDataBackupStatus();
+        }
         if (options.announce !== false) {
           dispatchSettingsChanged(options.mvSettingsPatch ? { ...settings, ...options.mvSettingsPatch } : settings);
         }
@@ -4473,7 +5041,7 @@ export const SettingsPage = (): JSX.Element => {
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
-  }, [dispatchSettingsChanged, refreshTaskbarPlaybackStatus]);
+  }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
 
   const handleNetworkProxySave = useCallback((): void => {
     const app = getAppBridge();
@@ -5324,6 +5892,10 @@ export const SettingsPage = (): JSX.Element => {
   const handleCloseToTrayToggle = (): void => {
     const nextHideToTrayOnClose = !(appSettings?.hideToTrayOnClose ?? false);
     patchAppSettings({ hideToTrayOnClose: nextHideToTrayOnClose });
+  };
+
+  const handleFirstRunWizardToggle = (): void => {
+    patchAppSettings({ onboardingCompleted: false });
   };
 
   const handleLiveLibraryUpdatesToggle = (): void => {
@@ -6399,6 +6971,124 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleChooseDataBackupDirectory = async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.chooseDataBackupDirectory) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端设置备份目录。');
+      return;
+    }
+
+    try {
+      setDataBackupBusy('choose');
+      setDataBackupMessage(null);
+      setError(null);
+      const directory = await app.chooseDataBackupDirectory();
+      if (!directory) {
+        return;
+      }
+
+      const settings = await app.setSettings({
+        autoDataBackupDirectory: directory,
+      });
+      setAppSettings(settings);
+      dispatchSettingsChanged(settings);
+      await refreshDataBackupStatus();
+      setDataBackupMessage(`自动备份目录已设置：${directory}。自动备份仍保持关闭，开启后才会按周期执行。`);
+    } catch (backupError) {
+      setDataBackupMessage(null);
+      setError(backupError instanceof Error ? backupError.message : String(backupError));
+    } finally {
+      setDataBackupBusy(null);
+    }
+  };
+
+  const handleRunDataBackupNow = async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.runDataBackupNow) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端执行数据备份。');
+      return;
+    }
+
+    try {
+      setDataBackupBusy('run');
+      setDataBackupMessage(null);
+      setError(null);
+      const result = await app.runDataBackupNow();
+      await refreshDataBackupStatus();
+      setDataBackupMessage(`数据备份已完成：${result.filePath}`);
+    } catch (backupError) {
+      await refreshDataBackupStatus();
+      setDataBackupMessage(null);
+      setError(backupError instanceof Error ? backupError.message : String(backupError));
+    } finally {
+      setDataBackupBusy(null);
+    }
+  };
+
+  const handleImportDataBackup = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        '导入数据备份会先归档当前 ECHO 数据，然后恢复备份里的设置、曲库索引、账号状态、缓存和元数据。音乐文件不会被删除。确认继续？',
+      )
+    ) {
+      return;
+    }
+
+    const app = getAppBridge();
+    if (!app?.importDataBackup) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端导入数据备份。');
+      return;
+    }
+
+    try {
+      setDataBackupBusy('import');
+      setDataBackupMessage(null);
+      setError(null);
+      const result = await app.importDataBackup();
+      if (!result) {
+        return;
+      }
+
+      setAppSettings(result.settings);
+      handleAppearanceChange(result.settings.appearancePreferences ?? defaultAppearancePreferences);
+      setPendingAlbumMergeStrategy(result.settings.albumMergeStrategy);
+      setPendingCacheDirectory(undefined);
+      setCacheDirectoryResult(null);
+      setCacheDirectoryMessage(null);
+      setDefaultCacheDirectory(await app.getDefaultCacheDirectory());
+      dispatchSettingsChanged(result.settings);
+      window.dispatchEvent(new Event('library:changed'));
+      await refreshDataBackupStatus();
+      const warningText = result.warnings.length > 0 ? `，警告 ${result.warnings.length} 条` : '';
+      const rollbackText = result.rollbackBackupPath ? `。导入前归档：${result.rollbackBackupPath}` : '';
+      setDataBackupMessage(`数据备份已导入${warningText}${rollbackText}`);
+    } catch (backupError) {
+      await refreshDataBackupStatus();
+      setDataBackupMessage(null);
+      setError(backupError instanceof Error ? backupError.message : String(backupError));
+    } finally {
+      setDataBackupBusy(null);
+    }
+  };
+
+  const handleOpenDataBackupDirectory = async (): Promise<void> => {
+    const app = getAppBridge();
+    if (!app?.openDataBackupDirectory) {
+      setError('桌面桥接不可用。请在 ECHO Next 桌面端打开备份目录。');
+      return;
+    }
+
+    try {
+      setDataBackupBusy('open');
+      setError(null);
+      await app.openDataBackupDirectory();
+    } catch (backupError) {
+      setError(backupError instanceof Error ? backupError.message : String(backupError));
+    } finally {
+      setDataBackupBusy(null);
+    }
+  };
+
   const handleFontPickerOpen = (target: FontPickerTarget): void => {
     setFontPickerTarget(target);
     setFontPickerQuery('');
@@ -6458,6 +7148,16 @@ export const SettingsPage = (): JSX.Element => {
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
   const formatBool = (value: boolean): string => (value ? t('common.yes') : t('common.no'));
   const activeFontValue = fontPickerTarget === 'chinese' ? appearancePreferences.chineseFontFamily : appearancePreferences.mainFontFamily;
+  const dataBackupDirectory = dataBackupStatus?.directory ?? appSettings?.autoDataBackupDirectory ?? null;
+  const dataBackupEnabled = appSettings?.autoDataBackupEnabled === true;
+  const dataBackupIntervalDays = appSettings?.autoDataBackupIntervalDays ?? dataBackupStatus?.intervalDays ?? 7;
+  const dataBackupRunning = dataBackupBusy !== null || dataBackupStatus?.running === true;
+  const dataBackupLastLabel = dataBackupStatus?.lastBackupAt
+    ? `${formatProtectionTimestamp(dataBackupStatus.lastBackupAt)}${dataBackupStatus.lastBackupPath ? ` · ${dataBackupStatus.lastBackupPath}` : ''}`
+    : '暂无自动备份';
+  const dataBackupNextLabel = dataBackupEnabled && dataBackupDirectory
+    ? formatProtectionTimestamp(dataBackupStatus?.nextBackupAt)
+    : '选择目录并开启后生效';
   const databaseHealthStatus = databaseProtectionStatus?.health.status;
   const latestHealthySnapshot = databaseProtectionStatus?.latestHealthySnapshot ?? null;
   const databaseProtectionBusy = databaseProtectionBusyAction !== null || dangerBusy;
@@ -6659,6 +7359,18 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
+              <SettingRow
+                id="settings-row-first-run-wizard"
+                highlighted={highlightedSettingId === 'settings-row-first-run-wizard'}
+                title="首次启动指引"
+                description="打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。"
+              >
+                <ToggleButton
+                  active={appSettings?.onboardingCompleted === false}
+                  disabled={!appSettings}
+                  onClick={handleFirstRunWizardToggle}
+                />
+              </SettingRow>
               <SettingRow title={t('settings.general.closeToTray')}>
                 <ToggleButton
                   active={appSettings?.hideToTrayOnClose ?? false}
@@ -6710,6 +7422,79 @@ export const SettingsPage = (): JSX.Element => {
                   </button>
                 </div>
                 {settingsBackupMessage ? <StatusText tone="good">{settingsBackupMessage}</StatusText> : null}
+              </SettingRow>
+              <SettingRow
+                className="setting-row--compact-panel"
+                id="settings-row-data-backup"
+                highlighted={highlightedSettingId === 'settings-row-data-backup'}
+                title="自动数据备份"
+                description="备份设置、曲库索引、播放记忆、账号本地状态、壁纸、封面缓存和元数据；备份前会校验曲库数据库，坏数据会被拒绝。"
+              >
+                <div className="settings-data-backup-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <ToggleButton
+                      active={dataBackupEnabled}
+                      disabled={!appSettings || !dataBackupDirectory || dataBackupRunning}
+                      onClick={() =>
+                        patchAppSettings({
+                          autoDataBackupEnabled: !dataBackupEnabled,
+                        })
+                      }
+                    />
+                    <StatusText tone={dataBackupEnabled ? 'good' : 'muted'}>
+                      {dataBackupEnabled ? '已开启自动备份' : dataBackupDirectory ? '已设置目录，自动备份未开启' : '请先选择备份目录'}
+                    </StatusText>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    {([3, 7, 30] as const).map((days) => (
+                      <ChipButton
+                        active={dataBackupIntervalDays === days}
+                        key={days}
+                        onClick={() => patchAppSettings({ autoDataBackupIntervalDays: days })}
+                      >
+                        {days === 30 ? '每月' : `${days} 天`}
+                      </ChipButton>
+                    ))}
+                  </div>
+                  <div className="settings-data-backup-meta">
+                    <span>目录</span>
+                    <strong>{dataBackupDirectory ?? '未设置'}</strong>
+                    <span>上次</span>
+                    <strong>{dataBackupLastLabel}</strong>
+                    <span>下次</span>
+                    <strong>{dataBackupNextLabel}</strong>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <button className="settings-action-button" type="button" disabled={dataBackupRunning} onClick={() => void handleChooseDataBackupDirectory()}>
+                      <FolderOpen size={15} />
+                      {dataBackupBusy === 'choose' ? '选择中...' : '选择目录'}
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!dataBackupDirectory || dataBackupRunning}
+                      onClick={() => void handleRunDataBackupNow()}
+                    >
+                      <Download size={15} />
+                      {dataBackupBusy === 'run' ? '备份中...' : '立即备份'}
+                    </button>
+                    <button className="settings-action-button" type="button" disabled={dataBackupRunning} onClick={() => void handleImportDataBackup()}>
+                      <FileText size={15} />
+                      {dataBackupBusy === 'import' ? '导入中...' : '导入备份'}
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!dataBackupDirectory || dataBackupRunning}
+                      onClick={() => void handleOpenDataBackupDirectory()}
+                    >
+                      <FolderOpen size={15} />
+                      打开目录
+                    </button>
+                  </div>
+                  {dataBackupStatus?.lastError ? <StatusText tone="muted">{dataBackupStatus.lastError}</StatusText> : null}
+                  {dataBackupMessage ? <StatusText tone="good">{dataBackupMessage}</StatusText> : null}
+                </div>
               </SettingRow>
               <SettingRow
                 title="一键导出 / 迁移 ECHO 数据包"
@@ -7870,7 +8655,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-theme-custom-header">
                     <div className="settings-theme-custom-heading">
                       <span>{t('settings.appearance.themeCustom.preview.title')}</span>
-                      <strong>{t(selectedThemePresetOption.labelKey)}</strong>
+                      <strong>{activeThemeCustom ? activeThemeCustom.name : t(selectedThemePresetOption.labelKey)}</strong>
                       <em>{t('settings.appearance.themeCustom.preview.description')}</em>
                     </div>
                     <div className="settings-theme-custom-toolbar">
@@ -7888,6 +8673,83 @@ export const SettingsPage = (): JSX.Element => {
                         <span style={{ background: themeCustomValues.secondary }} />
                         <strong style={{ background: themeCustomValues.accent, color: themeCustomValues.onAccent }}>Aa</strong>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-section settings-theme-custom-library">
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.myThemes.title')}</strong>
+                      <span>{t('settings.appearance.themeCustom.myThemes.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-library-actions">
+                      <button className="settings-action-button" type="button" onClick={handleThemeCustomCreate}>
+                        <Palette size={15} />
+                        {t('settings.appearance.themeCustom.action.create')}
+                      </button>
+                      <button className="settings-action-button" type="button" onClick={handleThemeCustomRename} disabled={!activeThemeCustom}>
+                        <FileText size={15} />
+                        {t('settings.appearance.themeCustom.action.rename')}
+                      </button>
+                      <button className="settings-action-button" type="button" onClick={handleThemeCustomDuplicate} disabled={!activeThemeCustom}>
+                        <History size={15} />
+                        {t('settings.appearance.themeCustom.action.duplicate')}
+                      </button>
+                      <button className="settings-danger-button" type="button" onClick={handleThemeCustomDelete} disabled={!activeThemeCustom}>
+                        <Trash2 size={15} />
+                        {t('settings.appearance.themeCustom.action.delete')}
+                      </button>
+                    </div>
+                    <div className="settings-theme-custom-theme-list">
+                      {savedThemeCustomThemes.length > 0 ? (
+                        savedThemeCustomThemes.map((theme) => (
+                          <button
+                            className={`settings-theme-custom-theme-card${theme.id === savedThemeCustomId ? ' active' : ''}`}
+                            key={theme.id}
+                            type="button"
+                            onClick={() => handleThemeCustomSelect(theme)}
+                          >
+                            <span>
+                              <strong>{theme.name}</strong>
+                              <em>{t(themePresetOptions.find((option) => option.preset === theme.basePreset)?.labelKey ?? selectedThemePresetOption.labelKey)}</em>
+                            </span>
+                            {theme.id === savedThemeCustomId ? <Check size={15} /> : null}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="settings-theme-custom-empty">{t('settings.appearance.themeCustom.myThemes.empty')}</p>
+                      )}
+                    </div>
+                    <div className="settings-theme-custom-copy-actions">
+                      <button className="settings-action-button" type="button" onClick={() => handleThemeCustomCopyTone('light', 'dark')}>
+                        {t('settings.appearance.themeCustom.action.copyLightToDark')}
+                      </button>
+                      <button className="settings-action-button" type="button" onClick={() => handleThemeCustomCopyTone('dark', 'light')}>
+                        {t('settings.appearance.themeCustom.action.copyDarkToLight')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-mock-preview" aria-hidden="true">
+                    <div className="settings-theme-custom-mock-titlebar" style={{ background: themeCustomValues.titlebar }} />
+                    <div className="settings-theme-custom-mock-body" style={{ background: themeCustomValues.panel }}>
+                      <aside style={{ background: themeCustomValues.sidebar }}>
+                        <span style={{ background: themeCustomValues.chip }} />
+                        <span style={{ background: themeCustomValues.rowActive }} />
+                        <span style={{ background: themeCustomValues.chip }} />
+                      </aside>
+                      <main>
+                        <span style={{ background: themeCustomValues.row }} />
+                        <span style={{ background: themeCustomValues.rowHover }} />
+                        <span style={{ background: themeCustomValues.field }} />
+                        <span style={{ background: themeCustomValues.accent, color: themeCustomValues.onAccent }}>
+                          Aa
+                        </span>
+                      </main>
+                    </div>
+                    <div className="settings-theme-custom-mock-player" style={{ background: themeCustomValues.player }}>
+                      <span style={{ background: themeCustomValues.success }} />
+                      <span style={{ background: themeCustomValues.warning }} />
+                      <span style={{ background: themeCustomValues.danger }} />
                     </div>
                   </div>
 
@@ -7943,20 +8805,83 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                   </div>
 
-                  <div className="settings-theme-custom-sliders">
-                    {percentThemeFields.map((option) => (
+                  <button className="settings-theme-custom-advanced-toggle" type="button" onClick={() => setThemeCustomAdvancedOpen((current) => !current)}>
+                    <SlidersHorizontal size={15} />
+                    {themeCustomAdvancedOpen ? t('settings.appearance.themeCustom.advanced.hide') : t('settings.appearance.themeCustom.advanced.show')}
+                  </button>
+
+                  <div className="settings-theme-custom-section" hidden={!themeCustomAdvancedOpen}>
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.surface')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.surface.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-card-grid">
+                      {surfaceThemeColorFields.map((option) => (
+                        <label className="settings-theme-custom-color-card" key={option.field}>
+                          <span className="settings-theme-custom-color-copy">
+                            <strong>{t(option.labelKey)}</strong>
+                            <em>{t(option.descriptionKey)}</em>
+                          </span>
+                          <span className="settings-theme-custom-color-control">
+                            <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              type="color"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-section" hidden={!themeCustomAdvancedOpen}>
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.state')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.state.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-card-grid settings-theme-custom-card-grid--advanced">
+                      {stateThemeColorFields.map((option) => (
+                        <label className="settings-theme-custom-color-card" key={option.field}>
+                          <span className="settings-theme-custom-color-copy">
+                            <strong>{t(option.labelKey)}</strong>
+                            <em>{t(option.descriptionKey)}</em>
+                          </span>
+                          <span className="settings-theme-custom-color-control">
+                            <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              type="color"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-theme-custom-sliders" hidden={!themeCustomAdvancedOpen}>
+                    {numberThemeFields
+                      .filter((option) => option.field !== 'motionSpeedSeconds' && option.field !== 'motionIntensityPercent')
+                      .map((option) => (
                       <label className="settings-theme-custom-slider" key={option.field}>
                         <span>
                           <em>
                             <strong>{t(option.labelKey)}</strong>
                             {t(option.descriptionKey)}
                           </em>
-                          <strong>{themeCustomValues[option.field]}%</strong>
+                          <strong>
+                            {themeCustomValues[option.field]}
+                            {option.suffix}
+                          </strong>
                         </span>
                         <input
                           aria-label={t(option.labelKey)}
                           min={option.min}
                           max={option.max}
+                          step={option.step ?? 1}
                           type="range"
                           value={themeCustomValues[option.field]}
                           onChange={(event) => updateThemeCustomPercent(option.field, Number(event.currentTarget.value))}
@@ -7965,38 +8890,72 @@ export const SettingsPage = (): JSX.Element => {
                     ))}
                   </div>
 
-                  <button className="settings-theme-custom-advanced-toggle" type="button" onClick={() => setThemeCustomAdvancedOpen((current) => !current)}>
-                    <SlidersHorizontal size={15} />
-                    {themeCustomAdvancedOpen ? t('settings.appearance.themeCustom.advanced.hide') : t('settings.appearance.themeCustom.advanced.show')}
-                  </button>
-
-                  {themeCustomAdvancedOpen ? (
-                    <div className="settings-theme-custom-section">
-                      <div className="settings-theme-custom-section-title">
-                        <strong>{t('settings.appearance.themeCustom.group.advanced')}</strong>
-                        <span>{t('settings.appearance.themeCustom.group.advanced.description')}</span>
-                      </div>
-                      <div className="settings-theme-custom-card-grid settings-theme-custom-card-grid--advanced">
-                        {advancedThemeColorFields.map((option) => (
-                          <label className="settings-theme-custom-color-card" key={option.field}>
-                            <span className="settings-theme-custom-color-copy">
-                              <strong>{t(option.labelKey)}</strong>
-                              <em>{t(option.descriptionKey)}</em>
+                  <div className="settings-theme-custom-section" hidden={!themeCustomAdvancedOpen}>
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.motion')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.motion.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-motion-row">
+                      <span>
+                        <strong>{t('settings.appearance.themeCustom.field.motionEnabled')}</strong>
+                        <em>{t('settings.appearance.themeCustom.field.motionEnabled.description')}</em>
+                      </span>
+                      <ToggleButton active={themeCustomValues.motionEnabled} onClick={() => updateThemeCustomMotionEnabled(!themeCustomValues.motionEnabled)} />
+                    </div>
+                    <div className="settings-theme-custom-sliders settings-theme-custom-sliders--motion">
+                      {numberThemeFields
+                        .filter((option) => option.field === 'motionSpeedSeconds' || option.field === 'motionIntensityPercent')
+                        .map((option) => (
+                          <label className="settings-theme-custom-slider" key={option.field}>
+                            <span>
+                              <em>
+                                <strong>{t(option.labelKey)}</strong>
+                                {t(option.descriptionKey)}
+                              </em>
+                              <strong>
+                                {themeCustomValues[option.field]}
+                                {option.suffix}
+                              </strong>
                             </span>
-                            <span className="settings-theme-custom-color-control">
-                              <code>{themeCustomValues[option.field].toUpperCase()}</code>
-                              <input
-                                aria-label={t(option.labelKey)}
-                                type="color"
-                                value={themeCustomValues[option.field]}
-                                onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
-                              />
-                            </span>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              min={option.min}
+                              max={option.max}
+                              step={option.step ?? 1}
+                              type="range"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomPercent(option.field, Number(event.currentTarget.value))}
+                            />
                           </label>
                         ))}
-                      </div>
                     </div>
-                  ) : null}
+                  </div>
+
+                  <div className="settings-theme-custom-section" hidden={!themeCustomAdvancedOpen}>
+                    <div className="settings-theme-custom-section-title">
+                      <strong>{t('settings.appearance.themeCustom.group.advanced')}</strong>
+                      <span>{t('settings.appearance.themeCustom.group.advanced.description')}</span>
+                    </div>
+                    <div className="settings-theme-custom-card-grid settings-theme-custom-card-grid--advanced">
+                      {advancedThemeColorFields.map((option) => (
+                        <label className="settings-theme-custom-color-card" key={option.field}>
+                          <span className="settings-theme-custom-color-copy">
+                            <strong>{t(option.labelKey)}</strong>
+                            <em>{t(option.descriptionKey)}</em>
+                          </span>
+                          <span className="settings-theme-custom-color-control">
+                            <code>{themeCustomValues[option.field].toUpperCase()}</code>
+                            <input
+                              aria-label={t(option.labelKey)}
+                              type="color"
+                              value={themeCustomValues[option.field]}
+                              onChange={(event) => updateThemeCustomColor(option.field, event.currentTarget.value)}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
 
                   {themeCustomWarnings.length > 0 ? (
                     <p className="settings-theme-custom-warning">{t('settings.appearance.themeCustom.message.lowContrast')}</p>

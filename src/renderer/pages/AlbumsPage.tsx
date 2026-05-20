@@ -7,6 +7,7 @@ import type { AlbumMenuAction } from '../components/album/AlbumContextMenu';
 import { AlbumDetailView } from '../components/album/AlbumDetailView';
 import { AlbumTagEditorDrawer } from '../components/album/AlbumTagEditorDrawer';
 import { LibrarySourceSwitch } from '../components/library/LibrarySourceSwitch';
+import { RemoteSourceFilter } from '../components/library/RemoteSourceFilter';
 import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '../components/ui/InfiniteScrollSentinel';
 import { likedAlbumsChangedEvent, likedChangedEvent } from '../hooks/useLikedMedia';
 import { useI18n } from '../i18n/I18nProvider';
@@ -54,6 +55,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>('default');
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
+  const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -133,6 +135,7 @@ export const AlbumsPage = (): JSX.Element => {
           search,
           sort,
           sourceProvider: sourceMode,
+          ...(sourceMode === 'remote' && remoteSourceId ? { sourceId: remoteSourceId } : {}),
         });
 
         if (requestIdRef.current !== requestId) {
@@ -161,11 +164,14 @@ export const AlbumsPage = (): JSX.Element => {
         }
       }
     },
-    [search, sort, sourceMode, t],
+    [remoteSourceId, search, sort, sourceMode, t],
   );
 
   const setSourceMode = useCallback((mode: LibrarySourceMode): void => {
     setSourceModeState(mode);
+    if (mode !== 'remote') {
+      setRemoteSourceId(null);
+    }
     writeStoredLibrarySourceMode(mode);
   }, []);
 
@@ -523,6 +529,7 @@ export const AlbumsPage = (): JSX.Element => {
         </label>
 
         <LibrarySourceSwitch value={sourceMode} onChange={setSourceMode} />
+        {sourceMode === 'remote' ? <RemoteSourceFilter value={remoteSourceId} onChange={setRemoteSourceId} /> : null}
 
         <div className="sort-select" ref={sortMenuRef}>
           <button
@@ -593,6 +600,7 @@ export const AlbumsPage = (): JSX.Element => {
                 <div className="album-copy">
                   <strong>{album.title}</strong>
                   <span>{album.albumArtist}</span>
+                  {album.mediaType === 'remote' ? <small className="remote-media-source">{album.sourceDisplayName ?? album.provider ?? '网盘'}</small> : null}
                   <small>{t('library.albums.card.tracks', { count: album.trackCount })}</small>
                 </div>
               </article>

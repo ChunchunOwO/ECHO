@@ -4,6 +4,7 @@ import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTag
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { LibrarySourceSwitch } from '../components/library/LibrarySourceSwitch';
+import { RemoteSourceFilter } from '../components/library/RemoteSourceFilter';
 import { OsuTimingPanel } from '../components/library/OsuTimingPanel';
 import { TrackList } from '../components/library/TrackList';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
@@ -179,6 +180,7 @@ export const SongsPage = (): JSX.Element => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>(() => initialSongsState.sort);
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => initialSongsState.sourceMode);
+  const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMaintainingLibrary, setIsMaintainingLibrary] = useState(false);
   const [hideDuplicates, setHideDuplicates] = useState(() => initialSongsState.hideDuplicates);
@@ -273,6 +275,9 @@ export const SongsPage = (): JSX.Element => {
 
   const setSourceMode = useCallback((mode: LibrarySourceMode): void => {
     setSourceModeState(mode);
+    if (mode !== 'remote') {
+      setRemoteSourceId(null);
+    }
     writeStoredLibrarySourceMode(mode);
     clearSongsFirstPageSnapshot();
   }, []);
@@ -384,6 +389,7 @@ export const SongsPage = (): JSX.Element => {
           search,
           sort,
           sourceProvider: sourceMode,
+          ...(sourceMode === 'remote' && remoteSourceId ? { sourceId: remoteSourceId } : {}),
           hideDuplicates,
           duplicateMode: 'strict',
         } as const;
@@ -446,7 +452,7 @@ export const SongsPage = (): JSX.Element => {
         }
       }
     },
-    [clearListMetadataCache, hideDuplicates, reportSongsError, search, sort, sourceMode],
+    [clearListMetadataCache, hideDuplicates, remoteSourceId, reportSongsError, search, sort, sourceMode],
   );
 
   useEffect(() => {
@@ -1261,6 +1267,7 @@ export const SongsPage = (): JSX.Element => {
         </label>
 
         <LibrarySourceSwitch value={sourceMode} onChange={setSourceMode} />
+        {sourceMode === 'remote' ? <RemoteSourceFilter value={remoteSourceId} onChange={setRemoteSourceId} /> : null}
 
         <div className="sort-select" ref={sortMenuRef}>
           <button

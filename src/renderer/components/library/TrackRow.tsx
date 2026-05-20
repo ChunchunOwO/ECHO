@@ -95,6 +95,7 @@ export const TrackRow = memo(
   ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
+    const remoteSourceLabel = track.mediaType === 'remote' ? track.sourceDisplayName ?? track.provider ?? '网盘' : null;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
     const shouldShowCover = Boolean(track.coverThumb && track.coverThumb !== failedCoverUrl);
     const canDownload = Boolean(onDownload) && track.provider !== 'spotify';
@@ -231,6 +232,7 @@ export const TrackRow = memo(
           <div className="track-title-row">
             {isPlaying ? <span className="playing-dot" aria-hidden="true" /> : null}
             <strong className="track-title">{track.title}</strong>
+            {remoteSourceLabel ? <span className="remote-track-source-badge">{remoteSourceLabel}</span> : null}
             {isPlaying ? <span className="playing-pill">Playing</span> : null}
             {isUnavailable ? <span className="playing-pill unavailable-pill">Unavailable</span> : null}
             {duplicateHiddenCount > 0 ? (
@@ -262,6 +264,7 @@ export const TrackRow = memo(
                 {tag.label}
               </span>
             ))}
+            {track.mediaType === 'remote' && track.remotePath ? <span className="hifi-tag tag-remote-path" title={track.remotePath}>{track.remotePath}</span> : null}
           </div>
         </div>
 

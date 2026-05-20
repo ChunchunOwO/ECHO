@@ -14,6 +14,7 @@ export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 export type ReplayGainMode = 'off' | 'track' | 'album';
 export type NetworkProxyMode = 'off' | 'system' | 'manual' | 'pac';
+export type DataBackupIntervalDays = 3 | 7 | 30;
 
 export type NetworkProxyTestResult = {
   ok: boolean;
@@ -68,9 +69,27 @@ export type AppThemeToneOverride = {
   border?: string;
   onAccent?: string;
   buttonText?: string;
+  titlebar?: string;
+  sidebar?: string;
+  player?: string;
+  field?: string;
+  row?: string;
+  rowHover?: string;
+  rowActive?: string;
+  chip?: string;
+  focus?: string;
+  danger?: string;
+  success?: string;
+  warning?: string;
   panelOpacityPercent?: number;
   glassPercent?: number;
   shadowPercent?: number;
+  cornerRadiusPx?: number;
+  panelBlurPx?: number;
+  saturationPercent?: number;
+  motionEnabled?: boolean;
+  motionSpeedSeconds?: number;
+  motionIntensityPercent?: number;
 };
 
 export type AppThemePresetOverride = {
@@ -79,6 +98,16 @@ export type AppThemePresetOverride = {
 };
 
 export type AppThemePresetOverrides = Partial<Record<AppThemePreset, AppThemePresetOverride>>;
+
+export type AppThemeCustomTheme = {
+  id: string;
+  name: string;
+  basePreset: AppThemePreset;
+  light?: AppThemeToneOverride;
+  dark?: AppThemeToneOverride;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type AppearancePreferences = {
   mainFontFamily: string;
@@ -113,6 +142,8 @@ export type AppSettings = {
   appearanceTheme: AppThemeMode;
   appearanceThemePreset?: AppThemePreset;
   appearanceThemePresetOverrides?: AppThemePresetOverrides;
+  appearanceCustomThemes?: AppThemeCustomTheme[];
+  appearanceThemeCustomId?: string | null;
   appearancePreferences?: AppearancePreferences;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;
@@ -138,6 +169,12 @@ export type AppSettings = {
   spotifyAutoLaunchOfficialPlayer?: boolean;
   connectAutoStartReceiversEnabled?: boolean;
   playlistBackupsEnabled?: boolean;
+  autoDataBackupEnabled?: boolean;
+  autoDataBackupDirectory?: string | null;
+  autoDataBackupIntervalDays?: DataBackupIntervalDays;
+  autoDataBackupLastRunAt?: string | null;
+  autoDataBackupLastPath?: string | null;
+  autoDataBackupLastError?: string | null;
   coverCacheDir: string | null;
   hideToTrayOnClose: boolean;
   rememberWindowSizeEnabled?: boolean;

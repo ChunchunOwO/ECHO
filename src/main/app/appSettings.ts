@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
 import type {
+  AppThemeCustomTheme,
   AppLocale,
   AppThemeMode,
   AppThemePresetOverride,
@@ -12,6 +13,7 @@ import type {
   AppVideoWallpaperPauseMode,
   AppWallpaperMediaType,
   AppSettings,
+  DataBackupIntervalDays,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
   NetworkProxyMode,
@@ -83,8 +85,62 @@ const appThemePresets: AppThemePreset[] = [
 ];
 const themeOverrideColorKeys: Array<keyof Pick<
   AppThemeToneOverride,
-  'appBg' | 'appBg2' | 'appBg3' | 'panel' | 'panelSoft' | 'accent' | 'accentStrong' | 'secondary' | 'heading' | 'text' | 'muted' | 'border' | 'onAccent' | 'buttonText'
->> = ['appBg', 'appBg2', 'appBg3', 'panel', 'panelSoft', 'accent', 'accentStrong', 'secondary', 'heading', 'text', 'muted', 'border', 'onAccent', 'buttonText'];
+  | 'appBg'
+  | 'appBg2'
+  | 'appBg3'
+  | 'panel'
+  | 'panelSoft'
+  | 'accent'
+  | 'accentStrong'
+  | 'secondary'
+  | 'heading'
+  | 'text'
+  | 'muted'
+  | 'border'
+  | 'onAccent'
+  | 'buttonText'
+  | 'titlebar'
+  | 'sidebar'
+  | 'player'
+  | 'field'
+  | 'row'
+  | 'rowHover'
+  | 'rowActive'
+  | 'chip'
+  | 'focus'
+  | 'danger'
+  | 'success'
+  | 'warning'
+>> = [
+  'appBg',
+  'appBg2',
+  'appBg3',
+  'panel',
+  'panelSoft',
+  'accent',
+  'accentStrong',
+  'secondary',
+  'heading',
+  'text',
+  'muted',
+  'border',
+  'onAccent',
+  'buttonText',
+  'titlebar',
+  'sidebar',
+  'player',
+  'field',
+  'row',
+  'rowHover',
+  'rowActive',
+  'chip',
+  'focus',
+  'danger',
+  'success',
+  'warning',
+];
+const maxCustomThemes = 24;
+const fallbackCustomThemeTimestamp = '1970-01-01T00:00:00.000Z';
 const librarySorts: LibrarySort[] = [
   'default',
   'createdAsc',
@@ -114,8 +170,8 @@ export const defaultAppearancePreferences: AppearancePreferences = {
 };
 
 const defaultRememberedAudioOutput: RememberedAudioOutput = {
-  enabled: false,
-  outputMode: 'shared',
+  enabled: true,
+  outputMode: 'system',
   sharedBackend: 'auto',
   latencyProfile: 'balanced',
 };
@@ -184,6 +240,8 @@ export const defaultSettings: AppSettings = {
   appearanceTheme: 'dark',
   appearanceThemePreset: 'classic',
   appearanceThemePresetOverrides: {},
+  appearanceCustomThemes: [],
+  appearanceThemeCustomId: null,
   appearancePreferences: { ...defaultAppearancePreferences },
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
@@ -209,6 +267,12 @@ export const defaultSettings: AppSettings = {
   spotifyAutoLaunchOfficialPlayer: true,
   connectAutoStartReceiversEnabled: false,
   playlistBackupsEnabled: true,
+  autoDataBackupEnabled: false,
+  autoDataBackupDirectory: null,
+  autoDataBackupIntervalDays: 7,
+  autoDataBackupLastRunAt: null,
+  autoDataBackupLastPath: null,
+  autoDataBackupLastError: null,
   coverCacheDir: null,
   hideToTrayOnClose: false,
   rememberWindowSizeEnabled: true,
@@ -389,9 +453,51 @@ const normalizeThemeHexColorSetting = (value: unknown): string | undefined => {
   return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toLowerCase() : undefined;
 };
 
-const normalizeThemeOverridePercent = (value: unknown, min: number, max: number): number | undefined => {
+const dataBackupIntervals: DataBackupIntervalDays[] = [3, 7, 30];
+
+const normalizeDataBackupIntervalDays = (value: unknown): DataBackupIntervalDays => {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.round(clamp(numeric, min, max)) : undefined;
+  return dataBackupIntervals.includes(numeric as DataBackupIntervalDays) ? (numeric as DataBackupIntervalDays) : 7;
+};
+
+const normalizeDataBackupDirectory = (value: unknown): string | null => normalizeCoverCacheDir(value);
+
+const normalizeBackupTimestamp = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? null : trimmed.slice(0, 64);
+};
+
+const normalizeBackupMessage = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.replace(/[\r\n]/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized ? normalized.slice(0, 1000) : null;
+};
+
+const normalizeThemeOverrideNumber = (value: unknown, min: number, max: number, decimals = 0): number | undefined => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  const factor = 10 ** decimals;
+  return Math.round(clamp(numeric, min, max) * factor) / factor;
+};
+
+const normalizeThemeOverridePercent = (value: unknown, min: number, max: number): number | undefined => {
+  const normalized = normalizeThemeOverrideNumber(value, min, max);
+  return normalized === undefined ? undefined : Math.round(normalized);
 };
 
 const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | undefined => {
@@ -412,6 +518,11 @@ const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | unde
   const panelOpacityPercent = normalizeThemeOverridePercent(input.panelOpacityPercent, 40, 100);
   const glassPercent = normalizeThemeOverridePercent(input.glassPercent, 0, 80);
   const shadowPercent = normalizeThemeOverridePercent(input.shadowPercent, 0, 100);
+  const cornerRadiusPx = normalizeThemeOverridePercent(input.cornerRadiusPx, 0, 28);
+  const panelBlurPx = normalizeThemeOverridePercent(input.panelBlurPx, 0, 32);
+  const saturationPercent = normalizeThemeOverridePercent(input.saturationPercent, 60, 140);
+  const motionSpeedSeconds = normalizeThemeOverrideNumber(input.motionSpeedSeconds, 0.12, 8, 2);
+  const motionIntensityPercent = normalizeThemeOverridePercent(input.motionIntensityPercent, 0, 160);
 
   if (panelOpacityPercent !== undefined) {
     output.panelOpacityPercent = panelOpacityPercent;
@@ -421,6 +532,24 @@ const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | unde
   }
   if (shadowPercent !== undefined) {
     output.shadowPercent = shadowPercent;
+  }
+  if (cornerRadiusPx !== undefined) {
+    output.cornerRadiusPx = cornerRadiusPx;
+  }
+  if (panelBlurPx !== undefined) {
+    output.panelBlurPx = panelBlurPx;
+  }
+  if (saturationPercent !== undefined) {
+    output.saturationPercent = saturationPercent;
+  }
+  if (typeof input.motionEnabled === 'boolean') {
+    output.motionEnabled = input.motionEnabled;
+  }
+  if (motionSpeedSeconds !== undefined) {
+    output.motionSpeedSeconds = motionSpeedSeconds;
+  }
+  if (motionIntensityPercent !== undefined) {
+    output.motionIntensityPercent = motionIntensityPercent;
   }
 
   return Object.keys(output).length > 0 ? output : undefined;
@@ -464,6 +593,90 @@ const normalizeThemePresetOverrides = (value: unknown): AppThemePresetOverrides 
   return output;
 };
 
+const normalizeThemeCustomIdValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? normalized : null;
+};
+
+const normalizeThemeCustomTimestamp = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return fallbackCustomThemeTimestamp;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.slice(0, 64) : fallbackCustomThemeTimestamp;
+};
+
+const normalizeThemeCustomName = (value: unknown): string => {
+  const normalized = normalizeRequiredText(value, '我的主题');
+  return normalized.slice(0, 48);
+};
+
+const normalizeThemeCustomTheme = (value: unknown): AppThemeCustomTheme | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Partial<AppThemeCustomTheme>;
+  const id = normalizeThemeCustomIdValue(input.id);
+  if (!id) {
+    return undefined;
+  }
+
+  const light = normalizeThemeToneOverride(input.light);
+  const dark = normalizeThemeToneOverride(input.dark);
+  const output: AppThemeCustomTheme = {
+    id,
+    name: normalizeThemeCustomName(input.name),
+    basePreset: normalizeAppearanceThemePreset(input.basePreset),
+    createdAt: normalizeThemeCustomTimestamp(input.createdAt),
+    updatedAt: normalizeThemeCustomTimestamp(input.updatedAt),
+  };
+
+  if (light) {
+    output.light = light;
+  }
+  if (dark) {
+    output.dark = dark;
+  }
+
+  return output;
+};
+
+const normalizeThemeCustomThemes = (value: unknown): AppThemeCustomTheme[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const output: AppThemeCustomTheme[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of value) {
+    if (output.length >= maxCustomThemes) {
+      break;
+    }
+
+    const theme = normalizeThemeCustomTheme(item);
+    if (!theme || seenIds.has(theme.id)) {
+      continue;
+    }
+
+    output.push(theme);
+    seenIds.add(theme.id);
+  }
+
+  return output;
+};
+
+const normalizeThemeCustomId = (value: unknown, themes: AppThemeCustomTheme[]): string | null => {
+  const id = normalizeThemeCustomIdValue(value);
+  return id && themes.some((theme) => theme.id === id) ? id : null;
+};
+
 const normalizeSongsSort = (value: unknown): LibrarySort =>
   librarySorts.includes(value as LibrarySort) ? (value as LibrarySort) : 'default';
 
@@ -504,9 +717,9 @@ const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput =
 
   const input = value as Partial<RememberedAudioOutput>;
   const outputMode =
-    input.outputMode === 'exclusive' || input.outputMode === 'asio' || input.outputMode === 'system'
+    input.outputMode === 'shared' || input.outputMode === 'exclusive' || input.outputMode === 'asio' || input.outputMode === 'system'
       ? input.outputMode
-      : 'shared';
+      : defaultRememberedAudioOutput.outputMode;
   const sharedBackend =
     input.sharedBackend === 'directsound' || input.sharedBackend === 'windows'
       ? input.sharedBackend
@@ -846,14 +1059,20 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   );
   const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
   const replayGainPreampDb = Number(settings.replayGainPreampDb);
+  const appearanceCustomThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes);
+  const appearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
+  const activeAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === appearanceThemeCustomId);
+  const appearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
 
   return {
     appMemoryVersion,
     onboardingCompleted: settings.onboardingCompleted !== false,
     locale: normalizeLocale(settings.locale),
     appearanceTheme: normalizeAppearanceTheme(settings.appearanceTheme),
-    appearanceThemePreset: normalizeAppearanceThemePreset(settings.appearanceThemePreset),
+    appearanceThemePreset,
     appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
+    appearanceCustomThemes,
+    appearanceThemeCustomId,
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -879,6 +1098,12 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
+    autoDataBackupEnabled: settings.autoDataBackupEnabled === true,
+    autoDataBackupDirectory: normalizeDataBackupDirectory(settings.autoDataBackupDirectory),
+    autoDataBackupIntervalDays: normalizeDataBackupIntervalDays(settings.autoDataBackupIntervalDays),
+    autoDataBackupLastRunAt: normalizeBackupTimestamp(settings.autoDataBackupLastRunAt),
+    autoDataBackupLastPath: normalizeDataBackupDirectory(settings.autoDataBackupLastPath),
+    autoDataBackupLastError: normalizeBackupMessage(settings.autoDataBackupLastError),
     coverCacheDir: normalizeCoverCacheDir(settings.coverCacheDir),
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
     rememberWindowSizeEnabled: settings.rememberWindowSizeEnabled !== false,

@@ -23,6 +23,18 @@ describe('audio error formatting', () => {
     expect(formatAudioHostError(message)).toBeTruthy();
   });
 
+  it('formats system audio seek failures as a plain playback message', () => {
+    expect(formatAudioHostError('system_audio_seek_timeout')).toBe('系统音频无法跳转到该位置，可能是文件或网络源不支持拖动');
+    expect(formatAudioHostError('system_audio_range_not_satisfiable')).toBe('系统音频无法跳转到该位置，可能是文件或网络源不支持拖动');
+  });
+
+  it('formats system audio media failures without suggesting the native engine failed', () => {
+    const formatted = formatAudioHostError('system_audio_playback_failed');
+
+    expect(formatted).toBe('系统音频播放失败，请尝试重新播放或切换到兼容输出');
+    expect(formatted).not.toContain('音频引擎');
+  });
+
   it('formats invalid executable spawn errors as an audio engine startup problem', () => {
     const message = "Error invoking remote method 'playback:play-local-file': Error: spawn EFTYPE";
 

@@ -183,16 +183,44 @@ describe('RemoteSourceService WebDAV integration', () => {
     const tracks = libraryStore.getTracks({ search: 'mofa' });
     expect(tracks.total).toBe(1);
     expect(libraryStore.getTracks({ search: '魔法' }).total).toBe(1);
+    expect(libraryStore.getTracks({ sourceProvider: 'remote', sourceId: source.id }).total).toBe(1);
     expect(tracks.items[0]).toEqual(expect.objectContaining({
       mediaType: 'remote',
       provider: 'webdav',
       sourceId: source.id,
+      sourceDisplayName: 'Mock AList',
       remotePath: trackPath,
       title: '会魔法的老人',
     }));
 
     expect(service.hydrateVisibleTracks(['local-track-id', tracks.items[0].id], { metadata: false, cover: false })).toEqual([
       expect.objectContaining({ id: tracks.items[0].id, mediaType: 'remote' }),
+    ]);
+
+    database.prepare("UPDATE remote_tracks SET metadata_status = 'error', cover_status = 'error', lyrics_status = 'not_found' WHERE source_id = ?").run(source.id);
+    expect(service.getOverview()).toMatchObject({
+      totalSources: 1,
+      enabledSources: 1,
+      trackCount: 1,
+      totalSizeBytes: audioBytes.length,
+      missingTrackCount: 0,
+      sources: [
+        expect.objectContaining({
+          sourceId: source.id,
+          trackCount: 1,
+          totalSizeBytes: audioBytes.length,
+          metadata: expect.objectContaining({ error: 1 }),
+          cover: expect.objectContaining({ error: 1 }),
+          lyrics: expect.objectContaining({ not_found: 1 }),
+        }),
+      ],
+    });
+    expect(service.listIssues(source.id, 'metadata', 10)).toEqual([
+      expect.objectContaining({
+        kind: 'metadata',
+        status: 'error',
+        remotePath: trackPath,
+      }),
     ]);
 
     const stream = await service.createStreamUrl({ trackId: tracks.items[0].id });
@@ -213,6 +241,10 @@ describe('RemoteSourceService WebDAV integration', () => {
     service.syncSource(source.id);
     await waitForSync(service, source.id);
     expect(libraryStore.getTracks({ search: 'mofa' }).total).toBe(0);
+    expect(service.getOverview(source.id)).toMatchObject({ trackCount: 0, missingTrackCount: 1 });
+    expect(service.listIssues(source.id, 'missing', 10)).toEqual([
+      expect.objectContaining({ kind: 'missing', status: 'missing', remotePath: trackPath }),
+    ]);
 
     service.deleteSource(source.id);
     expect(libraryStore.getTracks({ search: 'mofa' }).total).toBe(0);

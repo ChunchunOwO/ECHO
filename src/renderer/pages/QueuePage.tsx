@@ -152,6 +152,21 @@ const formatSavedQueueDate = (value: string): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
+const isStreamingQueueTrack = (track: LibraryTrack): boolean =>
+  track.mediaType === 'streaming' || Boolean(track.provider && track.providerTrackId);
+
+const isRemoteQueueTrack = (track: LibraryTrack): boolean =>
+  track.mediaType === 'remote' || Boolean(track.sourceId || track.remotePath || track.sourceDisplayName);
+
+const isLocalQueueTrack = (track: LibraryTrack): boolean =>
+  (track.mediaType ?? 'local') === 'local' && !isStreamingQueueTrack(track) && !isRemoteQueueTrack(track);
+
+const buildQueuePlaylistTrackIds = (items: QueueItem[]): string[] =>
+  items
+    .map((item) => item.track)
+    .filter((track) => track.isTemporary !== true && track.unavailable !== true && isLocalQueueTrack(track))
+    .map((track) => track.id);
+
 export const QueuePage = (): JSX.Element => {
   const { t } = useI18n();
   const queue = usePlaybackQueue();
@@ -278,16 +293,14 @@ export const QueuePage = (): JSX.Element => {
       return;
     }
 
-    const trackIds = queue.items
-      .map((item) => item.track)
-      .filter((track) => track.isTemporary !== true && (track.mediaType ?? 'local') === 'local')
-      .map((track) => track.id);
+    const trackIds = buildQueuePlaylistTrackIds(queue.items);
 
     if (trackIds.length === 0) {
-      setActionError('当前队列没有已入库的本地歌曲，不能保存为歌单。');
+      setActionError('当前队列没有可保存到本地歌单的已入库歌曲。');
       return;
     }
 
+    let createdPlaylistId: string | null = null;
     try {
       setActionError(null);
       setActionNotice(null);
@@ -295,10 +308,20 @@ export const QueuePage = (): JSX.Element => {
         name: `队列 ${formatSavedQueueDate(new Date().toISOString())}`,
         description: '从播放队列保存。',
       });
-      await library.addTracksToPlaylist(playlist.id, trackIds);
+      createdPlaylistId = playlist.id;
+      const items = await library.addTracksToPlaylist(playlist.id, trackIds);
+      const savedCount = items.length;
+
+      if (savedCount === 0) {
+        throw new Error('没有歌曲被写入歌单。');
+      }
+
       window.dispatchEvent(new Event('library:playlists-changed'));
-      setActionNotice(`已保存为歌单：${playlist.name}`);
+      setActionNotice(`已保存为歌单：${playlist.name}（${savedCount} 首）`);
     } catch (error) {
+      if (createdPlaylistId && library.deletePlaylist) {
+        await library.deletePlaylist(createdPlaylistId).catch(() => undefined);
+      }
       setActionError(error instanceof Error ? error.message : String(error));
     }
   }, [queue.items]);

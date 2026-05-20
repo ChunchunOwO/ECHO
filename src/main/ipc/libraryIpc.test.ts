@@ -284,7 +284,7 @@ const installLibraryService = () => {
     scanFolder: vi.fn(),
     getScanStatus: vi.fn(),
     cancelScan: vi.fn(),
-    getTracks: vi.fn(),
+    getTracks: vi.fn(() => ({ items: [], page: 1, pageSize: 50, total: 0, hasMore: false })),
     getLibraryQualityOverview: vi.fn(() => []),
     getLibraryQualityIssues: vi.fn((query: unknown) => ({
       items: [],
@@ -329,7 +329,23 @@ const installLibraryService = () => {
       truncated: false,
       limit: 1000,
     })),
+    refreshDuplicateTracks: vi.fn((mode = 'strict') => ({
+      mode,
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '2026-05-20T00:00:00.000Z',
+    })),
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
+    getDuplicateIndexSummary: vi.fn((mode = 'strict') => ({
+      mode,
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '2026-05-20T00:00:00.000Z',
+    })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
     getAlbumForTrack: vi.fn(),
@@ -831,6 +847,30 @@ describe('library IPC', () => {
 
     expect(service.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1', 'track-2'], 'strict');
     expect(result).toEqual({ 'track-1': 1, 'track-2': 0 });
+  });
+
+  it('preserves supported duplicate modes and falls back to strict for invalid values', async () => {
+    const service = installLibraryService();
+
+    await handlers[IpcChannels.LibraryRefreshDuplicateTracks]!(null, 'balanced');
+    await handlers[IpcChannels.LibraryGetDuplicateHiddenCounts]!(null, ['track-1'], 'aggressive');
+    await handlers[IpcChannels.LibraryGetDuplicateIndexSummary]!(null, 'unknown');
+    await handlers[IpcChannels.LibraryGetTracks]!(null, {
+      page: 1,
+      pageSize: 50,
+      hideDuplicates: true,
+      duplicateMode: 'balanced',
+    });
+
+    expect(service.refreshDuplicateTracks).toHaveBeenCalledWith('balanced');
+    expect(service.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1'], 'aggressive');
+    expect(service.getDuplicateIndexSummary).toHaveBeenCalledWith('strict');
+    expect(service.getTracks).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 50,
+      hideDuplicates: true,
+      duplicateMode: 'balanced',
+    });
   });
 
   it('returns zero duplicate hidden counts while the protected library is unavailable', async () => {

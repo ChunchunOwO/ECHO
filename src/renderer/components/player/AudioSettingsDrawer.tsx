@@ -83,6 +83,7 @@ type AudioDrawerCopy = {
   speedUp: string;
   standardPath: string;
   systemAudio: string;
+  systemAudioDescription: string;
   systemDefaultOutput: string;
 };
 
@@ -760,6 +761,7 @@ export const AudioSettingsDrawer = ({
       speedUp: t('audioDrawer.badge.speedUp'),
       standardPath: t('audioDrawer.signal.standardPath'),
       systemAudio: t('audioDrawer.device.systemAudio'),
+      systemAudioDescription: t('audioDrawer.device.systemAudioDescription'),
       systemDefaultOutput: t('audioDrawer.device.systemDefaultOutput'),
     }),
     [t],
@@ -1617,7 +1619,7 @@ export const AudioSettingsDrawer = ({
             <Waves size={15} />
             <span>
               <strong>{copy.systemAudio}</strong>
-              <small>{copy.systemDefaultOutput} / {t('audioDrawer.device.systemSelectedRoute')}</small>
+              <small>{copy.systemAudioDescription}</small>
             </span>
             <em>Windows</em>
             {systemAudioActive ? <Check size={15} /> : null}
@@ -1798,6 +1800,7 @@ export const AudioSettingsDrawer = ({
             </span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
+          <p>{t('audioDrawer.section.advancedOutputDescription')}</p>
 
           {isAdvancedOutputOpen ? (
             <div className="audio-drawer-options-body">

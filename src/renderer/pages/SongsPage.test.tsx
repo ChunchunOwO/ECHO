@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { LibraryPage, LibraryTrack } from '../../shared/types/library';
+import type { RemoteSource } from '../../shared/types/remoteSources';
 import {
   createSongsFirstPageSnapshotQueryKey,
   readSongsStartupLoadDiagnostics,
@@ -158,6 +159,24 @@ const makePagedResult = (items: LibraryTrack[], overrides: Partial<LibraryPage<L
   ...overrides,
 });
 
+const makeRemoteSource = (id: string, displayName: string): RemoteSource => ({
+  id,
+  provider: 'webdav',
+  displayName,
+  status: 'enabled',
+  baseUrl: 'https://cloud.example.test',
+  username: null,
+  authType: 'basic',
+  config: {},
+  syncMode: 'index',
+  lastTestAt: null,
+  lastSyncAt: null,
+  lastError: null,
+  indexedTrackCount: 0,
+  createdAt: '2026-05-20T00:00:00.000Z',
+  updatedAt: '2026-05-20T00:00:00.000Z',
+});
+
 const installEcho = (tracks: LibraryTrack[] = []) => {
   const playLocalFile = vi.fn().mockImplementation(({ filePath, trackId }: { filePath: string; trackId?: string }) =>
     Promise.resolve({
@@ -279,6 +298,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       setOutput: vi.fn(),
     },
     remoteSources: {
+      list: vi.fn().mockResolvedValue([]),
       hydrateVisibleTracks: vi.fn().mockResolvedValue([]),
     },
   } as unknown as Window['echo'];
@@ -703,6 +723,36 @@ describe('SongsPage', () => {
       expect(window.echo.remoteSources.hydrateVisibleTracks).toHaveBeenCalledWith(
         ['remote-track-1', 'remote-track-2'],
         { metadata: true, cover: true, priority: 12 },
+      ),
+    );
+  });
+
+  it('filters the remote song list by selected source', async () => {
+    window.localStorage.setItem('echo-next.library.source-mode', 'remote');
+    installEcho([
+      makeTrack({
+        id: 'remote-track-1',
+        mediaType: 'remote',
+        path: 'remote://source-1/music/one.flac',
+        sourceId: 'source-1',
+        provider: 'webdav',
+        remotePath: '/music/one.flac',
+        stableKey: 'stable-1',
+        title: 'Remote One',
+      }),
+    ]);
+    vi.mocked(window.echo.remoteSources.list).mockResolvedValue([
+      makeRemoteSource('source-1', 'AList One'),
+      makeRemoteSource('source-2', 'AList Two'),
+    ]);
+
+    await renderSongsPage();
+    await screen.findByText('Remote One');
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'source-2' } });
+
+    await waitFor(() =>
+      expect(window.echo.library.getTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sourceProvider: 'remote', sourceId: 'source-2' }),
       ),
     );
   });

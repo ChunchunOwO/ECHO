@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyThemeMode,
   readThemeMode,
+  readThemeCustomId,
+  readThemeCustomThemes,
   readThemePreset,
   readThemePresetOverrides,
   updateThemeMode,
@@ -18,6 +20,7 @@ afterEach(() => {
   delete document.documentElement.dataset.themeMode;
   delete document.documentElement.dataset.themePreset;
   delete document.documentElement.dataset.themeCustom;
+  delete document.documentElement.dataset.themeCustomId;
   delete document.documentElement.dataset.themeTransition;
   document.documentElement.removeAttribute('style');
   document.documentElement.style.colorScheme = '';
@@ -113,7 +116,60 @@ describe('theme preferences', () => {
     expect(document.documentElement.style.getPropertyValue('--preset-app-bg')).toBe('');
   });
 
-  it('runs animated theme transitions for interactive changes', () => {
+  it('applies a selected custom theme on top of its base preset with CSS motion variables', () => {
+    const customThemes = [
+      {
+        id: 'theme-safe',
+        name: 'Safe Theme',
+        basePreset: 'nyanCat' as const,
+        light: {
+          appBg: '#101820',
+          titlebar: '#203040',
+          accent: '#ff66aa',
+          motionEnabled: false,
+          motionSpeedSeconds: 0.35,
+          motionIntensityPercent: 42,
+        },
+        createdAt: '2026-05-20T00:00:00.000Z',
+        updatedAt: '2026-05-20T00:00:00.000Z',
+      },
+    ];
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    const rafSpy = vi.fn(() => 1);
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: rafSpy,
+    });
+
+    updateThemePreferences(
+      'light',
+      'classic',
+      {
+        classic: {
+          light: {
+            appBg: '#ffffff',
+            accent: '#111111',
+          },
+        },
+      },
+      { customThemeId: 'theme-safe', customThemes },
+    );
+
+    expect(readThemeCustomThemes()).toEqual(customThemes);
+    expect(readThemeCustomId()).toBe('theme-safe');
+    expect(document.documentElement.dataset.themePreset).toBe('nyanCat');
+    expect(document.documentElement.dataset.themeCustom).toBe('true');
+    expect(document.documentElement.dataset.themeCustomId).toBe('theme-safe');
+    expect(document.documentElement.style.getPropertyValue('--preset-app-bg')).toBe('#101820');
+    expect(document.documentElement.style.getPropertyValue('--theme-accent-solid-bg')).toBe('#ff66aa');
+    expect(document.documentElement.style.getPropertyValue('--theme-motion-enabled')).toBe('0');
+    expect(document.documentElement.style.getPropertyValue('--theme-motion-speed')).toBe('0.35s');
+    expect(document.documentElement.style.getPropertyValue('--theme-motion-intensity')).toBe('42%');
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(rafSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses lightweight CSS theme transitions for interactive changes', () => {
     const startViewTransition = vi.fn((callback: () => void) => {
       callback();
       return { finished: Promise.resolve() };
@@ -125,7 +181,7 @@ describe('theme preferences', () => {
 
     updateThemePreset('lemonMochi', { animate: true });
 
-    expect(startViewTransition).toHaveBeenCalledOnce();
+    expect(startViewTransition).not.toHaveBeenCalled();
     expect(document.documentElement.dataset.themeTransition).toBe('true');
     expect(document.documentElement.dataset.themePreset).toBe('lemonMochi');
   });

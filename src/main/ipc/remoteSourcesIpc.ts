@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
   RemoteBackgroundJobKind,
+  RemoteSourceIssueKind,
   RemoteRuntimeLimits,
   RemoteSourceInput,
   RemoteSourceProvider,
@@ -14,6 +15,7 @@ import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 const providers = new Set<RemoteSourceProvider>(['webdav', 'jellyfin', 'emby', 'smb', 'sshfs', 'subsonic']);
 const syncModes = new Set<RemoteSourceSyncMode>(['browse', 'index', 'mirror']);
 const backgroundJobKinds = new Set<RemoteBackgroundJobKind>(['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill']);
+const issueKinds = new Set<RemoteSourceIssueKind>(['metadata', 'cover', 'lyrics', 'mv', 'missing']);
 
 const requireText = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -84,6 +86,17 @@ const normalizeRuntimeLimits = (value: unknown): RemoteRuntimeLimits => {
 
   return output;
 };
+
+const normalizeIssueKind = (value: unknown): RemoteSourceIssueKind => {
+  if (typeof value === 'string' && issueKinds.has(value as RemoteSourceIssueKind)) {
+    return value as RemoteSourceIssueKind;
+  }
+
+  return 'metadata';
+};
+
+const normalizeIssueLimit = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
 const normalizeInput = (value: unknown): RemoteSourceInput => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -166,6 +179,12 @@ const normalizeUpdate = (value: unknown): RemoteSourceUpdate => {
 
 export const registerRemoteSourcesIpc = (): void => {
   ipcMain.handle(IpcChannels.RemoteSourcesList, () => getRemoteSourceService().listSources());
+  ipcMain.handle(IpcChannels.RemoteSourcesGetOverview, (_event, sourceId?: unknown) =>
+    getRemoteSourceService().getOverview(optionalText(sourceId)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesListIssues, (_event, sourceId: unknown, kind: unknown, limit?: unknown) =>
+    getRemoteSourceService().listIssues(requireText(sourceId, 'sourceId'), normalizeIssueKind(kind), normalizeIssueLimit(limit)),
+  );
   ipcMain.handle(IpcChannels.RemoteSourcesCreate, (_event, input: unknown) => getRemoteSourceService().createSource(normalizeInput(input)));
   ipcMain.handle(IpcChannels.RemoteSourcesUpdate, (_event, input: unknown) => getRemoteSourceService().updateSource(normalizeUpdate(input)));
   ipcMain.handle(IpcChannels.RemoteSourcesDelete, (_event, sourceId: unknown) => getRemoteSourceService().deleteSource(requireText(sourceId, 'sourceId')));

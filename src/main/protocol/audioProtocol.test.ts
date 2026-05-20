@@ -50,6 +50,35 @@ describe('echo-audio protocol', () => {
     expect(await response.text()).toBe('bcd');
   });
 
+  it('returns 416 for unsatisfiable local audio byte ranges', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'song.mp3');
+    writeFileSync(audioPath, 'abcdef');
+    const module = await import('./audioProtocol');
+    const url = module.createSystemAudioStreamUrl({ url: audioPath, mimeType: 'audio/mpeg' });
+    const handler = handleMock.mock.calls[0][1] as (request: Request) => Promise<Response>;
+
+    const response = await handler(new Request(url, { headers: { Range: 'bytes=99-120' } }));
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get('Content-Range')).toBe('bytes */6');
+  });
+
+  it('serves suffix ranges for local system audio streams', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'song.mp3');
+    writeFileSync(audioPath, 'abcdef');
+    const module = await import('./audioProtocol');
+    const url = module.createSystemAudioStreamUrl({ url: audioPath, mimeType: 'audio/mpeg' });
+    const handler = handleMock.mock.calls[0][1] as (request: Request) => Promise<Response>;
+
+    const response = await handler(new Request(url, { headers: { Range: 'bytes=-2' } }));
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('Content-Range')).toBe('bytes 4-5/6');
+    expect(await response.text()).toBe('ef');
+  });
+
   it('proxies registered remote audio streams with headers and range', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('stream', {

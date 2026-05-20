@@ -143,4 +143,121 @@ describe('QueuePage', () => {
 
     expect(playLocalFile).not.toHaveBeenCalled();
   });
+
+  it('does not create a local playlist from remote-only queue items', async () => {
+    const remoteTrack: LibraryTrack = {
+      ...makeTrack(1),
+      id: 'remote-track-1',
+      path: 'webdav://source/music/track-1.flac',
+      sourceId: 'remote-source-1',
+      remotePath: '/music/track-1.flac',
+      stableKey: 'remote:source-1:/music/track-1.flac',
+    };
+    const createPlaylist = vi.fn().mockResolvedValue({
+      id: 'playlist-queue',
+      name: 'Queue Playlist',
+    });
+    const addTracksToPlaylist = vi.fn().mockResolvedValue([{ id: 'playlist-item-1' }]);
+    const deletePlaylist = vi.fn();
+
+    window.echo = {
+      library: {
+        createPlaylist,
+        addTracksToPlaylist,
+        deletePlaylist,
+      },
+    } as unknown as Window['echo'];
+
+    renderQueuePage([remoteTrack]);
+
+    await screen.findByText('Track 1');
+    fireEvent.click(screen.getByRole('button', { name: '保存为歌单' }));
+
+    await waitFor(() => expect(screen.getByText('当前队列没有可保存到本地歌单的已入库歌曲。')).toBeTruthy());
+    expect(createPlaylist).not.toHaveBeenCalled();
+    expect(addTracksToPlaylist).not.toHaveBeenCalled();
+    expect(deletePlaylist).not.toHaveBeenCalled();
+  });
+
+  it('does not create a playlist from streaming-only queue items', async () => {
+    const streamingTrack: LibraryTrack = {
+      ...makeTrack(2),
+      id: 'streaming:netease:200',
+      mediaType: 'streaming',
+      path: 'streaming:netease:200',
+      provider: 'netease',
+      providerTrackId: '200',
+      stableKey: 'streaming:netease:200',
+      codec: null,
+      sampleRate: null,
+      bitDepth: null,
+      bitrate: null,
+    };
+    const createPlaylist = vi.fn().mockResolvedValue({
+      id: 'playlist-queue',
+      name: 'Queue Playlist',
+    });
+    const addStreamingTrackToPlaylist = vi.fn().mockResolvedValue({ id: 'playlist-item-streaming' });
+
+    window.echo = {
+      library: {
+        createPlaylist,
+        addTracksToPlaylist: vi.fn(),
+        addStreamingTrackToPlaylist,
+      },
+    } as unknown as Window['echo'];
+
+    renderQueuePage([streamingTrack]);
+
+    await screen.findByText('Track 2');
+    fireEvent.click(screen.getByRole('button', { name: '保存为歌单' }));
+
+    await waitFor(() => expect(screen.getByText('当前队列没有可保存到本地歌单的已入库歌曲。')).toBeTruthy());
+    expect(createPlaylist).not.toHaveBeenCalled();
+    expect(addStreamingTrackToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('skips remote and streaming items when saving a mixed queue to a local playlist', async () => {
+    const localTrack = makeTrack(1);
+    const remoteTrack: LibraryTrack = {
+      ...makeTrack(3),
+      id: 'remote-track-3',
+      mediaType: 'remote',
+      path: 'webdav://source/music/track-3.flac',
+      sourceId: 'remote-source-1',
+      remotePath: '/music/track-3.flac',
+      stableKey: 'remote:source-1:/music/track-3.flac',
+    };
+    const streamingTrack: LibraryTrack = {
+      ...makeTrack(2),
+      id: 'streaming:netease:200',
+      mediaType: 'streaming',
+      path: 'streaming:netease:200',
+      provider: 'netease',
+      providerTrackId: '200',
+      stableKey: 'streaming:netease:200',
+    };
+    const createPlaylist = vi.fn().mockResolvedValue({
+      id: 'playlist-queue',
+      name: 'Queue Playlist',
+    });
+    const addTracksToPlaylist = vi.fn().mockResolvedValue([{ id: 'playlist-item-local' }]);
+    const addStreamingTrackToPlaylist = vi.fn();
+
+    window.echo = {
+      library: {
+        createPlaylist,
+        addTracksToPlaylist,
+        addStreamingTrackToPlaylist,
+      },
+    } as unknown as Window['echo'];
+
+    renderQueuePage([localTrack, remoteTrack, streamingTrack]);
+
+    await screen.findByText('Track 2');
+    fireEvent.click(screen.getByRole('button', { name: '保存为歌单' }));
+
+    await waitFor(() => expect(addTracksToPlaylist).toHaveBeenCalledWith('playlist-queue', ['track-1']));
+    expect(addStreamingTrackToPlaylist).not.toHaveBeenCalled();
+  });
 });

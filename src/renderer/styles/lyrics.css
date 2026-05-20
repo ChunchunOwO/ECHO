@@ -987,21 +987,50 @@ html:not([data-theme="dark"]) .lyrics-page[data-background="customWallpaper"]:ha
   flex: 1 1 190px;
 }
 
-.lyrics-font-family-field input {
+.lyrics-font-picker-button {
+  display: flex;
   width: 100%;
   box-sizing: border-box;
   min-height: 36px;
-  padding: 0 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
   color: var(--theme-legacy-heading-text);
   border: 1px solid var(--theme-legacy-var(--theme-on-accent)-a12);
   border-radius: 10px;
   outline: none;
   background: var(--theme-legacy-var(--theme-on-accent)-a08);
+  cursor: pointer;
+  text-align: left;
 }
 
-.lyrics-font-family-field input:focus {
+.lyrics-font-picker-button:hover,
+.lyrics-font-picker-button:focus-visible {
   border-color: var(--theme-success-border);
   box-shadow: 0 0 0 3px rgba(139, 233, 188, 0.12);
+}
+
+.lyrics-font-picker-button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.lyrics-font-picker-button span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyrics-font-picker-button em {
+  flex: 0 0 auto;
+  color: var(--theme-legacy-surface-a56);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
 }
 
 .lyrics-font-actions {

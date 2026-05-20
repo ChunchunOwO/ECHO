@@ -5,6 +5,22 @@ import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
 import { pinyin } from 'pinyin-pro';
 
+const SQLITE_RUNTIME_PRAGMA_PROFILE = 'safe-performance-v1';
+const SQLITE_RUNTIME_PRAGMAS = [
+  'busy_timeout = 5000',
+  'journal_mode = WAL',
+  'synchronous = FULL',
+  'cache_size = -32768',
+  'temp_store = MEMORY',
+  'mmap_size = 268435456',
+];
+
+const applyRuntimePragmas = (database) => {
+  for (const pragma of SQLITE_RUNTIME_PRAGMAS) {
+    database.pragma(pragma);
+  }
+};
+
 const schemaSql = `
 CREATE TABLE folders (
   id TEXT PRIMARY KEY,
@@ -361,7 +377,7 @@ export const runBenchmark = (trackCount, options = {}) => {
   mkdirSync(root, { recursive: true });
   const databasePath = join(root, 'library.sqlite');
   const database = new Database(databasePath);
-  database.pragma('journal_mode = WAL');
+  applyRuntimePragmas(database);
   database.exec(schemaSql);
 
   try {
@@ -515,6 +531,8 @@ export const runBenchmark = (trackCount, options = {}) => {
     return {
       tracks: trackCount,
       scenario: options.scenario ?? 'tracks',
+      sqlitePragmaProfile: SQLITE_RUNTIME_PRAGMA_PROFILE,
+      sqlitePragmas: SQLITE_RUNTIME_PRAGMAS,
       albumsCount: grouping.result,
       insertDurationMs: insert.durationMs,
       groupingDurationMs: grouping.durationMs,
@@ -564,6 +582,7 @@ export const runAlbumBenchmark = (albumCount, options = {}) =>
 
 const printResult = (result) => {
   console.log(`scenario: ${result.scenario}`);
+  console.log(`sqlite pragma profile: ${result.sqlitePragmaProfile} (${result.sqlitePragmas.join('; ')})`);
   console.log(`tracks: ${result.tracks}`);
   console.log(`albums count: ${result.albumsCount}`);
   console.log(`insert duration: ${result.insertDurationMs.toFixed(2)} ms`);

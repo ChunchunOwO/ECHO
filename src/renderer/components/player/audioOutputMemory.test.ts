@@ -11,6 +11,15 @@ beforeEach(() => {
 });
 
 describe('audioOutputMemory', () => {
+  it('defaults empty output memory to system audio', () => {
+    expect(readRememberedAudioOutput()).toMatchObject({
+      enabled: false,
+      outputMode: 'system',
+      sharedBackend: 'auto',
+      latencyProfile: 'balanced',
+    });
+  });
+
   it('keeps low latency supported for WASAPI exclusive output', () => {
     expect(resolveSupportedLatencyProfile('exclusive', 'lowLatency')).toBe('lowLatency');
     expect(createOutputSettings('exclusive', null, 'lowLatency')).toMatchObject({

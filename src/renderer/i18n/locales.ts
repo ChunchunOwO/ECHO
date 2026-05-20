@@ -51,6 +51,7 @@ export type TranslationKey =
   | 'audioDrawer.device.lowLatency'
   | 'audioDrawer.device.selected'
   | 'audioDrawer.device.systemAudio'
+  | 'audioDrawer.device.systemAudioDescription'
   | 'audioDrawer.device.systemDefault'
   | 'audioDrawer.device.systemDefaultOutput'
   | 'audioDrawer.device.systemOutput'
@@ -115,6 +116,7 @@ export type TranslationKey =
   | 'audioDrawer.option.wasapiExclusive'
   | 'audioDrawer.option.wasapiExclusiveDescription'
   | 'audioDrawer.section.advancedOutput'
+  | 'audioDrawer.section.advancedOutputDescription'
   | 'audioDrawer.section.automix'
   | 'audioDrawer.section.asioDevices'
   | 'audioDrawer.section.currentOutput'
@@ -581,8 +583,14 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.wisteriaBubble'
   | 'settings.appearance.themePreset.wisteriaBubble.description'
   | 'settings.appearance.themeCustom.action.autoFix'
+  | 'settings.appearance.themeCustom.action.copyDarkToLight'
+  | 'settings.appearance.themeCustom.action.copyLightToDark'
+  | 'settings.appearance.themeCustom.action.create'
+  | 'settings.appearance.themeCustom.action.delete'
+  | 'settings.appearance.themeCustom.action.duplicate'
   | 'settings.appearance.themeCustom.action.export'
   | 'settings.appearance.themeCustom.action.import'
+  | 'settings.appearance.themeCustom.action.rename'
   | 'settings.appearance.themeCustom.action.reset'
   | 'settings.appearance.themeCustom.action.save'
   | 'settings.appearance.themeCustom.advanced.hide'
@@ -602,32 +610,76 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.field.border.description'
   | 'settings.appearance.themeCustom.field.buttonText'
   | 'settings.appearance.themeCustom.field.buttonText.description'
+  | 'settings.appearance.themeCustom.field.chip'
+  | 'settings.appearance.themeCustom.field.chip.description'
+  | 'settings.appearance.themeCustom.field.cornerRadius'
+  | 'settings.appearance.themeCustom.field.cornerRadius.description'
+  | 'settings.appearance.themeCustom.field.danger'
+  | 'settings.appearance.themeCustom.field.danger.description'
+  | 'settings.appearance.themeCustom.field.field'
+  | 'settings.appearance.themeCustom.field.field.description'
+  | 'settings.appearance.themeCustom.field.focus'
+  | 'settings.appearance.themeCustom.field.focus.description'
   | 'settings.appearance.themeCustom.field.glass'
   | 'settings.appearance.themeCustom.field.glass.description'
   | 'settings.appearance.themeCustom.field.heading'
   | 'settings.appearance.themeCustom.field.heading.description'
+  | 'settings.appearance.themeCustom.field.motionEnabled'
+  | 'settings.appearance.themeCustom.field.motionEnabled.description'
+  | 'settings.appearance.themeCustom.field.motionIntensity'
+  | 'settings.appearance.themeCustom.field.motionIntensity.description'
+  | 'settings.appearance.themeCustom.field.motionSpeed'
+  | 'settings.appearance.themeCustom.field.motionSpeed.description'
   | 'settings.appearance.themeCustom.field.muted'
   | 'settings.appearance.themeCustom.field.muted.description'
   | 'settings.appearance.themeCustom.field.onAccent'
   | 'settings.appearance.themeCustom.field.onAccent.description'
   | 'settings.appearance.themeCustom.field.panel'
+  | 'settings.appearance.themeCustom.field.panelBlur'
+  | 'settings.appearance.themeCustom.field.panelBlur.description'
   | 'settings.appearance.themeCustom.field.panel.description'
   | 'settings.appearance.themeCustom.field.panelOpacity'
   | 'settings.appearance.themeCustom.field.panelOpacity.description'
   | 'settings.appearance.themeCustom.field.panelSoft'
   | 'settings.appearance.themeCustom.field.panelSoft.description'
+  | 'settings.appearance.themeCustom.field.player'
+  | 'settings.appearance.themeCustom.field.player.description'
+  | 'settings.appearance.themeCustom.field.row'
+  | 'settings.appearance.themeCustom.field.row.description'
+  | 'settings.appearance.themeCustom.field.rowActive'
+  | 'settings.appearance.themeCustom.field.rowActive.description'
+  | 'settings.appearance.themeCustom.field.rowHover'
+  | 'settings.appearance.themeCustom.field.rowHover.description'
+  | 'settings.appearance.themeCustom.field.saturation'
+  | 'settings.appearance.themeCustom.field.saturation.description'
   | 'settings.appearance.themeCustom.field.secondary'
   | 'settings.appearance.themeCustom.field.secondary.description'
   | 'settings.appearance.themeCustom.field.shadow'
   | 'settings.appearance.themeCustom.field.shadow.description'
+  | 'settings.appearance.themeCustom.field.sidebar'
+  | 'settings.appearance.themeCustom.field.sidebar.description'
+  | 'settings.appearance.themeCustom.field.success'
+  | 'settings.appearance.themeCustom.field.success.description'
   | 'settings.appearance.themeCustom.field.text'
   | 'settings.appearance.themeCustom.field.text.description'
+  | 'settings.appearance.themeCustom.field.titlebar'
+  | 'settings.appearance.themeCustom.field.titlebar.description'
+  | 'settings.appearance.themeCustom.field.warning'
+  | 'settings.appearance.themeCustom.field.warning.description'
   | 'settings.appearance.themeCustom.group.advanced'
   | 'settings.appearance.themeCustom.group.advanced.description'
   | 'settings.appearance.themeCustom.group.core'
   | 'settings.appearance.themeCustom.group.core.description'
   | 'settings.appearance.themeCustom.group.gradient'
   | 'settings.appearance.themeCustom.group.gradient.description'
+  | 'settings.appearance.themeCustom.group.motion'
+  | 'settings.appearance.themeCustom.group.motion.description'
+  | 'settings.appearance.themeCustom.group.state'
+  | 'settings.appearance.themeCustom.group.state.description'
+  | 'settings.appearance.themeCustom.group.surface'
+  | 'settings.appearance.themeCustom.group.surface.description'
+  | 'settings.appearance.themeCustom.message.copied'
+  | 'settings.appearance.themeCustom.message.created'
   | 'settings.appearance.themeCustom.message.fixed'
   | 'settings.appearance.themeCustom.message.exported'
   | 'settings.appearance.themeCustom.message.imported'
@@ -636,6 +688,9 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.message.lowContrast'
   | 'settings.appearance.themeCustom.message.reset'
   | 'settings.appearance.themeCustom.message.saved'
+  | 'settings.appearance.themeCustom.myThemes.description'
+  | 'settings.appearance.themeCustom.myThemes.empty'
+  | 'settings.appearance.themeCustom.myThemes.title'
   | 'settings.appearance.themeCustom.preview.description'
   | 'settings.appearance.themeCustom.preview.title'
   | 'settings.appearance.themeCustom.title'
@@ -1052,7 +1107,8 @@ const zhCN: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO 驱动',
   'audioDrawer.device.lowLatency': '低延迟',
   'audioDrawer.device.selected': '已选择',
-  'audioDrawer.device.systemAudio': '系统音频',
+  'audioDrawer.device.systemAudio': '标准输出（推荐）',
+  'audioDrawer.device.systemAudioDescription': '最稳定，适合普通耳机、蓝牙、电脑扬声器',
   'audioDrawer.device.systemDefault': '系统默认',
   'audioDrawer.device.systemDefaultOutput': '系统默认输出',
   'audioDrawer.device.systemOutput': '系统输出',
@@ -1116,12 +1172,13 @@ const zhCN: TranslationMap = {
   'audioDrawer.option.wasapiSharedDescription': '日常 Windows 共享输出路径。',
   'audioDrawer.option.wasapiExclusive': 'WASAPI 独占模式',
   'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 输出路径。独占会请求同一设备并绕过共享混音器，只建议在确认 DAC/声卡和驱动稳定时使用；Realtek 等板载驱动兼容性较差，可能导致无声、卡顿或切换失败。',
-  'audioDrawer.section.advancedOutput': '高级输出',
+  'audioDrawer.section.advancedOutput': '高级音频引擎',
+  'audioDrawer.section.advancedOutputDescription': '适合外置声卡、WASAPI Exclusive、ASIO 和 HiFi 调试',
   'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 输出设备',
   'audioDrawer.section.currentOutput': '当前输出',
   'audioDrawer.section.hiddenDevices': '隐藏设备',
-  'audioDrawer.section.systemDevices': '系统输出设备',
+  'audioDrawer.section.systemDevices': '推荐输出',
   'audioDrawer.signal.balanceDsp': 'Balance DSP',
   'audioDrawer.signal.bitPerfect': 'Bit-perfect',
   'audioDrawer.signal.dspOn': 'DSP On',
@@ -1585,12 +1642,18 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.title': '自定义当前主题',
   'settings.appearance.themeCustom.description': '先选一个主题，再微调颜色；每个主题都会记住自己的自定义。',
   'settings.appearance.themeCustom.action.autoFix': '自动修正文字',
+  'settings.appearance.themeCustom.action.create': '新建我的主题',
+  'settings.appearance.themeCustom.action.rename': '重命名',
+  'settings.appearance.themeCustom.action.duplicate': '复制',
+  'settings.appearance.themeCustom.action.delete': '删除',
+  'settings.appearance.themeCustom.action.copyLightToDark': '复制浅色到深色',
+  'settings.appearance.themeCustom.action.copyDarkToLight': '复制深色到浅色',
   'settings.appearance.themeCustom.action.export': '导出参数',
   'settings.appearance.themeCustom.action.import': '导入参数',
   'settings.appearance.themeCustom.action.reset': '重置当前自定义',
   'settings.appearance.themeCustom.action.save': '保存自定义',
-  'settings.appearance.themeCustom.advanced.show': '展开高级颜色',
-  'settings.appearance.themeCustom.advanced.hide': '收起高级颜色',
+  'settings.appearance.themeCustom.advanced.show': '展开高级设置',
+  'settings.appearance.themeCustom.advanced.hide': '收起高级设置',
   'settings.appearance.themeCustom.field.appBg': '底色',
   'settings.appearance.themeCustom.field.appBg2': '渐变中段',
   'settings.appearance.themeCustom.field.appBg3': '渐变尾色',
@@ -1608,6 +1671,24 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity': '面板透明度',
   'settings.appearance.themeCustom.field.glass': '玻璃感',
   'settings.appearance.themeCustom.field.shadow': '阴影强度',
+  'settings.appearance.themeCustom.field.titlebar': '标题栏',
+  'settings.appearance.themeCustom.field.sidebar': '侧栏',
+  'settings.appearance.themeCustom.field.player': '播放器',
+  'settings.appearance.themeCustom.field.field': '输入框',
+  'settings.appearance.themeCustom.field.row': '列表行',
+  'settings.appearance.themeCustom.field.rowHover': '悬停行',
+  'settings.appearance.themeCustom.field.rowActive': '选中行',
+  'settings.appearance.themeCustom.field.chip': '芯片',
+  'settings.appearance.themeCustom.field.focus': '焦点环',
+  'settings.appearance.themeCustom.field.success': '成功色',
+  'settings.appearance.themeCustom.field.warning': '警告色',
+  'settings.appearance.themeCustom.field.danger': '危险色',
+  'settings.appearance.themeCustom.field.cornerRadius': '圆角',
+  'settings.appearance.themeCustom.field.panelBlur': '面板模糊',
+  'settings.appearance.themeCustom.field.saturation': '饱和度',
+  'settings.appearance.themeCustom.field.motionEnabled': '启用动效',
+  'settings.appearance.themeCustom.field.motionSpeed': '动效速度',
+  'settings.appearance.themeCustom.field.motionIntensity': '动效强度',
   'settings.appearance.themeCustom.field.appBg.description': '主窗口底色',
   'settings.appearance.themeCustom.field.appBg2.description': '背景渐变的柔光中段',
   'settings.appearance.themeCustom.field.appBg3.description': '背景渐变的末端停靠色',
@@ -1625,14 +1706,43 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity.description': '面板露出背景的程度',
   'settings.appearance.themeCustom.field.glass.description': '背景模糊和玻璃层次',
   'settings.appearance.themeCustom.field.shadow.description': '卡片、弹窗和播放器投影',
+  'settings.appearance.themeCustom.field.titlebar.description': '窗口顶部栏背景',
+  'settings.appearance.themeCustom.field.sidebar.description': '左侧导航和弱层级区域',
+  'settings.appearance.themeCustom.field.player.description': '底部播放器背景',
+  'settings.appearance.themeCustom.field.field.description': '输入框和搜索框底色',
+  'settings.appearance.themeCustom.field.row.description': '列表普通行背景',
+  'settings.appearance.themeCustom.field.rowHover.description': '鼠标悬停行背景',
+  'settings.appearance.themeCustom.field.rowActive.description': '当前选中行背景',
+  'settings.appearance.themeCustom.field.chip.description': '筛选芯片和小按钮底色',
+  'settings.appearance.themeCustom.field.focus.description': '键盘焦点和描边高亮',
+  'settings.appearance.themeCustom.field.success.description': '成功状态提示',
+  'settings.appearance.themeCustom.field.warning.description': '警告状态提示',
+  'settings.appearance.themeCustom.field.danger.description': '危险操作提示',
+  'settings.appearance.themeCustom.field.cornerRadius.description': '面板和按钮圆角大小',
+  'settings.appearance.themeCustom.field.panelBlur.description': '玻璃面板模糊半径',
+  'settings.appearance.themeCustom.field.saturation.description': '界面整体色彩浓度',
+  'settings.appearance.themeCustom.field.motionEnabled.description': '只影响 CSS 过渡变量',
+  'settings.appearance.themeCustom.field.motionSpeed.description': 'CSS 动效时长',
+  'settings.appearance.themeCustom.field.motionIntensity.description': 'CSS 位移和强调强度',
   'settings.appearance.themeCustom.preview.title': '正在编辑',
   'settings.appearance.themeCustom.preview.description': '改动会先实时预览，保存后才写入设置。',
+  'settings.appearance.themeCustom.myThemes.title': '我的主题',
+  'settings.appearance.themeCustom.myThemes.description': '另存、切换、复制、导入导出安全主题参数。',
+  'settings.appearance.themeCustom.myThemes.empty': '还没有自定义主题。',
   'settings.appearance.themeCustom.group.core': '常用颜色',
   'settings.appearance.themeCustom.group.core.description': '老 ECHO 式主色板，改这里最直观。',
   'settings.appearance.themeCustom.group.gradient': '背景渐变',
   'settings.appearance.themeCustom.group.gradient.description': '控制老 ECHO 那种窗口底色渐变氛围。',
+  'settings.appearance.themeCustom.group.surface': '表面',
+  'settings.appearance.themeCustom.group.surface.description': '标题栏、侧栏、播放器和列表层级。',
+  'settings.appearance.themeCustom.group.state': '状态',
+  'settings.appearance.themeCustom.group.state.description': '成功、警告、危险和焦点色。',
+  'settings.appearance.themeCustom.group.motion': '动效',
+  'settings.appearance.themeCustom.group.motion.description': '仅写入 CSS 变量，不增加运行时计时器。',
   'settings.appearance.themeCustom.group.advanced': '高级细节',
   'settings.appearance.themeCustom.group.advanced.description': '更细的文字、边界和按钮文字颜色。',
+  'settings.appearance.themeCustom.message.created': '已新建我的主题。',
+  'settings.appearance.themeCustom.message.copied': '已复制到目标色调，保存后生效。',
   'settings.appearance.themeCustom.message.exported': '已导出当前主题参数。',
   'settings.appearance.themeCustom.message.imported': '已导入主题参数并应用。',
   'settings.appearance.themeCustom.message.importFailed': '导入失败，请选择 ECHO 主题参数 JSON。',
@@ -1917,10 +2027,10 @@ const zhCN: TranslationMap = {
   'settings.playback.outputDevice.empty': '无可用设备',
   'settings.playback.outputDevice.title': '输出设备',
   'settings.playback.outputMode.asio': 'ASIO',
-  'settings.playback.outputMode.description': 'Shared 适合日常使用，系统音频会交给 Windows 默认输出链路；Exclusive / ASIO 用于采样率验收和后续 bit-perfect 路径。',
+  'settings.playback.outputMode.description': '普通耳机、蓝牙和电脑扬声器建议使用标准输出。WASAPI / ASIO / Exclusive 适合外置声卡和 HiFi 调试。',
   'settings.playback.outputMode.exclusive': 'Exclusive',
   'settings.playback.outputMode.shared': 'Shared',
-  'settings.playback.outputMode.system': '系统音频',
+  'settings.playback.outputMode.system': '标准输出（推荐）',
   'settings.playback.outputMode.title': '输出模式',
   'settings.playback.sharedBackend.description': 'DirectSound 只作为手动兼容模式，延迟较大；日常播放保持 WASAPI Shared。',
   'settings.playback.sharedBackend.directSound': 'DirectSound 兼容',
@@ -2084,7 +2194,8 @@ const zhTW: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO 驅動',
   'audioDrawer.device.lowLatency': '低延遲',
   'audioDrawer.device.selected': '已選取',
-  'audioDrawer.device.systemAudio': '系統音訊',
+  'audioDrawer.device.systemAudio': '標準輸出（推薦）',
+  'audioDrawer.device.systemAudioDescription': '最穩定，適合普通耳機、藍牙、電腦喇叭',
   'audioDrawer.device.systemDefault': '系統預設',
   'audioDrawer.device.systemDefaultOutput': '系統預設輸出',
   'audioDrawer.device.systemOutput': '系統輸出',
@@ -2148,12 +2259,13 @@ const zhTW: TranslationMap = {
   'audioDrawer.option.wasapiSharedDescription': '日常 Windows 共享輸出路徑。',
   'audioDrawer.option.wasapiExclusive': 'WASAPI 獨佔模式',
   'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 輸出路徑。獨佔會要求同一裝置並略過共享混音器，只建議在確認 DAC/音效卡與驅動穩定時使用；Realtek 等板載驅動相容性較差，可能導致無聲、卡頓或切換失敗。',
-  'audioDrawer.section.advancedOutput': '進階輸出',
+  'audioDrawer.section.advancedOutput': '進階音訊引擎',
+  'audioDrawer.section.advancedOutputDescription': '適合外接音效卡、WASAPI Exclusive、ASIO 和 HiFi 調試',
   'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 輸出裝置',
   'audioDrawer.section.currentOutput': '目前輸出',
   'audioDrawer.section.hiddenDevices': '隱藏裝置',
-  'audioDrawer.section.systemDevices': '系統輸出裝置',
+  'audioDrawer.section.systemDevices': '推薦輸出',
   'audioDrawer.signal.balanceDsp': '平衡 DSP',
   'audioDrawer.signal.bitPerfect': 'Bit-perfect',
   'audioDrawer.signal.dspOn': 'DSP 開啟',
@@ -2500,10 +2612,10 @@ const zhTW: TranslationMap = {
   'settings.general.backup.export': '匯出設定',
   'settings.general.backup.import': '匯入設定',
   'settings.playback.outputMode.asio': 'ASIO',
-  'settings.playback.outputMode.description': 'Shared 適合日常使用，系統音訊會交給 Windows 預設輸出鏈路；Exclusive / ASIO 用於取樣率驗收和後續 bit-perfect 路徑。',
+  'settings.playback.outputMode.description': '普通耳機、藍牙和電腦喇叭建議使用標準輸出。WASAPI / ASIO / Exclusive 適合外接音效卡和 HiFi 調試。',
   'settings.playback.outputMode.exclusive': 'Exclusive',
   'settings.playback.outputMode.shared': 'Shared',
-  'settings.playback.outputMode.system': '系統音訊',
+  'settings.playback.outputMode.system': '標準輸出（推薦）',
   'settings.playback.outputMode.title': '輸出模式',
   'settings.playback.speedMode.description': '選擇播放器底部速度滑桿使用的變速方式。',
   'settings.playback.speedMode.title': '變速模式',
@@ -2657,12 +2769,18 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.title': '自訂目前主題',
   'settings.appearance.themeCustom.description': '先選一個主題，再微調顏色；每個主題都會記住自己的自訂。',
   'settings.appearance.themeCustom.action.autoFix': '自動修正文字',
+  'settings.appearance.themeCustom.action.create': '新建我的主題',
+  'settings.appearance.themeCustom.action.rename': '重新命名',
+  'settings.appearance.themeCustom.action.duplicate': '複製',
+  'settings.appearance.themeCustom.action.delete': '刪除',
+  'settings.appearance.themeCustom.action.copyLightToDark': '複製淺色到深色',
+  'settings.appearance.themeCustom.action.copyDarkToLight': '複製深色到淺色',
   'settings.appearance.themeCustom.action.export': '匯出參數',
   'settings.appearance.themeCustom.action.import': '匯入參數',
   'settings.appearance.themeCustom.action.reset': '重置目前自訂',
   'settings.appearance.themeCustom.action.save': '儲存自訂',
-  'settings.appearance.themeCustom.advanced.show': '展開進階顏色',
-  'settings.appearance.themeCustom.advanced.hide': '收起進階顏色',
+  'settings.appearance.themeCustom.advanced.show': '展開進階設定',
+  'settings.appearance.themeCustom.advanced.hide': '收起進階設定',
   'settings.appearance.themeCustom.field.appBg': '底色',
   'settings.appearance.themeCustom.field.appBg2': '漸層中段',
   'settings.appearance.themeCustom.field.appBg3': '漸層尾色',
@@ -2680,6 +2798,24 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity': '面板透明度',
   'settings.appearance.themeCustom.field.glass': '玻璃感',
   'settings.appearance.themeCustom.field.shadow': '陰影強度',
+  'settings.appearance.themeCustom.field.titlebar': '標題列',
+  'settings.appearance.themeCustom.field.sidebar': '側欄',
+  'settings.appearance.themeCustom.field.player': '播放器',
+  'settings.appearance.themeCustom.field.field': '輸入框',
+  'settings.appearance.themeCustom.field.row': '列表列',
+  'settings.appearance.themeCustom.field.rowHover': '懸停列',
+  'settings.appearance.themeCustom.field.rowActive': '選中列',
+  'settings.appearance.themeCustom.field.chip': '晶片',
+  'settings.appearance.themeCustom.field.focus': '焦點環',
+  'settings.appearance.themeCustom.field.success': '成功色',
+  'settings.appearance.themeCustom.field.warning': '警告色',
+  'settings.appearance.themeCustom.field.danger': '危險色',
+  'settings.appearance.themeCustom.field.cornerRadius': '圓角',
+  'settings.appearance.themeCustom.field.panelBlur': '面板模糊',
+  'settings.appearance.themeCustom.field.saturation': '飽和度',
+  'settings.appearance.themeCustom.field.motionEnabled': '啟用動效',
+  'settings.appearance.themeCustom.field.motionSpeed': '動效速度',
+  'settings.appearance.themeCustom.field.motionIntensity': '動效強度',
   'settings.appearance.themeCustom.field.appBg.description': '主視窗底色',
   'settings.appearance.themeCustom.field.appBg2.description': '背景漸層的柔光中段',
   'settings.appearance.themeCustom.field.appBg3.description': '背景漸層的末端停靠色',
@@ -2697,14 +2833,43 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity.description': '面板露出背景的程度',
   'settings.appearance.themeCustom.field.glass.description': '背景模糊和玻璃層次',
   'settings.appearance.themeCustom.field.shadow.description': '卡片、彈窗和播放器投影',
+  'settings.appearance.themeCustom.field.titlebar.description': '視窗頂部列背景',
+  'settings.appearance.themeCustom.field.sidebar.description': '左側導覽和弱層級區域',
+  'settings.appearance.themeCustom.field.player.description': '底部播放器背景',
+  'settings.appearance.themeCustom.field.field.description': '輸入框和搜尋框底色',
+  'settings.appearance.themeCustom.field.row.description': '列表普通列背景',
+  'settings.appearance.themeCustom.field.rowHover.description': '滑鼠懸停列背景',
+  'settings.appearance.themeCustom.field.rowActive.description': '目前選中列背景',
+  'settings.appearance.themeCustom.field.chip.description': '篩選晶片和小按鈕底色',
+  'settings.appearance.themeCustom.field.focus.description': '鍵盤焦點和描邊高亮',
+  'settings.appearance.themeCustom.field.success.description': '成功狀態提示',
+  'settings.appearance.themeCustom.field.warning.description': '警告狀態提示',
+  'settings.appearance.themeCustom.field.danger.description': '危險操作提示',
+  'settings.appearance.themeCustom.field.cornerRadius.description': '面板和按鈕圓角大小',
+  'settings.appearance.themeCustom.field.panelBlur.description': '玻璃面板模糊半徑',
+  'settings.appearance.themeCustom.field.saturation.description': '介面整體色彩濃度',
+  'settings.appearance.themeCustom.field.motionEnabled.description': '只影響 CSS 過渡變數',
+  'settings.appearance.themeCustom.field.motionSpeed.description': 'CSS 動效時長',
+  'settings.appearance.themeCustom.field.motionIntensity.description': 'CSS 位移和強調強度',
   'settings.appearance.themeCustom.preview.title': '正在編輯',
   'settings.appearance.themeCustom.preview.description': '改動會先即時預覽，儲存後才寫入設定。',
+  'settings.appearance.themeCustom.myThemes.title': '我的主題',
+  'settings.appearance.themeCustom.myThemes.description': '另存、切換、複製、匯入匯出安全主題參數。',
+  'settings.appearance.themeCustom.myThemes.empty': '還沒有自訂主題。',
   'settings.appearance.themeCustom.group.core': '常用顏色',
   'settings.appearance.themeCustom.group.core.description': '老 ECHO 式主色板，改這裡最直觀。',
   'settings.appearance.themeCustom.group.gradient': '背景漸層',
   'settings.appearance.themeCustom.group.gradient.description': '控制老 ECHO 那種視窗底色漸層氛圍。',
+  'settings.appearance.themeCustom.group.surface': '表面',
+  'settings.appearance.themeCustom.group.surface.description': '標題列、側欄、播放器和列表層級。',
+  'settings.appearance.themeCustom.group.state': '狀態',
+  'settings.appearance.themeCustom.group.state.description': '成功、警告、危險和焦點色。',
+  'settings.appearance.themeCustom.group.motion': '動效',
+  'settings.appearance.themeCustom.group.motion.description': '僅寫入 CSS 變數，不增加執行時計時器。',
   'settings.appearance.themeCustom.group.advanced': '進階細節',
   'settings.appearance.themeCustom.group.advanced.description': '更細的文字、邊界和按鈕文字顏色。',
+  'settings.appearance.themeCustom.message.created': '已新建我的主題。',
+  'settings.appearance.themeCustom.message.copied': '已複製到目標色調，儲存後生效。',
   'settings.appearance.themeCustom.message.exported': '已匯出目前主題參數。',
   'settings.appearance.themeCustom.message.imported': '已匯入主題參數並套用。',
   'settings.appearance.themeCustom.message.importFailed': '匯入失敗，請選擇 ECHO 主題參數 JSON。',
@@ -2819,7 +2984,8 @@ const jaJP: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO ドライバー',
   'audioDrawer.device.lowLatency': '低遅延',
   'audioDrawer.device.selected': '選択中',
-  'audioDrawer.device.systemAudio': 'システム音声',
+  'audioDrawer.device.systemAudio': '標準出力（推奨）',
+  'audioDrawer.device.systemAudioDescription': 'もっとも安定。一般的なヘッドホン、Bluetooth、PC スピーカー向け',
   'audioDrawer.device.systemDefault': 'システム既定',
   'audioDrawer.device.systemDefaultOutput': 'システム既定出力',
   'audioDrawer.device.systemOutput': 'システム出力',
@@ -2883,12 +3049,13 @@ const jaJP: TranslationMap = {
   'audioDrawer.option.wasapiSharedDescription': '通常の Windows 共有出力経路です。',
   'audioDrawer.option.wasapiExclusive': 'WASAPI 排他モード',
   'audioDrawer.option.wasapiExclusiveDescription': '共有は通常の Windows 出力経路です。排他は同じデバイスを共有ミキサーなしで開きます。DAC/オーディオデバイスとドライバーが安定している場合だけ推奨します。Realtek などのオンボードドライバーは相性が弱く、無音・途切れ・切り替え失敗の原因になることがあります。',
-  'audioDrawer.section.advancedOutput': '詳細出力',
+  'audioDrawer.section.advancedOutput': '高度なオーディオエンジン',
+  'audioDrawer.section.advancedOutputDescription': '外部オーディオ機器、WASAPI Exclusive、ASIO、HiFi 調整向け',
   'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO 出力デバイス',
   'audioDrawer.section.currentOutput': '現在の出力',
   'audioDrawer.section.hiddenDevices': '非表示デバイス',
-  'audioDrawer.section.systemDevices': 'システム出力デバイス',
+  'audioDrawer.section.systemDevices': '推奨出力',
   'audioDrawer.signal.balanceDsp': 'バランス DSP',
   'audioDrawer.signal.bitPerfect': 'Bit-perfect',
   'audioDrawer.signal.dspOn': 'DSP オン',
@@ -3314,10 +3481,10 @@ const jaJP: TranslationMap = {
   'settings.playback.outputMode.title': '出力モード',
   'settings.playback.speedMode.description': '下部プレイヤーの速度スライダーで使う変速方式を選びます。',
   'settings.playback.speedMode.title': '変速モード',
-  'settings.playback.outputMode.description': 'Shared は日常利用向け、システム音声は Windows の既定出力経路に任せます。Exclusive / ASIO はサンプルレート検証と今後の bit-perfect 経路向けです。',
+  'settings.playback.outputMode.description': '一般的なヘッドホン、Bluetooth、PC スピーカーには標準出力を推奨します。WASAPI / ASIO / Exclusive は外部オーディオ機器や HiFi 調整向けです。',
   'settings.playback.outputMode.exclusive': 'Exclusive',
   'settings.playback.outputMode.shared': 'Shared',
-  'settings.playback.outputMode.system': 'システム音声',
+  'settings.playback.outputMode.system': '標準出力（推奨）',
   'settings.playback.sharedBackend.description': 'DirectSound は手動の互換モードです。遅延が大きいため、普段は WASAPI Shared を使います。',
   'settings.playback.sharedBackend.directSound': 'DirectSound 互換',
   'settings.playback.sharedBackend.title': '共有バックエンド',
@@ -3463,12 +3630,18 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
+  'settings.appearance.themeCustom.action.create': 'New My Theme',
+  'settings.appearance.themeCustom.action.rename': 'Rename',
+  'settings.appearance.themeCustom.action.duplicate': 'Duplicate',
+  'settings.appearance.themeCustom.action.delete': 'Delete',
+  'settings.appearance.themeCustom.action.copyLightToDark': 'Copy Light to Dark',
+  'settings.appearance.themeCustom.action.copyDarkToLight': 'Copy Dark to Light',
   'settings.appearance.themeCustom.action.export': 'Export Parameters',
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
-  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Colors',
-  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Colors',
+  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
+  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',
   'settings.appearance.themeCustom.field.appBg2': 'Gradient Mid',
   'settings.appearance.themeCustom.field.appBg3': 'Gradient End',
@@ -3486,6 +3659,24 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity': 'Panel Opacity',
   'settings.appearance.themeCustom.field.glass': 'Glass',
   'settings.appearance.themeCustom.field.shadow': 'Shadow',
+  'settings.appearance.themeCustom.field.titlebar': 'Titlebar',
+  'settings.appearance.themeCustom.field.sidebar': 'Sidebar',
+  'settings.appearance.themeCustom.field.player': 'Player',
+  'settings.appearance.themeCustom.field.field': 'Field',
+  'settings.appearance.themeCustom.field.row': 'Row',
+  'settings.appearance.themeCustom.field.rowHover': 'Row Hover',
+  'settings.appearance.themeCustom.field.rowActive': 'Selected Row',
+  'settings.appearance.themeCustom.field.chip': 'Chip',
+  'settings.appearance.themeCustom.field.focus': 'Focus Ring',
+  'settings.appearance.themeCustom.field.success': 'Success',
+  'settings.appearance.themeCustom.field.warning': 'Warning',
+  'settings.appearance.themeCustom.field.danger': 'Danger',
+  'settings.appearance.themeCustom.field.cornerRadius': 'Corner Radius',
+  'settings.appearance.themeCustom.field.panelBlur': 'Panel Blur',
+  'settings.appearance.themeCustom.field.saturation': 'Saturation',
+  'settings.appearance.themeCustom.field.motionEnabled': 'Enable Motion',
+  'settings.appearance.themeCustom.field.motionSpeed': 'Motion Speed',
+  'settings.appearance.themeCustom.field.motionIntensity': 'Motion Intensity',
   'settings.appearance.themeCustom.field.appBg.description': 'Main window base color',
   'settings.appearance.themeCustom.field.appBg2.description': 'Soft middle stop of the background gradient',
   'settings.appearance.themeCustom.field.appBg3.description': 'End stop of the background gradient',
@@ -3503,14 +3694,43 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity.description': 'How much background shows through panels',
   'settings.appearance.themeCustom.field.glass.description': 'Blur and glass layering',
   'settings.appearance.themeCustom.field.shadow.description': 'Cards, popups, and player shadows',
+  'settings.appearance.themeCustom.field.titlebar.description': 'Top window bar background',
+  'settings.appearance.themeCustom.field.sidebar.description': 'Left navigation and softer layers',
+  'settings.appearance.themeCustom.field.player.description': 'Bottom player background',
+  'settings.appearance.themeCustom.field.field.description': 'Inputs and search fields',
+  'settings.appearance.themeCustom.field.row.description': 'Normal list row background',
+  'settings.appearance.themeCustom.field.rowHover.description': 'Hovered list row background',
+  'settings.appearance.themeCustom.field.rowActive.description': 'Selected list row background',
+  'settings.appearance.themeCustom.field.chip.description': 'Filter chips and small buttons',
+  'settings.appearance.themeCustom.field.focus.description': 'Keyboard focus and outline highlight',
+  'settings.appearance.themeCustom.field.success.description': 'Success state notices',
+  'settings.appearance.themeCustom.field.warning.description': 'Warning state notices',
+  'settings.appearance.themeCustom.field.danger.description': 'Danger action notices',
+  'settings.appearance.themeCustom.field.cornerRadius.description': 'Panel and button radius',
+  'settings.appearance.themeCustom.field.panelBlur.description': 'Glass panel blur radius',
+  'settings.appearance.themeCustom.field.saturation.description': 'Overall UI color strength',
+  'settings.appearance.themeCustom.field.motionEnabled.description': 'Only writes CSS transition variables',
+  'settings.appearance.themeCustom.field.motionSpeed.description': 'CSS animation duration',
+  'settings.appearance.themeCustom.field.motionIntensity.description': 'CSS movement and emphasis strength',
   'settings.appearance.themeCustom.preview.title': 'Editing',
   'settings.appearance.themeCustom.preview.description': 'Changes preview live and are saved only when you click save.',
+  'settings.appearance.themeCustom.myThemes.title': 'My Themes',
+  'settings.appearance.themeCustom.myThemes.description': 'Save, switch, duplicate, import, and export safe theme parameters.',
+  'settings.appearance.themeCustom.myThemes.empty': 'No custom themes yet.',
   'settings.appearance.themeCustom.group.core': 'Common Colors',
   'settings.appearance.themeCustom.group.core.description': 'Old-ECHO-style palette controls for the most visible colors.',
   'settings.appearance.themeCustom.group.gradient': 'Background Gradient',
   'settings.appearance.themeCustom.group.gradient.description': 'Controls the old-ECHO-style window gradient mood.',
+  'settings.appearance.themeCustom.group.surface': 'Surface',
+  'settings.appearance.themeCustom.group.surface.description': 'Titlebar, sidebar, player, and list layers.',
+  'settings.appearance.themeCustom.group.state': 'State',
+  'settings.appearance.themeCustom.group.state.description': 'Success, warning, danger, and focus colors.',
+  'settings.appearance.themeCustom.group.motion': 'Motion',
+  'settings.appearance.themeCustom.group.motion.description': 'CSS variables only, without runtime timers.',
   'settings.appearance.themeCustom.group.advanced': 'Advanced Details',
   'settings.appearance.themeCustom.group.advanced.description': 'Fine tune text, borders, and button text colors.',
+  'settings.appearance.themeCustom.message.created': 'My theme was created.',
+  'settings.appearance.themeCustom.message.copied': 'Copied to the target tone. Save to keep it.',
   'settings.appearance.themeCustom.message.exported': 'Theme parameters were exported.',
   'settings.appearance.themeCustom.message.imported': 'Theme parameters were imported and applied.',
   'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',
@@ -3628,7 +3848,8 @@ const enUS: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO driver',
   'audioDrawer.device.lowLatency': 'Low latency',
   'audioDrawer.device.selected': 'Selected',
-  'audioDrawer.device.systemAudio': 'System audio',
+  'audioDrawer.device.systemAudio': 'Standard Output (Recommended)',
+  'audioDrawer.device.systemAudioDescription': 'Most stable for headphones, Bluetooth, and computer speakers',
   'audioDrawer.device.systemDefault': 'System default',
   'audioDrawer.device.systemDefaultOutput': 'System default output',
   'audioDrawer.device.systemOutput': 'System output',
@@ -3692,12 +3913,13 @@ const enUS: TranslationMap = {
   'audioDrawer.option.wasapiSharedDescription': 'Everyday Windows shared output path.',
   'audioDrawer.option.wasapiExclusive': 'WASAPI Exclusive Mode',
   'audioDrawer.option.wasapiExclusiveDescription': 'Shared is the everyday Windows path. Exclusive opens the same device without the shared mixer and is recommended only when your DAC or audio interface and driver are known to be stable; onboard Realtek-style drivers can be fragile and may cause silence, stutter, or switch failures.',
-  'audioDrawer.section.advancedOutput': 'Advanced Output',
+  'audioDrawer.section.advancedOutput': 'Advanced Audio Engine',
+  'audioDrawer.section.advancedOutputDescription': 'For external audio interfaces, WASAPI Exclusive, ASIO, and HiFi debugging',
   'audioDrawer.section.automix': 'Automix',
   'audioDrawer.section.asioDevices': 'ASIO Output Devices',
   'audioDrawer.section.currentOutput': 'Current Output',
   'audioDrawer.section.hiddenDevices': 'Hidden Devices',
-  'audioDrawer.section.systemDevices': 'System Output Devices',
+  'audioDrawer.section.systemDevices': 'Recommended Output',
   'audioDrawer.signal.balanceDsp': 'Balance DSP',
   'audioDrawer.signal.bitPerfect': 'Bit-perfect',
   'audioDrawer.signal.dspOn': 'DSP On',
@@ -4224,10 +4446,10 @@ const enUS: TranslationMap = {
   'settings.playback.outputMode.title': 'Output Mode',
   'settings.playback.speedMode.description': 'Choose the mode used by the speed slider in the player bar.',
   'settings.playback.speedMode.title': 'Speed Mode',
-  'settings.playback.outputMode.description': 'Shared is for everyday listening. System audio hands playback to the Windows default output path. Exclusive / ASIO are for sample-rate validation and future bit-perfect paths.',
+  'settings.playback.outputMode.description': 'Use Standard Output for headphones, Bluetooth, and computer speakers. WASAPI / ASIO / Exclusive are for external audio interfaces and HiFi debugging.',
   'settings.playback.outputMode.exclusive': 'Exclusive',
   'settings.playback.outputMode.shared': 'Shared',
-  'settings.playback.outputMode.system': 'System Audio',
+  'settings.playback.outputMode.system': 'Standard Output (Recommended)',
   'settings.playback.sharedBackend.description': 'DirectSound is a manual compatibility mode with high latency; keep WASAPI Shared for daily playback.',
   'settings.playback.sharedBackend.directSound': 'DirectSound Compatibility',
   'settings.playback.sharedBackend.title': 'Shared Backend',
@@ -4451,12 +4673,18 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
+  'settings.appearance.themeCustom.action.create': 'New My Theme',
+  'settings.appearance.themeCustom.action.rename': 'Rename',
+  'settings.appearance.themeCustom.action.duplicate': 'Duplicate',
+  'settings.appearance.themeCustom.action.delete': 'Delete',
+  'settings.appearance.themeCustom.action.copyLightToDark': 'Copy Light to Dark',
+  'settings.appearance.themeCustom.action.copyDarkToLight': 'Copy Dark to Light',
   'settings.appearance.themeCustom.action.export': 'Export Parameters',
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
-  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Colors',
-  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Colors',
+  'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
+  'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',
   'settings.appearance.themeCustom.field.appBg2': 'Gradient Mid',
   'settings.appearance.themeCustom.field.appBg3': 'Gradient End',
@@ -4474,6 +4702,24 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity': 'Panel Opacity',
   'settings.appearance.themeCustom.field.glass': 'Glass',
   'settings.appearance.themeCustom.field.shadow': 'Shadow',
+  'settings.appearance.themeCustom.field.titlebar': 'Titlebar',
+  'settings.appearance.themeCustom.field.sidebar': 'Sidebar',
+  'settings.appearance.themeCustom.field.player': 'Player',
+  'settings.appearance.themeCustom.field.field': 'Field',
+  'settings.appearance.themeCustom.field.row': 'Row',
+  'settings.appearance.themeCustom.field.rowHover': 'Row Hover',
+  'settings.appearance.themeCustom.field.rowActive': 'Selected Row',
+  'settings.appearance.themeCustom.field.chip': 'Chip',
+  'settings.appearance.themeCustom.field.focus': 'Focus Ring',
+  'settings.appearance.themeCustom.field.success': 'Success',
+  'settings.appearance.themeCustom.field.warning': 'Warning',
+  'settings.appearance.themeCustom.field.danger': 'Danger',
+  'settings.appearance.themeCustom.field.cornerRadius': 'Corner Radius',
+  'settings.appearance.themeCustom.field.panelBlur': 'Panel Blur',
+  'settings.appearance.themeCustom.field.saturation': 'Saturation',
+  'settings.appearance.themeCustom.field.motionEnabled': 'Enable Motion',
+  'settings.appearance.themeCustom.field.motionSpeed': 'Motion Speed',
+  'settings.appearance.themeCustom.field.motionIntensity': 'Motion Intensity',
   'settings.appearance.themeCustom.field.appBg.description': 'Main window base color',
   'settings.appearance.themeCustom.field.appBg2.description': 'Soft middle stop of the background gradient',
   'settings.appearance.themeCustom.field.appBg3.description': 'End stop of the background gradient',
@@ -4491,14 +4737,43 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.field.panelOpacity.description': 'How much background shows through panels',
   'settings.appearance.themeCustom.field.glass.description': 'Blur and glass layering',
   'settings.appearance.themeCustom.field.shadow.description': 'Cards, popups, and player shadows',
+  'settings.appearance.themeCustom.field.titlebar.description': 'Top window bar background',
+  'settings.appearance.themeCustom.field.sidebar.description': 'Left navigation and softer layers',
+  'settings.appearance.themeCustom.field.player.description': 'Bottom player background',
+  'settings.appearance.themeCustom.field.field.description': 'Inputs and search fields',
+  'settings.appearance.themeCustom.field.row.description': 'Normal list row background',
+  'settings.appearance.themeCustom.field.rowHover.description': 'Hovered list row background',
+  'settings.appearance.themeCustom.field.rowActive.description': 'Selected list row background',
+  'settings.appearance.themeCustom.field.chip.description': 'Filter chips and small buttons',
+  'settings.appearance.themeCustom.field.focus.description': 'Keyboard focus and outline highlight',
+  'settings.appearance.themeCustom.field.success.description': 'Success state notices',
+  'settings.appearance.themeCustom.field.warning.description': 'Warning state notices',
+  'settings.appearance.themeCustom.field.danger.description': 'Danger action notices',
+  'settings.appearance.themeCustom.field.cornerRadius.description': 'Panel and button radius',
+  'settings.appearance.themeCustom.field.panelBlur.description': 'Glass panel blur radius',
+  'settings.appearance.themeCustom.field.saturation.description': 'Overall UI color strength',
+  'settings.appearance.themeCustom.field.motionEnabled.description': 'Only writes CSS transition variables',
+  'settings.appearance.themeCustom.field.motionSpeed.description': 'CSS animation duration',
+  'settings.appearance.themeCustom.field.motionIntensity.description': 'CSS movement and emphasis strength',
   'settings.appearance.themeCustom.preview.title': 'Editing',
   'settings.appearance.themeCustom.preview.description': 'Changes preview live and are saved only when you click save.',
+  'settings.appearance.themeCustom.myThemes.title': 'My Themes',
+  'settings.appearance.themeCustom.myThemes.description': 'Save, switch, duplicate, import, and export safe theme parameters.',
+  'settings.appearance.themeCustom.myThemes.empty': 'No custom themes yet.',
   'settings.appearance.themeCustom.group.core': 'Common Colors',
   'settings.appearance.themeCustom.group.core.description': 'Old-ECHO-style palette controls for the most visible colors.',
   'settings.appearance.themeCustom.group.gradient': 'Background Gradient',
   'settings.appearance.themeCustom.group.gradient.description': 'Controls the old-ECHO-style window gradient mood.',
+  'settings.appearance.themeCustom.group.surface': 'Surface',
+  'settings.appearance.themeCustom.group.surface.description': 'Titlebar, sidebar, player, and list layers.',
+  'settings.appearance.themeCustom.group.state': 'State',
+  'settings.appearance.themeCustom.group.state.description': 'Success, warning, danger, and focus colors.',
+  'settings.appearance.themeCustom.group.motion': 'Motion',
+  'settings.appearance.themeCustom.group.motion.description': 'CSS variables only, without runtime timers.',
   'settings.appearance.themeCustom.group.advanced': 'Advanced Details',
   'settings.appearance.themeCustom.group.advanced.description': 'Fine tune text, borders, and button text colors.',
+  'settings.appearance.themeCustom.message.created': 'My theme was created.',
+  'settings.appearance.themeCustom.message.copied': 'Copied to the target tone. Save to keep it.',
   'settings.appearance.themeCustom.message.exported': 'Theme parameters were exported.',
   'settings.appearance.themeCustom.message.imported': 'Theme parameters were imported and applied.',
   'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',

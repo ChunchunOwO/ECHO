@@ -575,6 +575,7 @@ export type LibraryPageQuery = {
   search?: string;
   sort?: LibrarySort;
   sourceProvider?: PlaylistSourceProvider;
+  sourceId?: string | null;
   hideDuplicates?: boolean;
   duplicateMode?: DuplicateTrackMode;
   prioritizeArtistAvatars?: boolean;
@@ -757,6 +758,7 @@ export type LibraryTrack = {
   isTemporary?: boolean;
   path: string;
   sourceId?: string | null;
+  sourceDisplayName?: string | null;
   provider?: string | null;
   providerTrackId?: string | null;
   streamingQuality?: 'standard' | 'high' | 'lossless' | 'hires';
@@ -974,6 +976,7 @@ export type LibraryAlbum = {
   id: string;
   mediaType?: 'local' | 'remote';
   sourceId?: string | null;
+  sourceDisplayName?: string | null;
   provider?: string | null;
   albumKey: string;
   title: string;
@@ -1051,6 +1054,7 @@ export type LibraryArtist = {
   id: string;
   mediaType?: 'local' | 'remote';
   sourceId?: string | null;
+  sourceDisplayName?: string | null;
   provider?: string | null;
   name: string;
   sortName: string;

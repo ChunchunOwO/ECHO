@@ -267,3 +267,57 @@ export type RemoteBackgroundGlobalStatus = {
   concurrency: Record<RemoteBackgroundJobKind, number>;
   updatedAt: string | null;
 };
+
+export type RemoteSourceTrackStatusCounts = Record<RemoteTrackStatus, number>;
+
+export type RemoteSourceOverviewItem = {
+  sourceId: string;
+  provider: RemoteSourceProvider;
+  displayName: string;
+  status: RemoteSourceStatus;
+  syncMode: RemoteSourceSyncMode;
+  trackCount: number;
+  albumCount: number;
+  artistCount: number;
+  totalSizeBytes: number;
+  missingTrackCount: number;
+  metadata: RemoteSourceTrackStatusCounts;
+  cover: RemoteSourceTrackStatusCounts;
+  lyrics: RemoteSourceTrackStatusCounts;
+  mv: RemoteSourceTrackStatusCounts;
+  lastSyncAt: string | null;
+  lastError: string | null;
+};
+
+export type RemoteSourceOverview = {
+  totalSources: number;
+  enabledSources: number;
+  disabledSources: number;
+  errorSources: number;
+  trackCount: number;
+  albumCount: number;
+  artistCount: number;
+  totalSizeBytes: number;
+  missingTrackCount: number;
+  metadata: RemoteSourceTrackStatusCounts;
+  cover: RemoteSourceTrackStatusCounts;
+  lyrics: RemoteSourceTrackStatusCounts;
+  mv: RemoteSourceTrackStatusCounts;
+  sources: RemoteSourceOverviewItem[];
+};
+
+export type RemoteSourceIssueKind = 'metadata' | 'cover' | 'lyrics' | 'mv' | 'missing';
+
+export type RemoteSourceIssueItem = {
+  id: string;
+  sourceId: string;
+  provider: RemoteSourceProvider;
+  kind: RemoteSourceIssueKind;
+  status: RemoteTrackStatus | RemoteTrackAvailability;
+  title: string;
+  artist: string;
+  album: string;
+  remotePath: string;
+  sizeBytes: number | null;
+  updatedAt: string;
+};

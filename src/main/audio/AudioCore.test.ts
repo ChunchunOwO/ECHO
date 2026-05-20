@@ -257,6 +257,36 @@ class StreamErrorDecoder extends FakeDecoder {
   }
 }
 
+class EarlyDoneDecoder extends FakeDecoder {
+  private stream: PassThrough | null = null;
+  private resolveDone: (() => void) | null = null;
+
+  override decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
+    this.decodeRequests.push(request);
+    const stream = new PassThrough();
+    const stop = vi.fn(() => {
+      stream.destroy();
+    });
+    this.stream = stream;
+
+    return {
+      stream,
+      stop,
+      done: new Promise<void>((resolve) => {
+        this.resolveDone = resolve;
+      }),
+    };
+  }
+
+  finishDecoderProcess(): void {
+    this.resolveDone?.();
+  }
+
+  endPcmStream(chunk: Buffer): void {
+    this.stream?.end(chunk);
+  }
+}
+
 class FakeBridge extends EventEmitter {
   inputEnded = false;
   sessionBegins = 0;
@@ -637,6 +667,36 @@ describe('AudioSession stability cleanup', () => {
 
       expect(session.getStatus().state).toBe('error');
       expect(session.getStatus().error).toBe('decoder_stream_error: decode stream failed');
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('waits for the PCM stream tail before closing native input when the decoder exits first', async () => {
+    const decoder = new EarlyDoneDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const bridge = new FakeBridge();
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+      decoder.finishDecoderProcess();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(bridge.sessionEnds).toBe(0);
+
+      decoder.endPcmStream(pcmBuffer([0, 0, 0, 0]));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(bridge.sessionEnds).toBe(1);
+      expect(bridge.inputEnded).toBe(true);
     } finally {
       session.dispose();
     }
@@ -5417,6 +5477,44 @@ describe('AudioSession host availability', () => {
     });
 
     expect(unavailableSession.getStatus().host).toBe('unavailable');
+  });
+
+  it('returns isolated status snapshots without sharing nested objects', () => {
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map()),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      isNativeHostAvailable: () => false,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      const first = session.getStatus();
+      first.warnings.push('mutated-status');
+      if (first.automix) {
+        first.automix.enabled = true;
+      }
+      if (first.audioLevels) {
+        first.audioLevels.clipCount = 99;
+      }
+
+      const second = session.getStatus();
+
+      expect(first).not.toBe(second);
+      expect(first.warnings).not.toBe(second.warnings);
+      expect(first.automix).not.toBe(second.automix);
+      expect(first.audioLevels).not.toBe(second.audioLevels);
+      expect(second.host).toBe('unavailable');
+      expect(second.state).toBe('idle');
+      expect(second.positionSeconds).toBe(0);
+      expect(second.error).toBeNull();
+      expect(second.warnings).not.toContain('mutated-status');
+      expect(second.automix?.enabled).toBe(false);
+      expect(second.audioLevels?.clipCount).toBe(0);
+    } finally {
+      session.dispose();
+    }
   });
 
 });

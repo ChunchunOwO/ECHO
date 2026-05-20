@@ -837,105 +837,6 @@ const outputRestartSettingsEqual = (left: AudioOutputSettings, right: AudioOutpu
   return (Object.keys(leftSnapshot) as Array<keyof AudioOutputRestartSnapshot>).every((key) => leftSnapshot[key] === rightSnapshot[key]);
 };
 
-const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
-  host: nativeHostAvailable ? 'not-initialized' : 'unavailable',
-  state: 'idle',
-  outputDeviceId: null,
-  outputDeviceName: null,
-  outputDeviceType: null,
-  outputBackend: null,
-  activeOutputBackendImpl: null,
-  outputMode: 'shared',
-  sharedBackend: 'auto',
-  useJuceOutputRequested: false,
-  useJuceDecodeRequested: false,
-  activeDecodeBackendImpl: null,
-  dsdOutputModeRequested: 'pcm',
-  activeDsdOutputMode: null,
-  dsdNativeSampleRate: null,
-  dsdTransportSampleRate: null,
-  latencyProfile: 'lowLatency',
-  volume: 1,
-  playbackRate: 1,
-  playbackSpeedMode: 'nightcore',
-  replayGainEnabled: false,
-  replayGainMode: 'track',
-  replayGainAppliedDb: 0,
-  replayGainPreventedClipping: false,
-  automix: {
-    enabled: false,
-    mode: 'off',
-    active: false,
-    transitionSeconds: null,
-    transitionStartedAtSeconds: null,
-    nextTrackId: null,
-    transitionMode: null,
-    fallbackReason: null,
-    beatAligned: false,
-    skipIntroSilence: false,
-    nextStartSeconds: null,
-    overlapSeconds: null,
-    advanceAtSeconds: null,
-    plannedTrackCount: 0,
-    nextTransitionIndex: 0,
-  },
-  currentFilePath: null,
-  currentTrackId: null,
-  durationSeconds: 0,
-  positionSeconds: 0,
-  channels: null,
-  codec: null,
-  bitDepth: null,
-  bitrate: null,
-  fileSampleRate: null,
-  decoderOutputSampleRate: null,
-  requestedOutputSampleRate: null,
-  actualDeviceSampleRate: null,
-  sharedDeviceSampleRate: null,
-  resampling: false,
-  ffmpegPath: null,
-  ffmpegSource: null,
-  ffmpegVersion: null,
-  ffmpegHealthy: false,
-  soxrAvailable: false,
-  resamplerEngine: 'default',
-  resamplerFallbackActive: false,
-  bitPerfectCandidate: false,
-  sampleRateMismatch: false,
-  eqEnabled: false,
-  channelBalanceEnabled: false,
-  dspActive: false,
-  preampDb: 0,
-  eqPresetName: 'Flat',
-  clippingRisk: false,
-  audioLevels: {
-    inputPeakDb: null,
-    inputRmsDb: null,
-    estimatedOutputPeakDb: null,
-    estimatedOutputRmsDb: null,
-    headroomDb: null,
-    clipCount: 0,
-    lastClipAt: null,
-    meterSource: 'pre_native_estimated_post_dsp',
-  },
-  bitPerfectDisabledReason: null,
-  sharedStabilityTier: null,
-  nativeDeviceBufferFrames: null,
-  nativeRequestedBufferFrames: null,
-  nativeActualBufferFrames: null,
-  nativeOutputLatencyMs: null,
-  nativePositionStalenessMs: null,
-  nativeFifoCapacityFrames: null,
-  nativeStartupPrebufferFrames: null,
-  nativeBufferedFrames: null,
-  nativeBufferedMs: null,
-  nativeUnderrunCallbacks: 0,
-  nativeUnderrunFrames: 0,
-  lastSharedStabilityRecoveryAt: null,
-  warnings: [],
-  error: null,
-});
-
 class PcmVolumeTransform extends Transform {
   private gain: number;
   private remainder = Buffer.alloc(0);
@@ -2606,7 +2507,6 @@ export class AudioSession extends EventEmitter {
   getStatus(): AudioStatus {
     this.updatePositionFromOutput();
 
-    const status = defaultStatus(this.isNativeHostAvailable());
     const plan = this.currentPlan;
     const eqState = getEqBridge().getState();
     const channelBalanceState = getEqBridge().getChannelBalanceState();
@@ -2687,11 +2587,10 @@ export class AudioSession extends EventEmitter {
     const automixDurationSeconds = this.currentProbe?.durationSeconds ?? 0;
 
     return {
-      ...status,
       host: this.hostStatus,
       state: this.state,
       outputDeviceId: this.currentDevice?.id ?? null,
-    outputDeviceName: this.currentOutputDeviceName ?? this.currentDevice?.name ?? null,
+      outputDeviceName: this.currentOutputDeviceName ?? this.currentDevice?.name ?? null,
       outputDeviceType: this.currentOutputDeviceType,
       outputBackend: this.currentOutputBackend,
       activeOutputBackendImpl: this.currentOutputBackendImpl,
@@ -5025,7 +4924,7 @@ export class AudioSession extends EventEmitter {
     const pcmSource = livePcmResampler ? run.stream.pipe(livePcmResampler) : run.stream;
     pcmSource.pipe(gainTransform).pipe(replayGainTransform).pipe(speedTransform).pipe(levelMeterTransform).pipe(writable, { end: false });
     levelMeterTransform.once('end', signalNativeInputEnded);
-    run.done.then(signalNativeInputEnded).catch((error: unknown) => {
+    run.done.catch((error: unknown) => {
       if (this.runToken === token) {
         this.handleError(error instanceof Error ? error : new Error(String(error)));
       }

@@ -5,7 +5,14 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
-import type { DataPackageExportResult, SettingsBackupPayload, SettingsImportResult } from '../../shared/types/settingsBackup';
+import type {
+  DataBackupExportResult,
+  DataBackupImportResult,
+  DataBackupStatus,
+  DataPackageExportResult,
+  SettingsBackupPayload,
+  SettingsImportResult,
+} from '../../shared/types/settingsBackup';
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../../shared/types/coverCache';
 import type { UpdateStatus } from '../../shared/types/updates';
@@ -14,6 +21,12 @@ import { defaultSettings, getAppSettings, getAppWallpaperDirectory, getLyricsWal
 import { getAppCacheInventory as collectAppCacheInventory } from '../app/cacheInventory';
 import { checkForUpdates, getUpdateStatus, setAutoUpdateEnabled } from '../app/autoUpdater';
 import { refreshBackgroundSpaceRegistration, validateGlobalShortcut } from '../app/backgroundPlaybackShortcuts';
+import {
+  getDataBackupStatus,
+  importEchoUserDataBackup,
+  refreshDataBackupScheduler,
+  runDataBackupNow,
+} from '../app/dataBackup';
 import { exportEchoDataPackage } from '../app/dataPackage';
 import { getTaskbarPlaybackStatus, refreshTaskbarPlaybackIntegration } from '../app/taskbarPlaybackIntegration';
 import { destroyTray, ensureTray } from '../app/tray';
@@ -51,6 +64,7 @@ const settingsBackupFormat = 'echo-next-settings-backup';
 const settingsBackupVersion = 1;
 const settingsBackupFilters = [{ name: 'ECHO Next Settings', extensions: ['json'] }];
 const dataPackageFilters = [{ name: 'ECHO Next Data Package', extensions: ['zip'] }];
+const dataBackupFilters = [{ name: 'ECHO Next Data Backup', extensions: ['zip'] }];
 
 const requireFontPath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -245,6 +259,14 @@ const applyAppSettingsPatch = async (
     refreshTaskbarPlaybackIntegration();
   }
 
+  if (
+    typeof settingsPatch.autoDataBackupEnabled === 'boolean' ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'autoDataBackupDirectory') ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'autoDataBackupIntervalDays')
+  ) {
+    refreshDataBackupScheduler();
+  }
+
   if (typeof settingsPatch.autoFetchArtistImages === 'boolean' || typeof settingsPatch.artistImageFetchPaused === 'boolean') {
     getLibraryService().syncArtistImageBackfillState();
   }
@@ -258,6 +280,16 @@ const applyAppSettingsPatch = async (
 
   return settings;
 };
+
+const preserveCurrentDataBackupTarget = (settings: AppSettings, currentSettings: AppSettings): AppSettings => ({
+  ...settings,
+  autoDataBackupEnabled: currentSettings.autoDataBackupEnabled === true && Boolean(currentSettings.autoDataBackupDirectory),
+  autoDataBackupDirectory: currentSettings.autoDataBackupDirectory ?? null,
+  autoDataBackupIntervalDays: currentSettings.autoDataBackupIntervalDays ?? settings.autoDataBackupIntervalDays ?? 7,
+  autoDataBackupLastRunAt: currentSettings.autoDataBackupLastRunAt ?? null,
+  autoDataBackupLastPath: currentSettings.autoDataBackupLastPath ?? null,
+  autoDataBackupLastError: null,
+});
 
 export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
@@ -347,6 +379,45 @@ export const registerIpc = (): void => {
     }
 
     return exportEchoDataPackage(result.filePath);
+  });
+  ipcMain.handle(IpcChannels.AppChooseDataBackupDirectory, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose ECHO Next backup directory',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle(IpcChannels.AppGetDataBackupStatus, (): DataBackupStatus => getDataBackupStatus());
+  ipcMain.handle(IpcChannels.AppRunDataBackupNow, (): Promise<DataBackupExportResult> => runDataBackupNow('manual'));
+  ipcMain.handle(IpcChannels.AppImportDataBackup, async (): Promise<DataBackupImportResult | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import ECHO Next data backup',
+      properties: ['openFile'],
+      filters: dataBackupFilters,
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    const currentSettings = getAppSettings();
+    const imported = await importEchoUserDataBackup(result.filePaths[0]);
+    const restoredSettings = preserveCurrentDataBackupTarget(imported.settings, currentSettings);
+    const settings = await applyAppSettingsPatch(restoredSettings, { allowCoverCacheDir: true });
+    const warnings =
+      imported.settings.autoDataBackupEnabled === true || imported.settings.autoDataBackupDirectory
+        ? [...imported.warnings, '已保留当前设备的自动备份目录，未使用备份文件里的旧目录。']
+        : imported.warnings;
+    return { ...imported, warnings, settings };
+  });
+  ipcMain.handle(IpcChannels.AppOpenDataBackupDirectory, async (): Promise<void> => {
+    const directory = getAppSettings().autoDataBackupDirectory;
+    if (!directory) {
+      throw new Error('Backup directory is not configured.');
+    }
+
+    await shell.openPath(directory);
   });
   ipcMain.handle(IpcChannels.AppValidateGlobalShortcut, (_event: IpcMainInvokeEvent, accelerator: unknown) =>
     validateGlobalShortcut(accelerator),

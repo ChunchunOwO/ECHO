@@ -1,15 +1,19 @@
-import type { AppThemeMode, AppThemePreset, AppThemePresetOverride, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
+import type { AppThemeCustomTheme, AppThemeMode, AppThemePreset, AppThemePresetOverride, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
 import { getAppBridge } from '../utils/echoBridge';
 import { applyAppearancePreferences, readAppearancePreferences } from './appearancePreferences';
 
 export type EffectiveTheme = 'light' | 'dark';
 export type ThemeApplyOptions = {
   animate?: boolean;
+  customThemeId?: string | null;
+  customThemes?: AppThemeCustomTheme[];
 };
 
 const storageKey = 'echo-next:appearance-theme';
 const presetStorageKey = 'echo-next:appearance-theme-preset';
 const presetOverridesStorageKey = 'echo-next:appearance-theme-preset-overrides';
+const customThemesStorageKey = 'echo-next:appearance-custom-themes';
+const customThemeIdStorageKey = 'echo-next:appearance-theme-custom-id';
 const systemThemeQuery = '(prefers-color-scheme: dark)';
 const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
 const validThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
@@ -43,11 +47,65 @@ const validThemePresets: AppThemePreset[] = [
   'ginzaNoir',
   'frostJazz',
 ];
-const themeTransitionMs = 220;
+const themeTransitionMs = 140;
 const themeOverrideColorKeys: Array<keyof Pick<
   AppThemeToneOverride,
-  'appBg' | 'appBg2' | 'appBg3' | 'panel' | 'panelSoft' | 'accent' | 'accentStrong' | 'secondary' | 'heading' | 'text' | 'muted' | 'border' | 'onAccent' | 'buttonText'
->> = ['appBg', 'appBg2', 'appBg3', 'panel', 'panelSoft', 'accent', 'accentStrong', 'secondary', 'heading', 'text', 'muted', 'border', 'onAccent', 'buttonText'];
+  | 'appBg'
+  | 'appBg2'
+  | 'appBg3'
+  | 'panel'
+  | 'panelSoft'
+  | 'accent'
+  | 'accentStrong'
+  | 'secondary'
+  | 'heading'
+  | 'text'
+  | 'muted'
+  | 'border'
+  | 'onAccent'
+  | 'buttonText'
+  | 'titlebar'
+  | 'sidebar'
+  | 'player'
+  | 'field'
+  | 'row'
+  | 'rowHover'
+  | 'rowActive'
+  | 'chip'
+  | 'focus'
+  | 'danger'
+  | 'success'
+  | 'warning'
+>> = [
+  'appBg',
+  'appBg2',
+  'appBg3',
+  'panel',
+  'panelSoft',
+  'accent',
+  'accentStrong',
+  'secondary',
+  'heading',
+  'text',
+  'muted',
+  'border',
+  'onAccent',
+  'buttonText',
+  'titlebar',
+  'sidebar',
+  'player',
+  'field',
+  'row',
+  'rowHover',
+  'rowActive',
+  'chip',
+  'focus',
+  'danger',
+  'success',
+  'warning',
+];
+const maxCustomThemes = 24;
+const fallbackCustomThemeTimestamp = '1970-01-01T00:00:00.000Z';
 
 const customThemeStyleProperties = [
   '--preset-app-bg',
@@ -158,6 +216,21 @@ const customThemeStyleProperties = [
   '--echo-polish-shadow-panel',
   '--echo-polish-shadow-row',
   '--echo-polish-shadow-player',
+  '--theme-success',
+  '--theme-success-bg',
+  '--theme-warning',
+  '--theme-warning-bg',
+  '--theme-danger',
+  '--theme-danger-bg',
+  '--theme-corner-radius',
+  '--theme-panel-blur',
+  '--theme-saturation',
+  '--theme-motion-enabled',
+  '--theme-motion-speed',
+  '--theme-motion-intensity',
+  '--echo-polish-radius',
+  '--echo-polish-panel-blur',
+  '--echo-polish-saturation',
 ];
 
 const fallbackToneDefaults: Record<EffectiveTheme, {
@@ -219,10 +292,6 @@ const fallbackToneDefaults: Record<EffectiveTheme, {
   },
 };
 
-type ThemeTransitionDocument = Document & {
-  startViewTransition?: (callback: () => void) => { finished?: Promise<unknown> };
-};
-
 export const defaultThemeMode: AppThemeMode = 'dark';
 export const defaultThemePreset: AppThemePreset = 'classic';
 
@@ -243,9 +312,19 @@ export const normalizeThemeHexColor = (value: unknown): string | undefined => {
   return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toLowerCase() : undefined;
 };
 
-const normalizeOverridePercent = (value: unknown, min: number, max: number): number | undefined => {
+const normalizeOverrideNumber = (value: unknown, min: number, max: number, decimals = 0): number | undefined => {
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.round(clamp(numeric, min, max)) : undefined;
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  const factor = 10 ** decimals;
+  return Math.round(clamp(numeric, min, max) * factor) / factor;
+};
+
+const normalizeOverridePercent = (value: unknown, min: number, max: number): number | undefined => {
+  const normalized = normalizeOverrideNumber(value, min, max);
+  return normalized === undefined ? undefined : Math.round(normalized);
 };
 
 export const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | undefined => {
@@ -266,6 +345,11 @@ export const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride
   const panelOpacityPercent = normalizeOverridePercent(input.panelOpacityPercent, 40, 100);
   const glassPercent = normalizeOverridePercent(input.glassPercent, 0, 80);
   const shadowPercent = normalizeOverridePercent(input.shadowPercent, 0, 100);
+  const cornerRadiusPx = normalizeOverridePercent(input.cornerRadiusPx, 0, 28);
+  const panelBlurPx = normalizeOverridePercent(input.panelBlurPx, 0, 32);
+  const saturationPercent = normalizeOverridePercent(input.saturationPercent, 60, 140);
+  const motionSpeedSeconds = normalizeOverrideNumber(input.motionSpeedSeconds, 0.12, 8, 2);
+  const motionIntensityPercent = normalizeOverridePercent(input.motionIntensityPercent, 0, 160);
 
   if (panelOpacityPercent !== undefined) {
     output.panelOpacityPercent = panelOpacityPercent;
@@ -275,6 +359,24 @@ export const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride
   }
   if (shadowPercent !== undefined) {
     output.shadowPercent = shadowPercent;
+  }
+  if (cornerRadiusPx !== undefined) {
+    output.cornerRadiusPx = cornerRadiusPx;
+  }
+  if (panelBlurPx !== undefined) {
+    output.panelBlurPx = panelBlurPx;
+  }
+  if (saturationPercent !== undefined) {
+    output.saturationPercent = saturationPercent;
+  }
+  if (typeof input.motionEnabled === 'boolean') {
+    output.motionEnabled = input.motionEnabled;
+  }
+  if (motionSpeedSeconds !== undefined) {
+    output.motionSpeedSeconds = motionSpeedSeconds;
+  }
+  if (motionIntensityPercent !== undefined) {
+    output.motionIntensityPercent = motionIntensityPercent;
   }
 
   return Object.keys(output).length > 0 ? output : undefined;
@@ -316,6 +418,94 @@ export const normalizeThemePresetOverrides = (value: unknown): AppThemePresetOve
   }
 
   return output;
+};
+
+const normalizeThemeCustomIdValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? normalized : null;
+};
+
+const normalizeThemeCustomName = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '我的主题';
+  }
+
+  const normalized = value.replace(/[\r\n;]/g, '').trim();
+  return (normalized || '我的主题').slice(0, 48);
+};
+
+const normalizeThemeCustomTimestamp = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return fallbackCustomThemeTimestamp;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.slice(0, 64) : fallbackCustomThemeTimestamp;
+};
+
+export const normalizeThemeCustomTheme = (value: unknown): AppThemeCustomTheme | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Partial<AppThemeCustomTheme>;
+  const id = normalizeThemeCustomIdValue(input.id);
+  if (!id) {
+    return undefined;
+  }
+
+  const light = normalizeThemeToneOverride(input.light);
+  const dark = normalizeThemeToneOverride(input.dark);
+  const output: AppThemeCustomTheme = {
+    id,
+    name: normalizeThemeCustomName(input.name),
+    basePreset: normalizeThemePreset(input.basePreset),
+    createdAt: normalizeThemeCustomTimestamp(input.createdAt),
+    updatedAt: normalizeThemeCustomTimestamp(input.updatedAt),
+  };
+
+  if (light) {
+    output.light = light;
+  }
+  if (dark) {
+    output.dark = dark;
+  }
+
+  return output;
+};
+
+export const normalizeThemeCustomThemes = (value: unknown): AppThemeCustomTheme[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const output: AppThemeCustomTheme[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of value) {
+    if (output.length >= maxCustomThemes) {
+      break;
+    }
+
+    const theme = normalizeThemeCustomTheme(item);
+    if (!theme || seenIds.has(theme.id)) {
+      continue;
+    }
+
+    output.push(theme);
+    seenIds.add(theme.id);
+  }
+
+  return output;
+};
+
+export const normalizeThemeCustomId = (value: unknown, themes: AppThemeCustomTheme[]): string | null => {
+  const id = normalizeThemeCustomIdValue(value);
+  return id && themes.some((theme) => theme.id === id) ? id : null;
 };
 
 const hexToRgbTriplet = (value: string): string => {
@@ -377,9 +567,30 @@ const applyThemeToneOverride = (root: HTMLElement, tone: EffectiveTheme, overrid
   const subtle = readCssVariable(root, '--preset-subtle') || fallback.subtle;
   const onAccent = readColor('onAccent', '--preset-on-accent', fallback.onAccent);
   const buttonText = normalizeThemeHexColor(override.buttonText) ?? text;
+  const titlebarRgb = readTriplet('titlebar', '--preset-panel-rgb', panelRgb);
+  const sidebarRgb = readTriplet('sidebar', '--preset-soft-rgb', panelSoftRgb);
+  const playerRgb = readTriplet('player', '--preset-panel-rgb', panelRgb);
+  const fieldRgb = readTriplet('field', '--preset-panel-rgb', panelRgb);
+  const rowRgb = readTriplet('row', '--preset-panel-rgb', panelRgb);
+  const rowHoverRgb = readTriplet('rowHover', '--preset-panel-rgb', panelRgb);
+  const rowActiveRgb = readTriplet('rowActive', '--preset-accent-rgb', accentRgb);
+  const chipRgb = readTriplet('chip', '--preset-panel-rgb', panelRgb);
+  const focusRgb = readTriplet('focus', '--preset-accent-rgb', accentRgb);
+  const danger = readColor('danger', '--theme-danger', '#d64545');
+  const dangerRgb = hexToRgbTriplet(danger);
+  const success = readColor('success', '--theme-success', secondary);
+  const successRgb = hexToRgbTriplet(success);
+  const warning = readColor('warning', '--theme-warning', '#c98a16');
+  const warningRgb = hexToRgbTriplet(warning);
   const panelAlpha = (override.panelOpacityPercent ?? 72) / 100;
   const glassAlpha = (override.glassPercent ?? 18) / 100;
   const shadowScale = (override.shadowPercent ?? 100) / 100;
+  const cornerRadiusPx = override.cornerRadiusPx ?? 14;
+  const panelBlurPx = override.panelBlurPx ?? Math.round(12 + glassAlpha * 18);
+  const saturationPercent = override.saturationPercent ?? 100;
+  const motionEnabled = override.motionEnabled !== false;
+  const motionSpeedSeconds = override.motionSpeedSeconds ?? 0.22;
+  const motionIntensityPercent = override.motionIntensityPercent ?? 100;
   const panelStrongAlpha = Math.min(0.98, panelAlpha + 0.18);
   const panelMutedAlpha = Math.min(0.92, panelAlpha + 0.02);
   const fieldAlpha = Math.min(0.96, panelAlpha + 0.06);
@@ -438,8 +649,8 @@ const applyThemeToneOverride = (root: HTMLElement, tone: EffectiveTheme, overrid
   root.style.setProperty('--theme-panel-bg-muted', rgb(panelSoftRgb, panelMutedAlpha));
   root.style.setProperty('--theme-panel-border', rgb(borderRgb, 0.14 + glassAlpha * 0.12));
   root.style.setProperty('--theme-panel-border-strong', rgb(borderRgb, 0.24 + glassAlpha * 0.14));
-  root.style.setProperty('--theme-field-bg', rgb(panelRgb, fieldAlpha));
-  root.style.setProperty('--theme-field-bg-strong', rgb(panelRgb, panelStrongAlpha));
+  root.style.setProperty('--theme-field-bg', rgb(fieldRgb, fieldAlpha));
+  root.style.setProperty('--theme-field-bg-strong', rgb(fieldRgb, panelStrongAlpha));
   root.style.setProperty('--theme-field-border', rgb(borderRgb, 0.16 + glassAlpha * 0.12));
   root.style.setProperty('--theme-field-placeholder', subtle);
   root.style.setProperty('--theme-button-bg', rgb(panelRgb, buttonAlpha));
@@ -448,19 +659,19 @@ const applyThemeToneOverride = (root: HTMLElement, tone: EffectiveTheme, overrid
   root.style.setProperty('--theme-button-text', buttonText);
   root.style.setProperty('--theme-button-muted-bg', rgb(panelSoftRgb, panelMutedAlpha));
   root.style.setProperty('--theme-button-muted-text', muted);
-  root.style.setProperty('--theme-list-row-bg', rgb(panelRgb, Math.max(0.42, panelAlpha - 0.12)));
-  root.style.setProperty('--theme-list-row-bg-hover', rgb(panelRgb, Math.min(0.9, panelAlpha + 0.1)));
-  root.style.setProperty('--theme-list-row-bg-active', rgb(accentRgb, 0.16 + glassAlpha * 0.06));
+  root.style.setProperty('--theme-list-row-bg', rgb(rowRgb, Math.max(0.42, panelAlpha - 0.12)));
+  root.style.setProperty('--theme-list-row-bg-hover', rgb(rowHoverRgb, Math.min(0.9, panelAlpha + 0.1)));
+  root.style.setProperty('--theme-list-row-bg-active', rgb(rowActiveRgb, 0.16 + glassAlpha * 0.06));
   root.style.setProperty('--theme-list-row-border', rgb(borderRgb, 0.11 + glassAlpha * 0.08));
-  root.style.setProperty('--theme-chip-bg', rgb(panelRgb, buttonAlpha));
+  root.style.setProperty('--theme-chip-bg', rgb(chipRgb, buttonAlpha));
   root.style.setProperty('--theme-chip-bg-active', rgb(accentRgb, 0.17 + glassAlpha * 0.06));
   root.style.setProperty('--theme-chip-text', muted);
-  root.style.setProperty('--theme-player-bg', rgb(panelRgb, Math.min(0.98, panelAlpha + 0.19)));
+  root.style.setProperty('--theme-player-bg', rgb(playerRgb, Math.min(0.98, panelAlpha + 0.19)));
   root.style.setProperty('--theme-player-border', rgb(borderRgb, 0.18 + glassAlpha * 0.12));
   root.style.setProperty('--theme-control-bg', rgb(borderRgb, 0.12 + glassAlpha * 0.08));
   root.style.setProperty('--theme-control-bg-hover', rgb(borderRgb, 0.18 + glassAlpha * 0.1));
   root.style.setProperty('--theme-control-bg-active', rgb(accentRgb, 0.18 + glassAlpha * 0.08));
-  root.style.setProperty('--theme-focus-ring', rgb(accentRgb, 0.32));
+  root.style.setProperty('--theme-focus-ring', rgb(focusRgb, 0.32));
   root.style.setProperty('--theme-accent-bg', rgb(accentRgb, 0.13 + glassAlpha * 0.06));
   root.style.setProperty('--theme-accent-bg-strong', rgb(accentRgb, 0.22 + glassAlpha * 0.08));
   root.style.setProperty('--theme-accent-border', rgb(accentRgb, 0.3 + glassAlpha * 0.1));
@@ -472,25 +683,37 @@ const applyThemeToneOverride = (root: HTMLElement, tone: EffectiveTheme, overrid
   root.style.setProperty('--theme-scrollbar-thumb-hover', rgb(accentRgb, 0.5 + glassAlpha * 0.08));
   root.style.setProperty('--theme-shadow-soft', `0 22px 60px rgb(${fallback.shadowRgb} / ${shadowSoftAlpha.toFixed(3)})`);
   root.style.setProperty('--theme-shadow-panel', `0 12px 30px rgb(${fallback.shadowRgb} / ${shadowPanelAlpha.toFixed(3)})`);
+  root.style.setProperty('--theme-success', success);
+  root.style.setProperty('--theme-success-bg', rgb(successRgb, 0.14 + glassAlpha * 0.06));
+  root.style.setProperty('--theme-warning', warning);
+  root.style.setProperty('--theme-warning-bg', rgb(warningRgb, 0.14 + glassAlpha * 0.06));
+  root.style.setProperty('--theme-danger', danger);
+  root.style.setProperty('--theme-danger-bg', rgb(dangerRgb, 0.14 + glassAlpha * 0.06));
+  root.style.setProperty('--theme-corner-radius', `${cornerRadiusPx}px`);
+  root.style.setProperty('--theme-panel-blur', `${panelBlurPx}px`);
+  root.style.setProperty('--theme-saturation', `${saturationPercent}%`);
+  root.style.setProperty('--theme-motion-enabled', motionEnabled ? '1' : '0');
+  root.style.setProperty('--theme-motion-speed', `${motionSpeedSeconds}s`);
+  root.style.setProperty('--theme-motion-intensity', `${motionIntensityPercent}%`);
 
   root.style.setProperty('--echo-polish-app-bg', appBg);
   root.style.setProperty(
     '--echo-polish-app-bg-layer',
     `radial-gradient(circle at 13% 8%, ${rgb(accentRgb, 0.11 + glassAlpha * 0.13)}, transparent 31%), radial-gradient(circle at 88% 3%, ${rgb(secondaryRgb, 0.1 + glassAlpha * 0.12)}, transparent 32%), linear-gradient(135deg, ${appBg} 0%, ${appBg2} 50%, ${appBg3} 100%)`,
   );
-  root.style.setProperty('--echo-polish-titlebar-bg', rgb(panelRgb, Math.min(0.96, panelAlpha + 0.08)));
-  root.style.setProperty('--echo-polish-sidebar-bg', `linear-gradient(180deg, ${rgb(panelRgb, panelAlpha)}, ${rgb(panelSoftRgb, panelMutedAlpha)} 58%, ${rgb(panelRgb, panelStrongAlpha)})`);
+  root.style.setProperty('--echo-polish-titlebar-bg', rgb(titlebarRgb, Math.min(0.96, panelAlpha + 0.08)));
+  root.style.setProperty('--echo-polish-sidebar-bg', `linear-gradient(180deg, ${rgb(sidebarRgb, panelAlpha)}, ${rgb(panelSoftRgb, panelMutedAlpha)} 58%, ${rgb(panelRgb, panelStrongAlpha)})`);
   root.style.setProperty('--echo-polish-page-bg', `radial-gradient(circle at 18% 0%, ${rgb(accentRgb, 0.08 + glassAlpha * 0.08)}, transparent 34%), linear-gradient(180deg, ${rgb(panelRgb, Math.max(0.32, panelAlpha - 0.22))}, ${rgb(panelSoftRgb, panelMutedAlpha)} 54%, ${rgb(panelRgb, panelStrongAlpha)})`);
-  root.style.setProperty('--echo-polish-player-bg', `linear-gradient(180deg, ${rgb(panelRgb, panelStrongAlpha)}, ${rgb(panelSoftRgb, Math.min(0.96, panelMutedAlpha + 0.14))})`);
+  root.style.setProperty('--echo-polish-player-bg', `linear-gradient(180deg, ${rgb(playerRgb, panelStrongAlpha)}, ${rgb(panelSoftRgb, Math.min(0.96, panelMutedAlpha + 0.14))})`);
   root.style.setProperty('--echo-polish-surface', rgb(panelRgb, Math.max(0.48, panelAlpha - 0.06)));
   root.style.setProperty('--echo-polish-surface-strong', rgb(panelRgb, panelStrongAlpha));
   root.style.setProperty('--echo-polish-surface-muted', rgb(panelSoftRgb, Math.min(0.92, panelMutedAlpha + 0.1)));
-  root.style.setProperty('--echo-polish-field-bg', rgb(panelRgb, fieldAlpha));
+  root.style.setProperty('--echo-polish-field-bg', rgb(fieldRgb, fieldAlpha));
   root.style.setProperty('--echo-polish-button-bg', rgb(panelRgb, buttonAlpha));
   root.style.setProperty('--echo-polish-button-bg-hover', rgb(panelRgb, panelStrongAlpha));
-  root.style.setProperty('--echo-polish-row-bg', rgb(panelRgb, Math.max(0.4, panelAlpha - 0.16)));
-  root.style.setProperty('--echo-polish-row-bg-hover', rgb(panelRgb, Math.min(0.9, panelAlpha + 0.12)));
-  root.style.setProperty('--echo-polish-row-bg-active', rgb(accentRgb, 0.17 + glassAlpha * 0.06));
+  root.style.setProperty('--echo-polish-row-bg', rgb(rowRgb, Math.max(0.4, panelAlpha - 0.16)));
+  root.style.setProperty('--echo-polish-row-bg-hover', rgb(rowHoverRgb, Math.min(0.9, panelAlpha + 0.12)));
+  root.style.setProperty('--echo-polish-row-bg-active', rgb(rowActiveRgb, 0.17 + glassAlpha * 0.06));
   root.style.setProperty('--echo-polish-border', rgb(borderRgb, 0.14 + glassAlpha * 0.12));
   root.style.setProperty('--echo-polish-border-strong', rgb(borderRgb, 0.24 + glassAlpha * 0.14));
   root.style.setProperty('--echo-polish-hairline', rgb(panelRgb, panelStrongAlpha));
@@ -504,6 +727,9 @@ const applyThemeToneOverride = (root: HTMLElement, tone: EffectiveTheme, overrid
   root.style.setProperty('--echo-polish-shadow-panel', `0 14px 34px rgb(${fallback.shadowRgb} / ${shadowPanelAlpha.toFixed(3)})`);
   root.style.setProperty('--echo-polish-shadow-row', `0 9px 22px rgb(${fallback.shadowRgb} / ${shadowRowAlpha.toFixed(3)})`);
   root.style.setProperty('--echo-polish-shadow-player', `0 -18px 46px rgb(${fallback.shadowRgb} / ${shadowPlayerAlpha.toFixed(3)})`);
+  root.style.setProperty('--echo-polish-radius', `${cornerRadiusPx}px`);
+  root.style.setProperty('--echo-polish-panel-blur', `${panelBlurPx}px`);
+  root.style.setProperty('--echo-polish-saturation', `${saturationPercent}%`);
 };
 
 export const readThemeMode = (): AppThemeMode => {
@@ -567,6 +793,51 @@ export const writeThemePresetOverrides = (overrides: AppThemePresetOverrides): A
   return normalized;
 };
 
+export const readThemeCustomThemes = (): AppThemeCustomTheme[] => {
+  try {
+    const raw = window.localStorage.getItem(customThemesStorageKey);
+    return raw ? normalizeThemeCustomThemes(JSON.parse(raw) as unknown) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const writeThemeCustomThemes = (themes: AppThemeCustomTheme[]): AppThemeCustomTheme[] => {
+  const normalized = normalizeThemeCustomThemes(themes);
+
+  try {
+    window.localStorage.setItem(customThemesStorageKey, JSON.stringify(normalized));
+  } catch {
+    return normalized;
+  }
+
+  return normalized;
+};
+
+export const readThemeCustomId = (): string | null => {
+  try {
+    return normalizeThemeCustomId(window.localStorage.getItem(customThemeIdStorageKey), readThemeCustomThemes());
+  } catch {
+    return null;
+  }
+};
+
+export const writeThemeCustomId = (id: string | null, themes: AppThemeCustomTheme[] = readThemeCustomThemes()): string | null => {
+  const normalized = normalizeThemeCustomId(id, themes);
+
+  try {
+    if (normalized) {
+      window.localStorage.setItem(customThemeIdStorageKey, normalized);
+    } else {
+      window.localStorage.removeItem(customThemeIdStorageKey);
+    }
+  } catch {
+    return normalized;
+  }
+
+  return normalized;
+};
+
 export const resolveThemeMode = (mode: AppThemeMode): EffectiveTheme => {
   const normalized = normalizeThemeMode(mode);
 
@@ -603,37 +874,41 @@ const runThemeTransition = (callback: () => void, options: ThemeApplyOptions = {
   };
 
   root.dataset.themeTransition = 'true';
-
-  const transitionDocument = document as ThemeTransitionDocument;
-  if (typeof transitionDocument.startViewTransition === 'function') {
-    const transition = transitionDocument.startViewTransition(callback);
-    void transition.finished?.finally(clearTransitionState);
-    if (!transition.finished) {
-      clearTransitionState();
-    }
-    return;
-  }
-
   callback();
   clearTransitionState();
 };
 
-const applyThemeModeNow = (mode: AppThemeMode, preset: AppThemePreset, overrides: AppThemePresetOverrides): EffectiveTheme => {
+const applyThemeModeNow = (
+  mode: AppThemeMode,
+  preset: AppThemePreset,
+  overrides: AppThemePresetOverrides,
+  customThemes: AppThemeCustomTheme[] = readThemeCustomThemes(),
+  customThemeId: string | null = readThemeCustomId(),
+): EffectiveTheme => {
   const normalized = normalizeThemeMode(mode);
   const normalizedPreset = normalizeThemePreset(preset);
   const normalizedOverrides = normalizeThemePresetOverrides(overrides);
+  const normalizedCustomThemes = normalizeThemeCustomThemes(customThemes);
+  const normalizedCustomThemeId = normalizeThemeCustomId(customThemeId, normalizedCustomThemes);
+  const activeCustomTheme = normalizedCustomThemes.find((theme) => theme.id === normalizedCustomThemeId);
+  const effectivePreset = activeCustomTheme?.basePreset ?? normalizedPreset;
   const effectiveTheme = resolveThemeMode(normalized);
   const root = document.documentElement;
-  const toneOverride = normalizedOverrides[normalizedPreset]?.[effectiveTheme];
+  const toneOverride = activeCustomTheme?.[effectiveTheme] ?? normalizedOverrides[effectivePreset]?.[effectiveTheme];
 
   clearCustomThemeProperties(root);
   root.dataset.themeMode = normalized;
-  root.dataset.themePreset = normalizedPreset;
+  root.dataset.themePreset = effectivePreset;
   root.dataset.theme = effectiveTheme;
-  if (toneOverride) {
+  if (activeCustomTheme || toneOverride) {
     root.dataset.themeCustom = 'true';
   } else {
     delete root.dataset.themeCustom;
+  }
+  if (activeCustomTheme) {
+    root.dataset.themeCustomId = activeCustomTheme.id;
+  } else {
+    delete root.dataset.themeCustomId;
   }
   root.style.colorScheme = effectiveTheme;
   applyAppearancePreferences(readAppearancePreferences());
@@ -653,10 +928,12 @@ export const applyThemeMode = (
   const normalized = normalizeThemeMode(mode);
   const normalizedPreset = normalizeThemePreset(preset);
   const normalizedOverrides = normalizeThemePresetOverrides(overrides);
+  const normalizedCustomThemes = normalizeThemeCustomThemes(options.customThemes ?? readThemeCustomThemes());
+  const normalizedCustomThemeId = normalizeThemeCustomId(options.customThemeId ?? readThemeCustomId(), normalizedCustomThemes);
   let effectiveTheme = resolveThemeMode(normalized);
 
   runThemeTransition(() => {
-    effectiveTheme = applyThemeModeNow(normalized, normalizedPreset, normalizedOverrides);
+    effectiveTheme = applyThemeModeNow(normalized, normalizedPreset, normalizedOverrides, normalizedCustomThemes, normalizedCustomThemeId);
   }, options);
 
   return effectiveTheme;
@@ -670,7 +947,10 @@ export const updateThemeMode = (mode: AppThemeMode, options: ThemeApplyOptions =
 
 export const updateThemePreset = (preset: AppThemePreset, options: ThemeApplyOptions = {}): AppThemePreset => {
   const normalized = writeThemePreset(preset);
-  applyThemeMode(readThemeMode(), normalized, readThemePresetOverrides(), options);
+  const customThemes = options.customThemes ?? readThemeCustomThemes();
+  const customThemeId = Object.prototype.hasOwnProperty.call(options, 'customThemeId') ? options.customThemeId ?? null : readThemeCustomId();
+  writeThemeCustomId(customThemeId, customThemes);
+  applyThemeMode(readThemeMode(), normalized, readThemePresetOverrides(), { ...options, customThemeId, customThemes });
   return normalized;
 };
 
@@ -694,7 +974,16 @@ export const updateThemePreferences = (
   const normalizedMode = writeThemeMode(mode);
   const normalizedPreset = writeThemePreset(preset);
   const normalizedOverrides = writeThemePresetOverrides(overrides);
-  applyThemeMode(normalizedMode, normalizedPreset, normalizedOverrides, options);
+  const normalizedCustomThemes = writeThemeCustomThemes(options.customThemes ?? readThemeCustomThemes());
+  const normalizedCustomThemeId = writeThemeCustomId(
+    Object.prototype.hasOwnProperty.call(options, 'customThemeId') ? options.customThemeId ?? null : readThemeCustomId(),
+    normalizedCustomThemes,
+  );
+  applyThemeMode(normalizedMode, normalizedPreset, normalizedOverrides, {
+    ...options,
+    customThemeId: normalizedCustomThemeId,
+    customThemes: normalizedCustomThemes,
+  });
   return normalizedMode;
 };
 
@@ -703,7 +992,10 @@ export const loadPersistedThemeMode = async (): Promise<AppThemeMode> => {
 
   if (!appBridge) {
     const localThemeMode = readThemeMode();
-    applyThemeMode(localThemeMode, readThemePreset(), readThemePresetOverrides());
+    applyThemeMode(localThemeMode, readThemePreset(), readThemePresetOverrides(), {
+      customThemeId: readThemeCustomId(),
+      customThemes: readThemeCustomThemes(),
+    });
     return localThemeMode;
   }
 
@@ -712,6 +1004,10 @@ export const loadPersistedThemeMode = async (): Promise<AppThemeMode> => {
     settings.appearanceTheme ?? defaultThemeMode,
     settings.appearanceThemePreset ?? defaultThemePreset,
     settings.appearanceThemePresetOverrides ?? {},
+    {
+      customThemeId: settings.appearanceThemeCustomId ?? null,
+      customThemes: settings.appearanceCustomThemes ?? [],
+    },
   );
   return themeMode;
 };
@@ -723,7 +1019,10 @@ export const watchSystemThemeMode = (getThemeMode: () => AppThemeMode = readThem
 
   const mediaQuery = window.matchMedia(systemThemeQuery);
   const handleChange = (): void => {
-    applyThemeMode(getThemeMode(), readThemePreset(), readThemePresetOverrides());
+    applyThemeMode(getThemeMode(), readThemePreset(), readThemePresetOverrides(), {
+      customThemeId: readThemeCustomId(),
+      customThemes: readThemeCustomThemes(),
+    });
   };
 
   if (typeof mediaQuery.addEventListener === 'function') {

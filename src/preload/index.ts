@@ -68,6 +68,15 @@ type SystemPlaybackErrorReport = {
 const systemAudioWarning = 'system_audio_compatibility_mode';
 const systemAudioDeviceName = 'Windows default output';
 const maxSystemMediaRecoveryAttempts = 1;
+const systemSeekConfirmTimeoutMs = 2500;
+const systemSeekToleranceSeconds = 0.75;
+const systemSeekConfirmEvents: Array<keyof HTMLMediaElementEventMap> = [
+  'seeked',
+  'timeupdate',
+  'canplay',
+  'playing',
+  'loadedmetadata',
+];
 const systemPlaybackSupersededMessage = 'audio_session_run_cancelled';
 const audioStatusHandlers = new Set<(status: AudioStatus) => void>();
 const readPersistedSystemAudioMode = (): boolean => {
@@ -257,6 +266,74 @@ const getSystemDurationSeconds = (): number => {
 };
 
 const getSystemPositionSeconds = (): number => finiteSeconds(systemAudioElement?.currentTime) ?? 0;
+
+const systemPositionMatches = (element: HTMLAudioElement, targetSeconds: number): boolean => {
+  const currentSeconds = finiteSeconds(element.currentTime);
+  return currentSeconds !== null && Math.abs(currentSeconds - targetSeconds) <= systemSeekToleranceSeconds;
+};
+
+const waitForSystemSeekConfirmed = (
+  element: HTMLAudioElement,
+  targetSeconds: number,
+  generation: number,
+): Promise<void> => {
+  if (systemPositionMatches(element, targetSeconds)) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+    let maybeResolve = (): void => undefined;
+    let rejectForElementError = (): void => undefined;
+
+    const cleanup = (): void => {
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      for (const event of systemSeekConfirmEvents) {
+        element.removeEventListener(event, maybeResolve);
+      }
+      element.removeEventListener('error', rejectForElementError);
+    };
+
+    const finish = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    maybeResolve = (): void => {
+      if (generation !== systemPlaybackGeneration) {
+        finish(new Error(systemPlaybackSupersededMessage));
+        return;
+      }
+
+      if (systemPositionMatches(element, targetSeconds)) {
+        finish();
+      }
+    };
+
+    rejectForElementError = (): void => {
+      finish(new Error(element.error?.message || systemAudioError || 'system_audio_playback_failed'));
+    };
+
+    for (const event of systemSeekConfirmEvents) {
+      element.addEventListener(event, maybeResolve);
+    }
+    element.addEventListener('error', rejectForElementError);
+    timeoutId = globalThis.setTimeout(() => finish(new Error('system_audio_seek_timeout')), systemSeekConfirmTimeoutMs);
+    maybeResolve();
+  });
+};
 
 const createSystemAudioStatus = (): AudioStatus => {
   const base = lastNativeAudioStatus ?? createFallbackAudioStatus();
@@ -904,6 +981,11 @@ const echoApi: EchoApi = {
     exportSettings: () => ipcRenderer.invoke(IpcChannels.AppExportSettings),
     importSettings: () => ipcRenderer.invoke(IpcChannels.AppImportSettings),
     exportDataPackage: () => ipcRenderer.invoke(IpcChannels.AppExportDataPackage),
+    chooseDataBackupDirectory: () => ipcRenderer.invoke(IpcChannels.AppChooseDataBackupDirectory),
+    getDataBackupStatus: () => ipcRenderer.invoke(IpcChannels.AppGetDataBackupStatus),
+    runDataBackupNow: () => ipcRenderer.invoke(IpcChannels.AppRunDataBackupNow),
+    importDataBackup: () => ipcRenderer.invoke(IpcChannels.AppImportDataBackup),
+    openDataBackupDirectory: () => ipcRenderer.invoke(IpcChannels.AppOpenDataBackupDirectory),
     chooseFontFile: () => ipcRenderer.invoke(IpcChannels.AppChooseFontFile),
     chooseLyricsWallpaper: () => ipcRenderer.invoke(IpcChannels.AppChooseLyricsWallpaper),
     chooseAppWallpaper: () => ipcRenderer.invoke(IpcChannels.AppChooseAppWallpaper),
@@ -1160,10 +1242,20 @@ const echoApi: EchoApi = {
       }
 
       const element = ensureSystemAudioElement();
+      const durationSeconds = getSystemDurationSeconds();
+      const requestedPositionSeconds = Number.isFinite(Number(positionSeconds)) ? Number(positionSeconds) : 0;
+      const safePositionSeconds =
+        durationSeconds > 0
+          ? Math.min(durationSeconds, Math.max(0, requestedPositionSeconds))
+          : Math.max(0, requestedPositionSeconds);
       try {
-        element.currentTime = Math.max(0, positionSeconds);
-      } catch {
-        // Non-seekable streams keep playing from their current position.
+        element.currentTime = safePositionSeconds;
+        await waitForSystemSeekConfirmed(element, safePositionSeconds, systemPlaybackGeneration);
+        systemAudioError = null;
+      } catch (error) {
+        systemAudioError = error instanceof Error ? error.message : String(error);
+        emitSystemAudioStatus();
+        throw error;
       }
       emitSystemAudioStatus();
       return toSystemPlaybackStatus();
@@ -1190,6 +1282,8 @@ const echoApi: EchoApi = {
   },
   remoteSources: {
     list: () => ipcRenderer.invoke(IpcChannels.RemoteSourcesList),
+    getOverview: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetOverview, sourceId),
+    listIssues: (sourceId, kind, limit) => ipcRenderer.invoke(IpcChannels.RemoteSourcesListIssues, sourceId, kind, limit),
     create: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesCreate, input),
     update: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesUpdate, input),
     delete: (sourceId) => ipcRenderer.invoke(IpcChannels.RemoteSourcesDelete, sourceId),

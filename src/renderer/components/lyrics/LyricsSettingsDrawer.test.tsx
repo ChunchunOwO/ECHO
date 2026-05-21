@@ -41,6 +41,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
+  lyricsWordHighlightClarityPercent: 70,
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
@@ -551,6 +552,40 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsWordHighlightEnabled: false }));
+  });
+
+  it('previews and saves custom word highlight clarity', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    const previewListener = vi.fn();
+    window.addEventListener('lyrics:display-settings-changed', previewListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const slider = (await screen.findByRole('slider', { name: /逐字高亮清晰度/ })) as HTMLInputElement;
+    expect(slider.closest('label')?.textContent).toContain('正常');
+
+    vi.useFakeTimers();
+    fireEvent.change(slider, { target: { value: '88' } });
+
+    expect(slider.value).toBe('88');
+    expect(previewListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsWordHighlightClarityPercent: 88 } }));
+    expect(setSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
+    expect(setSettings).toHaveBeenCalledWith({ lyricsWordHighlightClarityPercent: 88 });
+
+    window.removeEventListener('lyrics:display-settings-changed', previewListener);
   });
 
   it('lets users enable the lyrics mini player bar', async () => {

@@ -1,4 +1,5 @@
 import type { ArtistConcertEvent, ArtistConcertInfo } from '../../../shared/types/library';
+import type { EchoDatabase } from '../../database/createDatabase';
 import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<{
@@ -8,9 +9,11 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<{
 }>;
 
 export type BandsintownEventsRequest = {
+  artistId?: string | null;
   artistName: string;
   appId: string | null | undefined;
   region?: string | null;
+  force?: boolean;
   timeoutMs?: number;
   fetcher?: FetchLike;
   now?: Date;
@@ -27,7 +30,9 @@ type BandsintownEvent = {
   id?: unknown;
   title?: unknown;
   datetime?: unknown;
+  timezone?: unknown;
   url?: unknown;
+  offers?: unknown;
   venue?: unknown;
 };
 
@@ -37,6 +42,29 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const normalizeFilterText = (value: string): string => value.trim().toLocaleLowerCase();
+const successTtlMs = 30 * 24 * 60 * 60 * 1000;
+const shortTtlMs = 60 * 60 * 1000;
+
+const normalizeCacheText = (value: string | null | undefined): string =>
+  (value ?? '')
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .trim();
+
+const parseJson = <T>(value: unknown, fallback: T): T => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const cacheKeyFor = (source: ArtistConcertEvent['source'], artistId: string | null | undefined, artistName: string, region: string | null): string =>
+  `${source}:${artistId?.trim() || normalizeCacheText(artistName)}:${normalizeCacheText(region)}`;
 
 const matchesRegion = (event: ArtistConcertEvent, region: string | null | undefined): boolean => {
   const filter = normalizeFilterText(region ?? '');
@@ -58,6 +86,17 @@ const buildBandsintownEventsUrl = (artistName: string, appId: string): string =>
   return `https://rest.bandsintown.com/artists/${encodedArtist}/events?${params.toString()}`;
 };
 
+const firstOfferUrl = (value: unknown): string | null => {
+  const offers = Array.isArray(value) ? value.map(asRecord) : [];
+  for (const offer of offers) {
+    const url = text(offer.url);
+    if (url) {
+      return url;
+    }
+  }
+  return null;
+};
+
 const parseBandsintownEvent = (value: unknown): ArtistConcertEvent | null => {
   const event = asRecord(value) as BandsintownEvent;
   const id = text(event.id);
@@ -77,13 +116,18 @@ const parseBandsintownEvent = (value: unknown): ArtistConcertEvent | null => {
   return {
     id: `bandsintown:${id}`,
     source: 'bandsintown',
+    sourceLabel: 'Bandsintown',
     title,
     startsAt,
+    timezone: text(event.timezone),
+    timeTbd: false,
     venueName,
     city,
     region,
     country,
     url: text(event.url),
+    ticketUrl: firstOfferUrl(event.offers),
+    venueUrl: null,
   };
 };
 
@@ -108,13 +152,18 @@ const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: 
 };
 
 export class ArtistEventsService {
-  constructor(private readonly fetcher: FetchLike = fetchWithNetworkProxy as FetchLike) {}
+  constructor(
+    private readonly fetcher: FetchLike = fetchWithNetworkProxy as FetchLike,
+    private readonly database: EchoDatabase | null = null,
+  ) {}
 
   async getBandsintownEvents(request: BandsintownEventsRequest): Promise<ArtistConcertInfo> {
     const artistName = request.artistName.trim();
     const appId = request.appId?.trim() ?? '';
     const region = request.region?.trim() || null;
-    const fetchedAt = (request.now ?? new Date()).toISOString();
+    const now = request.now ?? new Date();
+    const fetchedAt = now.toISOString();
+    const cacheKey = cacheKeyFor('bandsintown', request.artistId, artistName, region);
 
     if (!artistName || !appId) {
       return {
@@ -125,6 +174,13 @@ export class ArtistEventsService {
         fetchedAt: null,
         message: 'Configure Bandsintown app_id in Settings to load upcoming concerts.',
       };
+    }
+
+    if (request.force !== true) {
+      const cached = this.readEventCache(cacheKey, now);
+      if (cached) {
+        return cached;
+      }
     }
 
     try {
@@ -139,7 +195,7 @@ export class ArtistEventsService {
         .filter((event) => matchesRegion(event, region))
         .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 
-      return {
+      const result: ArtistConcertInfo = {
         status: 'ready',
         region,
         sources: ['bandsintown'],
@@ -147,8 +203,10 @@ export class ArtistEventsService {
         fetchedAt,
         message: events.length ? undefined : 'No upcoming Bandsintown events matched this artist and region.',
       };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
     } catch (error) {
-      return {
+      const result: ArtistConcertInfo = {
         status: 'unavailable',
         region,
         sources: ['bandsintown'],
@@ -156,6 +214,73 @@ export class ArtistEventsService {
         fetchedAt,
         message: error instanceof Error ? error.message : String(error),
       };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
     }
+  }
+
+  clearCache(): { removedRows: number } {
+    if (!this.database) {
+      return { removedRows: 0 };
+    }
+    const removedRows = Number(this.database.prepare('DELETE FROM artist_event_cache').run().changes ?? 0);
+    return { removedRows };
+  }
+
+  private readEventCache(cacheKey: string, now: Date): ArtistConcertInfo | null {
+    if (!this.database) {
+      return null;
+    }
+    const row = this.database.prepare<[string], Record<string, unknown>>('SELECT * FROM artist_event_cache WHERE cache_key = ?').get(cacheKey);
+    if (!row || Date.parse(text(row.expires_at) ?? '') <= now.getTime()) {
+      return null;
+    }
+    const status = row.status === 'ready' || row.status === 'unavailable' ? row.status : 'unavailable';
+    return {
+      status,
+      region: text(row.region),
+      sources: parseJson<ArtistConcertInfo['sources']>(row.sources_json, []),
+      events: parseJson<ArtistConcertEvent[]>(row.events_json, []),
+      fetchedAt: text(row.fetched_at),
+      message: text(row.message) ?? undefined,
+    };
+  }
+
+  private writeEventCache(cacheKey: string, artistId: string | null, artistName: string, region: string | null, info: ArtistConcertInfo, now: Date): void {
+    if (!this.database) {
+      return;
+    }
+    const hasData = info.events.length > 0;
+    const expiresAt = new Date(now.getTime() + (hasData ? successTtlMs : shortTtlMs)).toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO artist_event_cache (
+          cache_key, artist_id, normalized_name, region, source, events_json, sources_json, status, message, fetched_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          artist_id = excluded.artist_id,
+          normalized_name = excluded.normalized_name,
+          region = excluded.region,
+          source = excluded.source,
+          events_json = excluded.events_json,
+          sources_json = excluded.sources_json,
+          status = excluded.status,
+          message = excluded.message,
+          fetched_at = excluded.fetched_at,
+          expires_at = excluded.expires_at`,
+      )
+      .run(
+        cacheKey,
+        artistId,
+        normalizeCacheText(artistName),
+        region,
+        'bandsintown',
+        JSON.stringify(info.events),
+        JSON.stringify(info.sources),
+        info.status,
+        info.message ?? null,
+        info.fetchedAt ?? now.toISOString(),
+        expiresAt,
+      );
   }
 }

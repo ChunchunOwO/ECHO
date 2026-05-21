@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Disc3, Heart, Loader2, MoreHorizontal, Play, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Disc3, ExternalLink, Heart, Info, Loader2, MoreHorizontal, Play, RefreshCw, Users } from 'lucide-react';
 import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
@@ -93,6 +93,65 @@ const emptyOnlineInfoState = (): OnlineInfoState => ({
 
 const formatConfidence = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 
+const creditRoleTitle = (role: string): string => {
+  switch (role) {
+    case 'Vocal':
+      return 'Vocal & voices';
+    case 'Performer':
+      return 'Performance';
+    case 'Composer':
+      return 'Composition';
+    case 'Lyrics':
+      return 'Lyrics & words';
+    case 'Arrangement':
+      return 'Arrangement';
+    case 'Production':
+      return 'Production';
+    case 'Engineering':
+      return 'Engineering';
+    case 'Label':
+      return 'Release & label';
+    default:
+      return role || 'Other credits';
+  }
+};
+
+const creditRoleSummary = (role: string): string => {
+  switch (role) {
+    case 'Vocal':
+      return 'Lead vocals, featured voices, and credited vocal roles.';
+    case 'Performer':
+      return 'Instrumental and performance credits attached to the release or individual recordings.';
+    case 'Composer':
+      return 'Music-writing credits from release, recording, or work relationships.';
+    case 'Lyrics':
+      return 'Lyric, words, libretto, and related writing credits.';
+    case 'Arrangement':
+      return 'Arrangement, orchestration, and adaptation credits.';
+    case 'Production':
+      return 'Producer and production-side credits.';
+    case 'Engineering':
+      return 'Recording, mix, mastering, and sound engineering credits.';
+    case 'Label':
+      return 'Label and catalog information tied to the release.';
+    default:
+      return 'Additional credits found in the online metadata match.';
+  }
+};
+
+const creditSourceLabel = (source: string): string => {
+  switch (source) {
+    case 'recording':
+      return 'track credit';
+    case 'work':
+      return 'work credit';
+    case 'label':
+      return 'label';
+    default:
+      return 'album credit';
+  }
+};
+
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, removeTrackFromQueue, replaceQueue, updateTrackSnapshot } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
@@ -115,6 +174,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [activeTab, setActiveTab] = useState<AlbumDetailTab>('tracks');
   const [onlineInfoState, setOnlineInfoState] = useState<OnlineInfoState>(() => emptyOnlineInfoState());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
+  const onlineInfoRequestRef = useRef(0);
   const likedTrackIds = useLikedTrackIds(loadedTracks.map((track) => track.id));
   const duration = formatDuration(album.duration);
   const formatSummary = formatTechnicalSummary(firstTrack);
@@ -182,9 +242,14 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         loading: true,
         error: null,
       }));
+      const requestId = onlineInfoRequestRef.current + 1;
+      onlineInfoRequestRef.current = requestId;
 
       try {
         const info = await bridge.getAlbumOnlineInfo(album.id, { force });
+        if (onlineInfoRequestRef.current !== requestId) {
+          return;
+        }
         setOnlineInfoState({
           loading: false,
           info,
@@ -192,6 +257,9 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           loadedForAlbumId: album.id,
         });
       } catch (error) {
+        if (onlineInfoRequestRef.current !== requestId) {
+          return;
+        }
         setOnlineInfoState((current) => ({
           ...current,
           loading: false,
@@ -206,17 +274,8 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   useEffect(() => {
     setActiveTab('tracks');
     setOnlineInfoState(emptyOnlineInfoState());
-  }, [album.id]);
-
-  useEffect(() => {
-    if (activeTab === 'tracks') {
-      return;
-    }
-    if (onlineInfoState.loading || onlineInfoState.loadedForAlbumId === album.id) {
-      return;
-    }
     void loadOnlineInfo(false);
-  }, [activeTab, album.id, loadOnlineInfo, onlineInfoState.loadedForAlbumId, onlineInfoState.loading]);
+  }, [album.id, loadOnlineInfo]);
 
   const refreshAlbumLiked = useCallback(async (): Promise<void> => {
     try {
@@ -533,7 +592,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       info &&
       (section === 'credits'
         ? info.credits.length === 0
-        : !info.information);
+        : !info.information && !info.artistInformation);
 
     if (onlineInfoState.loading && !info) {
       return (
@@ -586,7 +645,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <strong>{info.sources.map((source) => source.label).join(' / ') || 'No source matched'}</strong>
           {info.match ? (
             <small>
-              {info.match.possible ? 'Possible MusicBrainz match' : 'MusicBrainz match'} · {formatConfidence(info.match.confidence)}
+              {info.match.possible ? 'Possible MusicBrainz match' : 'MusicBrainz match'} - {formatConfidence(info.match.confidence)}
             </small>
           ) : null}
         </div>
@@ -608,15 +667,31 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     return (
       <div className="album-online-panel album-credits-panel">
         {renderOnlineHeader()}
+        {info?.credits.length ? (
+          <section className="album-credit-overview" aria-label="Credit overview">
+            <Users size={18} />
+            <div>
+              <span>Album credits</span>
+              <strong>{info.credits.reduce((count, group) => count + group.people.length, 0)} credited people and organizations</strong>
+            </div>
+          </section>
+        ) : null}
         {info?.credits.map((group) => (
           <section className="album-credit-group" key={group.role}>
-            <h3>{group.role}</h3>
+            <header>
+              <div>
+                <span>{group.role}</span>
+                <h3>{creditRoleTitle(group.role)}</h3>
+              </div>
+              <small>{group.people.length} entries</small>
+            </header>
+            <p>{creditRoleSummary(group.role)}</p>
             <div className="album-credit-people">
               {group.people.map((person) => (
                 <span className="album-credit-chip" key={`${group.role}-${person.name}-${person.trackTitle ?? ''}-${person.detail ?? ''}`}>
                   <strong>{person.name}</strong>
-                  {person.detail ? <small>{person.detail}</small> : null}
-                  {person.trackTitle ? <em>{person.trackTitle}</em> : null}
+                  <small>{[person.detail, creditSourceLabel(person.source)].filter(Boolean).join(' - ')}</small>
+                  {person.trackTitle ? <em>Track: {person.trackTitle}</em> : null}
                 </span>
               ))}
             </div>
@@ -633,28 +708,41 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     }
 
     const info = onlineInfoState.info;
-    const information = info?.information;
+    const renderInformationArticle = (information: NonNullable<AlbumOnlineInfo['information']>, label: string): JSX.Element => (
+      <section className="album-information-article" key={label}>
+        <div className="album-information-main">
+          <span>{label} - {information.language}.wikipedia.org</span>
+          <h3>{information.title}</h3>
+          {information.description ? <small>{information.description}</small> : null}
+          <p>{information.extract}</p>
+        </div>
+        <div className="album-information-aside">
+          {information.thumbnailUrl ? <img alt="" src={information.thumbnailUrl} loading="lazy" decoding="async" /> : null}
+          {information.url ? (
+            <a href={information.url} target="_blank" rel="noreferrer">
+              <ExternalLink size={14} />
+              Open source
+            </a>
+          ) : null}
+        </div>
+      </section>
+    );
+
     return (
       <div className="album-online-panel album-information-panel">
         {renderOnlineHeader()}
-        {information ? (
-          <section className="album-information-article">
-            <div className="album-information-main">
-              <span>{information.language}.wikipedia.org</span>
-              <h3>{information.title}</h3>
-              {information.description ? <small>{information.description}</small> : null}
-              <p>{information.extract}</p>
-            </div>
-            <div className="album-information-aside">
-              {information.thumbnailUrl ? <img alt="" src={information.thumbnailUrl} loading="lazy" decoding="async" /> : null}
-              {information.url ? (
-                <a href={information.url} target="_blank" rel="noreferrer">
-                  Open Wikipedia
-                </a>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
+        <section className="album-information-overview" aria-label="Album and artist overview">
+          <Info size={18} />
+          <div>
+            <span>At a glance</span>
+            <strong>{album.albumArtist}</strong>
+            <small>{[album.title, album.year ? String(album.year) : null, formatTrackCount(album.trackCount)].filter(Boolean).join(' - ')}</small>
+          </div>
+        </section>
+        <div className="album-information-articles">
+          {info?.information ? renderInformationArticle(info.information, 'Album profile') : null}
+          {info?.artistInformation ? renderInformationArticle(info.artistInformation, 'Artist profile') : null}
+        </div>
       </div>
     );
   };

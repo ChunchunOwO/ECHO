@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
+import type { AlbumOnlineInfo, LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
 import { AlbumDetailView } from './AlbumDetailView';
 
 const queueMock = {
@@ -69,13 +69,49 @@ const track = (): LibraryTrack => ({
   fieldSources: {},
 });
 
-const installLibrary = (): void => {
+const onlineInfo = (): AlbumOnlineInfo => ({
+  albumId: 'album-1',
+  status: 'ready',
+  sources: [{ provider: 'wikipedia', label: 'en.wikipedia.org' }],
+  match: null,
+  credits: [
+    {
+      role: 'Composer',
+      people: [{ name: 'Mock Composer', detail: 'music', trackTitle: null, source: 'work' }],
+    },
+  ],
+  information: {
+    title: 'Mock Album',
+    description: 'Album',
+    extract: 'Mock album overview.',
+    url: 'https://example.test/album',
+    language: 'en',
+    thumbnailUrl: null,
+  },
+  artistInformation: {
+    title: 'Echo Unit',
+    description: 'Artist',
+    extract: 'Echo Unit artist overview.',
+    url: 'https://example.test/artist',
+    language: 'en',
+    thumbnailUrl: null,
+  },
+  fetchedAt: '2026-05-21T00:00:00.000Z',
+  expiresAt: '2026-06-21T00:00:00.000Z',
+  fromCache: false,
+  errors: [],
+});
+
+const installLibrary = (): { getAlbumOnlineInfo: ReturnType<typeof vi.fn> } => {
+  const getAlbumOnlineInfo = vi.fn().mockResolvedValue(onlineInfo());
   window.echo = {
     library: {
       getAlbum: vi.fn().mockResolvedValue({ coverLarge: null }),
+      getAlbumOnlineInfo,
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
     },
   } as unknown as Window['echo'];
+  return { getAlbumOnlineInfo };
 };
 
 afterEach(() => {
@@ -105,5 +141,18 @@ describe('AlbumDetailView', () => {
     });
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts reading online album info when the detail opens and shows artist information', async () => {
+    const { getAlbumOnlineInfo } = installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(getAlbumOnlineInfo).toHaveBeenCalledWith('album-1', { force: false }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Information' }));
+
+    expect(await screen.findByText('Artist profile - en.wikipedia.org')).toBeTruthy();
+    expect(screen.getByText('Echo Unit artist overview.')).toBeTruthy();
   });
 });

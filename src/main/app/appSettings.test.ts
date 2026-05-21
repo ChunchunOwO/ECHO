@@ -50,8 +50,8 @@ describe('app settings normalization', () => {
       enabled: false,
       connectionMode: 'localDesktop',
       host: '127.0.0.1',
-      port: null,
-      defaultPlaybackBackend: 'echoNative',
+      port: 4321,
+      defaultPlaybackBackend: 'ask',
     });
     expect(settings.playlistBackupsEnabled).toBe(true);
     expect(settings.autoDataBackupEnabled).toBe(false);
@@ -107,6 +107,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsRomanizationEnabled).toBe(true);
     expect(settings.lyricsTranslationEnabled).toBe(true);
     expect(settings.lyricsWordHighlightEnabled).toBe(true);
+    expect(settings.lyricsWordHighlightClarityPercent).toBe(70);
     expect(settings.lyricsFontSizePx).toBe(40);
     expect(settings.lyricsSecondaryFontSizePx).toBe(22);
     expect(settings.lyricsLineSpacingPercent).toBe(110);
@@ -210,9 +211,9 @@ describe('app settings normalization', () => {
       enabled: false,
       connectionMode: 'localDesktop',
       host: '127.0.0.1',
-      port: null,
+      port: 4321,
       mediaServerEnabled: false,
-      defaultPlaybackBackend: 'echoNative',
+      defaultPlaybackBackend: 'ask',
     });
 
     expect(
@@ -246,6 +247,14 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         hqPlayer: {
+          defaultPlaybackBackend: 'echoNative',
+        },
+      }).hqPlayer,
+    ).toMatchObject({ defaultPlaybackBackend: 'echoNative' });
+
+    expect(
+      normalizeSettings({
+        hqPlayer: {
           enabled: 'yes',
           connectionMode: 'embedded',
           host: ' ',
@@ -258,9 +267,9 @@ describe('app settings normalization', () => {
       enabled: false,
       connectionMode: 'localDesktop',
       host: '127.0.0.1',
-      port: null,
+      port: 4321,
       mediaServerPort: null,
-      defaultPlaybackBackend: 'echoNative',
+      defaultPlaybackBackend: 'ask',
     });
   });
 
@@ -946,6 +955,7 @@ describe('app settings normalization', () => {
         lyricsRomanizationEnabled: false,
         lyricsTranslationEnabled: false,
         lyricsWordHighlightEnabled: false,
+        lyricsWordHighlightClarityPercent: 999,
         lyricsFontSizePx: 999,
         lyricsLineSpacingPercent: 999,
         lyricsLineMaxChars: 999,
@@ -987,6 +997,7 @@ describe('app settings normalization', () => {
       lyricsRomanizationEnabled: false,
       lyricsTranslationEnabled: false,
       lyricsWordHighlightEnabled: false,
+      lyricsWordHighlightClarityPercent: 100,
       lyricsFontSizePx: 56,
       lyricsLineSpacingPercent: 150,
       lyricsLineMaxChars: 80,
@@ -1006,6 +1017,7 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsFontSizePx: 12,
+        lyricsWordHighlightClarityPercent: 20,
         lyricsLineSpacingPercent: 20,
         lyricsLineMaxChars: -1,
         lyricsAutoAcceptScore: 0.1,
@@ -1025,6 +1037,7 @@ describe('app settings normalization', () => {
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
+      lyricsWordHighlightClarityPercent: 40,
       lyricsLineSpacingPercent: 60,
       lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,

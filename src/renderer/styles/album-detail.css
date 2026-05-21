@@ -345,10 +345,78 @@
   font-size: 15px;
 }
 
+.album-credit-overview,
+.album-information-overview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px;
+  color: #4f46d8;
+  border: 1px solid rgba(98, 87, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.album-credit-overview > div,
+.album-information-overview > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.album-credit-overview span,
+.album-information-overview span {
+  color: #8a94a2;
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.album-credit-overview strong,
+.album-information-overview strong {
+  overflow: hidden;
+  color: #253143;
+  font-size: 15px;
+  font-weight: 880;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-information-overview small {
+  overflow: hidden;
+  color: #7b8798;
+  font-size: 12px;
+  font-weight: 740;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .album-credit-group,
 .album-related-section {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+}
+
+.album-credit-group header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.album-credit-group header > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.album-credit-group header span,
+.album-credit-group header small {
+  color: #8a94a2;
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
 }
 
 .album-credit-group h3,
@@ -358,6 +426,15 @@
   font-size: 13px;
   font-weight: 880;
   letter-spacing: 0;
+}
+
+.album-credit-group p {
+  max-width: 820px;
+  margin: 0;
+  color: #6f7c8c;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.55;
 }
 
 .album-credit-people {
@@ -447,6 +524,11 @@
   font-weight: 850;
 }
 
+.album-information-articles {
+  display: grid;
+  gap: 16px;
+}
+
 .album-information-article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
@@ -515,6 +597,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   min-height: 36px;
   width: 100%;
   padding: 0 14px;
@@ -844,6 +927,12 @@ html[data-theme="dark"] .album-track-like {
 html[data-theme="dark"] .album-online-header span,
 html[data-theme="dark"] .album-online-header small,
 html[data-theme="dark"] .album-online-state,
+html[data-theme="dark"] .album-credit-overview span,
+html[data-theme="dark"] .album-information-overview span,
+html[data-theme="dark"] .album-information-overview small,
+html[data-theme="dark"] .album-credit-group header span,
+html[data-theme="dark"] .album-credit-group header small,
+html[data-theme="dark"] .album-credit-group p,
 html[data-theme="dark"] .album-credit-chip small,
 html[data-theme="dark"] .album-credit-chip em,
 html[data-theme="dark"] .album-related-row small,
@@ -853,6 +942,8 @@ html[data-theme="dark"] .album-related-artist small {
 
 html[data-theme="dark"] .album-online-header strong,
 html[data-theme="dark"] .album-online-state strong,
+html[data-theme="dark"] .album-credit-overview strong,
+html[data-theme="dark"] .album-information-overview strong,
 html[data-theme="dark"] .album-credit-group h3,
 html[data-theme="dark"] .album-related-section h3,
 html[data-theme="dark"] .album-credit-chip strong,
@@ -863,6 +954,9 @@ html[data-theme="dark"] .album-related-artist strong {
 
 html[data-theme="dark"] .album-online-header button,
 html[data-theme="dark"] .album-online-state button,
+html[data-theme="dark"] .album-information-article a,
+html[data-theme="dark"] .album-credit-overview,
+html[data-theme="dark"] .album-information-overview,
 html[data-theme="dark"] .album-credit-chip,
 html[data-theme="dark"] .album-related-artist,
 html[data-theme="dark"] .album-related-row,

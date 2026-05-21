@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { HqPlayerSettings } from '../../../shared/types/hqplayer';
+import type { HqPlayerPlaybackControlPlan, HqPlayerSettings } from '../../../shared/types/hqplayer';
 import type { PlayableTrack } from '../../../shared/types/remoteSources';
 import { defaultHqPlayerSettings } from '../../app/appSettings';
 import type { HqPlayerMediaServerBridge } from './HqPlayerMediaServer';
-import { HqPlayerService, type HqPlayerMediaResolver, type HqPlayerSettingsStore, type HqPlayerTcpProbe } from './HqPlayerService';
+import {
+  HqPlayerService,
+  type HqPlayerControlSender,
+  type HqPlayerMediaResolver,
+  type HqPlayerSettingsStore,
+  type HqPlayerTcpProbe,
+} from './HqPlayerService';
 
 vi.mock('electron', () => ({
   app: {
@@ -49,6 +55,19 @@ const createMediaServer = (): HqPlayerMediaServerBridge => ({
     url: 'http://192.168.1.10:17890/hqplayer-media/token',
     expiresAt: '2026-05-20T02:00:00.000Z',
   }),
+});
+
+const createSentResult = (plan: HqPlayerPlaybackControlPlan) => ({
+  state: 'sent' as const,
+  reason: null,
+  transport: 'official-control-tcp' as const,
+  command: 'PlayNextURI' as const,
+  endpoint: plan.endpoint,
+  startedAt: '2026-05-21T01:00:00.000Z',
+  finishedAt: '2026-05-21T01:00:00.012Z',
+  elapsedMs: 12,
+  message: null,
+  response: '<PlayNextURI result="OK"/>',
 });
 
 const localTrack: PlayableTrack = {
@@ -97,7 +116,7 @@ describe('HqPlayerService', () => {
       state: 'disabled',
       endpoint: {
         host: '127.0.0.1',
-        port: null,
+        port: 4321,
       },
     });
 
@@ -165,6 +184,74 @@ describe('HqPlayerService', () => {
     });
   });
 
+  it('keeps read-only HQPlayer control details on the status snapshot', async () => {
+    const probe = vi.fn<HqPlayerTcpProbe>().mockResolvedValue({
+      ok: true,
+      elapsedMs: 18,
+      error: null,
+      controlInfo: {
+        name: 'Living Room',
+        product: 'HQPlayer Desktop',
+        version: '5.17.2',
+        platform: 'Windows',
+        engine: '5.29.2',
+        receivedAt: '2026-05-21T01:00:00.000Z',
+      },
+      playbackStatus: {
+        state: 'playing',
+        stateCode: 2,
+        track: 1,
+        trackId: 'track-1',
+        tracksTotal: 1,
+        queued: false,
+        positionSeconds: 12,
+        durationSeconds: 180,
+        volume: -3,
+        activeMode: 'poly-sinc',
+        activeFilter: 'sinc-M',
+        activeShaper: 'ASDM7',
+        activeRate: 2822400,
+        activeBits: 1,
+        activeChannels: 2,
+        inputFill: 0.5,
+        outputFill: 0.7,
+        outputDelayUs: 12000,
+        apodizing: 1,
+        metadata: null,
+        receivedAt: '2026-05-21T01:00:00.000Z',
+      },
+    });
+    const service = new HqPlayerService(
+      createStore({
+        enabled: true,
+        host: '127.0.0.1',
+        port: 4321,
+      }),
+      probe,
+    );
+
+    await expect(service.testConnection()).resolves.toMatchObject({
+      ok: true,
+      controlInfo: {
+        product: 'HQPlayer Desktop',
+        engine: '5.29.2',
+      },
+      playbackStatus: {
+        state: 'playing',
+        activeRate: 2822400,
+      },
+    });
+    expect(service.getStatus()).toMatchObject({
+      controlInfo: {
+        name: 'Living Room',
+      },
+      playbackStatus: {
+        state: 'playing',
+        durationSeconds: 180,
+      },
+    });
+  });
+
   it('keeps handoff in ECHO when HQPlayer is not the selected playback backend', async () => {
     const resolver = createResolver();
     const service = new HqPlayerService(
@@ -211,6 +298,31 @@ describe('HqPlayerService', () => {
       reason: 'hqplayer_confirmation_required',
       fallback: null,
       source: null,
+    });
+  });
+
+  it('allows an explicit confirmed handoff even when the default backend is ECHO', async () => {
+    const service = new HqPlayerService(
+      createStore({
+        enabled: true,
+        port: 4321,
+        defaultPlaybackBackend: 'echoNative',
+      }),
+      undefined,
+      createResolver(),
+    );
+
+    await expect(service.createPlaybackHandoff({ item: localTrack, confirmed: true })).resolves.toMatchObject({
+      state: 'ready',
+      reason: null,
+      source: {
+        trackId: 'local-1',
+        exposure: 'local-file',
+      },
+      control: {
+        state: 'prepared',
+        reason: null,
+      },
     });
   });
 
@@ -477,5 +589,78 @@ describe('HqPlayerService', () => {
         remoteAccess: false,
       },
     );
+  });
+
+  it('sends only a ready handoff through the HQPlayer control sender', async () => {
+    const sender = vi.fn<HqPlayerControlSender>().mockImplementation(async (plan) => createSentResult(plan));
+    const service = new HqPlayerService(
+      createStore({
+        enabled: true,
+        port: 4321,
+        defaultPlaybackBackend: 'hqplayer',
+      }),
+      undefined,
+      createResolver(),
+      createMediaServer(),
+      sender,
+    );
+
+    await service.createPlaybackHandoff({ item: localTrack });
+    const result = await service.sendLastPlaybackControl();
+
+    expect(sender).toHaveBeenCalledOnce();
+    expect(sender.mock.calls[0]?.[0]).toMatchObject({
+      state: 'prepared',
+      source: {
+        url: 'D:\\Music\\song.flac',
+      },
+    });
+    expect(result).toMatchObject({
+      state: 'sent',
+      reason: null,
+    });
+    expect(service.getLastPlaybackControlPlan()).toMatchObject({
+      send: {
+        state: 'sent',
+      },
+    });
+    expect(service.getLastPlaybackHandoffPlan()).toMatchObject({
+      control: {
+        send: {
+          state: 'sent',
+        },
+      },
+    });
+  });
+
+  it('does not send fallback or confirmation-only handoffs', async () => {
+    const sender = vi.fn<HqPlayerControlSender>();
+    const service = new HqPlayerService(
+      createStore({
+        enabled: true,
+        port: 4321,
+        defaultPlaybackBackend: 'ask',
+      }),
+      undefined,
+      createResolver(),
+      createMediaServer(),
+      sender,
+    );
+
+    await service.createPlaybackHandoff({ item: localTrack });
+    const result = await service.sendLastPlaybackControl();
+
+    expect(sender).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      state: 'skipped',
+      reason: 'handoff_not_ready',
+    });
+    expect(service.getLastPlaybackControlPlan()).toMatchObject({
+      state: 'skipped',
+      send: {
+        state: 'skipped',
+        reason: 'handoff_not_ready',
+      },
+    });
   });
 });

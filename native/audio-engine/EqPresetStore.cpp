@@ -23,6 +23,8 @@ EqPreset makePreset(const std::string& id, const std::string& name, float preamp
             eqFrequenciesHz[static_cast<size_t>(index)],
             clampEqGainDb(gains[static_cast<size_t>(index)]),
             1.0f,
+            EqFilterType::Peaking,
+            true,
         });
     }
 
@@ -65,6 +67,9 @@ bool EqPresetStore::validatePreset(const EqPreset& preset)
             return false;
 
         if (! std::isfinite(band.q) || band.q <= 0.0f || band.q > 12.0f)
+            return false;
+
+        if (normalizeEqFilterType(static_cast<int>(band.filterType)) != band.filterType)
             return false;
     }
 

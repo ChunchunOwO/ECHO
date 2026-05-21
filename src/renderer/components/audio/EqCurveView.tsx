@@ -176,7 +176,7 @@ export const EqCurveView = ({
     setDragPreview({
       index,
       band: {
-        ...(bands[index] ?? { frequencyHz: point.frequencyHz, gainDb: 0, q: 1 }),
+        ...(bands[index] ?? { frequencyHz: point.frequencyHz, gainDb: 0, q: 1, filterType: 'peaking' as const, enabled: true }),
         frequencyHz: previewFrequencyHz,
         gainDb: point.gainDb,
       },
@@ -311,6 +311,7 @@ export const EqCurveView = ({
               className="eq-curve-node-group"
               aria-label={t('settings.eq.curve.dragBand', { frequency: formatFrequencyLabel(band.frequencyHz) })}
               data-active={selected}
+              data-bypassed={band.enabled === false}
               data-dragging={activeBand === index}
               data-testid={`eq-curve-node-${index}`}
               key={`${band.frequencyHz}-${index}`}

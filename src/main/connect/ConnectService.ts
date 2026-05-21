@@ -6,8 +6,13 @@ import type {
   ConnectSessionStatus,
   ConnectStartRequest,
 } from '../../shared/types/connect';
+import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
+import type { PlayableTrack } from '../../shared/types/remoteSources';
+import { streamingProviderNames, type StreamingProviderName } from '../../shared/types/streaming';
+import { defaultHqPlayerSettings } from '../app/appSettings';
 import { getAudioSession } from '../audio/AudioSession';
+import { getHqPlayerService, type HqPlayerService } from '../integrations/hqplayer/HqPlayerService';
 import { getLibraryService } from '../library/LibraryService';
 import type { CoverVariant } from '../library/libraryTypes';
 import { buildDlnaDidlLite, createConnectMetadata, protocolInfoForMime } from './ConnectMetadata';
@@ -26,6 +31,11 @@ import {
 type ConnectEvents = {
   status: [ConnectSessionStatus];
 };
+
+type HqPlayerConnectService = Pick<
+  HqPlayerService,
+  'getSettings' | 'setSettings' | 'getStatus' | 'testConnection' | 'createPlaybackHandoff' | 'sendLastPlaybackControl'
+>;
 
 type PlaybackSource = {
   track: ConnectPlaybackTarget | LibraryTrack | null;
@@ -74,6 +84,21 @@ const airPlayPlaceholder: ConnectDevice = {
   lastSeenAt: null,
   unsupportedReason: 'AirPlay 需要先完成标题、艺术家、专辑、封面、时长的同步验收；当前不开放静默音频投送。',
 };
+
+const hqPlayerDeviceCapabilities: ConnectDevice['capabilities'] = {
+  canPlay: false,
+  canPause: false,
+  canStop: false,
+  canSeek: false,
+  canSetVolume: false,
+  supportsMetadata: true,
+  supportsSetNext: false,
+  supportedMimeTypes: [],
+  requiresTranscode: false,
+};
+
+const hqPlayerReasonText = (reason: string | null | undefined): string =>
+  reason ? `HQPlayer ${reason}` : 'HQPlayer 发送失败';
 
 const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
 
@@ -136,8 +161,12 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   private session: ConnectSessionStatus = idleStatus();
   private refreshInFlight: Promise<ConnectDevice[]> | null = null;
 
+  constructor(private readonly hqPlayerService: HqPlayerConnectService = getHqPlayerService()) {
+    super();
+  }
+
   listDevices(): ConnectDevice[] {
-    return [...Array.from(this.devices.values(), (device) => this.publicDevice(device)), airPlayPlaceholder];
+    return [...Array.from(this.devices.values(), (device) => this.publicDevice(device)), this.hqPlayerDevice(), airPlayPlaceholder];
   }
 
   getStatus(): ConnectSessionStatus {
@@ -178,6 +207,10 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   async connect(request: ConnectStartRequest): Promise<ConnectSessionStatus> {
+    if (request.deviceId === hqPlayerConnectDeviceId) {
+      return this.connectHqPlayer(request);
+    }
+
     if (request.deviceId === airPlayPlaceholder.id) {
       const status: ConnectSessionStatus = {
         ...idleStatus(),
@@ -307,6 +340,26 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     return { id, name, protocol, model, manufacturer, address, capabilities, state, lastSeenAt, unsupportedReason };
   }
 
+  private hqPlayerDevice(): ConnectDevice {
+    const status = this.hqPlayerService.getStatus();
+    const controlInfo = status.controlInfo ?? null;
+    const model = controlInfo?.product
+      ? [controlInfo.product, controlInfo.version].filter(Boolean).join(' ')
+      : 'Local Desktop Control';
+    return {
+      id: hqPlayerConnectDeviceId,
+      name: 'HQPlayer Desktop',
+      protocol: 'hqplayer',
+      model,
+      manufacturer: 'Signalyst',
+      address: `${status.endpoint.host}:${status.endpoint.port ?? defaultHqPlayerSettings.port}`,
+      capabilities: hqPlayerDeviceCapabilities,
+      state: status.state === 'available' || status.state === 'checking' || status.state === 'disabled' ? 'available' : 'unavailable',
+      lastSeenAt: controlInfo?.receivedAt ?? status.playbackStatus?.receivedAt ?? status.lastCheckedAt,
+      unsupportedReason: status.lastError,
+    };
+  }
+
   private async refreshAndFindDevice(deviceId: string): Promise<DlnaDevice | null> {
     await this.refreshDevices();
     return this.devices.get(deviceId) ?? null;
@@ -329,7 +382,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   private withInterpolatedPosition(status: ConnectSessionStatus): ConnectSessionStatus {
-    if (status.state !== 'playing' || status.durationSeconds <= 0) {
+    if (status.protocol !== 'dlna' || status.state !== 'playing' || status.durationSeconds <= 0) {
       return status;
     }
 
@@ -375,6 +428,159 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
       return getLibraryService().getTrack(status.currentTrackId);
     } catch {
       return null;
+    }
+  }
+
+  private getRichTrack(request: ConnectStartRequest): ConnectPlaybackTarget | LibraryTrack | null {
+    const track = this.getTrackFromStatus(request);
+    if (!track) {
+      return null;
+    }
+
+    try {
+      return getLibraryService().getTrack(track.id) ?? track;
+    } catch {
+      return track;
+    }
+  }
+
+  private createHqPlayerPlayableTrack(request: ConnectStartRequest): PlayableTrack {
+    const track = this.getRichTrack(request);
+    const status = getAudioSession().getStatus();
+    const filePath = request.filePath ?? track?.path ?? status.currentFilePath;
+    if (!track || !filePath) {
+      throw new Error('没有可交给 HQPlayer 的当前音频。请先播放或选中一首歌。');
+    }
+
+    const common = {
+      trackId: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist,
+      duration: track.duration,
+      coverThumb: track.coverThumb,
+    };
+    const mediaType = track.mediaType ?? 'local';
+
+    if (mediaType === 'remote') {
+      const remoteTrack = track as Partial<LibraryTrack>;
+      return {
+        ...common,
+        mediaType: 'remote',
+        sourceId: remoteTrack.sourceId ?? null,
+        stableKey: remoteTrack.stableKey ?? null,
+        remotePath: remoteTrack.remotePath ?? filePath,
+      };
+    }
+
+    if (mediaType === 'streaming') {
+      const streamingTrack = track as Partial<LibraryTrack>;
+      const provider = typeof streamingTrack.provider === 'string' && streamingProviderNames.includes(streamingTrack.provider as StreamingProviderName)
+        ? streamingTrack.provider as StreamingProviderName
+        : null;
+      if (!provider || !streamingTrack.providerTrackId || !streamingTrack.stableKey) {
+        throw new Error('当前串流曲目缺少 HQPlayer 交接信息。');
+      }
+
+      return {
+        ...common,
+        mediaType: 'streaming',
+        provider,
+        providerTrackId: streamingTrack.providerTrackId,
+        quality: streamingTrack.streamingQuality,
+        stableKey: streamingTrack.stableKey,
+        playable: true,
+        unavailableReason: null,
+      };
+    }
+
+    return {
+      ...common,
+      mediaType: 'local',
+      path: filePath,
+    };
+  }
+
+  private createHqPlayerMetadata(item: PlayableTrack): ConnectSessionStatus['metadata'] {
+    return {
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      albumArtist: item.albumArtist ?? null,
+      durationSeconds: item.duration ?? 0,
+      coverHttpUrl: item.coverThumb ?? '',
+    };
+  }
+
+  private async connectHqPlayer(request: ConnectStartRequest): Promise<ConnectSessionStatus> {
+    const startedAt = Date.now();
+    const item = this.createHqPlayerPlayableTrack(request);
+    this.setSession({
+      ...this.session,
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'connecting',
+      error: null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    try {
+      const settings = this.hqPlayerService.setSettings({
+        enabled: true,
+        connectionMode: 'localDesktop',
+        host: defaultHqPlayerSettings.host,
+        port: defaultHqPlayerSettings.port,
+      });
+      const connection = await this.hqPlayerService.testConnection(settings);
+      if (!connection.ok) {
+        throw new Error(connection.error ?? 'HQPlayer 连接失败');
+      }
+
+      const handoff = await this.hqPlayerService.createPlaybackHandoff({
+        item,
+        startSeconds: request.positionSeconds ?? 0,
+        confirmed: true,
+      });
+      if (handoff.state !== 'ready' || handoff.control.state !== 'prepared') {
+        throw new Error(hqPlayerReasonText(handoff.reason));
+      }
+
+      const send = await this.hqPlayerService.sendLastPlaybackControl();
+      if (send.state !== 'sent') {
+        throw new Error(send.message ?? hqPlayerReasonText(send.reason));
+      }
+
+      const audioStatus = getAudioSession().getStatus();
+      if (audioStatus.state === 'playing' || audioStatus.state === 'loading') {
+        await getAudioSession().pause().catch(() => undefined);
+      }
+
+      this.setSession({
+        deviceId: hqPlayerConnectDeviceId,
+        protocol: 'hqplayer',
+        state: 'playing',
+        currentTrackId: item.trackId,
+        metadata: this.createHqPlayerMetadata(item),
+        positionSeconds: request.positionSeconds ?? 0,
+        durationSeconds: item.duration ?? 0,
+        latencyMs: Date.now() - startedAt,
+        error: null,
+        updatedAt: new Date().toISOString(),
+      });
+      return this.getStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setSession({
+        ...this.session,
+        deviceId: hqPlayerConnectDeviceId,
+        protocol: 'hqplayer',
+        state: 'error',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+        updatedAt: new Date().toISOString(),
+      });
+      throw error;
     }
   }
 

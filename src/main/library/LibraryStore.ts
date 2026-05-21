@@ -47,12 +47,18 @@ import type {
   LibraryInboxBatch,
   LibraryInboxCreatePlaylistRequest,
   LibraryInboxFilterKind,
+  LibraryInboxItemRef,
+  LibraryInboxItemStatus,
   LibraryInboxIssueReason,
   LibraryInboxPlaylistResult,
+  LibraryInboxQueueResult,
   LibraryInboxScope,
+  LibraryInboxStatusFilter,
   LibraryInboxStory,
   LibraryInboxTrackPage,
   LibraryInboxTrackQuery,
+  LibraryInboxUpdateStateRequest,
+  LibraryInboxUpdateStateResult,
   LibraryPlaylist,
   LibraryPlaylistItem,
   DuplicateTrackGroup,
@@ -76,10 +82,24 @@ import type {
   ArtistInsightsOptions,
   ArtistInsightEdge,
   ArtistInsightNode,
+  ArtistOnlineInfo,
 } from './libraryTypes';
 import { COVER_CACHE_VERSION as currentCoverCacheVersion } from './libraryTypes';
 
 type DbRow = Record<string, unknown>;
+const emptyArtistOnlineInfo = (message?: string): ArtistOnlineInfo => ({
+  status: 'empty',
+  bio: null,
+  imageCredits: [],
+  externalLinks: [],
+  relatedArtists: [],
+  sourceLabels: [],
+  fetchedAt: null,
+  expiresAt: null,
+  fromCache: false,
+  errors: [],
+  message,
+});
 type MarkTracksMissingFromFolderOptions = {
   excludeDirectories?: readonly string[];
 };
@@ -131,6 +151,7 @@ type LibraryInboxResolvedQuery = {
   batchId: string | null;
   scope: LibraryInboxScope;
   filter: LibraryInboxFilterKind;
+  status: LibraryInboxStatusFilter;
   folderId: string | null;
   album: string | null;
   artist: string | null;
@@ -367,9 +388,11 @@ const libraryInboxFilters = new Set<LibraryInboxFilterKind>([
   'metadata_issue',
   'unknown_artist',
   'unknown_album',
+  'suspicious_file',
 ]);
 
 const libraryInboxScopes = new Set<LibraryInboxScope>(['latest', 'batch', 'all']);
+const libraryInboxStatuses = new Set<LibraryInboxStatusFilter>(['all', 'pending', 'processed', 'ignored']);
 
 const pageFromInboxQuery = (
   query?: LibraryInboxTrackQuery,
@@ -377,6 +400,7 @@ const pageFromInboxQuery = (
   batchId: string | null;
   scope: LibraryInboxScope;
   filter: LibraryInboxFilterKind;
+  status: LibraryInboxStatusFilter;
   folderId: string | null;
   album: string | null;
   artist: string | null;
@@ -387,11 +411,13 @@ const pageFromInboxQuery = (
   const rawScope = query?.scope;
   const scope = rawScope && libraryInboxScopes.has(rawScope) ? rawScope : query?.batchId ? 'batch' : 'latest';
   const rawFilter = query?.filter;
+  const rawStatus = query?.status;
 
   return {
     batchId: typeof query?.batchId === 'string' && query.batchId.trim() ? query.batchId.trim() : null,
     scope,
     filter: rawFilter && libraryInboxFilters.has(rawFilter) ? rawFilter : 'all',
+    status: rawStatus && libraryInboxStatuses.has(rawStatus) ? rawStatus : 'all',
     folderId: typeof query?.folderId === 'string' && query.folderId.trim() ? query.folderId.trim() : null,
     album: typeof query?.album === 'string' && query.album.trim() ? query.album.trim() : null,
     artist: typeof query?.artist === 'string' && query.artist.trim() ? query.artist.trim() : null,
@@ -1490,6 +1516,7 @@ export class LibraryStore {
         tracks.id,
         'local' AS media_type,
         tracks.path,
+        tracks.size_bytes,
         NULL AS source_id,
         NULL AS provider,
         NULL AS remote_path,
@@ -1649,6 +1676,7 @@ export class LibraryStore {
         selectedBatch: normalized.selectedBatch,
         scope: normalized.scope,
         filter: normalized.filter,
+        status: normalized.status,
         story: this.emptyLibraryInboxStory(),
         albums: [],
         facets: { folders: [], albums: [], artists: [] },
@@ -1666,6 +1694,7 @@ export class LibraryStore {
       `SELECT
         library_inbox_items.batch_id,
         library_inbox_items.created_at AS inbox_added_at,
+        COALESCE(library_inbox_item_states.status, 'pending') AS inbox_status,
         tracks.id,
         'local' AS media_type,
         tracks.path,
@@ -1722,6 +1751,7 @@ export class LibraryStore {
         addedAt: String(row.inbox_added_at ?? ''),
         track: this.mapTrack(row),
         reasons: this.libraryInboxIssueReasons(row),
+        inboxStatus: this.mapLibraryInboxItemStatus(row.inbox_status),
       })),
       page: normalized.page,
       pageSize: normalized.pageSize,
@@ -1731,6 +1761,7 @@ export class LibraryStore {
       selectedBatch: normalized.selectedBatch,
       scope: normalized.scope,
       filter: normalized.filter,
+      status: normalized.status,
       story: this.getLibraryInboxStory(normalized),
       albums: this.getLibraryInboxAlbumSummaries(normalized),
       facets: this.getLibraryInboxFacets(normalized),
@@ -1772,6 +1803,111 @@ export class LibraryStore {
       matchedCount,
       skippedCount: Math.max(0, matchedCount - items.length),
       truncated: matchedCount > items.length,
+      limit: libraryInboxPlaylistTrackLimit,
+    };
+  }
+
+  getLibraryInboxQueueTracks(query: LibraryInboxTrackQuery = {}): LibraryInboxQueueResult {
+    const batches = this.getLibraryInboxBatches();
+    const normalized = this.resolveLibraryInboxQuery(query, batches);
+
+    if (!normalized.hasTarget) {
+      throw new Error('No new-songs inbox batch is available.');
+    }
+
+    const matchedCount = this.countLibraryInboxTracks(normalized);
+    const selection = this.buildLibraryInboxTrackSelection(normalized);
+    const rows = this.allRows(
+      `SELECT
+        tracks.id,
+        'local' AS media_type,
+        tracks.path,
+        NULL AS source_id,
+        NULL AS provider,
+        NULL AS remote_path,
+        NULL AS stable_key,
+        tracks.title,
+        tracks.artist,
+        tracks.album,
+        tracks.album_artist,
+        tracks.track_no,
+        tracks.disc_no,
+        tracks.year,
+        tracks.genre,
+        tracks.duration,
+        tracks.codec,
+        tracks.sample_rate,
+        tracks.bit_depth,
+        tracks.bitrate,
+        tracks.bpm,
+        tracks.bpm_confidence,
+        tracks.beat_offset_ms,
+        tracks.analysis_status,
+        tracks.analysis_updated_at,
+        tracks.replay_gain_track_gain_db,
+        tracks.replay_gain_album_gain_db,
+        tracks.replay_gain_track_peak,
+        tracks.replay_gain_album_peak,
+        tracks.replay_gain_integrated_lufs,
+        tracks.replay_gain_source,
+        tracks.replay_gain_status,
+        tracks.replay_gain_updated_at,
+        tracks.cover_id,
+        tracks.metadata_status,
+        tracks.embedded_metadata_status,
+        tracks.embedded_cover_status,
+        tracks.network_metadata_status,
+        tracks.field_sources_json,
+        'available' AS availability
+       ${selection.fromSql}
+       ${selection.whereSql}
+       ORDER BY library_inbox_batches.finished_at DESC, library_inbox_items.position ASC
+       LIMIT ?`,
+      ...selection.params,
+      libraryInboxPlaylistTrackLimit,
+    );
+    const tracks = rows.map((row) => this.mapTrack(row));
+
+    return {
+      tracks,
+      matchedCount,
+      addedCount: tracks.length,
+      skippedCount: Math.max(0, matchedCount - tracks.length),
+      truncated: matchedCount > tracks.length,
+      limit: libraryInboxPlaylistTrackLimit,
+    };
+  }
+
+  updateLibraryInboxItemState(request: LibraryInboxUpdateStateRequest): LibraryInboxUpdateStateResult {
+    const status = this.mapLibraryInboxItemStatus(request.status);
+    const resolved = this.resolveLibraryInboxItemRefs(request);
+    const limitedRefs = resolved.refs.slice(0, libraryInboxPlaylistTrackLimit);
+    const timestamp = nowIso();
+
+    this.transaction(() => {
+      if (status === 'pending') {
+        const deleteState = this.database.prepare<[string, string]>(
+          'DELETE FROM library_inbox_item_states WHERE batch_id = ? AND track_id = ?',
+        );
+        limitedRefs.forEach((ref) => deleteState.run(ref.batchId, ref.trackId));
+        return;
+      }
+
+      const upsertState = this.database.prepare<[string, string, string, string]>(
+        `INSERT INTO library_inbox_item_states (batch_id, track_id, status, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(batch_id, track_id) DO UPDATE SET
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+      );
+      limitedRefs.forEach((ref) => upsertState.run(ref.batchId, ref.trackId, status, timestamp));
+    });
+
+    return {
+      updatedCount: limitedRefs.length,
+      matchedCount: resolved.matchedCount,
+      skippedCount: Math.max(0, resolved.matchedCount - limitedRefs.length),
+      truncated: resolved.matchedCount > limitedRefs.length,
       limit: libraryInboxPlaylistTrackLimit,
     };
   }
@@ -4288,6 +4424,7 @@ export class LibraryStore {
         artist: null,
         nodes: [],
         edges: [],
+        onlineInfo: emptyArtistOnlineInfo('Artist not found.'),
         concerts: {
           status: 'not_configured',
           region: options.region ?? null,
@@ -4401,6 +4538,7 @@ export class LibraryStore {
       artist,
       nodes,
       edges,
+      onlineInfo: emptyArtistOnlineInfo(),
       concerts: {
         status: 'not_configured',
         region: options.region ?? null,
@@ -6147,6 +6285,10 @@ export class LibraryStore {
     };
   }
 
+  private mapLibraryInboxItemStatus(value: unknown): LibraryInboxItemStatus {
+    return value === 'processed' || value === 'ignored' ? value : 'pending';
+  }
+
   private pruneLibraryInboxBatches(limit: number): void {
     const safeLimit = Math.max(1, Math.floor(limit));
     const rows = this.allRows(
@@ -6227,10 +6369,21 @@ export class LibraryStore {
         return "lower(trim(tracks.artist)) IN ('', 'unknown', 'unknown artist')";
       case 'unknown_album':
         return "lower(trim(tracks.album)) IN ('', 'unknown', 'unknown album')";
+      case 'suspicious_file':
+        return this.libraryInboxSuspiciousCondition();
       case 'all':
       default:
         return '1 = 1';
     }
+  }
+
+  private libraryInboxSuspiciousCondition(): string {
+    return `(
+      tracks.duration <= 0
+      OR tracks.size_bytes <= 0
+      OR tracks.codec IS NULL
+      OR trim(tracks.codec) = ''
+    )`;
   }
 
   private buildLibraryInboxTrackSelection(query: LibraryInboxResolvedQuery): {
@@ -6259,6 +6412,10 @@ export class LibraryStore {
       whereParts.push('tracks.artist = ?');
       params.push(query.artist);
     }
+    if (query.status !== 'all') {
+      whereParts.push("COALESCE(library_inbox_item_states.status, 'pending') = ?");
+      params.push(query.status);
+    }
     if (searchQuery) {
       whereParts.push('tracks_fts MATCH ?');
       params.push(searchQuery);
@@ -6268,6 +6425,9 @@ export class LibraryStore {
       fromSql: `FROM library_inbox_items
        INNER JOIN library_inbox_batches ON library_inbox_batches.id = library_inbox_items.batch_id
        INNER JOIN tracks ON tracks.id = library_inbox_items.track_id
+       LEFT JOIN library_inbox_item_states
+         ON library_inbox_item_states.batch_id = library_inbox_items.batch_id
+        AND library_inbox_item_states.track_id = library_inbox_items.track_id
        ${searchJoinSql}`,
       whereSql: `WHERE ${whereParts.join(' AND ')}`,
       params,
@@ -6301,6 +6461,66 @@ export class LibraryStore {
     ).map((row) => String(row.id));
   }
 
+  private getLibraryInboxItemRefs(query: LibraryInboxResolvedQuery, limit: number): LibraryInboxItemRef[] {
+    const selection = this.buildLibraryInboxTrackSelection(query);
+    const safeLimit = Math.max(1, Math.floor(limit));
+
+    return this.allRows(
+      `SELECT library_inbox_items.batch_id, library_inbox_items.track_id
+       ${selection.fromSql}
+       ${selection.whereSql}
+       ORDER BY library_inbox_batches.finished_at DESC, library_inbox_items.position ASC
+       LIMIT ?`,
+      ...selection.params,
+      safeLimit,
+    ).map((row) => ({
+      batchId: String(row.batch_id),
+      trackId: String(row.track_id),
+    }));
+  }
+
+  private resolveLibraryInboxItemRefs(request: LibraryInboxUpdateStateRequest): {
+    refs: LibraryInboxItemRef[];
+    matchedCount: number;
+  } {
+    if (Array.isArray(request.items) && request.items.length > 0) {
+      const seen = new Set<string>();
+      const refs: LibraryInboxItemRef[] = [];
+
+      for (const item of request.items) {
+        const batchId = typeof item.batchId === 'string' ? item.batchId.trim() : '';
+        const trackId = typeof item.trackId === 'string' ? item.trackId.trim() : '';
+        const key = `${batchId}\0${trackId}`;
+        if (!batchId || !trackId || seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        const row = this.getRow(
+          'SELECT 1 FROM library_inbox_items WHERE batch_id = ? AND track_id = ?',
+          batchId,
+          trackId,
+        );
+        if (row) {
+          refs.push({ batchId, trackId });
+        }
+      }
+
+      return { refs, matchedCount: refs.length };
+    }
+
+    const batches = this.getLibraryInboxBatches();
+    const normalized = this.resolveLibraryInboxQuery(request.query, batches);
+
+    if (!normalized.hasTarget) {
+      throw new Error('No new-songs inbox batch is available.');
+    }
+
+    return {
+      refs: this.getLibraryInboxItemRefs(normalized, libraryInboxPlaylistTrackLimit),
+      matchedCount: this.countLibraryInboxTracks(normalized),
+    };
+  }
+
   private emptyLibraryInboxStory(): LibraryInboxStory {
     return {
       trackCount: 0,
@@ -6311,6 +6531,12 @@ export class LibraryStore {
       metadataIssueCount: 0,
       unknownArtistCount: 0,
       unknownAlbumCount: 0,
+      suspiciousCount: 0,
+      pendingCount: 0,
+      processedCount: 0,
+      ignoredCount: 0,
+      coverCompleteness: 0,
+      metadataCompleteness: 0,
       totalDuration: 0,
       topFolders: [],
       topArtists: [],
@@ -6333,6 +6559,10 @@ export class LibraryStore {
          SUM(CASE WHEN ${this.libraryInboxFilterCondition('metadata_issue')} THEN 1 ELSE 0 END) AS metadata_issue_count,
          SUM(CASE WHEN ${this.libraryInboxFilterCondition('unknown_artist')} THEN 1 ELSE 0 END) AS unknown_artist_count,
          SUM(CASE WHEN ${this.libraryInboxFilterCondition('unknown_album')} THEN 1 ELSE 0 END) AS unknown_album_count,
+         SUM(CASE WHEN ${this.libraryInboxSuspiciousCondition()} THEN 1 ELSE 0 END) AS suspicious_count,
+         SUM(CASE WHEN COALESCE(library_inbox_item_states.status, 'pending') = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN COALESCE(library_inbox_item_states.status, 'pending') = 'processed' THEN 1 ELSE 0 END) AS processed_count,
+         SUM(CASE WHEN COALESCE(library_inbox_item_states.status, 'pending') = 'ignored' THEN 1 ELSE 0 END) AS ignored_count,
          SUM(tracks.duration) AS total_duration
        ${selection.fromSql}
        ${selection.whereSql}`,
@@ -6341,15 +6571,25 @@ export class LibraryStore {
     const topFolders = this.getLibraryInboxFacetOptions({ ...query, folderId: null }, 'folder').slice(0, 3);
     const topArtists = this.getLibraryInboxFacetOptions({ ...query, artist: null }, 'artist').slice(0, 3);
 
+    const trackCount = Number(row?.track_count ?? 0);
+    const missingCoverCount = Number(row?.missing_cover_count ?? 0);
+    const metadataIssueCount = Number(row?.metadata_issue_count ?? 0);
+
     return {
-      trackCount: Number(row?.track_count ?? 0),
+      trackCount,
       albumCount: Number(row?.album_count ?? 0),
       artistCount: Number(row?.artist_count ?? 0),
       folderCount: Number(row?.folder_count ?? 0),
-      missingCoverCount: Number(row?.missing_cover_count ?? 0),
-      metadataIssueCount: Number(row?.metadata_issue_count ?? 0),
+      missingCoverCount,
+      metadataIssueCount,
       unknownArtistCount: Number(row?.unknown_artist_count ?? 0),
       unknownAlbumCount: Number(row?.unknown_album_count ?? 0),
+      suspiciousCount: Number(row?.suspicious_count ?? 0),
+      pendingCount: Number(row?.pending_count ?? 0),
+      processedCount: Number(row?.processed_count ?? 0),
+      ignoredCount: Number(row?.ignored_count ?? 0),
+      coverCompleteness: trackCount > 0 ? Math.max(0, Math.min(100, Math.round(((trackCount - missingCoverCount) / trackCount) * 100))) : 0,
+      metadataCompleteness: trackCount > 0 ? Math.max(0, Math.min(100, Math.round(((trackCount - metadataIssueCount) / trackCount) * 100))) : 0,
       totalDuration: Number(row?.total_duration ?? 0),
       topFolders,
       topArtists,
@@ -6482,6 +6722,9 @@ export class LibraryStore {
     if (embeddedCoverStatus === 'error') {
       reasons.push('embedded_cover_error');
     }
+    if (Number(row.duration ?? 0) <= 0 || Number(row.size_bytes ?? 1) <= 0 || !textOrNull(row.codec)) {
+      reasons.push('suspicious_file');
+    }
 
     return [...new Set(reasons)];
   }
@@ -6495,6 +6738,7 @@ export class LibraryStore {
       metadata_issue: '资料异常',
       unknown_artist: '未知艺人',
       unknown_album: '未知专辑',
+      suspicious_file: '疑似异常',
     };
 
     return `新歌收件箱 ${scopeLabel} ${filterLabel[query.filter]} ${dateLabel}`;

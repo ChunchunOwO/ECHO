@@ -150,6 +150,9 @@ void testRapidChangesStayFinite()
             processor.setPreampDb(iteration % 2 == 0 ? 6.0f : -12.0f);
             processor.setBandGainDb(iteration % echo::eqBandCount, iteration % 2 == 0 ? 12.0f : -12.0f);
             processor.setBandFrequencyHz((iteration + 3) % echo::eqBandCount, iteration % 2 == 0 ? 1.0f : 50000.0f);
+            processor.setBandQ((iteration + 5) % echo::eqBandCount, iteration % 2 == 0 ? 0.001f : 50.0f);
+            processor.setBandFilterType((iteration + 7) % echo::eqBandCount, iteration % 3 == 0 ? echo::EqFilterType::LowShelf : echo::EqFilterType::HighShelf);
+            processor.setBandEnabled((iteration + 9) % echo::eqBandCount, iteration % 4 != 0);
 
             auto buffer = makeBuffer(2, 512);
             processor.processBlock(buffer, 0, buffer.getNumSamples());
@@ -209,6 +212,33 @@ void testCoefficientUpdatesStopInSteadyState()
     auto postTransition = makeBuffer(2, 4096);
     processor.processBlock(postTransition, 0, postTransition.getNumSamples());
     require(processor.getCoefficientUpdateCountForTests() == afterTransitionUpdates, "steady changed band must stop recalculating coefficients");
+}
+
+void testPeqBandControlsClampAndBypass()
+{
+    echo::EqProcessor processor;
+    processor.prepare(48000.0, 4096, 2);
+    processor.setEnabled(true);
+    processor.setBandGainDb(0, 12.0f);
+    processor.setBandFrequencyHz(0, 80.0f);
+    processor.setBandQ(0, 50.0f);
+    processor.setBandFilterType(0, echo::EqFilterType::LowShelf);
+
+    auto state = processor.getState();
+    require(state.bandQ[0] == echo::eqMaxQ, "band Q must clamp high values");
+    require(state.bandFilterTypes[0] == echo::EqFilterType::LowShelf, "band filter type must store low shelf");
+
+    auto shaped = makeBuffer(2, 4096);
+    processor.processBlock(shaped, 0, shaped.getNumSamples());
+    requireFinite(shaped, "low shelf PEQ output must stay finite");
+
+    processor.setBandEnabled(0, false);
+    auto warmup = makeBuffer(2, 4096);
+    processor.processBlock(warmup, 0, warmup.getNumSamples());
+    auto bypassed = makeBuffer(2, 4096);
+    auto dry = bypassed;
+    processor.processBlock(bypassed, 0, bypassed.getNumSamples());
+    requireBuffersClose(bypassed, dry, nearTolerance, "disabled PEQ band must become transparent");
 }
 
 void testHostBufferFallbackAttempts()
@@ -865,15 +895,35 @@ void testProtocolMessages()
         channelBalanceProcessor);
     requireContains(frequencyResponse, R"("frequencyHz":360)", "frequency response");
 
+    const auto qResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-q","band":3,"q":3.5})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(qResponse, R"("q":3.5)", "Q response");
+
+    const auto filterResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"highShelf"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(filterResponse, R"("filterType":"highShelf")", "filter type response");
+
+    const auto bypassResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-enabled","band":3,"enabled":false})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(bypassResponse, R"("enabled":false)", "band bypass response");
+
     const std::string presetJson =
         R"({"type":"eq:set-preset","preampDb":-2,"bands":[)"
-        R"({"frequencyHz":31,"gainDb":0},{"frequencyHz":62,"gainDb":1},{"frequencyHz":125,"gainDb":2},)"
+        R"({"frequencyHz":31,"gainDb":0,"q":1.2,"filterType":"lowShelf","enabled":true},{"frequencyHz":62,"gainDb":1},{"frequencyHz":125,"gainDb":2},)"
         R"({"frequencyHz":250,"gainDb":3},{"frequencyHz":500,"gainDb":4},{"frequencyHz":1000,"gainDb":5},)"
         R"({"frequencyHz":2000,"gainDb":4},{"frequencyHz":4000,"gainDb":3},{"frequencyHz":8000,"gainDb":2},)"
-        R"({"frequencyHz":16000,"gainDb":1}]})";
+        R"({"frequencyHz":16000,"gainDb":1,"q":0.5,"filterType":"highShelf","enabled":false}]})";
     const auto presetResponse = echo::EqMessageProtocol::handleJsonLine(presetJson, eqProcessor, channelBalanceProcessor);
     requireContains(presetResponse, R"("preampDb":-2)", "preset response");
     requireContains(presetResponse, R"("gainDb":5)", "preset response");
+    requireContains(presetResponse, R"("filterType":"lowShelf")", "preset response");
+    requireContains(presetResponse, R"("enabled":false)", "preset response");
 
     const auto invalidJsonResponse = echo::EqMessageProtocol::handleJsonLine("{not json", eqProcessor, channelBalanceProcessor);
     requireContains(invalidJsonResponse, R"("type":"eq:error")", "invalid json response");
@@ -892,6 +942,13 @@ void testProtocolMessages()
         channelBalanceProcessor);
     requireContains(invalidPresetResponse, R"("type":"eq:error")", "invalid preset response");
     requireContains(invalidPresetResponse, "invalid_preset_bands", "invalid preset response");
+
+    const auto invalidFilterResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":1,"filterType":"notch"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(invalidFilterResponse, R"("type":"eq:error")", "invalid filter response");
+    requireContains(invalidFilterResponse, "invalid_filter_type", "invalid filter response");
 }
 
 } // namespace
@@ -905,6 +962,7 @@ int main()
         { "rapid changes stay finite", testRapidChangesStayFinite },
         { "EQ limiter protects enabled output", testEqLimiterProtectsEnabledOutput },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
+        { "PEQ band controls clamp and bypass", testPeqBandControlsClampAndBypass },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },
         { "host backend names", testHostBackendNames },

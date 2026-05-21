@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { PropsWithChildren } from 'react';
 import type { AudioPlaybackState } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
-import type { AirPlayReceiverStatus, ConnectReceiverStatus } from '../../shared/types/connect';
+import type { AirPlayReceiverStatus, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LocalFileResolveResult, PlaybackStatus } from '../../shared/types/playback';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
@@ -35,6 +36,29 @@ export type QueueItem = {
   addedAt: string;
 };
 
+const playbackStateFromConnectStatus = (status: ConnectSessionStatus): AudioPlaybackState => {
+  switch (status.state) {
+    case 'playing':
+      return 'playing';
+    case 'paused':
+      return 'paused';
+    case 'stopped':
+      return 'stopped';
+    case 'error':
+      return 'error';
+    default:
+      return 'loading';
+  }
+};
+
+const playbackStatusFromConnectStatus = (status: ConnectSessionStatus, item: QueueItem): PlaybackStatus => ({
+  state: playbackStateFromConnectStatus(status),
+  currentTrackId: status.currentTrackId ?? item.track.id,
+  positionMs: Math.round(Math.max(0, status.positionSeconds) * 1000),
+  durationMs: Math.round(Math.max(0, status.durationSeconds || item.track.duration) * 1000),
+  filePath: item.track.path,
+});
+
 export type RepeatMode = 'off' | 'one' | 'all';
 
 type PlaybackModeMemory = {
@@ -60,10 +84,15 @@ type PlayTrackOptions = {
   source?: QueueSource;
   replaceQueueWith?: LibraryTrack[];
   forceNewQueueItem?: boolean;
+  routeToConnectOutput?: boolean;
 };
 
 type PlayNextOptions = {
   autoAdvance?: boolean;
+};
+
+type PlayLocalTrackOptions = {
+  routeToConnectOutput?: boolean;
 };
 
 type PlaybackQueueContextValue = {
@@ -1163,7 +1192,31 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     };
   }, [rearmAutomixForCurrentPlayback]);
 
-  const playLocalTrack = useCallback(async (item: QueueItem): Promise<PlaybackStatus> => {
+  const playConnectOutputTrack = useCallback(async (item: QueueItem, requestToken: number): Promise<PlaybackStatus | null> => {
+    const connect = window.echo?.connect;
+    if (!connect?.getStatus || !connect.connect) {
+      return null;
+    }
+
+    const status = await connect.getStatus().catch(() => null);
+    if (playRequestTokenRef.current !== requestToken) {
+      throw new Error(playbackCancellationErrorMessage);
+    }
+
+    if (status?.protocol !== 'hqplayer' || status.deviceId !== hqPlayerConnectDeviceId) {
+      return null;
+    }
+
+    const nextStatus = await connect.connect({
+      deviceId: status.deviceId,
+      track: item.track,
+      filePath: item.track.path,
+      positionSeconds: 0,
+    });
+    return playbackStatusFromConnectStatus(nextStatus, item);
+  }, []);
+
+  const playLocalTrack = useCallback(async (item: QueueItem, options: PlayLocalTrackOptions = {}): Promise<PlaybackStatus> => {
     const playback = window.echo?.playback;
     const track = item.track;
     const requestToken = playRequestTokenRef.current + 1;
@@ -1185,6 +1238,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     });
     const rawStatus = await (async () => {
       try {
+        const connectOutputStatus = options.routeToConnectOutput === true
+          ? await playConnectOutputTrack(item, requestToken)
+          : null;
+        if (connectOutputStatus) {
+          return connectOutputStatus;
+        }
+
         return isSpotifyTrack(track)
           ? await (async () => {
               await playback?.stop?.().catch(() => undefined);
@@ -1230,7 +1290,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       void startPlaybackHistorySession(item);
     }
     return status;
-  }, [createAutomixOptions, createGaplessOptions, finishPlaybackHistorySession, setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack, startPlaybackHistorySession]);
+  }, [createAutomixOptions, createGaplessOptions, finishPlaybackHistorySession, playConnectOutputTrack, setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack, startPlaybackHistorySession]);
 
   const autoSearchMv = useCallback((trackId: string): void => {
     const mvApi = window.echo?.mv;
@@ -1461,7 +1521,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         throw new Error('Queue item is no longer available.');
       }
 
-      const status = await playLocalTrack(item);
+      const status = await playLocalTrack(item, { routeToConnectOutput: true });
       commitPlayedItem(item, status);
       return status;
     },
@@ -1520,7 +1580,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
           : [track, ...replacementTracks];
         const nextItems = contextTracks.map((item) => createQueueItem(item, source));
         const itemToPlay = nextItems.find((item) => item.track.id === track.id) ?? nextItems[0] ?? createQueueItem(track, source);
-        const status = await playLocalTrack(itemToPlay);
+        const status = await playLocalTrack(itemToPlay, { routeToConnectOutput: options.routeToConnectOutput !== false });
 
         setItems(nextItems);
         setHistory([]);
@@ -1530,7 +1590,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
       const existingItem = options.forceNewQueueItem ? null : itemsRef.current.find((item) => item.track.id === track.id);
       const itemToPlay = existingItem ?? createQueueItem(track, source);
-      const status = await playLocalTrack(itemToPlay);
+      const status = await playLocalTrack(itemToPlay, { routeToConnectOutput: options.routeToConnectOutput !== false });
 
       if (!existingItem) {
         setItems((current) => [...current, itemToPlay]);
@@ -1559,7 +1619,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       const nextItems = result.tracks.map((track) => createQueueItem(track, source));
       const firstItem = nextItems[0];
       const previousItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
-      const status = await playLocalTrack(firstItem);
+      const status = await playLocalTrack(firstItem, { routeToConnectOutput: true });
 
       setItems((current) => [...current, ...nextItems]);
       commitPlayedItem(firstItem, status, { previousItem });
@@ -1573,7 +1633,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const previousFromHistory = historyRef.current[historyRef.current.length - 1];
 
     if (previousFromHistory) {
-      const status = await playLocalTrack(previousFromHistory);
+      const status = await playLocalTrack(previousFromHistory, { routeToConnectOutput: true });
       setHistory((current) => current.slice(0, -1));
       commitPlayedItem(previousFromHistory, status, { recordHistory: false });
       return status;
@@ -1597,7 +1657,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return null;
     }
 
-    const status = await playLocalTrack(target);
+    const status = await playLocalTrack(target, { routeToConnectOutput: true });
     commitPlayedItem(target, status, { recordHistory: false });
     return status;
   }, [commitPlayedItem, playLocalTrack, setHistory]);
@@ -1608,16 +1668,17 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const activeCurrentQueueId = currentQueueIdRef.current;
     const currentIndex = findCurrentIndex(current, activeCurrentQueueId, currentTrackIdRef.current);
     const activeItem = currentIndex >= 0 ? current[currentIndex] : findItemByQueueId(current, activeCurrentQueueId);
+    const routeToConnectOutput = options.autoAdvance !== true;
 
     const repeatCurrentItem = async (): Promise<PlaybackStatus | null> => {
       if (activeItem) {
-        const status = await playLocalTrack(activeItem);
+        const status = await playLocalTrack(activeItem, { routeToConnectOutput });
         commitPlayedItem(activeItem, status, { recordHistory: false });
         return status;
       }
 
       const fallbackTrack = lastPlayedTrackRef.current;
-      return fallbackTrack ? playTrack(fallbackTrack) : null;
+      return fallbackTrack ? playTrack(fallbackTrack, { routeToConnectOutput }) : null;
     };
 
     if (activeRepeatMode === 'one' && options.autoAdvance === true) {
@@ -1661,7 +1722,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return activeRepeatMode === 'one' ? repeatCurrentItem() : null;
     }
 
-    const status = await playLocalTrack(target);
+    const status = await playLocalTrack(target, { routeToConnectOutput });
     if (!itemsRef.current.some((item) => item.queueId === target.queueId)) {
       setItems((items) => [...items, target]);
     }

@@ -1,6 +1,8 @@
 import type { LibraryTrack } from './library';
 
-export type ConnectProtocol = 'dlna' | 'airplay';
+export type ConnectProtocol = 'dlna' | 'airplay' | 'hqplayer';
+
+export const hqPlayerConnectDeviceId = 'hqplayer:local-desktop';
 
 export type ConnectDeviceState = 'available' | 'connecting' | 'connected' | 'unavailable' | 'unsupported';
 

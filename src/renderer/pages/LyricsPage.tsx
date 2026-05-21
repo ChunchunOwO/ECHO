@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, ReactNode } from "react";
+import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   Check,
@@ -124,6 +124,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsRomanizationEnabled"
   | "lyricsTranslationEnabled"
   | "lyricsWordHighlightEnabled"
+  | "lyricsWordHighlightClarityPercent"
   | "lyricsAutoSearch"
   | "lyricsAutoAcceptScore"
   | "lyricsGlobalSyncOffsetMs"
@@ -170,6 +171,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
+  lyricsWordHighlightClarityPercent: 70,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
   lyricsGlobalSyncOffsetMs: 0,
@@ -627,6 +629,35 @@ const safeOriginalCoverUrl = (track: LibraryTrack | null): string | null => {
   return coverUrl && (allowInlineCover || !coverUrl.startsWith("data:")) ? coverUrl : null;
 };
 
+const normalizeClipboardLine = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const formatTrackInfoForClipboard = (title: string, album: string | null, artist: string): string =>
+  [title, album, artist]
+    .map(normalizeClipboardLine)
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+
+const formatLyricsForClipboard = (
+  lyricsState: LyricsState,
+  showRomanization: boolean,
+  showTranslation: boolean,
+): string =>
+  lyricsState.lines
+    .map((line) =>
+      [
+        normalizeClipboardLine(line.text),
+        showRomanization ? normalizeClipboardLine(line.romanization) : null,
+        showTranslation ? normalizeClipboardLine(line.translation) : null,
+      ]
+        .filter((text): text is string => Boolean(text))
+        .join("\n"),
+    )
+    .filter((text) => text.length > 0)
+    .join("\n");
+
 const readRememberedCandidateSource = (): CandidateSourceFilter => {
   try {
     const value = window.localStorage.getItem(lyricsCandidateSourceMemoryKey);
@@ -668,6 +699,8 @@ const selectLyricsDisplaySettings = (
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
   lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
+  lyricsWordHighlightClarityPercent:
+    settings.lyricsWordHighlightClarityPercent ?? fallbackLyricsDisplaySettings.lyricsWordHighlightClarityPercent,
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
@@ -729,6 +762,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsRomanizationEnabled",
   "lyricsTranslationEnabled",
   "lyricsWordHighlightEnabled",
+  "lyricsWordHighlightClarityPercent",
   "lyricsAutoSearch",
   "lyricsAutoAcceptScore",
   "lyricsGlobalSyncOffsetMs",
@@ -987,6 +1021,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [lyrics, setLyrics] = useState<LyricsState>(() =>
     initialLyrics && initialLyrics.length > 0
       ? syncedLyrics(initialLyrics, 0)
@@ -1028,10 +1063,62 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
   const albumNavigationTimeoutRef = useRef<number | null>(null);
+  const copyNoticeTimerRef = useRef<number | null>(null);
   const setLyricsViewMode = useCallback((mode: LyricsViewMode): void => {
     rememberLyricsViewMode(mode);
     setLyricsViewModeState(mode);
   }, []);
+  const clearCopyNotice = useCallback((): void => {
+    if (copyNoticeTimerRef.current !== null) {
+      window.clearTimeout(copyNoticeTimerRef.current);
+      copyNoticeTimerRef.current = null;
+    }
+
+    setCopyNotice(null);
+  }, []);
+  const showCopyNotice = useCallback((message: string): void => {
+    if (copyNoticeTimerRef.current !== null) {
+      window.clearTimeout(copyNoticeTimerRef.current);
+    }
+
+    setError(null);
+    setCopyNotice(message);
+    copyNoticeTimerRef.current = window.setTimeout(() => {
+      setCopyNotice(null);
+      copyNoticeTimerRef.current = null;
+    }, 1600);
+  }, []);
+  const showCopyError = useCallback(
+    (message: string): void => {
+      clearCopyNotice();
+      setError(message);
+    },
+    [clearCopyNotice],
+  );
+  const writeClipboardText = useCallback(
+    async (text: string, successMessage: string): Promise<void> => {
+      if (!navigator.clipboard?.writeText) {
+        showCopyError("当前环境不支持写入剪贴板。");
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+        showCopyNotice(successMessage);
+      } catch (copyError) {
+        showCopyError(copyError instanceof Error ? copyError.message : "复制失败。");
+      }
+    },
+    [showCopyError, showCopyNotice],
+  );
+  useEffect(
+    () => () => {
+      if (copyNoticeTimerRef.current !== null) {
+        window.clearTimeout(copyNoticeTimerRef.current);
+      }
+    },
+    [],
+  );
   const activeAudioStatus = shouldUseAudioStatusForCurrentPlayback(
     audioStatus,
     playbackStatus,
@@ -1098,6 +1185,11 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const coverUrl = safeCoverUrl(currentTrack) ?? airPlayArtworkUrl;
   const headerCoverUrl = safeOriginalCoverUrl(currentTrack) ?? airPlayArtworkUrl;
   const backgroundCoverUrl = safeOriginalCoverUrl(currentTrack) ?? airPlayArtworkUrl;
+  const trackCoverCopyTrackId = currentTrack?.id ?? null;
+  const canCopyTrackOriginalCover =
+    Boolean(trackCoverCopyTrackId) &&
+    currentTrack?.isTemporary !== true &&
+    !isSnapshotTrackId(trackCoverCopyTrackId);
   const lyricsSnapshotRequest = useMemo<LyricsTrackSnapshotRequest | null>(() => {
     if (!trackId || !isSnapshotLyricsTrack(currentTrack, trackId)) {
       return null;
@@ -1146,6 +1238,72 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         ? displayedLyrics
         : { ...displayedLyrics, offsetMs: 0 },
     [displayedLyrics, lyricsDisplaySettings.lyricsTimelineCorrectionEnabled],
+  );
+  const handleTrackInfoContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const text = formatTrackInfoForClipboard(title, album, artist);
+      if (!text) {
+        showCopyError("没有可复制的歌曲信息。");
+        return;
+      }
+
+      void writeClipboardText(text, "已复制歌曲信息");
+    },
+    [album, artist, showCopyError, title, writeClipboardText],
+  );
+  const handleTrackCoverContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!trackCoverCopyTrackId || !canCopyTrackOriginalCover) {
+        showCopyError("这首歌没有可复制的封面原图。");
+        return;
+      }
+
+      void (async () => {
+        try {
+          const copied = await window.echo.library.copyTrackOriginalCover(trackCoverCopyTrackId);
+          if (!copied) {
+            showCopyError("这首歌没有可复制的封面原图。");
+            return;
+          }
+
+          showCopyNotice("已复制封面原图");
+        } catch (copyError) {
+          showCopyError(copyError instanceof Error ? copyError.message : "复制封面失败。");
+        }
+      })();
+    },
+    [canCopyTrackOriginalCover, showCopyError, showCopyNotice, trackCoverCopyTrackId],
+  );
+  const handleLyricsContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const text = formatLyricsForClipboard(
+        effectiveDisplayedLyrics,
+        lyricsDisplaySettings.lyricsRomanizationEnabled,
+        lyricsDisplaySettings.lyricsTranslationEnabled,
+      );
+      if (!text) {
+        showCopyError("没有可复制的歌词。");
+        return;
+      }
+
+      void writeClipboardText(text, "已复制歌词");
+    },
+    [
+      effectiveDisplayedLyrics,
+      lyricsDisplaySettings.lyricsRomanizationEnabled,
+      lyricsDisplaySettings.lyricsTranslationEnabled,
+      showCopyError,
+      writeClipboardText,
+    ],
   );
   const shouldRequestNetworkBackgroundCover =
     lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true &&
@@ -1222,6 +1380,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         "--lyrics-context-opacity": (
           (lyricsDisplaySettings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent ?? 49) / 100
         ).toFixed(2),
+        "--lyrics-current-word-clarity": `${lyricsDisplaySettings.lyricsWordHighlightClarityPercent ?? fallbackLyricsDisplaySettings.lyricsWordHighlightClarityPercent ?? 70}%`,
         "--lyrics-color": lyricsDisplaySettings.lyricsColor,
         "--lyrics-cover-opacity": (
           lyricsDisplaySettings.lyricsCoverOpacityPercent / 100
@@ -1248,6 +1407,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsSecondaryFontSizePx,
       lyricsDisplaySettings.lyricsLineSpacingPercent,
       lyricsDisplaySettings.lyricsContextOpacityPercent,
+      lyricsDisplaySettings.lyricsWordHighlightClarityPercent,
       lyricsWallpaperUrl,
       smartReadableColors,
     ],
@@ -2932,14 +3092,23 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
         {lyricsDisplaySettings.lyricsHeaderHidden ? null : (
           <header className="lyrics-track-header">
-            <div className="lyrics-track-cover" data-empty={!headerCoverUrl}>
+            <div
+              className="lyrics-track-cover"
+              data-empty={!headerCoverUrl}
+              title="右键复制封面原图"
+              onContextMenu={handleTrackCoverContextMenu}
+            >
               {headerCoverUrl ? (
                 <img alt="" draggable={false} src={headerCoverUrl} />
               ) : (
                 <Disc3 size={26} />
               )}
             </div>
-            <div className="lyrics-track-copy">
+            <div
+              className="lyrics-track-copy"
+              title="右键复制歌曲信息"
+              onContextMenu={handleTrackInfoContextMenu}
+            >
               <span className="lyrics-kicker">Now Playing</span>
               <h1>{title}</h1>
               {album ? (
@@ -2979,6 +3148,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
             wordHighlightEnabled={lyricsDisplaySettings.lyricsWordHighlightEnabled !== false}
             showRomanization={lyricsDisplaySettings.lyricsRomanizationEnabled}
             showTranslation={lyricsDisplaySettings.lyricsTranslationEnabled}
+            onContextMenu={handleLyricsContextMenu}
             onSeek={(timeMs) => void handleLyricSeek(timeMs)}
           />
         ) : null}
@@ -3015,6 +3185,14 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       {error ? (
         <div className="lyrics-error" role="status">
           {error}
+        </div>
+      ) : null}
+      {copyNotice ? (
+        <div className="lyrics-copy-notice" role="status" aria-live="polite">
+          <span className="lyrics-copy-notice-mark" aria-hidden="true">
+            <Check size={13} strokeWidth={2.5} />
+          </span>
+          <span className="lyrics-copy-notice-text">{copyNotice}</span>
         </div>
       ) : null}
     </div>

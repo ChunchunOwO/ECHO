@@ -42,7 +42,8 @@ export const computeRecommendedPreamp = (eqState: Pick<EqState, 'bands'>): numbe
   return maxBandGainDb === 0 ? 0 : clamp(-maxBandGainDb, eqMinPreampDb, 0);
 };
 
-export const computeMaxBandGainDb = (bands: EqBand[]): number => Math.max(0, ...bands.map((band) => band.gainDb));
+export const computeMaxBandGainDb = (bands: EqBand[]): number =>
+  Math.max(0, ...bands.map((band) => (band.enabled === false ? 0 : band.gainDb)));
 
 export const computeEstimatedPeakGain = (eqState: Pick<EqState, 'preampDb' | 'bands'>): number =>
   Math.round((eqState.preampDb + computeMaxBandGainDb(eqState.bands)) * 10) / 10;
@@ -187,7 +188,7 @@ export const computeEqCurvePoints = (bands: EqBand[]): EqCurvePoint[] =>
   bands
     .map((band) => ({
       x: frequencyToCurveX(band.frequencyHz),
-      y: gainToCurveY(band.gainDb),
+      y: gainToCurveY(band.enabled === false ? 0 : band.gainDb),
     }))
     .sort((a, b) => a.x - b.x);
 

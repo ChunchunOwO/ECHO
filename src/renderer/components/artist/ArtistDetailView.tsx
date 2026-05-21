@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ListPlus, Play, Shuffle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ExternalLink, ListPlus, MapPin, Play, RefreshCw, Shuffle, Ticket } from 'lucide-react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { ArtistInsights, ArtistInsightEdge, ArtistInsightRelationKind, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { requestArtistDetailNavigation } from '../../utils/artistNavigation';
 import { AlbumDetailView } from '../album/AlbumDetailView';
 import { readPageScrollTop, writePageScrollTop } from '../ui/InfiniteScrollSentinel';
 import { ArtistAlbumGrid } from './ArtistAlbumGrid';
@@ -56,6 +57,19 @@ const getConfiguredConcertSources = (settings: Partial<AppSettings> | null | und
   ].filter((source): source is string => Boolean(source));
 };
 
+const compactBio = (value: string): string => (value.length > 360 ? `${value.slice(0, 357).trim()}...` : value);
+
+const formatEventDate = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const eventLocation = (event: ArtistInsights['concerts']['events'][number]): string =>
+  [event.venueName, event.city, event.region, event.country].filter(Boolean).join(' · ') || 'Venue to be announced';
+
 export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX.Element => {
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, replaceQueue } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
@@ -69,6 +83,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const [artistInsights, setArtistInsights] = useState<ArtistInsights | null>(null);
   const [areInsightsLoading, setAreInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [onlineRefreshRequest, setOnlineRefreshRequest] = useState(0);
   const [configuredConcertSources, setConfiguredConcertSources] = useState<string[]>([]);
   const [configuredConcertRegion, setConfiguredConcertRegion] = useState<string | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
@@ -186,7 +201,17 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
       setInsightsError(null);
 
       try {
-        const result = await library.getArtistInsights(artist.id, { limit: 12, includeOnline: false });
+        const localResult = await library.getArtistInsights(artist.id, { limit: 12, includeOnline: false });
+        if (!isCancelled) {
+          setArtistInsights(localResult);
+        }
+
+        const result = await library.getArtistInsights(artist.id, {
+          limit: 12,
+          includeOnline: true,
+          forceOnline: onlineRefreshRequest > 0,
+          region: configuredConcertRegion,
+        });
         if (!isCancelled) {
           setArtistInsights(result);
         }
@@ -207,7 +232,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     return () => {
       isCancelled = true;
     };
-  }, [artist.id]);
+  }, [artist.id, configuredConcertRegion, configuredConcertSources.length, onlineRefreshRequest]);
 
   useLayoutEffect(() => {
     if (selectedAlbum || !shouldRestoreDetailScrollRef.current) {
@@ -283,9 +308,28 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     shouldRestoreDetailScrollRef.current = true;
     setSelectedAlbum(album);
   }, []);
+  const handleRefreshOnlineInfo = useCallback((): void => {
+    setOnlineRefreshRequest((current) => current + 1);
+  }, []);
+  const handleOpenInsightArtist = useCallback((nodeId: string): void => {
+    const library = window.echo?.library;
+    if (!library?.getArtist) {
+      return;
+    }
+
+    void library.getArtist(nodeId).then((target) => {
+      if (target) {
+        requestArtistDetailNavigation(target);
+      }
+    }).catch(() => undefined);
+  }, []);
   const canPlay = loadedTracks.length > 0;
   const insightNodes = artistInsights?.nodes.filter((node) => node.id !== displayArtist.id) ?? [];
   const insightEdges = artistInsights?.edges ?? [];
+  const onlineInfo = artistInsights?.onlineInfo ?? null;
+  const onlineBio = onlineInfo?.bio ?? null;
+  const onlineSources = onlineInfo?.sourceLabels ?? [];
+  const externalLinks = onlineInfo?.externalLinks ?? [];
   const concertInfo = artistInsights?.concerts ?? null;
   const concertSourceLabel = concertInfo?.sources.length
     ? concertInfo.sources.join(' / ')
@@ -293,7 +337,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
       ? configuredConcertSources.join(' / ')
       : 'Provider keys required';
   const concertEmptyMessage = configuredConcertSources.length
-    ? `在线歌手信息已配置${configuredConcertRegion ? `（${configuredConcertRegion}）` : ''}；演出请求队列和缓存接入后会在这里显示。`
+    ? (concertInfo?.message ?? `No upcoming concerts matched${configuredConcertRegion ? ` ${configuredConcertRegion}` : ''}.`)
     : concertInfo?.message ?? 'Configure Bandsintown, Ticketmaster, or SeatGeek keys in Settings to load upcoming concerts.';
 
   if (selectedAlbum) {
@@ -322,7 +366,17 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
         Artists
       </button>
 
-      <section className="artist-hero" aria-label={`${displayArtist.name} artist details`}>
+      <section className="artist-hero" data-has-backdrop={shouldShowHeroImage} aria-label={`${displayArtist.name} artist details`}>
+        {shouldShowHeroImage && heroImageUrl ? (
+          <img
+            className="artist-hero-backdrop"
+            alt=""
+            decoding="async"
+            draggable={false}
+            src={heroImageUrl}
+            onError={() => setFailedHeroImageUrl(heroImageUrl)}
+          />
+        ) : null}
         <div className="artist-hero-avatar" data-cover={shouldShowHeroImage} aria-hidden="true">
           {shouldShowHeroImage && heroImageUrl ? (
             <img
@@ -350,7 +404,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
             <span>{formatCount(displayArtist.albumCount, 'album')}</span>
             <span>{loadedTracks.length > 0 ? `${loadedTracks.length}/${loadedTrackTotal} loaded` : 'Collected locally'}</span>
           </div>
-          <p>Collected from your local library.</p>
+          <p>{onlineBio ? compactBio(onlineBio.extract) : 'Collected from your local library. Online artist information loads quietly in the background.'}</p>
 
           <div className="artist-hero-actions">
             <button className="artist-primary-action" type="button" disabled={!canPlay || areTracksLoading} onClick={() => void handlePlayArtist()}>
@@ -365,7 +419,25 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
               <ListPlus size={16} />
               Add to Queue
             </button>
+            <button className="artist-secondary-action" type="button" disabled={areInsightsLoading} onClick={handleRefreshOnlineInfo}>
+              <RefreshCw className={areInsightsLoading ? 'spinning-icon' : undefined} size={16} />
+              Refresh Info
+            </button>
           </div>
+
+          {onlineSources.length || externalLinks.length ? (
+            <div className="artist-online-strip" aria-label="Online artist sources">
+              {onlineSources.map((sourceLabel) => (
+                <span key={sourceLabel}>{sourceLabel}</span>
+              ))}
+              {externalLinks.slice(0, 3).map((link) => (
+                <a href={link.url} key={link.url} rel="noreferrer" target="_blank">
+                  <ExternalLink size={13} />
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          ) : null}
 
           {playError || verifyError ? <p className="artist-detail-error">{playError ?? verifyError}</p> : null}
         </div>
@@ -405,10 +477,10 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
               {insightNodes.map((node) => {
                 const edge = insightEdges.find((item) => item.targetArtistId === node.id);
                 return (
-                  <article className="artist-insight-node" key={node.id}>
+                  <button className="artist-insight-node" type="button" key={node.id} onClick={() => handleOpenInsightArtist(node.id)}>
                     <strong>{node.name}</strong>
                     <span>{describeRelation(edge)}</span>
-                  </article>
+                  </button>
                 );
               })}
             </div>
@@ -431,10 +503,20 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
         {concertInfo?.events.length ? (
           <div className="artist-event-list">
             {concertInfo.events.map((event) => (
-              <a className="artist-event-row" href={event.url ?? undefined} key={event.id} rel="noreferrer" target="_blank">
+              <a className="artist-event-row" href={event.ticketUrl ?? event.url ?? undefined} key={event.id} rel="noreferrer" target="_blank">
+                <span className="artist-event-date">
+                  <CalendarDays size={14} />
+                  <time dateTime={event.startsAt}>{formatEventDate(event.startsAt)}</time>
+                </span>
                 <strong>{event.title}</strong>
-                <span>{[event.venueName, event.city, event.country].filter(Boolean).join(' · ')}</span>
-                <time dateTime={event.startsAt}>{new Date(event.startsAt).toLocaleDateString()}</time>
+                <span className="artist-event-location">
+                  <MapPin size={14} />
+                  {eventLocation(event)}
+                </span>
+                <span className="artist-event-source">
+                  <Ticket size={14} />
+                  {event.sourceLabel ?? event.source}
+                </span>
               </a>
             ))}
           </div>

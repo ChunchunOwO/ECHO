@@ -1167,6 +1167,69 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 37,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS artist_online_info_cache (
+          cache_key TEXT PRIMARY KEY,
+          artist_id TEXT NOT NULL,
+          normalized_name TEXT NOT NULL,
+          locale TEXT NOT NULL,
+          region TEXT,
+          bio_json TEXT,
+          image_credits_json TEXT NOT NULL DEFAULT '[]',
+          external_links_json TEXT NOT NULL DEFAULT '[]',
+          related_artists_json TEXT NOT NULL DEFAULT '[]',
+          source_labels_json TEXT NOT NULL DEFAULT '[]',
+          provider_errors_json TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS artist_event_cache (
+          cache_key TEXT PRIMARY KEY,
+          artist_id TEXT,
+          normalized_name TEXT NOT NULL,
+          region TEXT,
+          source TEXT NOT NULL,
+          events_json TEXT NOT NULL DEFAULT '[]',
+          sources_json TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL,
+          message TEXT,
+          fetched_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_artist_online_info_cache_artist_id
+          ON artist_online_info_cache(artist_id);
+        CREATE INDEX IF NOT EXISTS idx_artist_event_cache_artist_id
+          ON artist_event_cache(artist_id);
+        CREATE INDEX IF NOT EXISTS idx_artist_event_cache_source
+          ON artist_event_cache(source);
+      `);
+    },
+  },
+  {
+    id: 38,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS library_inbox_item_states (
+          batch_id TEXT NOT NULL,
+          track_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('pending', 'processed', 'ignored')),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (batch_id, track_id),
+          FOREIGN KEY (batch_id) REFERENCES library_inbox_batches(id) ON DELETE CASCADE,
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_library_inbox_item_states_status
+          ON library_inbox_item_states(status);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

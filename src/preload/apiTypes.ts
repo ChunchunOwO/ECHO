@@ -19,7 +19,21 @@ import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
-import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
+import type {
+  EqBindProfileRequest,
+  EqPreset,
+  EqProfile,
+  EqProfileBindingInfo,
+  EqProfileBindingTarget,
+  EqSavePresetRequest,
+  EqSaveProfileRequest,
+  EqSetBandEnabledRequest,
+  EqSetBandFilterTypeRequest,
+  EqSetBandFrequencyRequest,
+  EqSetBandGainRequest,
+  EqSetBandQRequest,
+  EqState,
+} from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type {
   AddLocalAudioFilesToPlaylistResult,
@@ -64,8 +78,11 @@ import type {
   LibraryInboxBatch,
   LibraryInboxCreatePlaylistRequest,
   LibraryInboxPlaylistResult,
+  LibraryInboxQueueResult,
   LibraryInboxTrackPage,
   LibraryInboxTrackQuery,
+  LibraryInboxUpdateStateRequest,
+  LibraryInboxUpdateStateResult,
   LibraryPlaylist,
   LibraryPlaylistItem,
   LibraryScanStatus,
@@ -108,6 +125,7 @@ import type {
   UpdatePlaylistRequest,
   ArtistInsights,
   ArtistInsightsOptions,
+  ArtistOnlineInfoCacheClearResult,
 } from '../shared/types/library';
 import type {
   LocalFileResolveResult,
@@ -130,6 +148,7 @@ import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm
 import type {
   HqPlayerConnectionTestResult,
   HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackControlSendResult,
   HqPlayerPlaybackHandoffPlan,
   HqPlayerPlaybackHandoffRequest,
   HqPlayerSettings,
@@ -254,6 +273,8 @@ export type EchoApi = {
     getLibraryInboxBatches: () => Promise<LibraryInboxBatch[]>;
     getLibraryInboxTracks: (query?: LibraryInboxTrackQuery) => Promise<LibraryInboxTrackPage>;
     createPlaylistFromLibraryInbox: (request: LibraryInboxCreatePlaylistRequest) => Promise<LibraryInboxPlaylistResult>;
+    addLibraryInboxToQueue: (query?: LibraryInboxTrackQuery) => Promise<LibraryInboxQueueResult>;
+    updateLibraryInboxItemState: (request: LibraryInboxUpdateStateRequest) => Promise<LibraryInboxUpdateStateResult>;
     getHealthReport: () => Promise<LibraryHealthReport>;
     exportHealthReport: () => Promise<string | null>;
     refreshDuplicateTracks: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
@@ -300,6 +321,7 @@ export type EchoApi = {
     getArtistInsights: (artistId: string, options?: ArtistInsightsOptions) => Promise<ArtistInsights>;
     getArtistTracks: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
     getArtistAlbums: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
+    clearArtistOnlineInfoCache: () => Promise<ArtistOnlineInfoCacheClearResult>;
     enqueueMissingArtistImages: (
       request?: { artists?: Array<Pick<LibraryArtist, 'id' | 'name'>>; force?: boolean; limit?: number } | Array<Pick<LibraryArtist, 'id' | 'name'>>,
     ) => Promise<ArtistImageQueueResult>;
@@ -338,6 +360,7 @@ export type EchoApi = {
     copyTrackPath: (trackId: string) => Promise<void>;
     copyTrackNameArtist: (trackId: string) => Promise<void>;
     copyTrackCover: (trackId: string) => Promise<boolean>;
+    copyTrackOriginalCover: (trackId: string) => Promise<boolean>;
     saveTrackCover: (trackId: string) => Promise<string | null>;
     deleteTrackFile: (trackId: string) => Promise<void>;
     copyAlbumInfo: (albumId: string) => Promise<void>;
@@ -533,6 +556,7 @@ export type EchoApi = {
     getStatus: () => Promise<HqPlayerStatus>;
     testConnection: (patch?: Partial<HqPlayerSettings>) => Promise<HqPlayerConnectionTestResult>;
     createPlaybackHandoff: (request: HqPlayerPlaybackHandoffRequest) => Promise<HqPlayerPlaybackHandoffPlan>;
+    sendLastPlaybackControl: () => Promise<HqPlayerPlaybackControlSendResult>;
     getLastPlaybackHandoff: () => Promise<HqPlayerPlaybackHandoffPlan | null>;
     getLastPlaybackControl: () => Promise<HqPlayerPlaybackControlPlan | null>;
   };
@@ -613,6 +637,9 @@ export type EchoApi = {
     setEnabled: (enabled: boolean) => Promise<EqState>;
     setBandGain: (request: EqSetBandGainRequest) => Promise<EqState>;
     setBandFrequency: (request: EqSetBandFrequencyRequest) => Promise<EqState>;
+    setBandQ: (request: EqSetBandQRequest) => Promise<EqState>;
+    setBandFilterType: (request: EqSetBandFilterTypeRequest) => Promise<EqState>;
+    setBandEnabled: (request: EqSetBandEnabledRequest) => Promise<EqState>;
     setPreamp: (preampDb: number) => Promise<EqState>;
     setPreset: (presetId: string) => Promise<EqState>;
     reset: () => Promise<EqState>;
@@ -620,6 +647,12 @@ export type EchoApi = {
     savePreset: (request: EqSavePresetRequest) => Promise<EqPreset>;
     exportPreset: (request: EqSavePresetRequest) => Promise<string | null>;
     deletePreset: (presetId: string) => Promise<EqPreset[]>;
+    listProfiles: () => Promise<EqProfile[]>;
+    saveProfile: (request: EqSaveProfileRequest) => Promise<EqProfile>;
+    applyProfile: (profileId: string) => Promise<EqState>;
+    deleteProfile: (profileId: string) => Promise<EqProfile[]>;
+    bindProfileToOutput: (request: EqBindProfileRequest) => Promise<EqProfileBindingInfo>;
+    getProfileBinding: (target: EqProfileBindingTarget) => Promise<EqProfileBindingInfo>;
     getChannelBalanceState: () => Promise<ChannelBalanceState>;
     setChannelBalanceState: (patch: Partial<ChannelBalanceState>) => Promise<ChannelBalanceState>;
     resetChannelBalance: () => Promise<ChannelBalanceState>;

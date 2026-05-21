@@ -10,6 +10,8 @@ const bands = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((freque
   frequencyHz,
   gainDb: 0,
   q: 1,
+  filterType: 'peaking' as const,
+  enabled: true,
 }));
 
 const eqState = (overrides: Partial<EqState> = {}): EqState => ({
@@ -113,12 +115,39 @@ beforeEach(() => {
       setBandFrequency: vi.fn().mockImplementation(({ band, frequencyHz }: { band: number; frequencyHz: number }) =>
         Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, frequencyHz } : item)) })),
       ),
+      setBandQ: vi.fn().mockImplementation(({ band, q }: { band: number; q: number }) =>
+        Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, q } : item)) })),
+      ),
+      setBandFilterType: vi.fn().mockImplementation(({ band, filterType }: { band: number; filterType: 'peaking' | 'lowShelf' | 'highShelf' }) =>
+        Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, filterType } : item)) })),
+      ),
+      setBandEnabled: vi.fn().mockImplementation(({ band, enabled }: { band: number; enabled: boolean }) =>
+        Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, enabled } : item)) })),
+      ),
       setPreamp: vi.fn().mockImplementation((preampDb: number) => Promise.resolve(eqState({ preampDb }))),
       setPreset: vi.fn().mockImplementation((presetId: string) => Promise.resolve(eqState({ presetId, presetName: presetId === 'rock' ? 'Rock' : 'User Bright' }))),
       reset: vi.fn().mockResolvedValue(eqState()),
       savePreset: vi.fn().mockResolvedValue(presets[2]),
       exportPreset: vi.fn().mockResolvedValue('D:\\Exports\\Desk Headphones.json'),
       deletePreset: vi.fn().mockResolvedValue(presets.slice(0, 2)),
+      listProfiles: vi.fn().mockResolvedValue([]),
+      saveProfile: vi.fn().mockResolvedValue({
+        id: 'desk-profile',
+        name: 'Desk Profile',
+        state: currentState,
+        bindings: [],
+        createdAt: 'now',
+        updatedAt: 'now',
+      }),
+      applyProfile: vi.fn().mockResolvedValue(currentState),
+      deleteProfile: vi.fn().mockResolvedValue([]),
+      bindProfileToOutput: vi.fn().mockResolvedValue({
+        key: 'exclusive-null',
+        label: 'EXCLUSIVE / Current output',
+        profileId: 'desk-profile',
+        profileName: 'Desk Profile',
+      }),
+      getProfileBinding: vi.fn().mockResolvedValue(null),
       getChannelBalanceState: vi.fn().mockResolvedValue(channelBalanceState()),
       setChannelBalanceState: vi.fn().mockImplementation((patch) => Promise.resolve(channelBalanceState(patch))),
       resetChannelBalance: vi.fn().mockResolvedValue(channelBalanceState()),
@@ -147,12 +176,49 @@ describe('EqPanel', () => {
 
     expect(await screen.findByRole('button', { name: 'Advanced' })).toBeTruthy();
     expect(screen.queryByLabelText('Unlock frequency')).toBeNull();
+    expect(screen.queryByLabelText('Q')).toBeNull();
+    expect(screen.queryByLabelText('EQ profile name')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Store A' })).toBeNull();
 
     await showAdvancedEqTools();
 
     expect(await screen.findByLabelText('Unlock frequency')).toBeTruthy();
+    expect(screen.getByLabelText('Q')).toBeTruthy();
+    expect(screen.getByLabelText('EQ profile name')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Store A' })).toBeTruthy();
+  });
+
+  it('updates PEQ band Q, filter type, and bypass state from the advanced inspector', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.change(await screen.findByLabelText('Q'), { target: { value: '2.4' } });
+    fireEvent.blur(screen.getByLabelText('Q'));
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'lowShelf' } });
+    fireEvent.click(screen.getByLabelText('Band enabled'));
+
+    await waitFor(() => expect(window.echo.eq.setBandQ).toHaveBeenCalledWith({ band: 0, q: 2.4 }));
+    await waitFor(() => expect(window.echo.eq.setBandFilterType).toHaveBeenCalledWith({ band: 0, filterType: 'lowShelf' }));
+    await waitFor(() => expect(window.echo.eq.setBandEnabled).toHaveBeenCalledWith({ band: 0, enabled: false }));
+  });
+
+  it('saves profiles and binds the selected profile only to the current output when requested', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.change(await screen.findByLabelText('EQ profile name'), { target: { value: 'Desk Profile' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+
+    await waitFor(() => expect(window.echo.eq.saveProfile).toHaveBeenCalledWith(expect.objectContaining({ name: 'Desk Profile' })));
+    await waitFor(() => expect(window.echo.eq.listProfiles).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind current output' }));
+    await waitFor(() =>
+      expect(window.echo.eq.bindProfileToOutput).toHaveBeenCalledWith(expect.objectContaining({
+        profileId: 'desk-profile',
+        target: expect.objectContaining({ outputMode: 'exclusive' }),
+      })),
+    );
   });
 
   it('lets EQ curve nodes update gain and snapped frequency while standard frequency snap is locked', async () => {

@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AudioStatus } from '../../shared/types/audio';
+import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import { PlaybackQueueProvider, isPlaybackCancellationError, usePlaybackQueue } from './PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from './playbackStatusStore';
@@ -38,6 +39,74 @@ describe('PlaybackQueueProvider playback history session', () => {
   it('identifies internal playback cancellation errors', () => {
     expect(isPlaybackCancellationError(new Error('audio_session_run_cancelled'))).toBe(true);
     expect(isPlaybackCancellationError(new Error('native device failed'))).toBe(false);
+  });
+
+  it('routes manual playback to the active HQPlayer Connect output instead of local playback', async () => {
+    const track = makeTrack(1);
+    const playLocalFile = vi.fn();
+    const connectTrack = vi.fn().mockResolvedValue({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'playing',
+      currentTrackId: track.id,
+      metadata: null,
+      positionSeconds: 0,
+      durationSeconds: track.duration,
+      latencyMs: 9,
+      error: null,
+      updatedAt: '2026-05-21T01:00:00.000Z',
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue({
+          deviceId: hqPlayerConnectDeviceId,
+          protocol: 'hqplayer',
+          state: 'playing',
+          currentTrackId: 'previous-track',
+          metadata: null,
+          positionSeconds: 0,
+          durationSeconds: 120,
+          latencyMs: null,
+          error: null,
+          updatedAt: '2026-05-21T01:00:00.000Z',
+        }),
+        connect: connectTrack,
+      },
+    } as unknown as Window['echo'];
+
+    const AutoPlay = (): JSX.Element => {
+      const { playTrack } = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void playTrack(track);
+      }, [playTrack]);
+
+      return <span hidden />;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutoPlay />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(connectTrack).toHaveBeenCalledWith(expect.objectContaining({
+      deviceId: hqPlayerConnectDeviceId,
+      track,
+      filePath: track.path,
+      positionSeconds: 0,
+    })));
+    expect(playLocalFile).not.toHaveBeenCalled();
   });
 
   it('does not wait for history writes before switching tracks', async () => {

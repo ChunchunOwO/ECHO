@@ -272,12 +272,24 @@ CREATE TABLE IF NOT EXISTS library_inbox_items (
   FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS library_inbox_item_states (
+  batch_id TEXT NOT NULL,
+  track_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'processed', 'ignored')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (batch_id, track_id),
+  FOREIGN KEY (batch_id) REFERENCES library_inbox_batches(id) ON DELETE CASCADE,
+  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_library_inbox_batches_finished_at
   ON library_inbox_batches(finished_at DESC);
 CREATE INDEX IF NOT EXISTS idx_library_inbox_items_batch_position
   ON library_inbox_items(batch_id, position);
 CREATE INDEX IF NOT EXISTS idx_library_inbox_items_track_id
   ON library_inbox_items(track_id);
+CREATE INDEX IF NOT EXISTS idx_library_inbox_item_states_status
+  ON library_inbox_item_states(status);
 
 CREATE TABLE IF NOT EXISTS playback_history (
   id TEXT PRIMARY KEY,
@@ -435,6 +447,37 @@ CREATE TABLE IF NOT EXISTS album_online_info_cache (
   sources_json TEXT NOT NULL DEFAULT '[]',
   provider_errors_json TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS artist_online_info_cache (
+  cache_key TEXT PRIMARY KEY,
+  artist_id TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  locale TEXT NOT NULL,
+  region TEXT,
+  bio_json TEXT,
+  image_credits_json TEXT NOT NULL DEFAULT '[]',
+  external_links_json TEXT NOT NULL DEFAULT '[]',
+  related_artists_json TEXT NOT NULL DEFAULT '[]',
+  source_labels_json TEXT NOT NULL DEFAULT '[]',
+  provider_errors_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS artist_event_cache (
+  cache_key TEXT PRIMARY KEY,
+  artist_id TEXT,
+  normalized_name TEXT NOT NULL,
+  region TEXT,
+  source TEXT NOT NULL,
+  events_json TEXT NOT NULL DEFAULT '[]',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL,
+  message TEXT,
   fetched_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
@@ -713,6 +756,9 @@ CREATE INDEX IF NOT EXISTS idx_network_metadata_candidates_track_id ON network_m
 CREATE INDEX IF NOT EXISTS idx_network_metadata_decisions_track_id ON network_metadata_decisions(track_id);
 CREATE INDEX IF NOT EXISTS idx_network_cover_candidates_track_id ON network_cover_candidates(track_id);
 CREATE INDEX IF NOT EXISTS idx_album_online_info_cache_album_id ON album_online_info_cache(album_id);
+CREATE INDEX IF NOT EXISTS idx_artist_online_info_cache_artist_id ON artist_online_info_cache(artist_id);
+CREATE INDEX IF NOT EXISTS idx_artist_event_cache_artist_id ON artist_event_cache(artist_id);
+CREATE INDEX IF NOT EXISTS idx_artist_event_cache_source ON artist_event_cache(source);
 CREATE INDEX IF NOT EXISTS idx_lyrics_cache_track_provider ON lyrics_cache(track_id, provider);
 CREATE INDEX IF NOT EXISTS idx_lyrics_cache_cache_key ON lyrics_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_lyrics_candidates_track_provider_status ON lyrics_candidates(track_id, provider, status);

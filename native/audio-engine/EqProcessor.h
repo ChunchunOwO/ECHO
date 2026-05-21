@@ -26,6 +26,9 @@ public:
     void setPreampDb(float value);
     bool setBandGainDb(int bandIndex, float value);
     bool setBandFrequencyHz(int bandIndex, float value);
+    bool setBandQ(int bandIndex, float value);
+    bool setBandFilterType(int bandIndex, EqFilterType value);
+    bool setBandEnabled(int bandIndex, bool value);
     void resetFlat();
     void setState(const EqState& state);
     EqState getState() const;
@@ -65,6 +68,11 @@ private:
     EqFrequencyArray smoothedBandFrequencies {};
     EqFrequencyArray targetBandFrequencies {};
     EqFrequencyArray bandFrequencySteps {};
+    EqQArray smoothedBandQ {};
+    EqQArray targetBandQ {};
+    EqQArray bandQSteps {};
+    EqFilterTypeArray smoothedBandFilterTypes {};
+    EqBandEnabledArray smoothedBandEnabled {};
     std::array<BiquadCoefficients, eqBandCount> coefficients;
 #if defined(ECHO_AUDIO_ENGINE_TESTS) && ECHO_AUDIO_ENGINE_TESTS
     uint64_t coefficientUpdateCount = 0;
@@ -75,6 +83,9 @@ private:
     std::atomic<float> atomicPreampDb { 0.0f };
     std::array<std::atomic<float>, eqBandCount> atomicBandGainsDb;
     std::array<std::atomic<float>, eqBandCount> atomicBandFrequenciesHz;
+    std::array<std::atomic<float>, eqBandCount> atomicBandQ;
+    std::array<std::atomic<int>, eqBandCount> atomicBandFilterTypes;
+    std::array<std::atomic<bool>, eqBandCount> atomicBandEnabled;
     std::atomic<bool> clippingRisk { false };
 };
 } // namespace echo

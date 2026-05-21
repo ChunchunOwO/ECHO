@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistDetailView } from './ArtistDetailView';
 import type { AppSettings } from '../../../shared/types/appSettings';
-import type { LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import type { ArtistInsights, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 
 const queueMock = {
   appendToQueue: vi.fn(),
@@ -107,7 +107,29 @@ const track = (id: string): LibraryTrack => ({
   fieldSources: {},
 });
 
-const installLibrary = (getArtist = vi.fn().mockResolvedValue(artist()), appSettings?: Partial<AppSettings>): void => {
+const artistInsights = (overrides: Partial<ArtistInsights> = {}): ArtistInsights => ({
+  artist: artist(),
+  nodes: [{ ...artist(), source: 'local' }],
+  edges: [],
+  onlineInfo: {
+    status: 'empty',
+    bio: null,
+    imageCredits: [],
+    externalLinks: [],
+    relatedArtists: [],
+    sourceLabels: [],
+    fetchedAt: null,
+  },
+  concerts: { status: 'not_configured', region: null, sources: [], events: [], fetchedAt: null },
+  generatedAt: '2026-05-20T00:00:00.000Z',
+  ...overrides,
+});
+
+const installLibrary = (
+  getArtist = vi.fn().mockResolvedValue(artist()),
+  appSettings?: Partial<AppSettings>,
+  getArtistInsights = vi.fn().mockResolvedValue(artistInsights()),
+): void => {
   window.echo = {
     app: appSettings
       ? {
@@ -116,6 +138,7 @@ const installLibrary = (getArtist = vi.fn().mockResolvedValue(artist()), appSett
       : undefined,
     library: {
       getArtist,
+      getArtistInsights,
     },
   } as unknown as Window['echo'];
 };
@@ -263,7 +286,7 @@ describe('ArtistDetailView', () => {
     expect(screen.getByRole('button', { name: 'Open mock album' })).toBeTruthy();
   });
 
-  it('shows configured concert provider status without loading online events', async () => {
+  it('shows configured concert provider status while online events are empty', async () => {
     installLibrary(vi.fn().mockResolvedValue(artist()), {
       onlineArtistInfoBandsintownAppId: 'echo-next',
       onlineArtistInfoRegion: 'HK',
@@ -272,6 +295,67 @@ describe('ArtistDetailView', () => {
     render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
 
     await screen.findByText('Bandsintown');
-    expect(screen.getByText('在线歌手信息已配置（HK）；演出请求队列和缓存接入后会在这里显示。')).toBeTruthy();
+    expect(screen.getByText('No upcoming concerts matched HK.')).toBeTruthy();
+  });
+
+  it('renders online artist bio links and concert cards after the background insights load', async () => {
+    const getArtistInsights = vi.fn()
+      .mockResolvedValueOnce(artistInsights())
+      .mockResolvedValue(artistInsights({
+        onlineInfo: {
+          status: 'ready',
+          bio: {
+            title: 'Echo Unit',
+            description: 'Japanese band',
+            extract: 'Echo Unit is a fictional test artist with a very polished artist profile.',
+            url: 'https://example.wikipedia/Echo_Unit',
+            language: 'en',
+            thumbnailUrl: 'https://img.example/echo.jpg',
+          },
+          imageCredits: ['Echo Unit image via en.wikipedia.org'],
+          externalLinks: [{ label: 'Echo Unit', url: 'https://example.wikipedia/Echo_Unit', source: 'wikipedia' }],
+          relatedArtists: [],
+          sourceLabels: ['en.wikipedia.org', 'MusicBrainz'],
+          fetchedAt: '2026-05-20T00:00:00.000Z',
+        },
+        concerts: {
+          status: 'ready',
+          region: 'HK',
+          sources: ['bandsintown'],
+          fetchedAt: '2026-05-20T00:00:00.000Z',
+          events: [
+            {
+              id: 'bandsintown:evt-1',
+              source: 'bandsintown',
+              sourceLabel: 'Bandsintown',
+              title: 'Echo Unit Live',
+              startsAt: '2026-06-01T20:00:00',
+              venueName: 'Echo Arena',
+              city: 'Hong Kong',
+              region: 'HK',
+              country: 'Hong Kong',
+              url: 'https://bandsintown.example/events/evt-1',
+              ticketUrl: null,
+              venueUrl: null,
+            },
+          ],
+        },
+      }));
+    installLibrary(vi.fn().mockResolvedValue(artist()), { onlineArtistInfoBandsintownAppId: 'echo-next', onlineArtistInfoRegion: 'HK' }, getArtistInsights);
+
+    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+
+    expect(await screen.findByText(/fictional test artist/)).toBeTruthy();
+    expect(screen.getByText('en.wikipedia.org')).toBeTruthy();
+    expect(screen.getByText('MusicBrainz')).toBeTruthy();
+    expect(screen.getByText('Echo Unit Live')).toBeTruthy();
+    await waitFor(() =>
+      expect(getArtistInsights).toHaveBeenCalledWith('artist-1', {
+        limit: 12,
+        includeOnline: true,
+        forceOnline: false,
+        region: 'HK',
+      }),
+    );
   });
 });

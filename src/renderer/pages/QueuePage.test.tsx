@@ -45,7 +45,7 @@ const makeTrack = (index: number): LibraryTrack => ({
   fieldSources: {},
 });
 
-const QueueSeeder = ({ tracks }: { tracks: LibraryTrack[] }): null => {
+const QueueSeeder = ({ startTrackId, tracks }: { startTrackId?: string; tracks: LibraryTrack[] }): null => {
   const queue = usePlaybackQueue();
   const didSeedRef = useRef(false);
 
@@ -55,17 +55,17 @@ const QueueSeeder = ({ tracks }: { tracks: LibraryTrack[] }): null => {
     }
 
     didSeedRef.current = true;
-    queue.replaceQueue(tracks);
-  }, [queue, tracks]);
+    queue.replaceQueue(tracks, startTrackId ? { startTrackId } : undefined);
+  }, [queue, startTrackId, tracks]);
 
   return null;
 };
 
-const renderQueuePage = (tracks: LibraryTrack[]): void => {
+const renderQueuePage = (tracks: LibraryTrack[], options: { startTrackId?: string } = {}): void => {
   render(
     <I18nProvider>
       <PlaybackQueueProvider>
-        <QueueSeeder tracks={tracks} />
+        <QueueSeeder startTrackId={options.startTrackId} tracks={tracks} />
         <QueuePage />
       </PlaybackQueueProvider>
     </I18nProvider>,
@@ -79,6 +79,21 @@ afterEach(() => {
 });
 
 describe('QueuePage', () => {
+  it('uses original artwork for the large now-playing cover only', async () => {
+    const track: LibraryTrack = {
+      ...makeTrack(1),
+      coverId: 'cover 1',
+      coverThumb: 'echo-cover://thumb/cover%201',
+    };
+
+    renderQueuePage([track], { startTrackId: track.id });
+
+    await waitFor(() =>
+      expect(document.querySelector('.queue-now-cover img')?.getAttribute('src')).toBe('echo-cover://original/cover%201'),
+    );
+    expect(document.querySelector('.queue-row-cover img')?.getAttribute('src')).toBe('echo-cover://thumb/cover%201');
+  });
+
   it('plays a queued item when its row is double-clicked', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);

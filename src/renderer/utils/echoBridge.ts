@@ -5,16 +5,35 @@ import {
   channelBalanceMinBalance,
   channelBalanceMinGainDb,
 } from '../../shared/types/audio';
-import type { EqBand, EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
+import type {
+  EqBand,
+  EqFilterType,
+  EqPreset,
+  EqProfile,
+  EqProfileBinding,
+  EqProfileBindingInfo,
+  EqProfileBindingTarget,
+  EqSavePresetRequest,
+  EqSaveProfileRequest,
+  EqSetBandEnabledRequest,
+  EqSetBandFilterTypeRequest,
+  EqSetBandFrequencyRequest,
+  EqSetBandGainRequest,
+  EqSetBandQRequest,
+  EqState,
+} from '../../shared/types/eq';
 import {
   eqBandCount,
+  eqFilterTypes,
   eqFrequenciesHz,
   eqMaxFrequencyHz,
   eqMaxGainDb,
   eqMaxPreampDb,
+  eqMaxQ,
   eqMinFrequencyHz,
   eqMinGainDb,
   eqMinPreampDb,
+  eqMinQ,
 } from '../../shared/types/eq';
 import type { StreamingLikedSongsSyncResult, StreamingPlaylistImportResult } from '../../shared/types/streaming';
 
@@ -40,6 +59,7 @@ type BrowserEqStorage = {
   state: EqState;
   channelBalance: ChannelBalanceState;
   userPresets: EqPreset[];
+  profiles: EqProfile[];
 };
 
 type EqBridgeApi = NonNullable<Window['echo']>['eq'];
@@ -48,11 +68,17 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const nowIso = (): string => new Date().toISOString();
 
+const filterTypes = new Set<EqFilterType>(eqFilterTypes);
+
+const normalizeFilterType = (value: unknown): EqFilterType => (filterTypes.has(value as EqFilterType) ? value as EqFilterType : 'peaking');
+
 const createBands = (gains: number[] = []): EqBand[] =>
   eqFrequenciesHz.map((frequencyHz, index) => ({
     frequencyHz,
     gainDb: clamp(Number(gains[index] ?? 0), eqMinGainDb, eqMaxGainDb),
     q: 1,
+    filterType: 'peaking',
+    enabled: true,
   }));
 
 const browserBuiltInPresets: EqPreset[] = [
@@ -92,6 +118,12 @@ const clonePreset = (preset: EqPreset): EqPreset => ({ ...preset, bands: cloneBa
 
 const cloneState = (state: EqState): EqState => ({ ...state, bands: cloneBands(state.bands) });
 
+const cloneProfile = (profile: EqProfile): EqProfile => ({
+  ...profile,
+  state: cloneState(profile.state),
+  bindings: profile.bindings.map((binding) => ({ ...binding })),
+});
+
 const sanitizePresetId = (name: string): string =>
   name
     .trim()
@@ -114,7 +146,9 @@ const normalizeBands = (bands: unknown, fallback = createBands()): EqBand[] => {
     return {
       frequencyHz: Number.isFinite(frequencyHz) ? clamp(frequencyHz, eqMinFrequencyHz, eqMaxFrequencyHz) : eqFrequenciesHz[index],
       gainDb: Number.isFinite(gainDb) ? clamp(gainDb, eqMinGainDb, eqMaxGainDb) : 0,
-      q: Number.isFinite(q) && q > 0 ? clamp(q, 0.1, 12) : 1,
+      q: Number.isFinite(q) && q > 0 ? clamp(q, eqMinQ, eqMaxQ) : 1,
+      filterType: normalizeFilterType(input?.filterType),
+      enabled: input?.enabled !== false,
     };
   });
 };
@@ -182,6 +216,78 @@ const normalizePreset = (value: unknown): EqPreset | null => {
   };
 };
 
+const normalizeProfileBinding = (value: unknown): EqProfileBinding | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const input = value as Partial<EqProfileBinding>;
+  const key = typeof input.key === 'string' && input.key.trim() ? input.key.trim().slice(0, 512) : null;
+  const label = typeof input.label === 'string' && input.label.trim() ? input.label.trim().slice(0, 160) : null;
+
+  if (!key || !label) {
+    return null;
+  }
+
+  return {
+    key,
+    label,
+    outputMode: typeof input.outputMode === 'string' && input.outputMode.trim() ? input.outputMode.trim().slice(0, 48) : 'shared',
+    createdAt: typeof input.createdAt === 'string' ? input.createdAt : nowIso(),
+  };
+};
+
+const normalizeProfile = (value: unknown): EqProfile | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const input = value as Partial<EqProfile>;
+  const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 64) : null;
+  const id = typeof input.id === 'string' && input.id.trim() ? sanitizePresetId(input.id) : name ? sanitizePresetId(name) : null;
+
+  if (!id || !name || !input.state) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    state: normalizeState(input.state),
+    bindings: Array.isArray(input.bindings)
+      ? input.bindings.map(normalizeProfileBinding).filter((binding): binding is EqProfileBinding => Boolean(binding))
+      : [],
+    createdAt: typeof input.createdAt === 'string' ? input.createdAt : nowIso(),
+    updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : nowIso(),
+  };
+};
+
+const buildProfileBinding = (target: EqProfileBindingTarget): EqProfileBinding => {
+  const outputMode = typeof target.outputMode === 'string' && target.outputMode.trim() ? target.outputMode.trim() : 'shared';
+  const deviceId = typeof target.outputDeviceId === 'string' && target.outputDeviceId.trim() ? target.outputDeviceId.trim() : null;
+  const deviceName = typeof target.outputDeviceName === 'string' && target.outputDeviceName.trim()
+    ? target.outputDeviceName.trim()
+    : typeof target.deviceName === 'string' && target.deviceName.trim()
+      ? target.deviceName.trim()
+      : 'System default output';
+  const identity = {
+    outputMode,
+    outputBackend: typeof target.outputBackend === 'string' && target.outputBackend.trim() ? target.outputBackend.trim() : null,
+    sharedBackend: typeof target.sharedBackend === 'string' && target.sharedBackend.trim() ? target.sharedBackend.trim() : null,
+    deviceId,
+    deviceName,
+    deviceType: typeof target.outputDeviceType === 'string' && target.outputDeviceType.trim() ? target.outputDeviceType.trim() : null,
+    deviceIndex: Number.isInteger(target.deviceIndex) ? Number(target.deviceIndex) : null,
+  };
+
+  return {
+    key: JSON.stringify(identity),
+    label: `${outputMode.toUpperCase()} / ${deviceName}`,
+    outputMode,
+    createdAt: nowIso(),
+  };
+};
+
 const canUseLocalStorage = (): boolean => {
   try {
     return typeof window !== 'undefined' && Boolean(window.localStorage);
@@ -195,6 +301,7 @@ class BrowserEqBridge implements EqBridgeApi {
     state: defaultBrowserEqState(),
     channelBalance: defaultBrowserChannelBalance(),
     userPresets: [],
+    profiles: [],
   };
 
   constructor() {
@@ -213,7 +320,12 @@ class BrowserEqBridge implements EqBridgeApi {
 
   async setBandGain({ band, gainDb }: EqSetBandGainRequest): Promise<EqState> {
     this.assertBandIndex(band);
-    const safeGainDb = clamp(Number(gainDb), eqMinGainDb, eqMaxGainDb);
+    const rawGainDb = Number(gainDb);
+    if (!Number.isFinite(rawGainDb)) {
+      throw new Error('invalid_eq_band_gain');
+    }
+
+    const safeGainDb = clamp(rawGainDb, eqMinGainDb, eqMaxGainDb);
     this.storage.state = {
       ...this.storage.state,
       presetId: 'custom',
@@ -226,7 +338,12 @@ class BrowserEqBridge implements EqBridgeApi {
 
   async setBandFrequency({ band, frequencyHz }: EqSetBandFrequencyRequest): Promise<EqState> {
     this.assertBandIndex(band);
-    const safeFrequencyHz = clamp(Number(frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz);
+    const rawFrequencyHz = Number(frequencyHz);
+    if (!Number.isFinite(rawFrequencyHz)) {
+      throw new Error('invalid_eq_band_frequency');
+    }
+
+    const safeFrequencyHz = clamp(rawFrequencyHz, eqMinFrequencyHz, eqMaxFrequencyHz);
     this.storage.state = {
       ...this.storage.state,
       presetId: 'custom',
@@ -237,8 +354,56 @@ class BrowserEqBridge implements EqBridgeApi {
     return this.getState();
   }
 
+  async setBandQ({ band, q }: EqSetBandQRequest): Promise<EqState> {
+    this.assertBandIndex(band);
+    const rawQ = Number(q);
+    if (!Number.isFinite(rawQ)) {
+      throw new Error('invalid_eq_band_q');
+    }
+
+    const safeQ = clamp(rawQ, eqMinQ, eqMaxQ);
+    this.storage.state = {
+      ...this.storage.state,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: this.storage.state.bands.map((item, index) => (index === band ? { ...item, q: safeQ } : item)),
+    };
+    this.writeStorage();
+    return this.getState();
+  }
+
+  async setBandFilterType({ band, filterType }: EqSetBandFilterTypeRequest): Promise<EqState> {
+    this.assertBandIndex(band);
+    const safeFilterType = normalizeFilterType(filterType);
+    this.storage.state = {
+      ...this.storage.state,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: this.storage.state.bands.map((item, index) => (index === band ? { ...item, filterType: safeFilterType } : item)),
+    };
+    this.writeStorage();
+    return this.getState();
+  }
+
+  async setBandEnabled({ band, enabled }: EqSetBandEnabledRequest): Promise<EqState> {
+    this.assertBandIndex(band);
+    this.storage.state = {
+      ...this.storage.state,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: this.storage.state.bands.map((item, index) => (index === band ? { ...item, enabled: enabled === true } : item)),
+    };
+    this.writeStorage();
+    return this.getState();
+  }
+
   async setPreamp(preampDb: number): Promise<EqState> {
-    const safePreampDb = clamp(Number(preampDb), eqMinPreampDb, eqMaxPreampDb);
+    const rawPreampDb = Number(preampDb);
+    if (!Number.isFinite(rawPreampDb)) {
+      throw new Error('invalid_eq_preamp');
+    }
+
+    const safePreampDb = clamp(rawPreampDb, eqMinPreampDb, eqMaxPreampDb);
     this.storage.state = { ...this.storage.state, preampDb: safePreampDb, presetId: 'custom', presetName: 'Custom' };
     this.writeStorage();
     return this.getState();
@@ -356,6 +521,99 @@ class BrowserEqBridge implements EqBridgeApi {
     return this.listPresets();
   }
 
+  async listProfiles(): Promise<EqProfile[]> {
+    return this.storage.profiles.map(cloneProfile);
+  }
+
+  async saveProfile(request: EqSaveProfileRequest): Promise<EqProfile> {
+    const name = typeof request.name === 'string' && request.name.trim() ? request.name.trim().slice(0, 64) : null;
+    const id = typeof request.id === 'string' && request.id.trim() ? sanitizePresetId(request.id) : name ? sanitizePresetId(name) : null;
+
+    if (!id || !name) {
+      throw new Error('invalid_eq_profile');
+    }
+
+    const existingIndex = this.storage.profiles.findIndex((profile) => profile.id === id);
+    const existing = existingIndex >= 0 ? this.storage.profiles[existingIndex] : null;
+    const profile: EqProfile = {
+      id,
+      name,
+      state: normalizeState(request.state),
+      bindings: existing?.bindings.map((binding) => ({ ...binding })) ?? [],
+      createdAt: existing?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    if (existingIndex >= 0) {
+      this.storage.profiles[existingIndex] = profile;
+    } else {
+      this.storage.profiles.push(profile);
+    }
+
+    this.writeStorage();
+    return cloneProfile(profile);
+  }
+
+  async applyProfile(profileId: string): Promise<EqState> {
+    const profile = this.storage.profiles.find((item) => item.id === profileId);
+
+    if (!profile) {
+      throw new Error('eq_profile_not_found');
+    }
+
+    this.storage.state = cloneState(profile.state);
+    this.writeStorage();
+    return this.getState();
+  }
+
+  async deleteProfile(profileId: string): Promise<EqProfile[]> {
+    this.storage.profiles = this.storage.profiles.filter((profile) => profile.id !== profileId);
+    this.writeStorage();
+    return this.listProfiles();
+  }
+
+  async bindProfileToOutput(request: { profileId: string; target: EqProfileBindingTarget }): Promise<EqProfileBindingInfo> {
+    const binding = buildProfileBinding(request.target);
+    const profileIndex = this.storage.profiles.findIndex((profile) => profile.id === request.profileId);
+
+    if (profileIndex < 0) {
+      throw new Error('eq_profile_not_found');
+    }
+
+    this.storage.profiles = this.storage.profiles.map((profile, index) => ({
+      ...profile,
+      bindings: index === profileIndex
+        ? [...profile.bindings.filter((item) => item.key !== binding.key), binding]
+        : profile.bindings.filter((item) => item.key !== binding.key),
+      updatedAt: index === profileIndex ? nowIso() : profile.updatedAt,
+    }));
+    this.writeStorage();
+
+    return {
+      key: binding.key,
+      label: binding.label,
+      profileId: request.profileId,
+      profileName: this.storage.profiles[profileIndex].name,
+    };
+  }
+
+  async getProfileBinding(target: EqProfileBindingTarget): Promise<EqProfileBindingInfo> {
+    const binding = buildProfileBinding(target);
+    const profile = this.storage.profiles.find((item) => item.bindings.some((profileBinding) => profileBinding.key === binding.key));
+
+    if (!profile) {
+      return null;
+    }
+
+    const storedBinding = profile.bindings.find((profileBinding) => profileBinding.key === binding.key) ?? binding;
+    return {
+      key: storedBinding.key,
+      label: storedBinding.label,
+      profileId: profile.id,
+      profileName: profile.name,
+    };
+  }
+
   async getChannelBalanceState(): Promise<ChannelBalanceState> {
     return { ...this.storage.channelBalance };
   }
@@ -394,6 +652,9 @@ class BrowserEqBridge implements EqBridgeApi {
         channelBalance: normalizeChannelBalance(parsed.channelBalance ?? {}, defaultBrowserChannelBalance()),
         userPresets: Array.isArray(parsed.userPresets)
           ? parsed.userPresets.map(normalizePreset).filter((preset): preset is EqPreset => Boolean(preset && !preset.readonly))
+          : [],
+        profiles: Array.isArray(parsed.profiles)
+          ? parsed.profiles.map(normalizeProfile).filter((profile): profile is EqProfile => Boolean(profile))
           : [],
       };
     } catch {

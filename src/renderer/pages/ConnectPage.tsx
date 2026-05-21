@@ -3,13 +3,11 @@ import {
   AlertTriangle,
   Cable,
   Cast,
-  FileAudio,
   Loader2,
   Pause,
   Play,
   Power,
   RefreshCw,
-  Save,
   Server,
   SlidersHorizontal,
   Smartphone,
@@ -25,8 +23,10 @@ import type {
   HqPlayerConnectionTestResult,
   HqPlayerDefaultPlaybackBackend,
   HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackControlSendReason,
   HqPlayerPlaybackHandoffPlan,
   HqPlayerPlaybackHandoffReason,
+  HqPlayerRemotePlaybackStatus,
   HqPlayerSettings,
   HqPlayerStatus,
 } from '../../shared/types/hqplayer';
@@ -130,7 +130,7 @@ const defaultHqPlayerSettings: HqPlayerSettings = {
   enabled: false,
   connectionMode: 'localDesktop',
   host: '127.0.0.1',
-  port: null,
+  port: 4321,
   executablePath: null,
   allowLaunch: false,
   mediaServerEnabled: false,
@@ -138,6 +138,9 @@ const defaultHqPlayerSettings: HqPlayerSettings = {
   defaultPlaybackBackend: 'ask',
   profileName: null,
 };
+
+const hqPlayerLocalHost = '127.0.0.1';
+const hqPlayerDefaultPort = 4321;
 
 const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
 const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
@@ -176,11 +179,32 @@ const hqPlayerHandoffReasonLabel: Record<HqPlayerPlaybackHandoffReason, string> 
   unsupported_media_type: '暂不支持的媒体类型',
 };
 
+const hqPlayerSendReasonLabel: Record<HqPlayerPlaybackControlSendReason, string> = {
+  control_plan_missing: '还没有可发送的交接计划',
+  handoff_not_ready: '交接未就绪',
+  source_missing: '音源缺失',
+  source_requires_headers: '音源需要私密请求头',
+  hqplayer_control_port_not_configured: '控制端口未配置',
+  hqplayer_connection_timeout: '连接超时',
+  hqplayer_connection_refused: '连接被拒绝',
+  hqplayer_connection_failed: '连接失败',
+  hqplayer_protocol_error: '协议响应异常',
+  hqplayer_response_error: 'HQPlayer 返回错误',
+};
+
 const hqPlayerExposureLabel: Record<NonNullable<HqPlayerPlaybackControlPlan['source']>['exposure'], string> = {
   'local-file': '本地文件',
   'loopback-http': '本机流地址',
   'direct-http': '直连 HTTP',
   'media-server': 'ECHO 媒体服务',
+};
+
+const hqPlayerRemoteStateLabel: Record<HqPlayerRemotePlaybackStatus['state'], string> = {
+  stopped: '已停止',
+  paused: '已暂停',
+  playing: '播放中',
+  'stop-requested': '正在停止',
+  unknown: '未知',
 };
 
 const formatTime = (seconds: number): string => {
@@ -191,7 +215,7 @@ const formatTime = (seconds: number): string => {
 };
 
 const formatProtocol = (device: Pick<ConnectDevice, 'protocol'>): string =>
-  device.protocol === 'dlna' ? 'DLNA / UPnP' : 'AirPlay';
+  device.protocol === 'dlna' ? 'DLNA / UPnP' : device.protocol === 'hqplayer' ? 'HQPlayer' : 'AirPlay';
 
 const formatReceiverAddress = (value: string): string => {
   try {
@@ -227,6 +251,73 @@ const formatTimestamp = (value: string | null): string => {
 
 const formatHqEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
   settings.port ? `${settings.host}:${settings.port}` : `${settings.host}:未配置`;
+
+const withHqPlayerFriendlyDefaults = (settings: HqPlayerSettings): HqPlayerSettings => {
+  const isLocal = settings.connectionMode !== 'remote';
+  return {
+    ...settings,
+    connectionMode: isLocal ? 'localDesktop' : 'remote',
+    host: isLocal ? hqPlayerLocalHost : settings.host,
+    port: settings.port ?? hqPlayerDefaultPort,
+  };
+};
+
+const createHqPlayerConnectSettings = (settings: HqPlayerSettings): HqPlayerSettings => ({
+  ...withHqPlayerFriendlyDefaults(settings),
+  enabled: true,
+});
+
+const formatHqPlayerSendMessage = (plan: HqPlayerPlaybackControlPlan | null): string => {
+  const send = plan?.send ?? null;
+  if (!send) {
+    return '未发送';
+  }
+
+  if (send.state === 'sent') {
+    return `已发送 · ${send.elapsedMs}ms`;
+  }
+
+  if (send.state === 'prepared') {
+    return '已准备';
+  }
+
+  const reason = send.reason ? hqPlayerSendReasonLabel[send.reason] : send.message;
+  return `${send.state === 'failed' ? '发送失败' : '未发送'} · ${reason ?? '未知原因'}`;
+};
+
+const formatHqPlayerProduct = (
+  controlInfo: HqPlayerConnectionTestResult['controlInfo'] | HqPlayerStatus['controlInfo'] | null | undefined,
+): string =>
+  controlInfo?.product
+    ? [controlInfo.product, controlInfo.version].filter(Boolean).join(' ')
+    : '待检测';
+
+const formatHqPlayerEngine = (
+  controlInfo: HqPlayerConnectionTestResult['controlInfo'] | HqPlayerStatus['controlInfo'] | null | undefined,
+): string =>
+  controlInfo?.engine ?? controlInfo?.platform ?? '待检测';
+
+const formatHqPlayerRemotePosition = (status: HqPlayerRemotePlaybackStatus | null): string => {
+  if (!status) {
+    return '待检测';
+  }
+
+  const position = status.positionSeconds ?? 0;
+  const duration = status.durationSeconds ?? 0;
+  return `${hqPlayerRemoteStateLabel[status.state]} · ${formatTime(position)} / ${formatTime(duration)}`;
+};
+
+const formatHqPlayerSignal = (status: HqPlayerRemotePlaybackStatus | null): string => {
+  if (!status) {
+    return '待检测';
+  }
+
+  const format = status.activeRate && status.activeBits && status.activeChannels
+    ? `${status.activeRate}Hz / ${status.activeBits}bit / ${status.activeChannels}ch`
+    : '格式待回读';
+  const dsp = [status.activeMode, status.activeFilter, status.activeShaper].filter(Boolean).join(' · ');
+  return dsp ? `${format} · ${dsp}` : format;
+};
 
 const isStreamingProviderName = (value: string | null | undefined): value is StreamingProviderName =>
   streamingProviderNames.includes(value as StreamingProviderName);
@@ -320,7 +411,7 @@ export const ConnectPage = (): JSX.Element => {
   const [hqPlayerTestResult, setHqPlayerTestResult] = useState<HqPlayerConnectionTestResult | null>(null);
   const [hqPlayerLastHandoff, setHqPlayerLastHandoff] = useState<HqPlayerPlaybackHandoffPlan | null>(null);
   const [hqPlayerLastControl, setHqPlayerLastControl] = useState<HqPlayerPlaybackControlPlan | null>(null);
-  const [hqPlayerBusy, setHqPlayerBusy] = useState<'save' | 'test' | 'preview' | null>(null);
+  const [hqPlayerBusy, setHqPlayerBusy] = useState<'test' | null>(null);
 
   const activeDevice = useMemo(
     () => devices.find((device) => device.id === status.deviceId) ?? null,
@@ -360,11 +451,15 @@ export const ConnectPage = (): JSX.Element => {
     airPlayReceiverStatus.durationSeconds > 0
       ? Math.min(100, Math.max(0, (airPlayReceiverStatus.positionSeconds / airPlayReceiverStatus.durationSeconds) * 100))
       : 0;
+  const hqPlayerEffectiveDraft = useMemo(
+    () => withHqPlayerFriendlyDefaults(hqPlayerDraft),
+    [hqPlayerDraft],
+  );
   const hqPlayerState: HqPlayerStatus['state'] =
-    hqPlayerStatus?.state ?? (hqPlayerDraft.enabled ? (hqPlayerDraft.port ? 'unavailable' : 'not-configured') : 'disabled');
+    hqPlayerStatus?.state ?? (hqPlayerDraft.enabled ? (hqPlayerEffectiveDraft.port ? 'unavailable' : 'not-configured') : 'disabled');
   const hqPlayerEndpointLabel = formatHqEndpoint({
-    host: hqPlayerStatus?.endpoint.host ?? hqPlayerDraft.host,
-    port: hqPlayerStatus?.endpoint.port ?? hqPlayerDraft.port,
+    host: hqPlayerStatus?.endpoint.host ?? hqPlayerEffectiveDraft.host,
+    port: hqPlayerStatus?.endpoint.port ?? hqPlayerEffectiveDraft.port,
   });
   const hqPlayerControlPlan = hqPlayerLastControl ?? hqPlayerLastHandoff?.control ?? null;
   const hqPlayerLastReason = hqPlayerLastHandoff?.reason ? hqPlayerHandoffReasonLabel[hqPlayerLastHandoff.reason] : null;
@@ -372,7 +467,14 @@ export const ConnectPage = (): JSX.Element => {
     () => toHqPlayerPlayableTrack(currentTrack, currentFilePath),
     [currentFilePath, currentTrack],
   );
-  const hqPlayerPreviewDisabled = hqPlayerBusy === 'preview' || !hqPlayerCurrentPlayable || !hqPlayerDraft.enabled || !hqPlayerDraft.port;
+  const hqPlayerSendMessage = formatHqPlayerSendMessage(hqPlayerControlPlan);
+  const hqPlayerControlInfo = hqPlayerTestResult?.controlInfo ?? hqPlayerStatus?.controlInfo ?? null;
+  const hqPlayerPlaybackStatus = hqPlayerTestResult?.playbackStatus ?? hqPlayerStatus?.playbackStatus ?? null;
+  const hqPlayerProductLabel = formatHqPlayerProduct(hqPlayerControlInfo);
+  const hqPlayerEngineLabel = formatHqPlayerEngine(hqPlayerControlInfo);
+  const hqPlayerRemotePositionLabel = formatHqPlayerRemotePosition(hqPlayerPlaybackStatus);
+  const hqPlayerSignalLabel = formatHqPlayerSignal(hqPlayerPlaybackStatus);
+  const activeDeviceCapabilities = activeDevice?.capabilities ?? null;
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -406,7 +508,7 @@ export const ConnectPage = (): JSX.Element => {
         hqPlayer.getLastPlaybackHandoff(),
         hqPlayer.getLastPlaybackControl(),
       ]);
-      setHqPlayerDraft(settings);
+      setHqPlayerDraft(withHqPlayerFriendlyDefaults(settings));
       setHqPlayerStatus(nextStatus);
       setHqPlayerLastHandoff(lastHandoff);
       setHqPlayerLastControl(lastControl);
@@ -508,35 +610,23 @@ export const ConnectPage = (): JSX.Element => {
   }, [autoStartReceiversEnabled]);
 
   const patchHqPlayerDraft = useCallback((patch: Partial<HqPlayerSettings>): void => {
-    setHqPlayerDraft((current) => ({ ...current, ...patch }));
+    setHqPlayerDraft((current) => withHqPlayerFriendlyDefaults({ ...current, ...patch }));
     setHqPlayerTestResult(null);
   }, []);
 
-  const saveHqPlayerSettings = useCallback(async (): Promise<HqPlayerSettings | null> => {
+  const saveHqPlayerSettings = useCallback(async (settings: HqPlayerSettings = hqPlayerEffectiveDraft): Promise<HqPlayerSettings | null> => {
     const hqPlayer = window.echo?.hqPlayer;
     if (!hqPlayer) {
       setError('Desktop bridge unavailable. 请在 Electron 桌面端配置 HQPlayer。');
       return null;
     }
 
-    const saved = await hqPlayer.setSettings(hqPlayerDraft);
-    setHqPlayerDraft(saved);
+    const saved = await hqPlayer.setSettings(withHqPlayerFriendlyDefaults(settings));
+    setHqPlayerDraft(withHqPlayerFriendlyDefaults(saved));
     setHqPlayerStatus(await hqPlayer.getStatus());
     window.dispatchEvent(new CustomEvent('settings:changed', { detail: { hqPlayer: saved } }));
     return saved;
-  }, [hqPlayerDraft]);
-
-  const handleHqPlayerSave = useCallback(async (): Promise<void> => {
-    setHqPlayerBusy('save');
-    setError(null);
-    try {
-      await saveHqPlayerSettings();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
-    } finally {
-      setHqPlayerBusy(null);
-    }
-  }, [saveHqPlayerSettings]);
+  }, [hqPlayerEffectiveDraft]);
 
   const handleHqPlayerTestConnection = useCallback(async (): Promise<void> => {
     const hqPlayer = window.echo?.hqPlayer;
@@ -548,7 +638,11 @@ export const ConnectPage = (): JSX.Element => {
     setHqPlayerBusy('test');
     setError(null);
     try {
-      const result = await hqPlayer.testConnection(hqPlayerDraft);
+      const saved = await saveHqPlayerSettings(createHqPlayerConnectSettings(hqPlayerEffectiveDraft));
+      if (!saved) {
+        return;
+      }
+      const result = await hqPlayer.testConnection(saved);
       setHqPlayerTestResult(result);
       setHqPlayerStatus(await hqPlayer.getStatus());
     } catch (testError) {
@@ -556,38 +650,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setHqPlayerBusy(null);
     }
-  }, [hqPlayerDraft]);
-
-  const handleHqPlayerPreview = useCallback(async (): Promise<void> => {
-    const hqPlayer = window.echo?.hqPlayer;
-    if (!hqPlayer) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端预演 HQPlayer。');
-      return;
-    }
-
-    if (!hqPlayerCurrentPlayable) {
-      setError('请先播放或选中一首歌，再预演 HQPlayer 交接。');
-      return;
-    }
-
-    setHqPlayerBusy('preview');
-    setError(null);
-    try {
-      await saveHqPlayerSettings();
-      const plan = await hqPlayer.createPlaybackHandoff({
-        item: hqPlayerCurrentPlayable,
-        startSeconds: Math.max(0, currentPositionSeconds),
-        confirmed: true,
-      });
-      setHqPlayerLastHandoff(plan);
-      setHqPlayerLastControl(plan.control ?? await hqPlayer.getLastPlaybackControl());
-      setHqPlayerStatus(await hqPlayer.getStatus());
-    } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : String(previewError));
-    } finally {
-      setHqPlayerBusy(null);
-    }
-  }, [currentPositionSeconds, hqPlayerCurrentPlayable, saveHqPlayerSettings]);
+  }, [hqPlayerEffectiveDraft, saveHqPlayerSettings]);
 
   const toggleReceiver = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -780,35 +843,21 @@ export const ConnectPage = (): JSX.Element => {
             <button
               className="settings-action-button"
               type="button"
-              disabled={hqPlayerBusy === 'save'}
-              onClick={() => void handleHqPlayerSave()}
-            >
-              {hqPlayerBusy === 'save' ? <Loader2 className="spinning-icon" size={15} /> : <Save size={15} />}
-              保存
-            </button>
-            <button
-              className="settings-action-button"
-              type="button"
               disabled={hqPlayerBusy === 'test'}
               onClick={() => void handleHqPlayerTestConnection()}
             >
               <RefreshCw className={hqPlayerBusy === 'test' ? 'spinning-icon' : undefined} size={15} />
-              测试连接
-            </button>
-            <button
-              className="settings-action-button"
-              type="button"
-              disabled={hqPlayerPreviewDisabled}
-              onClick={() => void handleHqPlayerPreview()}
-            >
-              {hqPlayerBusy === 'preview' ? <Loader2 className="spinning-icon" size={15} /> : <FileAudio size={15} />}
-              应用并预演
+              检测 HQPlayer
             </button>
           </div>
         </div>
 
         <div className="connect-hqplayer-layout">
           <div className="connect-hqplayer-config">
+            <div className="connect-hqplayer-local-card">
+              <strong>本机 HQPlayer Desktop</strong>
+              <span>{formatHqEndpoint({ host: hqPlayerLocalHost, port: hqPlayerDefaultPort })}</span>
+            </div>
             <div className="connect-hqplayer-toggle-row">
               <div className="settings-inline-toggle">
                 <span>启用 HQPlayer</span>
@@ -817,13 +866,15 @@ export const ConnectPage = (): JSX.Element => {
                   aria-pressed={hqPlayerDraft.enabled}
                   className={`toggle-btn ${hqPlayerDraft.enabled ? 'active' : ''}`}
                   type="button"
-                  onClick={() => patchHqPlayerDraft({ enabled: !hqPlayerDraft.enabled })}
+                  onClick={() => patchHqPlayerDraft(
+                    hqPlayerDraft.enabled ? { enabled: false } : createHqPlayerConnectSettings(hqPlayerEffectiveDraft),
+                  )}
                 >
                   <span />
                 </button>
               </div>
               <div className="settings-inline-toggle">
-                <span>媒体服务</span>
+                <span>串流保护</span>
                 <button
                   aria-label="HQPlayer 媒体服务"
                   aria-pressed={hqPlayerDraft.mediaServerEnabled}
@@ -836,72 +887,79 @@ export const ConnectPage = (): JSX.Element => {
               </div>
             </div>
 
-            <div className="connect-hqplayer-segments" aria-label="HQPlayer 连接模式">
-              {hqPlayerConnectionModes.map((mode) => (
-                <button
-                  className="connect-hqplayer-chip"
-                  data-active={hqPlayerDraft.connectionMode === mode ? 'true' : undefined}
-                  key={mode}
-                  type="button"
-                  onClick={() => patchHqPlayerDraft({ connectionMode: mode })}
-                >
-                  {hqPlayerModeLabel[mode]}
-                </button>
-              ))}
-            </div>
+            <details className="connect-hqplayer-advanced">
+              <summary>高级设置</summary>
+              <div className="connect-hqplayer-segments" aria-label="HQPlayer 连接模式">
+                {hqPlayerConnectionModes.map((mode) => (
+                  <button
+                    className="connect-hqplayer-chip"
+                    data-active={hqPlayerEffectiveDraft.connectionMode === mode ? 'true' : undefined}
+                    key={mode}
+                    type="button"
+                    onClick={() => patchHqPlayerDraft({
+                      connectionMode: mode,
+                      host: mode === 'localDesktop' ? hqPlayerLocalHost : hqPlayerDraft.host,
+                      port: hqPlayerEffectiveDraft.port,
+                    })}
+                  >
+                    {hqPlayerModeLabel[mode]}
+                  </button>
+                ))}
+              </div>
 
-            <div className="connect-hqplayer-segments" aria-label="HQPlayer 默认交接">
-              {hqPlayerDefaultBackends.map((backend) => (
-                <button
-                  className="connect-hqplayer-chip"
-                  data-active={hqPlayerDraft.defaultPlaybackBackend === backend ? 'true' : undefined}
-                  key={backend}
-                  type="button"
-                  onClick={() => patchHqPlayerDraft({ defaultPlaybackBackend: backend })}
-                >
-                  {hqPlayerBackendLabel[backend]}
-                </button>
-              ))}
-            </div>
+              <div className="connect-hqplayer-segments" aria-label="HQPlayer 默认交接">
+                {hqPlayerDefaultBackends.map((backend) => (
+                  <button
+                    className="connect-hqplayer-chip"
+                    data-active={hqPlayerEffectiveDraft.defaultPlaybackBackend === backend ? 'true' : undefined}
+                    key={backend}
+                    type="button"
+                    onClick={() => patchHqPlayerDraft({ defaultPlaybackBackend: backend })}
+                  >
+                    {hqPlayerBackendLabel[backend]}
+                  </button>
+                ))}
+              </div>
 
-            <div className="connect-hqplayer-fields">
-              <label className="connect-hqplayer-field">
-                <span>Host</span>
-                <input
-                  type="text"
-                  value={hqPlayerDraft.host}
-                  onChange={(event) => patchHqPlayerDraft({ host: event.currentTarget.value })}
-                />
-              </label>
-              <label className="connect-hqplayer-field">
-                <span>控制端口</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={hqPlayerDraft.port ?? ''}
-                  onChange={(event) => patchHqPlayerDraft({ port: parsePort(event.currentTarget.value) })}
-                />
-              </label>
-              <label className="connect-hqplayer-field">
-                <span>媒体端口</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={hqPlayerDraft.mediaServerPort ?? ''}
-                  onChange={(event) => patchHqPlayerDraft({ mediaServerPort: parsePort(event.currentTarget.value) })}
-                />
-              </label>
-              <label className="connect-hqplayer-field connect-hqplayer-field--wide">
-                <span>Profile</span>
-                <input
-                  type="text"
-                  value={hqPlayerDraft.profileName ?? ''}
-                  onChange={(event) => patchHqPlayerDraft({ profileName: event.currentTarget.value.trim() || null })}
-                />
-              </label>
-            </div>
+              <div className="connect-hqplayer-fields">
+                <label className="connect-hqplayer-field">
+                  <span>Host</span>
+                  <input
+                    type="text"
+                    value={hqPlayerEffectiveDraft.host}
+                    onChange={(event) => patchHqPlayerDraft({ host: event.currentTarget.value })}
+                  />
+                </label>
+                <label className="connect-hqplayer-field">
+                  <span>控制端口</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={hqPlayerEffectiveDraft.port ?? ''}
+                    onChange={(event) => patchHqPlayerDraft({ port: parsePort(event.currentTarget.value) })}
+                  />
+                </label>
+                <label className="connect-hqplayer-field">
+                  <span>媒体端口</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={hqPlayerDraft.mediaServerPort ?? ''}
+                    onChange={(event) => patchHqPlayerDraft({ mediaServerPort: parsePort(event.currentTarget.value) })}
+                  />
+                </label>
+                <label className="connect-hqplayer-field connect-hqplayer-field--wide">
+                  <span>Profile</span>
+                  <input
+                    type="text"
+                    value={hqPlayerDraft.profileName ?? ''}
+                    onChange={(event) => patchHqPlayerDraft({ profileName: event.currentTarget.value.trim() || null })}
+                  />
+                </label>
+              </div>
+            </details>
           </div>
 
           <div className="connect-hqplayer-status-grid">
@@ -911,10 +969,10 @@ export const ConnectPage = (): JSX.Element => {
             </span>
             <span>
               <em>默认交接</em>
-              <strong>{hqPlayerBackendLabel[hqPlayerDraft.defaultPlaybackBackend]}</strong>
+              <strong>{hqPlayerBackendLabel[hqPlayerEffectiveDraft.defaultPlaybackBackend]}</strong>
             </span>
             <span>
-              <em>媒体服务</em>
+              <em>串流保护</em>
               <strong>{hqPlayerDraft.mediaServerEnabled ? (hqPlayerDraft.mediaServerPort ? `ECHO:${hqPlayerDraft.mediaServerPort}` : '自动端口') : '关闭'}</strong>
             </span>
             <span>
@@ -927,6 +985,22 @@ export const ConnectPage = (): JSX.Element => {
                 <strong>{hqPlayerTestResult.ok ? `可用 · ${hqPlayerTestResult.elapsedMs}ms` : hqPlayerTestResult.error ?? '不可用'}</strong>
               </span>
             ) : null}
+            <span>
+              <em>HQPlayer</em>
+              <strong>{hqPlayerProductLabel}</strong>
+            </span>
+            <span>
+              <em>Engine</em>
+              <strong>{hqPlayerEngineLabel}</strong>
+            </span>
+            <span>
+              <em>远端状态</em>
+              <strong>{hqPlayerRemotePositionLabel}</strong>
+            </span>
+            <span className="connect-hqplayer-status-grid__wide">
+              <em>信号路径</em>
+              <strong>{hqPlayerSignalLabel}</strong>
+            </span>
           </div>
 
           <div className="connect-hqplayer-plan">
@@ -941,6 +1015,10 @@ export const ConnectPage = (): JSX.Element => {
             <div className="connect-hqplayer-plan-row">
               <em>Control</em>
               <strong>{hqPlayerControlPlan ? `${hqPlayerControlPlan.action} · ${hqPlayerControlPlan.transport}` : '暂无'}</strong>
+            </div>
+            <div className="connect-hqplayer-plan-row">
+              <em>Send</em>
+              <strong>{hqPlayerSendMessage}</strong>
             </div>
             <div className="connect-hqplayer-plan-row">
               <em>Source</em>
@@ -960,7 +1038,7 @@ export const ConnectPage = (): JSX.Element => {
             </div>
             <div className="connect-hqplayer-plan-footer">
               <Server size={15} />
-              <span>{hqPlayerDraft.connectionMode === 'remote' ? '远程模式会优先使用 ECHO 媒体服务' : '本机模式可直接交接本地文件或本机流地址'}</span>
+              <span>{hqPlayerEffectiveDraft.connectionMode === 'remote' ? '远程模式会优先使用 ECHO 媒体服务' : '本机模式可直接交接本地文件或本机流地址'}</span>
             </div>
           </div>
         </div>
@@ -1114,13 +1192,13 @@ export const ConnectPage = (): JSX.Element => {
           <small>{formatTime(status.positionSeconds)} / {formatTime(status.durationSeconds || currentTrack?.duration || 0)}</small>
         </div>
         <div className="connect-controls" aria-label="Connect 控制">
-          <button className="icon-button" type="button" aria-label="播放" title="播放" onClick={() => void runCommand('play')} disabled={isCommandBusy || !status.deviceId}>
+          <button className="icon-button" type="button" aria-label="播放" title="播放" onClick={() => void runCommand('play')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPlay !== true}>
             <Play size={17} />
           </button>
-          <button className="icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void runCommand('pause')} disabled={isCommandBusy || !status.deviceId}>
+          <button className="icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void runCommand('pause')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canPause !== true}>
             <Pause size={17} />
           </button>
-          <button className="icon-button" type="button" aria-label="停止" title="停止" onClick={() => void runCommand('stop')} disabled={isCommandBusy || !status.deviceId}>
+          <button className="icon-button" type="button" aria-label="停止" title="停止" onClick={() => void runCommand('stop')} disabled={isCommandBusy || !status.deviceId || activeDeviceCapabilities?.canStop !== true}>
             <Square size={16} />
           </button>
           <button className="icon-button" type="button" aria-label="断开" title="断开" onClick={() => void runCommand('disconnect')} disabled={isCommandBusy || !status.deviceId}>
@@ -1140,7 +1218,7 @@ export const ConnectPage = (): JSX.Element => {
                   void commitVolume(volumePercent);
                 }
               }}
-              disabled={!activeDevice?.capabilities.canSetVolume}
+              disabled={activeDeviceCapabilities?.canSetVolume !== true}
               aria-label="投送音量"
             />
           </label>
@@ -1163,7 +1241,7 @@ export const ConnectPage = (): JSX.Element => {
             return (
               <article className="connect-device-row" data-active={isActive ? 'true' : undefined} key={device.id}>
                 <div className="connect-device-icon" data-protocol={device.protocol}>
-                  {device.protocol === 'dlna' ? <Wifi size={20} /> : <Cast size={20} />}
+                  {device.protocol === 'dlna' ? <Wifi size={20} /> : device.protocol === 'hqplayer' ? <Cable size={20} /> : <Cast size={20} />}
                 </div>
                 <div className="connect-device-copy">
                   <strong>{device.name}</strong>
@@ -1180,7 +1258,7 @@ export const ConnectPage = (): JSX.Element => {
                   disabled={disabled}
                   onClick={() => void connectDevice(device)}
                 >
-                  {isBusy ? <Loader2 className="spinning-icon" size={15} /> : <Cast size={15} />}
+                  {isBusy ? <Loader2 className="spinning-icon" size={15} /> : device.protocol === 'hqplayer' ? <Cable size={15} /> : <Cast size={15} />}
                   {isActive ? '重新投送' : '连接'}
                 </button>
               </article>

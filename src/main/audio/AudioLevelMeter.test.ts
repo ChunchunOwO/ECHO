@@ -48,6 +48,8 @@ const eqState = (overrides: Partial<EqState> = {}): EqState => ({
     frequencyHz,
     gainDb: 0,
     q: 1,
+    filterType: 'peaking' as const,
+    enabled: true,
   })),
   ...overrides,
 });
@@ -116,5 +118,15 @@ describe('AudioLevelMeter', () => {
       estimatedOutputRmsDb: -14,
       headroomDb: 1,
     });
+  });
+
+  it('ignores bypassed EQ bands when estimating DSP output gain', () => {
+    const eq = eqState({
+      enabled: true,
+      preampDb: -2,
+      bands: eqState().bands.map((band, index) => (index === 5 ? { ...band, gainDb: 10, enabled: false } : band)),
+    });
+
+    expect(computeDspEstimatedGainDb(eq, channelBalanceState())).toBe(-2);
   });
 });

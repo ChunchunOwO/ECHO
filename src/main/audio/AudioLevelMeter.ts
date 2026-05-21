@@ -49,7 +49,7 @@ const computeChannelBalanceGainDb = (state: ChannelBalanceState): number => {
 
 export const computeDspEstimatedGainDb = (eqState: EqState, channelBalanceState: ChannelBalanceState): number => {
   const eqGainDb = eqState.enabled
-    ? eqState.preampDb + Math.max(0, ...eqState.bands.map((band) => band.gainDb))
+    ? eqState.preampDb + Math.max(0, ...eqState.bands.map((band) => (band.enabled === false ? 0 : band.gainDb)))
     : 0;
   const channelGainDb = channelBalanceState.enabled ? computeChannelBalanceGainDb(channelBalanceState) : 0;
 

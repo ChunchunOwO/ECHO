@@ -70,6 +70,12 @@ const qualityTags = (track: LibraryTrack | null): string[] =>
       ].filter((tag): tag is string => Boolean(tag))
     : [];
 
+const originalCoverUrlFromThumb = (coverUrl: string | null): string | null =>
+  coverUrl?.replace(/^echo-cover:\/\/(?:thumb|album|large)\//u, 'echo-cover://original/') ?? null;
+
+const queueNowCoverUrl = (track: Pick<LibraryTrack, 'coverId' | 'coverThumb'> | null): string | null =>
+  track?.coverId ? `echo-cover://original/${encodeURIComponent(track.coverId)}` : originalCoverUrlFromThumb(track?.coverThumb ?? null);
+
 const trackFromHistory = (entry: PlaybackHistoryEntry): LibraryTrack => ({
   id: entry.stableKey ?? entry.trackId ?? entry.id,
   mediaType: entry.mediaType,
@@ -203,6 +209,7 @@ export const QueuePage = (): JSX.Element => {
   const isNowPlayingTemporary = nowPlaying?.isTemporary === true;
   const isNowPlayingLiked = nowPlaying && !isNowPlayingTemporary ? likedTrackIds[nowPlaying.id] === true : false;
   const nowPlayingTags = qualityTags(nowPlaying);
+  const nowPlayingCoverUrl = queueNowCoverUrl(nowPlaying);
   const sourceLabel = queue.currentItem?.source.label ?? t('queue.now.sourceFallback');
   const queueMenuSource = useMemo(() => ({ type: 'manual' as const, label: t('queue.header.title') }), [t]);
   const rowVirtualizer = useVirtualizer({
@@ -690,8 +697,8 @@ export const QueuePage = (): JSX.Element => {
       </header>
 
       <section className="queue-now-card" aria-label={t('queue.now.kicker')}>
-        <div className="queue-now-cover" data-empty={!nowPlaying?.coverThumb}>
-          {nowPlaying?.coverThumb ? <img alt="" src={nowPlaying.coverThumb} /> : <Disc3 size={54} />}
+        <div className="queue-now-cover" data-empty={!nowPlayingCoverUrl}>
+          {nowPlayingCoverUrl ? <img alt="" src={nowPlayingCoverUrl} /> : <Disc3 size={54} />}
         </div>
 
         <div className="queue-now-main">

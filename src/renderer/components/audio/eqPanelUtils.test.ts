@@ -24,6 +24,8 @@ const eqState = (gains: number[]): EqState => ({
     frequencyHz: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000][index] ?? 1000,
     gainDb,
     q: 1,
+    filterType: 'peaking' as const,
+    enabled: true,
   })),
 });
 
@@ -85,6 +87,15 @@ describe('eqPanelUtils', () => {
   it('estimates peak gain from preamp plus maximum positive boost', () => {
     expect(computeEstimatedPeakGain({ preampDb: -4, bands: eqState([0, 6, -2]).bands })).toBe(2);
     expect(computeEstimatedPeakGain({ preampDb: -3, bands: eqState([-6, -2, -1]).bands })).toBe(-3);
+  });
+
+  it('ignores bypassed PEQ bands in safety and curve estimates', () => {
+    const state = eqState([12, 0, -3]);
+    state.bands[0].enabled = false;
+
+    expect(computeRecommendedPreamp(state)).toBe(0);
+    expect(computeEstimatedPeakGain({ preampDb: -2, bands: state.bands })).toBe(-2);
+    expect(computeEqCurvePoints(state.bands)[0].y).toBe(0.5);
   });
 
   it('computes loudness-matched A/B preamp within range', () => {

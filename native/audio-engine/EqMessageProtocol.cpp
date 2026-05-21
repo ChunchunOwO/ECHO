@@ -35,6 +35,36 @@ std::string getString(const juce::DynamicObject& object, const juce::Identifier&
     return value.isString() ? value.toString().toStdString() : std::string();
 }
 
+EqFilterType parseEqFilterType(const std::string& value, EqFilterType fallback)
+{
+    if (value == "lowShelf")
+        return EqFilterType::LowShelf;
+
+    if (value == "highShelf")
+        return EqFilterType::HighShelf;
+
+    if (value == "peaking")
+        return EqFilterType::Peaking;
+
+    return fallback;
+}
+
+bool isEqFilterTypeText(const std::string& value)
+{
+    return value == "peaking" || value == "lowShelf" || value == "highShelf";
+}
+
+std::string eqFilterTypeText(EqFilterType value)
+{
+    switch (value)
+    {
+        case EqFilterType::LowShelf: return "lowShelf";
+        case EqFilterType::HighShelf: return "highShelf";
+        case EqFilterType::Peaking:
+        default: return "peaking";
+    }
+}
+
 ChannelBalanceMonoMode parseMonoMode(const std::string& value, ChannelBalanceMonoMode fallback)
 {
     if (value == "sum")
@@ -99,7 +129,10 @@ std::string EqMessageProtocol::createStateMessage(const EqProcessor& processor)
 
         output << "{\"frequencyHz\":" << state.bandFrequenciesHz[static_cast<size_t>(index)]
                << ",\"gainDb\":" << state.bandGainsDb[static_cast<size_t>(index)]
-               << ",\"q\":1}";
+               << ",\"q\":" << state.bandQ[static_cast<size_t>(index)]
+               << ",\"filterType\":\"" << eqFilterTypeText(state.bandFilterTypes[static_cast<size_t>(index)]) << "\""
+               << ",\"enabled\":" << boolText(state.bandEnabled[static_cast<size_t>(index)])
+               << "}";
     }
 
     output << "]}";
@@ -188,6 +221,41 @@ std::string EqMessageProtocol::handleJsonLine(
         return createStateMessage(processor);
     }
 
+    if (type == "eq:set-band-q")
+    {
+        const int band = getInt(*object, "band", -1);
+
+        if (! processor.setBandQ(band, getNumber(*object, "q", 1.0f)))
+            return createErrorMessage(type, "invalid_band_index");
+
+        return createStateMessage(processor);
+    }
+
+    if (type == "eq:set-band-filter-type")
+    {
+        const int band = getInt(*object, "band", -1);
+        const auto filterTypeText = getString(*object, "filterType");
+        if (! isEqFilterTypeText(filterTypeText))
+            return createErrorMessage(type, "invalid_filter_type");
+
+        const auto filterType = parseEqFilterType(filterTypeText, EqFilterType::Peaking);
+
+        if (! processor.setBandFilterType(band, filterType))
+            return createErrorMessage(type, "invalid_band_index");
+
+        return createStateMessage(processor);
+    }
+
+    if (type == "eq:set-band-enabled")
+    {
+        const int band = getInt(*object, "band", -1);
+
+        if (! processor.setBandEnabled(band, getBool(*object, "enabled", true)))
+            return createErrorMessage(type, "invalid_band_index");
+
+        return createStateMessage(processor);
+    }
+
     if (type == "eq:set-preamp")
     {
         processor.setPreampDb(getNumber(*object, "preampDb", 0.0f));
@@ -217,6 +285,12 @@ std::string EqMessageProtocol::handleJsonLine(
 
             processor.setBandFrequencyHz(index, getNumber(*bandObject, "frequencyHz", eqFrequenciesHz[static_cast<size_t>(index)]));
             processor.setBandGainDb(index, getNumber(*bandObject, "gainDb", 0.0f));
+            processor.setBandQ(index, getNumber(*bandObject, "q", 1.0f));
+            const auto bandFilterType = getString(*bandObject, "filterType");
+            if (! bandFilterType.empty() && ! isEqFilterTypeText(bandFilterType))
+                return createErrorMessage(type, "invalid_filter_type");
+            processor.setBandFilterType(index, parseEqFilterType(bandFilterType, EqFilterType::Peaking));
+            processor.setBandEnabled(index, getBool(*bandObject, "enabled", true));
         }
 
         return createStateMessage(processor);

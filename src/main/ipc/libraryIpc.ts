@@ -21,8 +21,11 @@ import type {
   LibraryQualityIssueQuery,
   LibraryInboxCreatePlaylistRequest,
   LibraryInboxFilterKind,
+  LibraryInboxItemStatus,
   LibraryInboxScope,
+  LibraryInboxStatusFilter,
   LibraryInboxTrackQuery,
+  LibraryInboxUpdateStateRequest,
   LibraryHealthReport,
   LibraryPlaylist,
   LibraryPlaylistItem,
@@ -100,8 +103,11 @@ const libraryInboxFilterKinds = new Set<LibraryInboxFilterKind>([
   'metadata_issue',
   'unknown_artist',
   'unknown_album',
+  'suspicious_file',
 ]);
 const libraryInboxScopes = new Set<LibraryInboxScope>(['latest', 'batch', 'all']);
+const libraryInboxStatuses = new Set<LibraryInboxStatusFilter>(['all', 'pending', 'processed', 'ignored']);
+const libraryInboxItemStatuses = new Set<LibraryInboxItemStatus>(['pending', 'processed', 'ignored']);
 const songCardRenderer = new SongCardRenderer();
 
 const closeLibraryDatabaseUsers = (): void => {
@@ -312,6 +318,9 @@ const normalizeLibraryInboxTrackQuery = (value: unknown): LibraryInboxTrackQuery
   if (typeof input.filter === 'string' && libraryInboxFilterKinds.has(input.filter as LibraryInboxFilterKind)) {
     query.filter = input.filter as LibraryInboxFilterKind;
   }
+  if (typeof input.status === 'string' && libraryInboxStatuses.has(input.status as LibraryInboxStatusFilter)) {
+    query.status = input.status as LibraryInboxStatusFilter;
+  }
 
   return query;
 };
@@ -323,6 +332,28 @@ const normalizeLibraryInboxPlaylistRequest = (value: unknown): LibraryInboxCreat
   return {
     ...query,
     name: normalizeNullableIpcText(input.name),
+  };
+};
+
+const normalizeLibraryInboxUpdateStateRequest = (value: unknown): LibraryInboxUpdateStateRequest => {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const status = typeof input.status === 'string' && libraryInboxItemStatuses.has(input.status as LibraryInboxItemStatus)
+    ? input.status as LibraryInboxItemStatus
+    : 'processed';
+  const items = Array.isArray(input.items)
+    ? input.items
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => ({
+          batchId: normalizeNullableIpcText(item.batchId) ?? '',
+          trackId: normalizeNullableIpcText(item.trackId) ?? '',
+        }))
+        .filter((item) => item.batchId.length > 0 && item.trackId.length > 0)
+    : undefined;
+
+  return {
+    status,
+    items,
+    query: input.query ? normalizeLibraryInboxTrackQuery(input.query) : undefined,
   };
 };
 
@@ -1092,6 +1123,18 @@ const renderTrackCard = async (trackId: unknown) => {
   });
 };
 
+const getTrackOriginalCoverImage = (trackId: unknown): Electron.NativeImage | null => {
+  const track = getExistingTrack(trackId);
+  const asset = track.coverId ? getLibraryService().resolveCoverAsset(track.coverId, 'original') : null;
+
+  if (!asset?.filePath || !existsSync(asset.filePath)) {
+    return null;
+  }
+
+  const image = nativeImage.createFromPath(asset.filePath);
+  return image.isEmpty() ? null : image;
+};
+
 const getExistingAlbum = (albumId: unknown) => {
   const id = requireText(albumId, 'albumId');
   const album = getLibraryService().getAlbum(id);
@@ -1382,6 +1425,12 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryCreateInboxPlaylist, (_event, request: unknown) =>
     getLibraryService().createPlaylistFromLibraryInbox(normalizeLibraryInboxPlaylistRequest(request)),
   );
+  ipcMain.handle(IpcChannels.LibraryAddInboxToQueue, (_event, query: unknown) =>
+    getLibraryService().getLibraryInboxQueueTracks(normalizeLibraryInboxTrackQuery(query)),
+  );
+  ipcMain.handle(IpcChannels.LibraryUpdateInboxItemState, (_event, request: unknown) =>
+    getLibraryService().updateLibraryInboxItemState(normalizeLibraryInboxUpdateStateRequest(request)),
+  );
   ipcMain.handle(IpcChannels.LibraryGetHealthReport, () => createLibraryHealthReportForRenderer());
   ipcMain.handle(IpcChannels.LibraryExportHealthReport, async (): Promise<string | null> => {
     const result = await dialog.showSaveDialog({
@@ -1533,6 +1582,7 @@ export const registerLibraryIpc = (): void => {
         ? (options as { limit: number }).limit
         : undefined,
       includeOnline: Boolean(options && typeof options === 'object' && (options as { includeOnline?: unknown }).includeOnline === true),
+      forceOnline: Boolean(options && typeof options === 'object' && (options as { forceOnline?: unknown }).forceOnline === true),
       region: options && typeof options === 'object' && typeof (options as { region?: unknown }).region === 'string'
         ? (options as { region: string }).region
         : null,
@@ -1570,6 +1620,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().kickoffArtistImageBackfill(normalizeArtistImageBackfillOptions(options)),
   );
   ipcMain.handle(IpcChannels.LibraryArtistImagesClearCache, () => getLibraryService().clearArtistImageCache());
+  ipcMain.handle(IpcChannels.LibraryArtistOnlineInfoClearCache, () => getLibraryService().clearArtistOnlineInfoCache());
   ipcMain.handle(IpcChannels.LibraryGetAlbumTracks, (_event, albumId: unknown, query: unknown) =>
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),
   );
@@ -1685,6 +1736,15 @@ export const registerLibraryIpc = (): void => {
     const card = await renderTrackCard(trackId);
     const image = nativeImage.createFromBuffer(card.pngBuffer);
     if (image.isEmpty()) {
+      return false;
+    }
+
+    clipboard.writeImage(image);
+    return true;
+  });
+  ipcMain.handle(IpcChannels.LibraryCopyTrackOriginalCover, (_event, trackId: unknown): boolean => {
+    const image = getTrackOriginalCoverImage(trackId);
+    if (!image) {
       return false;
     }
 

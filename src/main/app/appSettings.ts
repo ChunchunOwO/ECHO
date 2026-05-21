@@ -182,12 +182,12 @@ export const defaultHqPlayerSettings: HqPlayerSettings = {
   enabled: false,
   connectionMode: 'localDesktop',
   host: '127.0.0.1',
-  port: null,
+  port: 4321,
   executablePath: null,
   allowLaunch: false,
   mediaServerEnabled: false,
   mediaServerPort: null,
-  defaultPlaybackBackend: 'echoNative',
+  defaultPlaybackBackend: 'ask',
   profileName: null,
 };
 const lowLatencyMaxBufferSizeFrames = 2048;
@@ -341,6 +341,7 @@ export const defaultSettings: AppSettings = {
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
+  lyricsWordHighlightClarityPercent: 70,
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsFontFamily: 'Microsoft YaHei',
@@ -458,7 +459,7 @@ const normalizeNullablePort = (value: unknown): number | null => {
 };
 
 const normalizeHqPlayerBackend = (value: unknown): HqPlayerDefaultPlaybackBackend =>
-  value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
+  value === 'echoNative' || value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
 
 export const normalizeHqPlayerSettings = (value: unknown): HqPlayerSettings => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -470,7 +471,7 @@ export const normalizeHqPlayerSettings = (value: unknown): HqPlayerSettings => {
     enabled: input.enabled === true,
     connectionMode: input.connectionMode === 'remote' ? 'remote' : 'localDesktop',
     host: normalizeRequiredText(input.host, defaultHqPlayerSettings.host).slice(0, 255),
-    port: normalizeNullablePort(input.port),
+    port: normalizeNullablePort(input.port) ?? defaultHqPlayerSettings.port,
     executablePath: normalizeFontPath(input.executablePath),
     allowLaunch: input.allowLaunch === true,
     mediaServerEnabled: input.mediaServerEnabled === true,
@@ -1080,6 +1081,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsDefaultOffsetMs = Number(settings.lyricsDefaultOffsetMs);
   const lyricsGlobalSyncOffsetMs = Number(settings.lyricsGlobalSyncOffsetMs);
   const lyricsFontSizePx = Number(settings.lyricsFontSizePx);
+  const lyricsWordHighlightClarityPercent = Number(settings.lyricsWordHighlightClarityPercent);
   const lyricsSecondaryFontSizePx = Number(settings.lyricsSecondaryFontSizePx);
   const lyricsLineSpacingPercent = Number(settings.lyricsLineSpacingPercent);
   const lyricsLineMaxChars = Number(settings.lyricsLineMaxChars);
@@ -1229,6 +1231,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
     lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
     lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
+    lyricsWordHighlightClarityPercent: Number.isFinite(lyricsWordHighlightClarityPercent)
+      ? Math.round(clamp(lyricsWordHighlightClarityPercent, 40, 100))
+      : defaultSettings.lyricsWordHighlightClarityPercent,
     lyricsFontSizePx: Number.isFinite(lyricsFontSizePx)
       ? Math.round(clamp(lyricsFontSizePx, 22, 56))
       : defaultSettings.lyricsFontSizePx,

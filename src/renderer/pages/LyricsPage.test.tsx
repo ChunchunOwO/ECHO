@@ -26,6 +26,8 @@ import { LyricsPage } from "./LyricsPage";
 import type { LyricLine } from "../components/lyrics/lyricsTypes";
 import { albumDetailNavigationEvent } from "../utils/albumNavigation";
 
+const originalClipboard = window.navigator.clipboard;
+
 const makeTrack = (overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
   id: "track-1",
   path: "D:\\Music\\song.flac",
@@ -411,6 +413,7 @@ const mockEcho = (
       }),
     },
     library: {
+      copyTrackOriginalCover: vi.fn().mockResolvedValue(true),
       resolveLyricsBackgroundCover: vi.fn().mockResolvedValue(null),
     },
   } as unknown as Window["echo"];
@@ -423,8 +426,21 @@ const mockEcho = (
   };
 };
 
+const installClipboardTextMock = (): ReturnType<typeof vi.fn> => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  return writeText;
+};
+
 afterEach(() => {
   cleanup();
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: originalClipboard,
+  });
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.useRealTimers();
@@ -446,6 +462,8 @@ describe("LyricsPage", () => {
     expect(css).toContain("var(--lyrics-word-fill-color) 0 calc((var(--lyrics-word-progress) * 100%) - 0.12em)");
     expect(css).toContain("color-mix(in srgb, var(--lyrics-word-fill-color) 72%, var(--lyrics-word-upcoming-color) 28%) calc(var(--lyrics-word-progress) * 100%)");
     expect(css).toContain('.lyrics-line[data-active="true"][data-word-highlight="true"] .lyrics-word[data-word-state="current"]');
+    expect(css).toContain("--lyrics-word-upcoming-color: color-mix(in srgb, var(--lyrics-readable-color) var(--lyrics-current-word-clarity, 70%), transparent);");
+    expect(css).toMatch(/\.lyrics-line\[data-active="true"\] span \{[\s\S]*?line-height: 1\.18;/);
     expect(css).not.toContain('scale(1.045)');
     expect(css).not.toContain('.lyrics-word[data-word-state="current"]::after');
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line span');
@@ -1692,6 +1710,74 @@ describe("LyricsPage", () => {
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1");
   });
 
+  it("copies visible track info from the lyrics header context menu", async () => {
+    const writeText = installClipboardTextMock();
+    const track = makeTrack();
+    mockEcho(track);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Test Song")).toBeTruthy();
+    fireEvent.contextMenu(container.querySelector(".lyrics-track-copy") as HTMLElement);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Test Song\nTest Album\nTest Artist"));
+    expect(await screen.findByText("已复制歌曲信息")).toBeTruthy();
+  });
+
+  it("copies the original track cover from the cover context menu", async () => {
+    const track = makeTrack({ coverId: "cover-1" });
+    mockEcho(track);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Test Song")).toBeTruthy();
+    fireEvent.contextMenu(container.querySelector(".lyrics-track-cover") as HTMLElement);
+
+    await waitFor(() => expect(window.echo.library.copyTrackOriginalCover).toHaveBeenCalledWith("track-1"));
+    expect(await screen.findByText("已复制封面原图")).toBeTruthy();
+  });
+
+  it("copies visible lyrics from the lyrics context menu", async () => {
+    const writeText = installClipboardTextMock();
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("First line")).toBeTruthy();
+    fireEvent.contextMenu(container.querySelector(".lyrics-scroll") as HTMLElement);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line\nSecond line\nThird line"));
+    expect(await screen.findByText("已复制歌词")).toBeTruthy();
+  });
+
   it("hides per-track lyrics offset controls by default", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -2636,6 +2722,7 @@ describe("LyricsPage", () => {
       lyricsLineSpacingPercent: 118,
       lyricsLineMaxChars: 32,
       lyricsContextOpacityPercent: 64,
+      lyricsWordHighlightClarityPercent: 88,
     });
 
     const { container } = render(
@@ -2673,6 +2760,7 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.64",
     );
+    expect(page.style.getPropertyValue("--lyrics-current-word-clarity")).toBe("88%");
     expect(page.dataset.lyricsColorMode).toBe("manual");
   });
 

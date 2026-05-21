@@ -1,12 +1,14 @@
-import { Socket } from 'node:net';
 import type {
   HqPlayerConnectionTestResult,
+  HqPlayerControlInfo,
   HqPlayerEndpoint,
   HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackControlSendResult,
   HqPlayerPlaybackHandoffPlan,
   HqPlayerPlaybackHandoffReason,
   HqPlayerPlaybackHandoffRequest,
   HqPlayerPlaybackHandoffSource,
+  HqPlayerRemotePlaybackStatus,
   HqPlayerSettings,
   HqPlayerStatus,
 } from '../../../shared/types/hqplayer';
@@ -16,6 +18,11 @@ import { defaultHqPlayerSettings, getAppSettings, normalizeHqPlayerSettings, set
 import { getRemoteSourceService } from '../../library/remote/RemoteSourceService';
 import { getStreamingService } from '../../streaming/StreamingService';
 import { createHqPlayerPlaybackControlPlan } from './HqPlayerControlAdapter';
+import {
+  createSkippedHqPlayerControlSendResult,
+  probeHqPlayerControlEndpoint,
+  sendHqPlayerPlaybackControlPlan,
+} from './HqPlayerControlSender';
 import { getHqPlayerMediaServer, type HqPlayerMediaServerBridge, type HqPlayerMediaServerInput } from './HqPlayerMediaServer';
 
 type TcpProbeRequest = {
@@ -28,6 +35,8 @@ type TcpProbeResult = {
   ok: boolean;
   elapsedMs: number;
   error: string | null;
+  controlInfo?: HqPlayerControlInfo | null;
+  playbackStatus?: HqPlayerRemotePlaybackStatus | null;
 };
 
 export type HqPlayerTcpProbe = (request: TcpProbeRequest) => Promise<TcpProbeResult>;
@@ -46,6 +55,8 @@ export type HqPlayerMediaResolver = {
   }) => Promise<RemoteStreamUrlResult>;
   resolveStreamingPlayback: (request: StreamingPlaybackRequest, options?: { forceRefresh?: boolean }) => Promise<StreamingPlaybackSource>;
 };
+
+export type HqPlayerControlSender = (plan: HqPlayerPlaybackControlPlan) => Promise<HqPlayerPlaybackControlSendResult>;
 
 const hqPlayerConnectionTimeoutMs = 1500;
 
@@ -67,7 +78,7 @@ const toEndpoint = (settings: HqPlayerSettings): HqPlayerEndpoint => ({
 
 const createStatus = (
   settings: HqPlayerSettings,
-  overrides: Partial<Pick<HqPlayerStatus, 'state' | 'lastCheckedAt' | 'lastError'>> = {},
+  overrides: Partial<Pick<HqPlayerStatus, 'state' | 'lastCheckedAt' | 'lastError' | 'controlInfo' | 'playbackStatus'>> = {},
 ): HqPlayerStatus => ({
   enabled: settings.enabled,
   state: settings.enabled ? (settings.port ? 'unavailable' : 'not-configured') : 'disabled',
@@ -77,42 +88,24 @@ const createStatus = (
   profileName: settings.profileName,
   lastCheckedAt: null,
   lastError: null,
+  controlInfo: null,
+  playbackStatus: null,
   ...overrides,
 });
 
-const safeProbeError = (error: unknown): string => {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim().slice(0, 240);
-  }
-
-  return String(error || 'hqplayer_connection_failed').slice(0, 240);
+const probeTcpEndpoint: HqPlayerTcpProbe = async ({ host, port, timeoutMs }) => {
+  const result = await probeHqPlayerControlEndpoint(
+    { connectionMode: 'localDesktop', host, port },
+    { timeoutMs },
+  );
+  return {
+    ok: result.ok,
+    elapsedMs: result.elapsedMs,
+    error: result.error ?? result.message,
+    controlInfo: result.controlInfo,
+    playbackStatus: result.playbackStatus,
+  };
 };
-
-const probeTcpEndpoint: HqPlayerTcpProbe = ({ host, port, timeoutMs }) =>
-  new Promise((resolve) => {
-    const startedAt = Date.now();
-    const socket = new Socket();
-    let settled = false;
-
-    const finish = (ok: boolean, error: string | null = null): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      socket.destroy();
-      resolve({
-        ok,
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        error,
-      });
-    };
-
-    socket.setTimeout(timeoutMs, () => finish(false, 'hqplayer_connection_timeout'));
-    socket.once('connect', () => finish(true));
-    socket.once('error', (error) => finish(false, safeProbeError(error)));
-    socket.connect({ host, port });
-  });
 
 const defaultSettingsStore: HqPlayerSettingsStore = {
   read: () => normalizeHqPlayerSettings(getAppSettings().hqPlayer),
@@ -142,6 +135,7 @@ export class HqPlayerService {
     private readonly tcpProbe: HqPlayerTcpProbe = probeTcpEndpoint,
     private readonly mediaResolver: HqPlayerMediaResolver = defaultMediaResolver,
     private readonly mediaServer: HqPlayerMediaServerBridge = getHqPlayerMediaServer(),
+    private readonly controlSender: HqPlayerControlSender = sendHqPlayerPlaybackControlPlan,
   ) {
     this.status = createStatus(this.store.read());
   }
@@ -177,6 +171,20 @@ export class HqPlayerService {
     return this.lastPlaybackControlPlan;
   }
 
+  async sendLastPlaybackControl(): Promise<HqPlayerPlaybackControlSendResult> {
+    const settings = this.store.read();
+    const control = this.lastPlaybackControlPlan;
+    if (!control) {
+      return createSkippedHqPlayerControlSendResult(toEndpoint(settings), 'control_plan_missing');
+    }
+
+    const send = control.state === 'prepared'
+      ? await this.controlSender(control)
+      : createSkippedHqPlayerControlSendResult(control.endpoint, control.reason ?? 'handoff_not_ready');
+    this.rememberPlaybackControlSend(send);
+    return send;
+  }
+
   async testConnection(patch?: Partial<HqPlayerSettings>): Promise<HqPlayerConnectionTestResult> {
     const settings = patch ? normalizeHqPlayerSettings({ ...this.store.read(), ...patch }) : this.store.read();
     const endpoint = toEndpoint(settings);
@@ -190,6 +198,8 @@ export class HqPlayerService {
         elapsedMs: 0,
         checkedAt,
         error: 'hqplayer_disabled',
+        controlInfo: null,
+        playbackStatus: null,
       };
       this.status = createStatus(settings, {
         state: result.state,
@@ -207,6 +217,8 @@ export class HqPlayerService {
         elapsedMs: 0,
         checkedAt,
         error: 'hqplayer_control_port_not_configured',
+        controlInfo: null,
+        playbackStatus: null,
       };
       this.status = createStatus(settings, {
         state: result.state,
@@ -234,12 +246,16 @@ export class HqPlayerService {
       elapsedMs: probe.elapsedMs,
       checkedAt,
       error: probe.error,
+      controlInfo: probe.controlInfo ?? null,
+      playbackStatus: probe.playbackStatus ?? null,
     };
 
     this.status = createStatus(settings, {
       state: result.state,
       lastCheckedAt: checkedAt,
       lastError: result.error,
+      controlInfo: result.controlInfo,
+      playbackStatus: result.playbackStatus,
     });
 
     return result;
@@ -277,7 +293,7 @@ export class HqPlayerService {
       return fallback('hqplayer_control_port_not_configured');
     }
 
-    if (settings.defaultPlaybackBackend === 'echoNative') {
+    if (settings.defaultPlaybackBackend === 'echoNative' && request.confirmed !== true) {
       return fallback('echo_native_selected');
     }
 
@@ -303,6 +319,24 @@ export class HqPlayerService {
       });
     } catch {
       return fallback('source_resolution_failed');
+    }
+  }
+
+  private rememberPlaybackControlSend(send: HqPlayerPlaybackControlSendResult): void {
+    if (!this.lastPlaybackControlPlan) {
+      return;
+    }
+
+    const control = {
+      ...this.lastPlaybackControlPlan,
+      send,
+    };
+    this.lastPlaybackControlPlan = control;
+    if (this.lastPlaybackHandoffPlan) {
+      this.lastPlaybackHandoffPlan = {
+        ...this.lastPlaybackHandoffPlan,
+        control,
+      };
     }
   }
 

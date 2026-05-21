@@ -20,6 +20,7 @@ const showOpenDialogMock = vi.fn();
 const showSaveDialogMock = vi.fn();
 const writeImageMock = vi.fn();
 const createFromBufferMock = vi.fn(() => ({ isEmpty: () => false }));
+const createFromPathMock = vi.fn(() => ({ isEmpty: () => false }));
 const openPathMock = vi.fn();
 const showItemInFolderMock = vi.fn();
 const trashItemMock = vi.fn();
@@ -93,6 +94,7 @@ vi.mock('electron', () => ({
   },
   nativeImage: {
     createFromBuffer: createFromBufferMock,
+    createFromPath: createFromPathMock,
   },
   shell: {
     openPath: openPathMock,
@@ -171,12 +173,12 @@ const installLibraryService = () => {
     sampleRate: 44100,
     bitDepth: 16,
     bitrate: 1000,
-    coverId: null,
-    coverThumb: null,
+    coverId: null as string | null,
+    coverThumb: null as string | null,
     fieldSources: {},
   };
   const service = {
-    getTrack: vi.fn(() => track),
+    getTrack: vi.fn((_trackId?: string) => track),
     getPlaylist: vi.fn(() => ({
       id: 'playlist-1',
       name: 'Export Mix',
@@ -251,7 +253,7 @@ const installLibraryService = () => {
       createdAt: '2026-05-18T00:00:00.000Z',
       updatedAt: '2026-05-18T00:00:00.000Z',
     })),
-    resolveCoverAsset: vi.fn(() => null),
+    resolveCoverAsset: vi.fn<(_coverId?: string, _variant?: string) => { filePath: string; mimeType: string } | null>(() => null),
     addFolder: vi.fn(),
     getFolders: vi.fn(),
     getFolderOverviews: vi.fn(() => []),
@@ -351,7 +353,22 @@ const installLibraryService = () => {
     getAlbumForTrack: vi.fn(),
     getArtists: vi.fn(),
     getArtist: vi.fn(),
-    getArtistInsights: vi.fn(() => ({ artist: null, nodes: [], edges: [], concerts: { status: 'not_configured', region: null, sources: [], events: [], fetchedAt: null }, generatedAt: '2026-05-20T00:00:00.000Z' })),
+    getArtistInsights: vi.fn(() => ({
+      artist: null,
+      nodes: [],
+      edges: [],
+      onlineInfo: {
+        status: 'empty',
+        bio: null,
+        imageCredits: [],
+        externalLinks: [],
+        relatedArtists: [],
+        sourceLabels: [],
+        fetchedAt: null,
+      },
+      concerts: { status: 'not_configured', region: null, sources: [], events: [], fetchedAt: null },
+      generatedAt: '2026-05-20T00:00:00.000Z',
+    })),
     getArtistTracks: vi.fn(),
     getArtistAlbums: vi.fn(),
     enqueueMissingArtistImages: vi.fn(() => ({ queued: 0, skipped: 0 })),
@@ -375,6 +392,7 @@ const installLibraryService = () => {
       lastQueued: { queued: 0, skipped: 0 },
       summary: { total: 0, matched: 0, pending: 0, loading: 0, notFound: 0, error: 0, rateLimited: 0 },
     })),
+    clearArtistOnlineInfoCache: vi.fn(() => ({ removedRows: 0 })),
     kickoffArtistImageBackfill: vi.fn(() => ({
       paused: false,
       running: true,
@@ -473,6 +491,7 @@ describe('library IPC', () => {
     showSaveDialogMock.mockReset();
     writeImageMock.mockReset();
     createFromBufferMock.mockClear();
+    createFromPathMock.mockClear();
     openPathMock.mockReset();
     showItemInFolderMock.mockReset();
     trashItemMock.mockReset();
@@ -743,6 +762,24 @@ describe('library IPC', () => {
     expect(writeImageMock).toHaveBeenCalledTimes(1);
   });
 
+  it('copies the original track cover image to the clipboard', () => {
+    const service = installLibraryService();
+    const root = makeTempRoot();
+    const coverPath = join(root, 'cover.png');
+    const coverImage = { isEmpty: () => false as false };
+    writeFileSync(coverPath, 'cover');
+    service.getTrack.mockReturnValue({ ...service.getTrack('track-1'), coverId: 'cover-1' });
+    service.resolveCoverAsset.mockReturnValue({ filePath: coverPath, mimeType: 'image/png' });
+    createFromPathMock.mockReturnValue(coverImage);
+
+    const result = handlers[IpcChannels.LibraryCopyTrackOriginalCover]!(null, 'track-1');
+
+    expect(result).toBe(true);
+    expect(service.resolveCoverAsset).toHaveBeenCalledWith('cover-1', 'original');
+    expect(createFromPathMock).toHaveBeenCalledWith(coverPath);
+    expect(writeImageMock).toHaveBeenCalledWith(coverImage);
+  });
+
   it('saves a generated song card as png', async () => {
     const root = makeTempRoot();
     const outputPath = join(root, 'card.png');
@@ -916,7 +953,7 @@ describe('library IPC', () => {
     await handlers[IpcChannels.LibraryGetArtistAlbums]!(null, 'artist-1', { page: 1, pageSize: 12, sort: 'recent' });
 
     expect(service.getArtist).toHaveBeenCalledWith('artist-1');
-    expect(service.getArtistInsights).toHaveBeenCalledWith('artist-1', { limit: 8, includeOnline: true, region: 'HK' });
+    expect(service.getArtistInsights).toHaveBeenCalledWith('artist-1', { limit: 8, includeOnline: true, forceOnline: false, region: 'HK' });
     expect(service.getArtistTracks).toHaveBeenCalledWith('artist-1', { page: 2, pageSize: 50, sort: 'durationDesc' });
     expect(service.getArtistAlbums).toHaveBeenCalledWith('artist-1', { page: 1, pageSize: 12, sort: 'recent' });
   });
@@ -937,6 +974,7 @@ describe('library IPC', () => {
     await handlers[IpcChannels.LibraryArtistImagesSetPaused]!(null, true);
     await handlers[IpcChannels.LibraryArtistImagesKickoff]!(null, { force: true, limit: 50 });
     await handlers[IpcChannels.LibraryArtistImagesClearCache]!();
+    await handlers[IpcChannels.LibraryArtistOnlineInfoClearCache]!();
 
     expect(service.enqueueMissingArtistImages).toHaveBeenCalledWith([{ id: 'artist-1', name: 'Suara', artistKey: undefined, artistName: undefined }], {
       force: false,
@@ -950,6 +988,7 @@ describe('library IPC', () => {
     expect(service.setArtistImageJobsPaused).toHaveBeenCalledWith(true);
     expect(service.kickoffArtistImageBackfill).toHaveBeenCalledWith({ force: true, limit: 50 });
     expect(service.clearArtistImageCache).toHaveBeenCalledTimes(1);
+    expect(service.clearArtistOnlineInfoCache).toHaveBeenCalledTimes(1);
   });
 
   it('registers folder center IPC handlers with normalized queries', async () => {

@@ -3,6 +3,7 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
   HqPlayerConnectionTestResult,
   HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackControlSendResult,
   HqPlayerPlaybackHandoffPlan,
   HqPlayerPlaybackHandoffRequest,
   HqPlayerSettings,
@@ -50,6 +51,9 @@ export const registerHqPlayerIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.HqPlayerCreatePlaybackHandoff, (_event, request: unknown): Promise<HqPlayerPlaybackHandoffPlan> =>
     service.createPlaybackHandoff(normalizePlaybackHandoffRequest(request)),
+  );
+  ipcMain.handle(IpcChannels.HqPlayerSendLastPlaybackControl, (): Promise<HqPlayerPlaybackControlSendResult> =>
+    service.sendLastPlaybackControl(),
   );
   ipcMain.handle(IpcChannels.HqPlayerGetLastPlaybackHandoff, (): HqPlayerPlaybackHandoffPlan | null =>
     service.getLastPlaybackHandoffPlan(),

@@ -37,6 +37,8 @@ import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
 import { AlbumOnlineInfoService } from './online/AlbumOnlineInfoService';
+import { ArtistEventsService } from './online/ArtistEventsService';
+import { ArtistOnlineInfoService, emptyArtistOnlineInfo } from './online/ArtistOnlineInfoService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
@@ -64,8 +66,11 @@ import type {
   LibraryInboxBatch,
   LibraryInboxCreatePlaylistRequest,
   LibraryInboxPlaylistResult,
+  LibraryInboxQueueResult,
   LibraryInboxTrackPage,
   LibraryInboxTrackQuery,
+  LibraryInboxUpdateStateRequest,
+  LibraryInboxUpdateStateResult,
   LibraryPlaylist,
   LibraryPlaylistItem,
   LibraryScanStatus,
@@ -107,6 +112,7 @@ import type {
   FieldSources,
   ArtistInsights,
   ArtistInsightsOptions,
+  ArtistOnlineInfoCacheClearResult,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -212,6 +218,8 @@ export class LibraryService {
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
     private readonly albumOnlineInfoService: AlbumOnlineInfoService | null = null,
+    private readonly artistOnlineInfoService: ArtistOnlineInfoService | null = null,
+    private readonly artistEventsService: ArtistEventsService | null = null,
   ) {
     this.moveCandidateService = new LibraryMoveCandidateService(this.database);
     this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
@@ -323,6 +331,14 @@ export class LibraryService {
 
   createPlaylistFromLibraryInbox(request: LibraryInboxCreatePlaylistRequest): LibraryInboxPlaylistResult {
     return this.store.createPlaylistFromLibraryInbox(request);
+  }
+
+  getLibraryInboxQueueTracks(query?: LibraryInboxTrackQuery): LibraryInboxQueueResult {
+    return this.store.getLibraryInboxQueueTracks(query);
+  }
+
+  updateLibraryInboxItemState(request: LibraryInboxUpdateStateRequest): LibraryInboxUpdateStateResult {
+    return this.store.updateLibraryInboxItemState(request);
   }
 
   refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
@@ -539,8 +555,38 @@ export class LibraryService {
     return this.store.getArtist(artistId);
   }
 
-  getArtistInsights(artistId: string, options?: ArtistInsightsOptions): ArtistInsights {
-    return this.store.getArtistInsights(artistId, options);
+  async getArtistInsights(artistId: string, options?: ArtistInsightsOptions): Promise<ArtistInsights> {
+    const localInsights = this.store.getArtistInsights(artistId, options);
+    if (options?.includeOnline !== true || !localInsights.artist) {
+      return localInsights;
+    }
+
+    const settings = this.readAppSettings();
+    const region = options.region ?? settings.onlineArtistInfoRegion ?? null;
+    const [onlineInfo, concerts] = await Promise.all([
+      this.artistOnlineInfoService
+        ? this.artistOnlineInfoService.getArtistOnlineInfo(localInsights.artist, {
+            force: options.forceOnline,
+            locale: settings.locale,
+            region,
+          })
+        : Promise.resolve(emptyArtistOnlineInfo('Artist online info service is unavailable.')),
+      this.artistEventsService
+        ? this.artistEventsService.getBandsintownEvents({
+            artistId: localInsights.artist.id,
+            artistName: localInsights.artist.name,
+            appId: settings.onlineArtistInfoBandsintownAppId,
+            region,
+            force: options.forceOnline,
+          })
+        : Promise.resolve(localInsights.concerts),
+    ]);
+
+    return {
+      ...localInsights,
+      onlineInfo,
+      concerts,
+    };
   }
 
   getArtistTracks(artistId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize' | 'sort'>): LibraryPage<LibraryTrack> {
@@ -665,6 +711,12 @@ export class LibraryService {
     }
 
     return this.artistImageCacheService.clearCache();
+  }
+
+  clearArtistOnlineInfoCache(): ArtistOnlineInfoCacheClearResult {
+    const onlineRows = this.artistOnlineInfoService?.clearCache().removedRows ?? 0;
+    const eventRows = this.artistEventsService?.clearCache().removedRows ?? 0;
+    return { removedRows: onlineRows + eventRows };
   }
 
   getAlbumTracks(albumId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>): LibraryPage<LibraryTrack> {
@@ -2321,6 +2373,8 @@ export const createLibraryService = (
 
   const networkMetadataService = new NetworkMetadataService(database);
   const albumOnlineInfoService = new AlbumOnlineInfoService(database);
+  const artistOnlineInfoService = new ArtistOnlineInfoService(database);
+  const artistEventsService = new ArtistEventsService(undefined, database);
   const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
   const replayGainAnalysisJobQueue = new ReplayGainAnalysisJobQueue(store, {
     getTargetLufs: () => readSettings().replayGainTargetLufs ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS,
@@ -2359,6 +2413,8 @@ export const createLibraryService = (
     readSettings,
     scanConcurrency,
     albumOnlineInfoService,
+    artistOnlineInfoService,
+    artistEventsService,
   );
 };
 

@@ -518,13 +518,18 @@ export type ArtistInsightEdge = {
 export type ArtistConcertEvent = {
   id: string;
   source: 'bandsintown' | 'ticketmaster' | 'seatgeek';
+  sourceLabel?: string;
   title: string;
   startsAt: string;
+  timezone?: string | null;
+  timeTbd?: boolean;
   venueName: string | null;
   city: string | null;
   region: string | null;
   country: string | null;
   url: string | null;
+  ticketUrl?: string | null;
+  venueUrl?: string | null;
 };
 
 export type ArtistConcertInfo = {
@@ -536,9 +541,50 @@ export type ArtistConcertInfo = {
   message?: string;
 };
 
+export type ArtistOnlineInfoExternalLink = {
+  label: string;
+  url: string;
+  source: 'wikipedia' | 'musicbrainz' | 'wikidata' | 'spotify' | 'bandsintown' | 'other';
+};
+
+export type ArtistOnlineInfoBio = {
+  title: string;
+  description: string | null;
+  extract: string;
+  url: string | null;
+  language: string;
+  thumbnailUrl: string | null;
+};
+
+export type ArtistOnlineRelation = {
+  name: string;
+  type: string | null;
+  url: string | null;
+  source: 'musicbrainz' | 'wikidata' | 'other';
+};
+
+export type ArtistOnlineInfo = {
+  status: 'loading' | 'ready' | 'partial' | 'empty' | 'unavailable';
+  bio: ArtistOnlineInfoBio | null;
+  imageCredits: string[];
+  externalLinks: ArtistOnlineInfoExternalLink[];
+  relatedArtists?: ArtistOnlineRelation[];
+  sourceLabels: string[];
+  fetchedAt: string | null;
+  expiresAt?: string | null;
+  fromCache?: boolean;
+  errors?: string[];
+  message?: string;
+};
+
+export type ArtistOnlineInfoCacheClearResult = {
+  removedRows: number;
+};
+
 export type ArtistInsightsOptions = {
   limit?: number;
   includeOnline?: boolean;
+  forceOnline?: boolean;
   region?: string | null;
 };
 
@@ -546,6 +592,7 @@ export type ArtistInsights = {
   artist: LibraryArtist | null;
   nodes: ArtistInsightNode[];
   edges: ArtistInsightEdge[];
+  onlineInfo: ArtistOnlineInfo;
   concerts: ArtistConcertInfo;
   generatedAt: string;
 };
@@ -1040,6 +1087,7 @@ export type AlbumOnlineInfo = {
   match: AlbumOnlineInfoMatch | null;
   credits: AlbumCreditGroup[];
   information: AlbumInformationSummary | null;
+  artistInformation: AlbumInformationSummary | null;
   fetchedAt: string | null;
   expiresAt: string | null;
   fromCache: boolean;
@@ -1134,9 +1182,12 @@ export type LibraryInboxFilterKind =
   | 'missing_cover'
   | 'metadata_issue'
   | 'unknown_artist'
-  | 'unknown_album';
+  | 'unknown_album'
+  | 'suspicious_file';
 
 export type LibraryInboxScope = 'latest' | 'batch' | 'all';
+export type LibraryInboxItemStatus = 'pending' | 'processed' | 'ignored';
+export type LibraryInboxStatusFilter = 'all' | LibraryInboxItemStatus;
 
 export type LibraryInboxBatch = {
   id: string;
@@ -1157,13 +1208,14 @@ export type LibraryInboxFacetOption = {
   count: number;
 };
 
-export type LibraryInboxIssueReason = LibraryQualityIssueReason;
+export type LibraryInboxIssueReason = LibraryQualityIssueReason | 'suspicious_file';
 
 export type LibraryInboxTrackItem = {
   batchId: string;
   addedAt: string;
   track: LibraryTrack;
   reasons: LibraryInboxIssueReason[];
+  inboxStatus: LibraryInboxItemStatus;
 };
 
 export type LibraryInboxAlbumSummary = {
@@ -1186,6 +1238,12 @@ export type LibraryInboxStory = {
   metadataIssueCount: number;
   unknownArtistCount: number;
   unknownAlbumCount: number;
+  suspiciousCount: number;
+  pendingCount: number;
+  processedCount: number;
+  ignoredCount: number;
+  coverCompleteness: number;
+  metadataCompleteness: number;
   totalDuration: number;
   topFolders: LibraryInboxFacetOption[];
   topArtists: LibraryInboxFacetOption[];
@@ -1195,6 +1253,7 @@ export type LibraryInboxTrackQuery = {
   batchId?: string | null;
   scope?: LibraryInboxScope;
   filter?: LibraryInboxFilterKind;
+  status?: LibraryInboxStatusFilter;
   folderId?: string | null;
   album?: string | null;
   artist?: string | null;
@@ -1208,6 +1267,7 @@ export type LibraryInboxTrackPage = LibraryPage<LibraryInboxTrackItem> & {
   selectedBatch: LibraryInboxBatch | null;
   scope: LibraryInboxScope;
   filter: LibraryInboxFilterKind;
+  status: LibraryInboxStatusFilter;
   story: LibraryInboxStory;
   albums: LibraryInboxAlbumSummary[];
   facets: {
@@ -1221,10 +1281,38 @@ export type LibraryInboxCreatePlaylistRequest = Omit<LibraryInboxTrackQuery, 'pa
   name?: string | null;
 };
 
+export type LibraryInboxItemRef = {
+  batchId: string;
+  trackId: string;
+};
+
+export type LibraryInboxUpdateStateRequest = {
+  status: LibraryInboxItemStatus;
+  items?: LibraryInboxItemRef[];
+  query?: LibraryInboxTrackQuery;
+};
+
+export type LibraryInboxUpdateStateResult = {
+  updatedCount: number;
+  matchedCount: number;
+  skippedCount: number;
+  truncated: boolean;
+  limit: number;
+};
+
 export type LibraryInboxPlaylistResult = {
   playlist: LibraryPlaylist;
   addedCount: number;
   matchedCount: number;
+  skippedCount: number;
+  truncated: boolean;
+  limit: number;
+};
+
+export type LibraryInboxQueueResult = {
+  tracks: LibraryTrack[];
+  matchedCount: number;
+  addedCount: number;
   skippedCount: number;
   truncated: boolean;
   limit: number;

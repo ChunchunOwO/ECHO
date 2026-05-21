@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ArtistEventsService } from './ArtistEventsService';
+import { createDatabase } from '../../database/createDatabase';
 
 describe('ArtistEventsService', () => {
   it('does not fetch Bandsintown events without an app_id', async () => {
@@ -60,24 +61,34 @@ describe('ArtistEventsService', () => {
       {
         id: 'bandsintown:evt-1',
         source: 'bandsintown',
+        sourceLabel: 'Bandsintown',
         title: 'Echo Arena - Hong Kong',
         startsAt: '2026-06-01T20:00:00',
+        timezone: null,
+        timeTbd: false,
         venueName: 'Echo Arena',
         city: 'Hong Kong',
         region: 'HK',
         country: 'Hong Kong',
         url: null,
+        ticketUrl: null,
+        venueUrl: null,
       },
       {
         id: 'bandsintown:evt-2',
         source: 'bandsintown',
+        sourceLabel: 'Bandsintown',
         title: 'Echo Unit Live',
         startsAt: '2026-06-02T20:00:00',
+        timezone: null,
+        timeTbd: false,
         venueName: 'Second Hall',
         city: 'Tokyo',
         region: 'Tokyo',
         country: 'Japan',
         url: 'https://bandsintown.example/events/evt-2',
+        ticketUrl: null,
+        venueUrl: null,
       },
     ]);
     expect(String(fetcher.mock.calls[0]?.[0])).toContain('https://rest.bandsintown.com/artists/Echo%20Unit/events?');
@@ -131,5 +142,41 @@ describe('ArtistEventsService', () => {
     expect(result.events).toEqual([]);
     expect(result.fetchedAt).toBe('2026-05-20T00:00:00.000Z');
     expect(result.message).toBe('bandsintown_request_failed:429');
+  });
+
+  it('reuses cached Bandsintown events for the same artist and region', async () => {
+    const database = createDatabase(':memory:');
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          id: 'hk',
+          datetime: '2026-06-01T20:00:00',
+          venue: { name: 'Echo Arena', city: 'Hong Kong', region: 'HK', country: 'Hong Kong' },
+        },
+      ],
+    });
+    const service = new ArtistEventsService(fetcher, database);
+
+    const first = await service.getBandsintownEvents({
+      artistId: 'artist-1',
+      artistName: 'Echo Unit',
+      appId: 'echo-next',
+      region: 'HK',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+    const second = await service.getBandsintownEvents({
+      artistId: 'artist-1',
+      artistName: 'Echo Unit',
+      appId: 'echo-next',
+      region: 'HK',
+      now: new Date('2026-05-20T00:10:00.000Z'),
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(first.events).toHaveLength(1);
+    expect(second.events).toEqual(first.events);
+    database.close();
   });
 });

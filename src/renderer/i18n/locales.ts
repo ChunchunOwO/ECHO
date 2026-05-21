@@ -849,6 +849,9 @@ export type TranslationKey =
   | 'settings.eq.action.applyA'
   | 'settings.eq.action.applyB'
   | 'settings.eq.action.applySafePreamp'
+  | 'settings.eq.action.applyProfile'
+  | 'settings.eq.action.bindProfile'
+  | 'settings.eq.action.deleteProfile'
   | 'settings.eq.action.overwrite'
   | 'settings.eq.action.redo'
   | 'settings.eq.action.resetBand'
@@ -862,6 +865,7 @@ export type TranslationKey =
   | 'settings.eq.action.revertUserPreset'
   | 'settings.eq.action.save'
   | 'settings.eq.action.saveAs'
+  | 'settings.eq.action.saveProfile'
   | 'settings.eq.action.showAdvanced'
   | 'settings.eq.action.storeA'
   | 'settings.eq.action.storeB'
@@ -880,7 +884,11 @@ export type TranslationKey =
   | 'settings.eq.band.frequencyUnlocked'
   | 'settings.eq.band.gain'
   | 'settings.eq.band.gainStepper'
+  | 'settings.eq.band.bypassed'
+  | 'settings.eq.band.enabled'
+  | 'settings.eq.band.filterType'
   | 'settings.eq.band.inspector'
+  | 'settings.eq.band.q'
   | 'settings.eq.band.readoutsAria'
   | 'settings.eq.bitPerfect.channelDisabled'
   | 'settings.eq.bitPerfect.disabled'
@@ -931,6 +939,11 @@ export type TranslationKey =
   | 'settings.eq.error.bridgeDeletePreset'
   | 'settings.eq.error.bridgeSavePreset'
   | 'settings.eq.error.presetName'
+  | 'settings.eq.error.profileName'
+  | 'settings.eq.error.profileTarget'
+  | 'settings.eq.filter.highShelf'
+  | 'settings.eq.filter.lowShelf'
+  | 'settings.eq.filter.peaking'
   | 'settings.eq.level.clips'
   | 'settings.eq.level.estimatedOutputPeak'
   | 'settings.eq.level.headroom'
@@ -943,6 +956,14 @@ export type TranslationKey =
   | 'settings.eq.preamp.metricsAria'
   | 'settings.eq.preamp.recommended'
   | 'settings.eq.preamp.safeHeadroom'
+  | 'settings.eq.profile.bound'
+  | 'settings.eq.profile.empty'
+  | 'settings.eq.profile.nameAria'
+  | 'settings.eq.profile.namePlaceholder'
+  | 'settings.eq.profile.noOutput'
+  | 'settings.eq.profile.selectorAria'
+  | 'settings.eq.profile.title'
+  | 'settings.eq.profile.unbound'
   | 'settings.eq.preset.builtIn'
   | 'settings.eq.preset.approximation'
   | 'settings.eq.preset.copyName'
@@ -2001,6 +2022,9 @@ const zhCN: TranslationMap = {
   'settings.eq.action.applyA': '应用 A',
   'settings.eq.action.applyB': '应用 B',
   'settings.eq.action.applySafePreamp': '应用安全前级',
+  'settings.eq.action.applyProfile': '应用配置档',
+  'settings.eq.action.bindProfile': '绑定当前输出',
+  'settings.eq.action.deleteProfile': '删除配置档',
   'settings.eq.action.overwrite': '覆盖当前',
   'settings.eq.action.redo': '重做',
   'settings.eq.action.resetBand': '重置 {frequency}',
@@ -2014,6 +2038,7 @@ const zhCN: TranslationMap = {
   'settings.eq.action.revertUserPreset': '还原用户预设',
   'settings.eq.action.save': '保存',
   'settings.eq.action.saveAs': '另存为',
+  'settings.eq.action.saveProfile': '保存配置档',
   'settings.eq.action.showAdvanced': '高级',
   'settings.eq.action.storeA': '存入 A',
   'settings.eq.action.storeB': '存入 B',
@@ -2032,7 +2057,11 @@ const zhCN: TranslationMap = {
   'settings.eq.band.frequencyUnlocked': '自由频率',
   'settings.eq.band.gain': '增益',
   'settings.eq.band.gainStepper': '增益步进',
+  'settings.eq.band.bypassed': '旁路',
+  'settings.eq.band.enabled': '启用此段',
+  'settings.eq.band.filterType': '类型',
   'settings.eq.band.inspector': '选中频段',
+  'settings.eq.band.q': 'Q',
   'settings.eq.band.readoutsAria': '10 段 EQ 可拖动频段读数',
   'settings.eq.bitPerfect.channelDisabled': 'DSP 已启用：bit-perfect 已关闭。',
   'settings.eq.bitPerfect.disabled': 'DSP 已启用：bit-perfect 已关闭{reason}。',
@@ -2083,6 +2112,11 @@ const zhCN: TranslationMap = {
   'settings.eq.error.bridgeDeletePreset': '桌面桥接不可用。请在 ECHO Next 桌面端删除 EQ 预设。',
   'settings.eq.error.bridgeSavePreset': '桌面桥接不可用。请在 ECHO Next 桌面端保存 EQ 预设。',
   'settings.eq.error.presetName': '请输入预设名称。',
+  'settings.eq.error.profileName': '请输入配置档名称。',
+  'settings.eq.error.profileTarget': '请选择一个配置档。',
+  'settings.eq.filter.highShelf': '高架',
+  'settings.eq.filter.lowShelf': '低架',
+  'settings.eq.filter.peaking': '峰值',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
   'settings.eq.level.headroom': '余量',
@@ -2095,6 +2129,14 @@ const zhCN: TranslationMap = {
   'settings.eq.preamp.metricsAria': '安全余量指标',
   'settings.eq.preamp.recommended': '建议',
   'settings.eq.preamp.safeHeadroom': '安全余量',
+  'settings.eq.profile.bound': '{output} 已绑定 {profile}',
+  'settings.eq.profile.empty': '未选择配置档',
+  'settings.eq.profile.nameAria': 'EQ 配置档名称',
+  'settings.eq.profile.namePlaceholder': '保存为配置档',
+  'settings.eq.profile.noOutput': '当前输出',
+  'settings.eq.profile.selectorAria': 'EQ 配置档',
+  'settings.eq.profile.title': '配置档',
+  'settings.eq.profile.unbound': '{output} 未绑定配置档',
   'settings.eq.preset.approximation': '10 段近似',
   'settings.eq.preset.builtIn': '内置预设',
   'settings.eq.preset.copyName': '{name} 副本',
@@ -4708,6 +4750,9 @@ const enUS: TranslationMap = {
   'settings.eq.action.applyA': 'Apply A',
   'settings.eq.action.applyB': 'Apply B',
   'settings.eq.action.applySafePreamp': 'Apply safe preamp',
+  'settings.eq.action.applyProfile': 'Apply profile',
+  'settings.eq.action.bindProfile': 'Bind current output',
+  'settings.eq.action.deleteProfile': 'Delete profile',
   'settings.eq.action.overwrite': 'Overwrite',
   'settings.eq.action.redo': 'Redo',
   'settings.eq.action.resetBand': 'Reset {frequency}',
@@ -4721,6 +4766,7 @@ const enUS: TranslationMap = {
   'settings.eq.action.revertUserPreset': 'Revert user preset',
   'settings.eq.action.save': 'Save',
   'settings.eq.action.saveAs': 'Save as',
+  'settings.eq.action.saveProfile': 'Save profile',
   'settings.eq.action.showAdvanced': 'Advanced',
   'settings.eq.action.storeA': 'Store A',
   'settings.eq.action.storeB': 'Store B',
@@ -4739,7 +4785,11 @@ const enUS: TranslationMap = {
   'settings.eq.band.frequencyUnlocked': 'Free frequency',
   'settings.eq.band.gain': 'Gain',
   'settings.eq.band.gainStepper': 'Gain stepper',
+  'settings.eq.band.bypassed': 'Bypassed',
+  'settings.eq.band.enabled': 'Band enabled',
+  'settings.eq.band.filterType': 'Type',
   'settings.eq.band.inspector': 'Selected band',
+  'settings.eq.band.q': 'Q',
   'settings.eq.band.readoutsAria': '10-band EQ draggable band readouts',
   'settings.eq.bitPerfect.channelDisabled': 'DSP active: bit-perfect disabled.',
   'settings.eq.bitPerfect.disabled': 'DSP active: bit-perfect disabled{reason}.',
@@ -4790,6 +4840,11 @@ const enUS: TranslationMap = {
   'settings.eq.error.bridgeDeletePreset': 'Desktop bridge unavailable. Open ECHO Next in Electron to delete EQ presets.',
   'settings.eq.error.bridgeSavePreset': 'Desktop bridge unavailable. Open ECHO Next in Electron to save EQ presets.',
   'settings.eq.error.presetName': 'Enter a preset name before saving.',
+  'settings.eq.error.profileName': 'Enter a profile name before saving.',
+  'settings.eq.error.profileTarget': 'Select a profile first.',
+  'settings.eq.filter.highShelf': 'High shelf',
+  'settings.eq.filter.lowShelf': 'Low shelf',
+  'settings.eq.filter.peaking': 'Peaking',
   'settings.eq.level.clips': 'Clips {count}',
   'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
   'settings.eq.level.headroom': 'Headroom',
@@ -4802,6 +4857,14 @@ const enUS: TranslationMap = {
   'settings.eq.preamp.metricsAria': 'Headroom safety metrics',
   'settings.eq.preamp.recommended': 'Recommended',
   'settings.eq.preamp.safeHeadroom': 'Safe Headroom',
+  'settings.eq.profile.bound': '{output} bound to {profile}',
+  'settings.eq.profile.empty': 'No profile selected',
+  'settings.eq.profile.nameAria': 'EQ profile name',
+  'settings.eq.profile.namePlaceholder': 'Save as profile',
+  'settings.eq.profile.noOutput': 'Current output',
+  'settings.eq.profile.selectorAria': 'EQ profile',
+  'settings.eq.profile.title': 'Profiles',
+  'settings.eq.profile.unbound': '{output} has no profile binding',
   'settings.eq.preset.approximation': '10-band approximation',
   'settings.eq.preset.builtIn': 'Built-in presets',
   'settings.eq.preset.copyName': 'Copy of {name}',

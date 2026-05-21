@@ -148,6 +148,7 @@ const setChannelBalanceStateMock = vi.fn();
 const validateGlobalShortcutMock = vi.fn();
 const kickoffArtistImageBackfillMock = vi.fn();
 const getArtistImageJobStatusMock = vi.fn();
+const clearArtistOnlineInfoCacheMock = vi.fn();
 const startReplayGainAnalysisMock = vi.fn();
 const getReplayGainAnalysisStatusMock = vi.fn();
 const openPluginDirectoryMock = vi.fn();
@@ -335,6 +336,7 @@ vi.mock('../utils/echoBridge', () => ({
     repairDatabase: repairDatabaseMock,
     getArtistImageJobStatus: getArtistImageJobStatusMock,
     kickoffArtistImageBackfill: kickoffArtistImageBackfillMock,
+    clearArtistOnlineInfoCache: clearArtistOnlineInfoCacheMock,
     getDuplicateIndexSummary: vi.fn().mockResolvedValue({
       mode: 'strict',
       totalTracksScanned: 0,
@@ -531,6 +533,7 @@ beforeEach(() => {
       rateLimited: 0,
     },
   });
+  clearArtistOnlineInfoCacheMock.mockResolvedValue({ removedRows: 0 });
   startReplayGainAnalysisMock.mockResolvedValue({
     id: 'replay-gain-job',
     status: 'completed',
@@ -713,7 +716,24 @@ describe('SettingsPage', () => {
         onlineArtistInfoRegion: 'HK',
       }),
     );
-    expect(screen.getByText('在线歌手信息配置已保存。演出数据源接入前不会自动联网请求。')).toBeTruthy();
+    expect(screen.getByText('在线歌手信息配置已保存。艺人页会按需后台加载简介和演出。')).toBeTruthy();
+  });
+
+  it('clears online artist info cache from integrations', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearArtistOnlineInfoCacheMock.mockResolvedValue({ removedRows: 3 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.integrations\\.label');
+    await screen.findByText('在线歌手信息');
+    fireEvent.click(screen.getByRole('button', { name: /清理艺人资料缓存/ }));
+
+    await waitFor(() => expect(clearArtistOnlineInfoCacheMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('已清理 3 条在线歌手信息和演出缓存。')).toBeTruthy();
   });
 
   it('offers plugin actions from settings without duplicating the full manager', async () => {

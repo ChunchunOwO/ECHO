@@ -231,6 +231,7 @@ export type AppSettings = {
   lyricsRomanizationEnabled: boolean;
   lyricsTranslationEnabled: boolean;
   lyricsWordHighlightEnabled?: boolean;
+  lyricsWordHighlightClarityPercent?: number;
   lyricsFontSizePx: number;
   lyricsSecondaryFontSizePx?: number;
   lyricsFontFamily?: string;

@@ -13,7 +13,18 @@ import type {
   ChannelBalanceState,
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
-import type { EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
+import type {
+  EqBindProfileRequest,
+  EqProfileBindingTarget,
+  EqSavePresetRequest,
+  EqSaveProfileRequest,
+  EqSetBandEnabledRequest,
+  EqSetBandFilterTypeRequest,
+  EqSetBandFrequencyRequest,
+  EqSetBandGainRequest,
+  EqSetBandQRequest,
+  EqState,
+} from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
@@ -390,6 +401,15 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqSetBandFrequency, async (_event, request: EqSetBandFrequencyRequest): Promise<EqState> =>
     getEqBridge().setBandFrequency(request),
   );
+  ipcMain.handle(IpcChannels.EqSetBandQ, async (_event, request: EqSetBandQRequest): Promise<EqState> =>
+    getEqBridge().setBandQ(request),
+  );
+  ipcMain.handle(IpcChannels.EqSetBandFilterType, async (_event, request: EqSetBandFilterTypeRequest): Promise<EqState> =>
+    getEqBridge().setBandFilterType(request),
+  );
+  ipcMain.handle(IpcChannels.EqSetBandEnabled, async (_event, request: EqSetBandEnabledRequest): Promise<EqState> =>
+    getEqBridge().setBandEnabled(request),
+  );
   ipcMain.handle(IpcChannels.EqSetPreamp, async (_event, preampDb: unknown): Promise<EqState> =>
     getEqBridge().setPreamp(Number(preampDb)),
   );
@@ -401,6 +421,12 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqSavePreset, (_event, request: EqSavePresetRequest) => getEqBridge().savePreset(request));
   ipcMain.handle(IpcChannels.EqExportPreset, (_event, request: EqSavePresetRequest) => exportEqPreset(request));
   ipcMain.handle(IpcChannels.EqDeletePreset, (_event, presetId: unknown) => getEqBridge().deletePreset(String(presetId)));
+  ipcMain.handle(IpcChannels.EqListProfiles, () => getEqBridge().listProfiles());
+  ipcMain.handle(IpcChannels.EqSaveProfile, (_event, request: EqSaveProfileRequest) => getEqBridge().saveProfile(request));
+  ipcMain.handle(IpcChannels.EqApplyProfile, (_event, profileId: unknown) => getEqBridge().applyProfile(String(profileId)));
+  ipcMain.handle(IpcChannels.EqDeleteProfile, (_event, profileId: unknown) => getEqBridge().deleteProfile(String(profileId)));
+  ipcMain.handle(IpcChannels.EqBindProfileToOutput, (_event, request: EqBindProfileRequest) => getEqBridge().bindProfileToOutput(request));
+  ipcMain.handle(IpcChannels.EqGetProfileBinding, (_event, target: EqProfileBindingTarget) => getEqBridge().getProfileBinding(target));
   ipcMain.handle(IpcChannels.ChannelBalanceGetState, (): ChannelBalanceState => getEqBridge().getChannelBalanceState());
   ipcMain.handle(IpcChannels.ChannelBalanceSetState, async (_event, patch: Partial<ChannelBalanceState>): Promise<ChannelBalanceState> =>
     getEqBridge().setChannelBalanceState(patch),

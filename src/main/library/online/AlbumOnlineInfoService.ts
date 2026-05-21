@@ -22,9 +22,20 @@ type AlbumSnapshot = {
 type OnlinePayload = {
   credits: AlbumCreditGroup[];
   information: AlbumInformationSummary | null;
+  artistInformation: AlbumInformationSummary | null;
   match: AlbumOnlineInfoMatch | null;
   sources: AlbumOnlineInfoSource[];
   errors: string[];
+};
+
+type CachedAlbumOnlineInfo = AlbumOnlineInfo & {
+  cacheVersion: number;
+};
+
+type ParsedInformationCache = {
+  version: number;
+  information: AlbumInformationSummary | null;
+  artistInformation: AlbumInformationSummary | null;
 };
 
 type MusicBrainzReleaseSearchResult = {
@@ -200,6 +211,49 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
   }
 };
 
+const isInformationSummary = (value: unknown): value is AlbumInformationSummary => {
+  const record = asRecord(value);
+  return Boolean(text(record.title) && text(record.extract) && text(record.language));
+};
+
+const parseInformationCache = (value: unknown): ParsedInformationCache => {
+  const parsed = parseJson<unknown>(value, null);
+  if (!parsed) {
+    return { version: 1, information: null, artistInformation: null };
+  }
+
+  if (isInformationSummary(parsed)) {
+    return { version: 1, information: parsed, artistInformation: null };
+  }
+
+  const record = asRecord(parsed);
+  return {
+    version: Number(record.version) === 2 ? 2 : 1,
+    information: isInformationSummary(record.album) ? record.album : null,
+    artistInformation: isInformationSummary(record.artist) ? record.artist : null,
+  };
+};
+
+const serializeInformationCache = (info: AlbumOnlineInfo): string =>
+  JSON.stringify({
+    version: 2,
+    album: info.information,
+    artist: info.artistInformation,
+  });
+
+const mergeSources = (fresh: AlbumOnlineInfoSource[], cached: AlbumOnlineInfoSource[]): AlbumOnlineInfoSource[] => {
+  const seen = new Set<string>();
+  const merged: AlbumOnlineInfoSource[] = [];
+  for (const source of [...fresh, ...cached]) {
+    const key = `${source.provider}:${source.label}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(source);
+    }
+  }
+  return merged;
+};
+
 const pickArtistCredit = (value: unknown): { name: string | null; id: string | null } => {
   const credits = Array.isArray(value) ? value.map(asRecord) : [];
   const first = credits[0] ?? {};
@@ -262,18 +316,32 @@ export class AlbumOnlineInfoService {
     const language = wikipediaLanguageForLocale(options.locale);
     const cacheKey = cacheKeyFor(snapshot.album.id, snapshot.album.title, snapshot.album.albumArtist, language);
     const now = new Date();
+    let legacyCache: CachedAlbumOnlineInfo | null = null;
 
     if (options.force !== true) {
       const cached = this.readCache(cacheKey, snapshot.album.id);
       if (cached && Date.parse(cached.expiresAt ?? '') > now.getTime()) {
-        return cached;
+        if (cached.cacheVersion >= 2) {
+          return cached;
+        }
+        legacyCache = cached;
       }
     }
 
-    const payload = await this.fetchOnlineInfo(snapshot, language);
+    const fetchedPayload = await this.fetchOnlineInfo(snapshot, language);
+    const payload: OnlinePayload = legacyCache
+      ? {
+          ...fetchedPayload,
+          credits: fetchedPayload.credits.length > 0 ? fetchedPayload.credits : legacyCache.credits,
+          information: fetchedPayload.information ?? legacyCache.information,
+          match: fetchedPayload.match ?? legacyCache.match,
+          sources: mergeSources(fetchedPayload.sources, legacyCache.sources),
+        }
+      : fetchedPayload;
     const hasData =
       payload.credits.length > 0 ||
-      Boolean(payload.information);
+      Boolean(payload.information) ||
+      Boolean(payload.artistInformation);
     const status = hasData ? (payload.errors.length > 0 ? 'partial' : 'ready') : payload.errors.length > 0 ? 'error' : 'empty';
     const fetchedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + (hasData ? successTtlMs : shortTtlMs)).toISOString();
@@ -284,6 +352,7 @@ export class AlbumOnlineInfoService {
       match: payload.match,
       credits: payload.credits,
       information: payload.information,
+      artistInformation: payload.artistInformation,
       fetchedAt,
       expiresAt,
       fromCache: false,
@@ -304,10 +373,16 @@ export class AlbumOnlineInfoService {
       errors.push(`MusicBrainz: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    const information = await this.fetchWikipediaInformation(snapshot, language).catch((error: unknown) => {
-      errors.push(`Wikipedia: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
-    });
+    const [information, artistInformation] = await Promise.all([
+      this.fetchWikipediaInformation(snapshot, language).catch((error: unknown) => {
+        errors.push(`Wikipedia album: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      }),
+      this.fetchWikipediaArtistInformation(snapshot, language).catch((error: unknown) => {
+        errors.push(`Wikipedia artist: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      }),
+    ]);
 
     const credits = musicBrainz ? this.extractCredits(musicBrainz.release) : [];
     const match = musicBrainz ? this.toMatch(musicBrainz.search) : null;
@@ -315,13 +390,14 @@ export class AlbumOnlineInfoService {
     if (musicBrainz) {
       sources.push({ provider: 'musicbrainz', label: 'MusicBrainz' });
     }
-    if (information) {
+    if (information || artistInformation) {
       sources.push({ provider: 'wikipedia', label: `${language}.wikipedia.org` });
     }
 
     return {
       credits,
       information,
+      artistInformation,
       match,
       sources,
       errors,
@@ -472,6 +548,53 @@ export class AlbumOnlineInfoService {
     return null;
   }
 
+  private async fetchWikipediaArtistInformation(snapshot: AlbumSnapshot, language: string): Promise<AlbumInformationSummary | null> {
+    const artist = snapshot.album.albumArtist.trim();
+    if (!artist || /^unknown artist$/iu.test(artist) || /^various artists$/iu.test(artist)) {
+      return null;
+    }
+
+    const queries = [
+      artist,
+      `${artist} musician`,
+      `${artist} band`,
+    ].filter((value, index, values) => value.trim() && values.indexOf(value) === index);
+
+    for (const query of queries) {
+      try {
+        const searchData = asRecord(await wikipediaSearchJson(language, query));
+        const pages = Array.isArray(searchData.pages) ? searchData.pages.map(asRecord) : [];
+        const best = pages
+          .map((page) => ({
+            key: text(page.key),
+            title: text(page.title),
+            score: Math.max(similarity(artist, text(page.title)), similarity(query, text(page.title))),
+          }))
+          .filter((page): page is { key: string; title: string; score: number } => Boolean(page.key && page.title))
+          .sort((left, right) => right.score - left.score)[0];
+        const pageTitle = best?.key ?? query;
+        const data = asRecord(await wikipediaJson(language, pageTitle));
+        const extract = text(data.extract);
+        const title = text(data.title);
+        if (!extract || !title) {
+          continue;
+        }
+        return {
+          title,
+          description: text(data.description),
+          extract: extract.length > 1300 ? `${extract.slice(0, 1297).trim()}...` : extract,
+          url: text(asRecord(asRecord(data.content_urls).desktop).page),
+          language,
+          thumbnailUrl: text(asRecord(data.thumbnail).source),
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   private toMatch(search: MusicBrainzReleaseSearchResult): AlbumOnlineInfoMatch {
     return {
       provider: 'musicbrainz',
@@ -485,22 +608,25 @@ export class AlbumOnlineInfoService {
     };
   }
 
-  private readCache(cacheKey: string, albumId: string): AlbumOnlineInfo | null {
+  private readCache(cacheKey: string, albumId: string): CachedAlbumOnlineInfo | null {
     const row = this.database.prepare<[string], DbRow>('SELECT * FROM album_online_info_cache WHERE cache_key = ?').get(cacheKey);
     if (!row) {
       return null;
     }
+    const cachedInformation = parseInformationCache(row.information_json);
     return {
       albumId,
       status: row.status === 'ready' || row.status === 'partial' || row.status === 'empty' || row.status === 'error' ? row.status : 'empty',
       sources: parseJson<AlbumOnlineInfoSource[]>(row.sources_json, []),
       match: parseJson<AlbumOnlineInfoMatch | null>(row.match_json, null),
       credits: parseJson<AlbumCreditGroup[]>(row.credits_json, []),
-      information: parseJson<AlbumInformationSummary | null>(row.information_json, null),
+      information: cachedInformation.information,
+      artistInformation: cachedInformation.artistInformation,
       fetchedAt: text(row.fetched_at),
       expiresAt: text(row.expires_at),
       fromCache: true,
       errors: parseJson<string[]>(row.provider_errors_json, []),
+      cacheVersion: cachedInformation.version,
     };
   }
 
@@ -539,7 +665,7 @@ export class AlbumOnlineInfoService {
           normalizedArtist,
           JSON.stringify(info.credits),
           JSON.stringify({}),
-          JSON.stringify(info.information),
+          serializeInformationCache(info),
           JSON.stringify(info.match),
           JSON.stringify(info.sources),
           JSON.stringify(info.errors),
@@ -572,7 +698,7 @@ export class AlbumOnlineInfoService {
         normalizedTitle,
         normalizedArtist,
         JSON.stringify(info.credits),
-        JSON.stringify(info.information),
+        serializeInformationCache(info),
         JSON.stringify(info.match),
         JSON.stringify(info.sources),
         JSON.stringify(info.errors),

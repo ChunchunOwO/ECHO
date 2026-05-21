@@ -8,6 +8,7 @@ import { DecoderPipeline } from './DecoderPipeline';
 import { JuceDecodePipeline } from './JuceDecodePipeline';
 import { getEqBridge } from './EqBridge';
 import { PcmLevelMeterTransform, createAudioLevelTelemetry, type PcmLevelSnapshot } from './AudioLevelMeter';
+import type { EqProfileBindingTarget } from '../../shared/types/eq';
 import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutputBridge';
 import { PlaybackClock } from './PlaybackClock';
 import { isCueTrackPath } from './CueSheet';
@@ -6427,9 +6428,28 @@ export class AudioSession extends EventEmitter {
     }
   }
 
+  private createEqProfileBindingTarget(): EqProfileBindingTarget {
+    const settings = this.currentOutputSettings ?? this.outputSettings;
+    const outputMode = this.currentPlan?.outputMode ?? normalizeOutputMode(settings.outputMode);
+    const sharedBackend = outputMode === 'shared' ? normalizeSharedBackend(settings.sharedBackend) : 'auto';
+
+    return {
+      outputMode,
+      sharedBackend,
+      outputBackend: this.currentOutputBackend,
+      outputDeviceId: this.currentDevice?.id ?? null,
+      outputDeviceName: this.currentDevice?.name ?? this.currentOutputDeviceName ?? settings.deviceName ?? null,
+      outputDeviceType: this.currentOutputDeviceType ?? this.currentDevice?.outputMode ?? null,
+      deviceIndex: Number.isInteger(Number(settings.deviceIndex)) ? Number(settings.deviceIndex) : null,
+      deviceName: settings.deviceName ?? null,
+    };
+  }
+
   private async syncEqStateForPlayback(): Promise<void> {
     try {
-      await getEqBridge().syncStateToNative();
+      const eqBridge = getEqBridge();
+      eqBridge.applyBoundProfileForOutput(this.createEqProfileBindingTarget());
+      await eqBridge.syncStateToNative();
     } catch (error) {
       if (!isEqControlDisconnectError(error)) {
         throw error;

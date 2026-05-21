@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -47,7 +47,9 @@ const createEqControlServer = async (
   options: { responseBands?: EqState['bands'] } = {},
 ): Promise<{ port: number; messages: Array<Record<string, unknown>>; closeClients: () => void }> => {
   const messages: Array<Record<string, unknown>> = [];
-  const responseBands = options.responseBands ?? createBridge().getState().bands;
+  let responseBands = (options.responseBands ?? createBridge().getState().bands).map((band) => ({ ...band }));
+  let responseEnabled = true;
+  let responsePreampDb = 0;
   const clients: net.Socket[] = [];
   const server = net.createServer((socket) => {
     sockets.push(socket);
@@ -63,10 +65,31 @@ const createEqControlServer = async (
         if (line) {
           const message = JSON.parse(line) as Record<string, unknown>;
           messages.push(message);
+          const band = Number(message.band);
+          if (message.type === 'eq:set-enabled') {
+            responseEnabled = message.enabled === true;
+          } else if (message.type === 'eq:set-preamp' && Number.isFinite(Number(message.preampDb))) {
+            responsePreampDb = Number(message.preampDb);
+          } else if (message.type === 'eq:set-preset' && Array.isArray(message.bands)) {
+            responsePreampDb = Number(message.preampDb ?? responsePreampDb);
+            responseBands = (message.bands as EqState['bands']).map((item) => ({ ...item }));
+          } else if (Number.isInteger(band) && band >= 0 && band < responseBands.length) {
+            if (message.type === 'eq:set-band-gain' && Number.isFinite(Number(message.gainDb))) {
+              responseBands[band] = { ...responseBands[band], gainDb: Number(message.gainDb) };
+            } else if (message.type === 'eq:set-band-frequency' && Number.isFinite(Number(message.frequencyHz))) {
+              responseBands[band] = { ...responseBands[band], frequencyHz: Number(message.frequencyHz) };
+            } else if (message.type === 'eq:set-band-q' && Number.isFinite(Number(message.q))) {
+              responseBands[band] = { ...responseBands[band], q: Number(message.q) };
+            } else if (message.type === 'eq:set-band-filter-type') {
+              responseBands[band] = { ...responseBands[band], filterType: message.filterType as EqState['bands'][number]['filterType'] };
+            } else if (message.type === 'eq:set-band-enabled') {
+              responseBands[band] = { ...responseBands[band], enabled: message.enabled === true };
+            }
+          }
           if (message.type === 'channelBalance.setState') {
             socket.write(`${JSON.stringify({ type: 'channelBalance:state' })}\n`);
           } else {
-            socket.write(`${JSON.stringify({ type: 'eq:state', enabled: true, preampDb: 0, bands: responseBands })}\n`);
+            socket.write(`${JSON.stringify({ type: 'eq:state', enabled: responseEnabled, preampDb: responsePreampDb, bands: responseBands })}\n`);
           }
         }
         newlineIndex = buffer.indexOf('\n');
@@ -145,6 +168,67 @@ describe('EqBridge protocol validation', () => {
     await bridge.setBandFrequency({ band: 2, frequencyHz: 50000 });
 
     expect(bridge.getState().bands[2].frequencyHz).toBe(20000);
+  });
+
+  it('normalizes old persisted EQ bands with PEQ defaults', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    writeFileSync(
+      join(dir, 'eq-state.json'),
+      JSON.stringify({
+        enabled: true,
+        preampDb: -2,
+        bands: Array.from({ length: 10 }, (_value, index) => ({
+          frequencyHz: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000][index],
+          gainDb: index === 0 ? 4 : 0,
+        })),
+      }),
+      'utf8',
+    );
+
+    const bridge = new EqBridge(dir);
+    const state = bridge.getState();
+
+    expect(state.bands[0]).toMatchObject({
+      gainDb: 4,
+      q: 1,
+      filterType: 'peaking',
+      enabled: true,
+    });
+  });
+
+  it('clamps PEQ Q and propagates band type and bypass state to native control', async () => {
+    const bridge = createBridge();
+    const server = await createEqControlServer();
+    bridge.connect(server.port);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await bridge.setBandQ({ band: 3, q: 50 });
+    await bridge.setBandFilterType({ band: 3, filterType: 'lowShelf' });
+    await bridge.setBandEnabled({ band: 3, enabled: false });
+
+    expect(bridge.getState().bands[3]).toMatchObject({
+      q: 12,
+      filterType: 'lowShelf',
+      enabled: false,
+    });
+    expect(server.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'eq:set-band-q', band: 3, q: 12 }),
+      expect.objectContaining({ type: 'eq:set-band-filter-type', band: 3, filterType: 'lowShelf' }),
+      expect.objectContaining({ type: 'eq:set-band-enabled', band: 3, enabled: false }),
+    ]));
+  });
+
+  it('backs up old EQ files before first Phase 2 format write', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'eq-state.json'), JSON.stringify(createBridge().getState()), 'utf8');
+    writeFileSync(join(dir, 'eq-presets.json'), JSON.stringify([]), 'utf8');
+    const bridge = new EqBridge(dir);
+
+    await bridge.setBandQ({ band: 1, q: 2 });
+
+    expect(existsSync(join(dir, 'eq-backups', 'phase2-backup.done'))).toBe(true);
   });
 
   it('refuses malformed preset data', () => {
@@ -229,6 +313,36 @@ describe('EqBridge protocol validation', () => {
     });
     expect(bridge.getState().bands[1].gainDb).toBe(3);
     expect(stateChanges.at(-1)).toMatchObject({ presetId: saved.id, presetName: 'Desk Headphones' });
+  });
+
+  it('stores EQ profiles and only auto-applies explicitly bound output profiles', async () => {
+    const bridge = createBridge();
+    await bridge.setBandGain({ band: 0, gainDb: 5 });
+    const desk = bridge.saveProfile({
+      name: 'Desk DAC',
+      state: bridge.getState(),
+    });
+    await bridge.setBandGain({ band: 0, gainDb: -5 });
+    const bt = bridge.saveProfile({
+      name: 'Bluetooth',
+      state: bridge.getState(),
+    });
+    const target = {
+      outputMode: 'shared',
+      outputDeviceId: 'device-a',
+      outputDeviceName: 'Desk DAC',
+      outputDeviceType: 'shared',
+      sharedBackend: 'windows',
+    };
+
+    bridge.bindProfileToOutput({ profileId: desk.id, target });
+    bridge.bindProfileToOutput({ profileId: bt.id, target: { ...target, outputDeviceId: 'device-b', outputDeviceName: 'Bluetooth' } });
+
+    expect(bridge.getProfileBinding(target)).toMatchObject({ profileId: desk.id, profileName: 'Desk DAC' });
+    bridge.applyBoundProfileForOutput(target);
+    expect(bridge.getState().bands[0].gainDb).toBe(5);
+    bridge.applyBoundProfileForOutput({ ...target, outputDeviceId: 'missing-device' });
+    expect(bridge.getState().bands[0].gainDb).toBe(5);
   });
 
   it('includes professional target curves as read-only built-in presets', async () => {

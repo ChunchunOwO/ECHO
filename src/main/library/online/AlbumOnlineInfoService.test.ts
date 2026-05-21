@@ -46,7 +46,18 @@ describe('AlbumOnlineInfoService', () => {
     const row = {
       status: 'ready',
       credits_json: JSON.stringify([{ role: 'Composer', people: [{ name: 'Cached Person', detail: null, trackTitle: null, source: 'release' }] }]),
-      information_json: JSON.stringify(null),
+      information_json: JSON.stringify({
+        version: 2,
+        album: null,
+        artist: {
+          title: 'Cached Artist',
+          description: 'Artist profile',
+          extract: 'Cached artist biography.',
+          url: 'https://example.test/artist',
+          language: 'en',
+          thumbnailUrl: null,
+        },
+      }),
       match_json: JSON.stringify(null),
       sources_json: JSON.stringify([{ provider: 'musicbrainz', label: 'MusicBrainz' }]),
       provider_errors_json: JSON.stringify([]),
@@ -63,24 +74,16 @@ describe('AlbumOnlineInfoService', () => {
 
     expect(result.fromCache).toBe(true);
     expect(result.credits[0]?.people[0]?.name).toBe('Cached Person');
+    expect(result.artistInformation?.title).toBe('Cached Artist');
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
   it('keeps writing cache compatible with the legacy related_json column', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ releases: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ pages: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ pages: [] }),
-      });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ releases: [], pages: [] }),
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const run = vi.fn();
@@ -107,6 +110,7 @@ describe('AlbumOnlineInfoService', () => {
     const insertSql = String((database.prepare as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] ?? '');
     expect(insertSql).toContain('related_json');
     expect(run.mock.calls[0]).toContain(JSON.stringify({}));
+    expect(run.mock.calls[0]).toContain(JSON.stringify({ version: 2, album: null, artist: null }));
     vi.unstubAllGlobals();
   });
 });

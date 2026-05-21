@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { Music2 } from 'lucide-react';
 import { LyricsLine } from './LyricsLine';
 import type { LyricsState } from './lyricsTypes';
@@ -23,6 +24,7 @@ type LyricsViewProps = {
   playbackRate?: number;
   playbackState?: string;
   positionUpdatedAtMs?: number;
+  onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   onSeek: (timeMs: number) => void;
   hideEmptyState?: boolean;
   showRomanization?: boolean;
@@ -198,6 +200,7 @@ export const LyricsView = ({
   durationMs,
   hideEmptyState = false,
   lyrics,
+  onContextMenu,
   onSeek,
   playbackRate = 1,
   playbackState = 'idle',
@@ -576,7 +579,13 @@ export const LyricsView = ({
   }
 
   return (
-    <section className="lyrics-scroll" aria-label="Lyrics" data-kind={lyrics.kind} ref={scrollRef}>
+    <section
+      className="lyrics-scroll"
+      aria-label="Lyrics"
+      data-kind={lyrics.kind}
+      ref={scrollRef}
+      onContextMenu={onContextMenu}
+    >
       {lyrics.lines.map((line, index) => (
         <LyricsLine
           active={index === activeIndex}

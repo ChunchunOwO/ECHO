@@ -73,6 +73,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsRomanizationEnabled'
   | 'lyricsTranslationEnabled'
   | 'lyricsWordHighlightEnabled'
+  | 'lyricsWordHighlightClarityPercent'
   | 'lyricsFontSizePx'
   | 'lyricsSecondaryFontSizePx'
   | 'lyricsFontFamily'
@@ -116,6 +117,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
+  lyricsWordHighlightClarityPercent: 70,
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsFontFamily: 'Microsoft YaHei',
@@ -365,6 +367,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
   lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
+  lyricsWordHighlightClarityPercent: settings.lyricsWordHighlightClarityPercent ?? fallbackSettings.lyricsWordHighlightClarityPercent,
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
   lyricsFontFamily: settings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily,
@@ -415,6 +418,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const lyricsContextOpacityPercent = effectiveSettings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent;
   const lyricsLineMaxChars = effectiveSettings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars ?? 0;
   const lyricsFontFamily = effectiveSettings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily ?? 'Microsoft YaHei';
+  const wordHighlightClarityPercent = effectiveSettings.lyricsWordHighlightClarityPercent ?? fallbackSettings.lyricsWordHighlightClarityPercent ?? 70;
+  const wordHighlightClarityLabel =
+    wordHighlightClarityPercent === fallbackSettings.lyricsWordHighlightClarityPercent ? '正常' : `${wordHighlightClarityPercent}%`;
   const enabledProviderSet = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
   const orderedLyricsSourceOptions = useMemo(() => {
     const orderedIds = [
@@ -1473,6 +1479,30 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             />
           </label>
           <p>仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。</p>
+
+          {showPersistentControls ? (
+          <>
+          <label className="lyrics-drawer-range">
+            <span>
+              <strong>
+                <SlidersHorizontal size={15} />
+                逐字高亮清晰度
+              </strong>
+              <em>{wordHighlightClarityLabel}</em>
+            </span>
+            <input
+              type="range"
+              min={40}
+              max={100}
+              step={1}
+              value={wordHighlightClarityPercent}
+              disabled={isBusy || effectiveSettings.lyricsWordHighlightEnabled === false}
+              onChange={(event) => patchSettingsDebounced({ lyricsWordHighlightClarityPercent: Number(event.currentTarget.value) })}
+            />
+          </label>
+          <p>默认“正常”；调高会让当前词未唱到的部分更完整，调低会更有逐字推进感。</p>
+          </>
+          ) : null}
 
           {showPersistentControls ? (
           <>

@@ -41,6 +41,8 @@ export type HqPlayerStatus = {
   profileName: string | null;
   lastCheckedAt: string | null;
   lastError: string | null;
+  controlInfo?: HqPlayerControlInfo | null;
+  playbackStatus?: HqPlayerRemotePlaybackStatus | null;
 };
 
 export type HqPlayerConnectionTestResult = {
@@ -50,6 +52,60 @@ export type HqPlayerConnectionTestResult = {
   elapsedMs: number;
   checkedAt: string;
   error: string | null;
+  controlInfo?: HqPlayerControlInfo | null;
+  playbackStatus?: HqPlayerRemotePlaybackStatus | null;
+};
+
+export type HqPlayerControlInfo = {
+  name: string | null;
+  product: string | null;
+  version: string | null;
+  platform: string | null;
+  engine: string | null;
+  receivedAt: string;
+};
+
+export type HqPlayerRemotePlaybackState = 'stopped' | 'paused' | 'playing' | 'stop-requested' | 'unknown';
+
+export type HqPlayerRemotePlaybackMetadata = {
+  uri: string | null;
+  mime: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  albumArtist: string | null;
+  composer: string | null;
+  performer: string | null;
+  genre: string | null;
+  date: string | null;
+  sampleRate: number | null;
+  bits: number | null;
+  channels: number | null;
+  bitrate: number | null;
+};
+
+export type HqPlayerRemotePlaybackStatus = {
+  state: HqPlayerRemotePlaybackState;
+  stateCode: number | null;
+  track: number | null;
+  trackId: string | null;
+  tracksTotal: number | null;
+  queued: boolean | null;
+  positionSeconds: number | null;
+  durationSeconds: number | null;
+  volume: number | null;
+  activeMode: string | null;
+  activeFilter: string | null;
+  activeShaper: string | null;
+  activeRate: number | null;
+  activeBits: number | null;
+  activeChannels: number | null;
+  inputFill: number | null;
+  outputFill: number | null;
+  outputDelayUs: number | null;
+  apodizing: number | null;
+  metadata: HqPlayerRemotePlaybackMetadata | null;
+  receivedAt: string;
 };
 
 export type HqPlayerPlaybackHandoffState = 'ready' | 'needs-confirmation' | 'fallback';
@@ -101,6 +157,32 @@ export type HqPlayerPlaybackControlPlanState = 'prepared' | 'skipped';
 
 export type HqPlayerPlaybackControlPlanReason = 'handoff_not_ready' | 'source_missing';
 
+export type HqPlayerPlaybackControlSendState = 'prepared' | 'sent' | 'failed' | 'skipped';
+
+export type HqPlayerPlaybackControlSendReason =
+  | 'control_plan_missing'
+  | HqPlayerPlaybackControlPlanReason
+  | 'source_requires_headers'
+  | 'hqplayer_control_port_not_configured'
+  | 'hqplayer_connection_timeout'
+  | 'hqplayer_connection_refused'
+  | 'hqplayer_connection_failed'
+  | 'hqplayer_protocol_error'
+  | 'hqplayer_response_error';
+
+export type HqPlayerPlaybackControlSendResult = {
+  state: HqPlayerPlaybackControlSendState;
+  reason: HqPlayerPlaybackControlSendReason | null;
+  transport: 'official-control-tcp';
+  command: 'PlayNextURI' | 'PlayNextURI+Seek' | 'none';
+  endpoint: HqPlayerEndpoint;
+  startedAt: string;
+  finishedAt: string;
+  elapsedMs: number;
+  message: string | null;
+  response: string | null;
+};
+
 export type HqPlayerPlaybackControlPlan = {
   state: HqPlayerPlaybackControlPlanState;
   reason: HqPlayerPlaybackControlPlanReason | null;
@@ -125,6 +207,7 @@ export type HqPlayerPlaybackControlPlan = {
   } | null;
   startSeconds: number | null;
   createdAt: string;
+  send: HqPlayerPlaybackControlSendResult | null;
 };
 
 export type HqPlayerPlaybackHandoffFallback = {

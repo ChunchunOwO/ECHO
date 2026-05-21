@@ -3411,6 +3411,7 @@ export const SettingsPage = (): JSX.Element => {
     seatGeekClientId: '',
     region: '',
   });
+  const [onlineArtistInfoBusyAction, setOnlineArtistInfoBusyAction] = useState<'save' | 'clear' | null>(null);
   const [onlineArtistInfoMessage, setOnlineArtistInfoMessage] = useState<string | null>(null);
 
   const settingsSearchEntries = useMemo(() => {
@@ -5378,10 +5379,12 @@ export const SettingsPage = (): JSX.Element => {
       onlineArtistInfoRegion: onlineArtistInfoDraft.region.trim() || null,
     };
 
+    setOnlineArtistInfoBusyAction('save');
     setOnlineArtistInfoMessage('正在保存在线歌手信息配置...');
     const app = getAppBridge();
     if (!app) {
       setError('Desktop bridge unavailable. Open ECHO Next in Electron to save artist info settings.');
+      setOnlineArtistInfoBusyAction(null);
       setOnlineArtistInfoMessage(null);
       return;
     }
@@ -5391,14 +5394,39 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         dispatchSettingsChanged(settings);
-        setOnlineArtistInfoMessage('在线歌手信息配置已保存。演出数据源接入前不会自动联网请求。');
+        setOnlineArtistInfoMessage('在线歌手信息配置已保存。艺人页会按需后台加载简介和演出。');
       })
       .catch((settingsError) => {
         const message = settingsError instanceof Error ? settingsError.message : String(settingsError);
         setError(message);
         setOnlineArtistInfoMessage(message);
-      });
+      })
+      .finally(() => setOnlineArtistInfoBusyAction(null));
   }, [dispatchSettingsChanged, onlineArtistInfoDraft]);
+
+  const handleClearArtistOnlineInfoCache = useCallback((): void => {
+    const library = getLibraryBridge();
+
+    if (!library?.clearArtistOnlineInfoCache) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to clear artist online info cache.');
+      return;
+    }
+
+    setOnlineArtistInfoBusyAction('clear');
+    setOnlineArtistInfoMessage(null);
+    void library
+      .clearArtistOnlineInfoCache()
+      .then((result) => {
+        setOnlineArtistInfoMessage(`已清理 ${result.removedRows} 条在线歌手信息和演出缓存。`);
+        window.dispatchEvent(new Event('library:changed'));
+      })
+      .catch((clearError) => {
+        const message = clearError instanceof Error ? clearError.message : String(clearError);
+        setError(message);
+        setOnlineArtistInfoMessage(message);
+      })
+      .finally(() => setOnlineArtistInfoBusyAction(null));
+  }, []);
 
   const handleMonoAudioToggle = useCallback((enabled: boolean): void => {
     const eq = getEqBridge();
@@ -8744,13 +8772,17 @@ export const SettingsPage = (): JSX.Element => {
                     </label>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left">
-                    <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleOnlineArtistInfoSave}>
+                    <button className="settings-action-button" type="button" disabled={!appSettings || onlineArtistInfoBusyAction !== null} onClick={handleOnlineArtistInfoSave}>
                       <Save size={15} />
-                      保存配置
+                      {onlineArtistInfoBusyAction === 'save' ? '保存中...' : '保存配置'}
+                    </button>
+                    <button className="settings-action-button" type="button" disabled={onlineArtistInfoBusyAction !== null} onClick={handleClearArtistOnlineInfoCache}>
+                      <Trash2 size={15} />
+                      {onlineArtistInfoBusyAction === 'clear' ? '清理中...' : '清理艺人资料缓存'}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    使用方式：在对应服务后台申请 key，填入任意已准备好的 app_id / apikey / client_id；地区过滤可填 HK、Tokyo、US 等关键词，留空为全球。第一版只保存配置，不发起在线请求。
+                    使用方式：在对应服务后台申请 key，填入任意已准备好的 app_id / apikey / client_id；地区过滤可填 HK、Tokyo、US 等关键词，留空为全球。艺人页会按需后台缓存简介和演出，不会显示假内容。
                   </p>
                   {onlineArtistInfoMessage ? <p className="settings-inline-note">{onlineArtistInfoMessage}</p> : null}
                 </div>
@@ -8959,7 +8991,7 @@ export const SettingsPage = (): JSX.Element => {
                 title="本地插件"
                 description="插件默认放在 userData/plugins 下，用户可以直接编辑 echo.plugin.json、plugin.js 和面板文件。"
               >
-                <div className="settings-cache-panel settings-cache-panel--plugins">
+                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--plugins">
                   <div className="settings-status-grid">
                     <span>
                       <em>运行方式</em>

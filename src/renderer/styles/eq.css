@@ -9,19 +9,32 @@
 .eq-header-actions,
 .eq-status-cards,
 .eq-compare-row,
+.eq-compare-heading,
+.eq-compare-actions,
+.eq-compare-health,
 .eq-preset-tools,
+.eq-band-actions,
 .channel-balance-header,
 .channel-balance-actions,
+.channel-balance-status-strip,
 .channel-balance-grid label,
 .channel-balance-readout,
 .channel-balance-switches,
 .channel-balance-segmented,
+.channel-control-main,
+.channel-balance-lane,
+.channel-trim-lane,
+.channel-tool-matrix,
 .eq-inspector,
 .eq-inspector label,
 .eq-inspector-toggle,
+.eq-profile-row,
+.eq-profile-actions,
 .eq-stepper-group,
 .eq-preset-search,
 .eq-compare-toggle,
+.eq-ab-slot-header,
+.eq-ab-slot-actions,
 .channel-tool-group header,
 .channel-tool-group label,
 .channel-calibration-readout {
@@ -84,6 +97,8 @@
 .eq-icon-action,
 .eq-preset-selector select,
 .eq-preset-tools input,
+.eq-profile-row input,
+.eq-profile-row select,
 .eq-preset-tools button,
 .eq-soft-button,
 .eq-band-chip {
@@ -326,19 +341,26 @@
 }
 
 .eq-status-cards {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.52);
+  flex-wrap: wrap;
 }
 
 .eq-status-card {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 138px;
   min-width: 0;
-  padding: 10px 12px;
+  min-height: 30px;
+  padding: 0 9px;
   border: 1px solid rgba(28, 47, 67, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.6);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.46);
 }
 
 .eq-status-card span,
@@ -412,23 +434,23 @@
 
 .eq-workbench {
   display: grid;
-  gap: 10px;
-  padding: 10px;
+  gap: 0;
+  overflow: hidden;
   border: 1px solid rgba(28, 47, 67, 0.08);
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--theme-legacy-surface-a78), rgba(244, 248, 249, 0.74)), #f5f8fb;
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.72);
 }
 
 .eq-preamp-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(210px, 0.8fr) minmax(280px, 1.2fr) minmax(170px, auto);
   min-width: 0;
   align-items: center;
   gap: 12px;
   min-height: 48px;
-  padding: 8px 10px;
-  border: 1px solid var(--theme-legacy-border-soft);
-  border-radius: 10px;
-  background: var(--theme-legacy-surface-a54);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--theme-legacy-border-soft);
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .eq-preamp-bar > div {
@@ -496,16 +518,17 @@
 .eq-curve-column {
   display: grid;
   min-width: 0;
-  gap: 10px;
+  gap: 0;
 }
 
 .eq-curve-shell {
   position: relative;
   min-height: 360px;
   overflow: hidden;
-  border: 1px solid rgba(28, 47, 67, 0.1);
-  border-radius: 10px;
-  background: linear-gradient(180deg, var(--theme-legacy-surface-a64), rgba(247, 250, 252, 0.54)), #f6f8fa;
+  border: 0;
+  border-bottom: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(247, 250, 252, 0.48)), #f6f8fa;
 }
 
 .eq-curve-shell[data-enabled="false"] {
@@ -605,23 +628,40 @@
   font-size: 10px;
 }
 
-.eq-inspector {
-  gap: 8px;
-  min-height: 44px;
-  padding: 8px;
+.eq-advanced-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(28, 47, 67, 0.08);
+  background: rgba(248, 250, 252, 0.58);
+}
+
+.eq-advanced-section {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px;
   border: 1px solid var(--theme-legacy-border-soft);
-  border-radius: 9px;
-  background: var(--theme-legacy-surface-a58);
-  flex-wrap: wrap;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.eq-inspector {
+  display: grid;
+  min-height: 0;
 }
 
 .eq-inspector-title {
-  display: grid;
-  gap: 2px;
-  min-width: 112px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
 }
 
 .eq-inspector-title span,
+.eq-section-heading span,
 .eq-inspector label span,
 .eq-inspector em {
   color: var(--theme-legacy-muted-text);
@@ -636,18 +676,27 @@
   font-weight: 900;
 }
 
-.eq-inspector label {
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 8px;
-  border: 1px solid rgba(28, 47, 67, 0.08);
-  border-radius: 8px;
-  background: var(--theme-legacy-surface-a54);
+.eq-inspector-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(112px, 1fr));
+  gap: 8px;
 }
 
-.eq-inspector input[type="number"] {
-  width: 78px;
-  min-height: 24px;
+.eq-inspector label {
+  display: grid;
+  align-items: center;
+  gap: 4px;
+  min-height: 60px;
+  padding: 7px 8px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.62);
+}
+
+.eq-inspector input[type="number"],
+.eq-inspector select {
+  width: 100%;
+  min-height: 28px;
   padding: 0 6px;
   color: var(--theme-legacy-heading-text);
   border: 1px solid rgba(28, 47, 67, 0.12);
@@ -656,6 +705,22 @@
   font: inherit;
   font-size: 12px;
   font-weight: 850;
+}
+
+.eq-inspector select {
+  width: 100%;
+}
+
+.eq-inspector-actions {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.eq-inspector-actions .eq-inspector-toggle {
+  min-height: 30px;
 }
 
 .eq-inspector-toggle input {
@@ -675,9 +740,23 @@
 
 .eq-band-strip {
   display: grid;
-  grid-template-columns: repeat(10, minmax(54px, 1fr)) auto;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.eq-band-list {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(54px, 1fr));
   gap: 7px;
   min-width: 0;
+}
+
+.eq-band-actions {
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
 }
 
 .eq-band-chip {
@@ -694,6 +773,16 @@
   color: var(--theme-legacy-accent-text);
   border-color: rgba(31, 93, 102, 0.28);
   background: #e8f4f3;
+}
+
+.eq-band-chip[data-bypassed="true"],
+.eq-curve-node-group[data-bypassed="true"] {
+  opacity: 0.48;
+}
+
+.eq-curve-node-group[data-bypassed="true"] .eq-curve-node {
+  fill: rgba(245, 247, 250, 0.84);
+  stroke-dasharray: 4 3;
 }
 
 .eq-band-chip span {
@@ -716,6 +805,112 @@
   border-radius: 9px;
   background: var(--theme-legacy-surface-a54);
   flex-wrap: wrap;
+}
+
+.eq-compare-panel {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.66);
+}
+
+.eq-compare-heading {
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.eq-compare-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eq-compare-heading p {
+  margin: 0;
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.eq-ab-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.eq-ab-slot {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.eq-ab-slot[data-filled="true"] {
+  border-color: rgba(31, 93, 102, 0.18);
+  background: rgba(232, 244, 243, 0.46);
+}
+
+.eq-ab-slot-header {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.eq-ab-slot-header span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--theme-legacy-accent-text);
+  border: 1px solid rgba(31, 93, 102, 0.18);
+  border-radius: 999px;
+  background: rgba(232, 244, 243, 0.72);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.eq-ab-slot-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-ab-slot-actions {
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.eq-compare-actions {
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eq-compare-health {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--theme-legacy-accent-text);
+  border: 1px solid rgba(31, 93, 102, 0.18);
+  border-radius: 8px;
+  background: rgba(232, 244, 243, 0.5);
+  font-size: 12px;
+  font-weight: 860;
+}
+
+.eq-compare-health[data-risk="true"] {
+  color: #9a5528;
+  border-color: rgba(189, 93, 45, 0.28);
+  background: #fff5ed;
 }
 
 .eq-compare-row span {
@@ -758,10 +953,63 @@
 }
 
 .eq-ab-summary {
-  max-width: 180px;
+  max-width: 100%;
+  margin: 0;
   overflow: hidden;
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-weight: 780;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.eq-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.eq-profile-row select,
+.eq-profile-row input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.eq-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.eq-section-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-profile-actions {
+  justify-content: flex-start;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.eq-profile-status {
+  display: block;
+  min-width: 0;
+  padding-top: 2px;
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.35;
 }
 
 .eq-soft-button[data-risk="true"] {
@@ -772,22 +1020,72 @@
 
 .channel-balance-panel {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid var(--theme-legacy-border-soft);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(247, 250, 252, 0.72);
 }
 
 .channel-balance-header {
   justify-content: space-between;
   gap: 14px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(28, 47, 67, 0.08);
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.channel-balance-status-strip {
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(28, 47, 67, 0.08);
+  background: rgba(248, 250, 252, 0.58);
+  flex-wrap: wrap;
+}
+
+.channel-balance-status-strip span {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 28px;
+  min-width: 118px;
+  padding: 0 9px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.channel-balance-status-strip em {
+  color: var(--theme-legacy-muted-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.channel-balance-status-strip strong {
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.channel-balance-status-strip[data-risk="true"] span:last-child {
+  border-color: rgba(189, 93, 45, 0.24);
+  background: rgba(255, 245, 237, 0.78);
 }
 
 .channel-balance-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.channel-console-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.82fr);
+  gap: 10px;
+  padding: 10px;
 }
 
 .channel-tool-group {
@@ -799,6 +1097,36 @@
   border: 1px solid var(--theme-legacy-border-soft);
   border-radius: 10px;
   background: var(--theme-legacy-surface-a56);
+}
+
+.channel-control-desk {
+  grid-row: span 2;
+}
+
+.channel-control-main {
+  align-items: stretch;
+  gap: 10px;
+}
+
+.channel-balance-lane,
+.channel-trim-lane {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.channel-balance-lane {
+  flex-basis: 42%;
+  padding: 9px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.channel-trim-lane {
+  flex-basis: 58%;
 }
 
 .channel-tool-group header {
@@ -830,6 +1158,14 @@
 
 .channel-tool-group label > span {
   min-width: 82px;
+}
+
+.channel-trim-lane label {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid rgba(28, 47, 67, 0.07);
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.52);
 }
 
 .channel-tool-group input[type="range"] {
@@ -867,6 +1203,10 @@
 }
 
 .channel-balance-wide label {
+  padding: 0 2px;
+}
+
+.channel-balance-lane label {
   padding: 0 2px;
 }
 
@@ -908,7 +1248,8 @@
   grid-column: 1 / -1;
 }
 
-.channel-balance-wide em {
+.channel-balance-wide em,
+.channel-balance-lane em {
   color: var(--theme-legacy-muted-text);
   font-size: 11px;
   font-style: normal;
@@ -922,6 +1263,27 @@
   flex-wrap: wrap;
 }
 
+.channel-balance-segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.channel-balance-segmented .eq-soft-button {
+  min-width: 0;
+}
+
+.channel-tool-matrix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.channel-tool-matrix .eq-soft-button {
+  min-width: 0;
+  justify-content: center;
+}
+
 .eq-soft-button[data-active="true"] {
   color: var(--theme-legacy-accent-text);
   border-color: rgba(31, 93, 102, 0.24);
@@ -930,6 +1292,9 @@
 
 .channel-balance-readout {
   gap: 10px;
+  padding: 10px;
+  border-top: 1px solid rgba(28, 47, 67, 0.08);
+  background: rgba(255, 255, 255, 0.32);
   flex-wrap: wrap;
 }
 
@@ -958,6 +1323,7 @@
 
 .channel-balance-readout p {
   margin: 0;
+  align-self: center;
   color: #9a5528;
   font-size: 12px;
   font-weight: 760;
@@ -968,12 +1334,76 @@
   padding: 0 11px;
 }
 
+.eq-preset-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.64);
+}
+
+.eq-preset-console-main {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.eq-preset-save-field {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  flex: 1 1 240px;
+}
+
+.eq-preset-save-field span {
+  color: var(--theme-legacy-muted-text);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.eq-preset-save-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.eq-preset-actions {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .eq-preset-tools button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 0 11px;
   cursor: pointer;
+}
+
+.eq-preset-state-badge {
+  display: inline-grid;
+  min-height: 32px;
+  padding: 0 10px;
+  place-items: center;
+  color: var(--theme-legacy-muted-text);
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.44);
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.eq-preset-state-badge[data-readonly="false"] {
+  color: var(--theme-legacy-accent-text);
+  border-color: rgba(31, 93, 102, 0.18);
+  background: rgba(232, 244, 243, 0.48);
 }
 
 .eq-panel-error {
@@ -986,28 +1416,48 @@
 .app-shell--wallpaper .eq-title-icon,
 .app-shell--wallpaper .eq-enable-pill,
 .app-shell--wallpaper .eq-icon-action,
+.app-shell--wallpaper .eq-preset-console,
 .app-shell--wallpaper .eq-preset-tools input,
 .app-shell--wallpaper .eq-preset-tools button,
+.app-shell--wallpaper .eq-preset-state-badge,
 .app-shell--wallpaper .eq-soft-button,
 .app-shell--wallpaper .eq-band-chip,
 .app-shell--wallpaper .eq-preset-search,
 .app-shell--wallpaper .eq-preset-filter,
 .app-shell--wallpaper .eq-preset-trigger,
 .app-shell--wallpaper .eq-preset-menu,
+.app-shell--wallpaper .eq-status-cards,
 .app-shell--wallpaper .eq-status-card,
 .app-shell--wallpaper .eq-preset-metadata,
 .app-shell--wallpaper .eq-workbench,
 .app-shell--wallpaper .eq-preamp-bar,
 .app-shell--wallpaper .eq-level-meter,
 .app-shell--wallpaper .eq-curve-shell,
+.app-shell--wallpaper .eq-advanced-grid,
+.app-shell--wallpaper .eq-advanced-section,
 .app-shell--wallpaper .eq-inspector,
 .app-shell--wallpaper .eq-inspector label,
 .app-shell--wallpaper .eq-inspector input[type="number"],
+.app-shell--wallpaper .eq-inspector select,
+.app-shell--wallpaper .eq-profile-row,
+.app-shell--wallpaper .eq-profile-row input,
+.app-shell--wallpaper .eq-profile-row select,
+.app-shell--wallpaper .eq-band-strip,
 .app-shell--wallpaper .eq-compare-row,
+.app-shell--wallpaper .eq-compare-panel,
+.app-shell--wallpaper .eq-ab-slot,
+.app-shell--wallpaper .eq-compare-health,
 .app-shell--wallpaper .channel-balance-panel,
+.app-shell--wallpaper .channel-balance-header,
+.app-shell--wallpaper .channel-balance-status-strip,
+.app-shell--wallpaper .channel-balance-status-strip span,
+.app-shell--wallpaper .channel-console-grid,
 .app-shell--wallpaper .channel-tool-group,
+.app-shell--wallpaper .channel-balance-lane,
+.app-shell--wallpaper .channel-trim-lane label,
 .app-shell--wallpaper .channel-calibration-readout span,
 .app-shell--wallpaper .channel-balance-meter,
+.app-shell--wallpaper .channel-balance-readout,
 .app-shell--wallpaper .channel-balance-readout span {
   border-color: rgb(28 47 67 / var(--app-wallpaper-ui-border-alpha));
   background: rgb(255 255 255 / var(--app-wallpaper-ui-sidebar-top-alpha));
@@ -1021,6 +1471,8 @@
 
 .app-shell--wallpaper .eq-preset-filter,
 .app-shell--wallpaper .eq-curve-shell,
+.app-shell--wallpaper .channel-balance-status-strip,
+.app-shell--wallpaper .channel-console-grid,
 .app-shell--wallpaper .channel-calibration-readout span,
 .app-shell--wallpaper .channel-balance-meter {
   background: rgb(248 250 252 / var(--app-wallpaper-ui-page-bottom-alpha));
@@ -1050,8 +1502,11 @@
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-title-icon,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-enable-pill,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-icon-action,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-console,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-tools input,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-tools button,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-state-badge,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-state-badge[data-readonly="false"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-band-chip,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-search,
@@ -1060,6 +1515,7 @@
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-trigger,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-menu,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-preset-option[data-selected="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-cards,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card[data-risk="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-status-card[data-active="true"],
@@ -1070,17 +1526,37 @@
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-level-meter,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-level-meter[data-risk="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-curve-shell,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-advanced-grid,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-advanced-section,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector label,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector input[type="number"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-inspector select,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-profile-row,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-profile-row input,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-profile-row select,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-band-strip,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-band-chip[data-selected="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-compare-row,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-compare-panel,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-ab-slot,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-ab-slot[data-filled="true"],
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-compare-health,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-compare-health[data-risk="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button[data-risk="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .eq-soft-button[data-active="true"],
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-panel,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-header,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-status-strip,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-status-strip span,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-status-strip[data-risk="true"] span:last-child,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-console-grid,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-tool-group,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-lane,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-trim-lane label,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-calibration-readout span,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-meter,
+.app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-readout,
 .app-shell--wallpaper[data-wallpaper-unified-opacity="true"] .channel-balance-readout span {
   border-color: transparent;
   background: transparent;
@@ -1095,28 +1571,48 @@ html[data-theme="dark"] .eq-panel {
 html[data-theme="dark"] .eq-title-icon,
 html[data-theme="dark"] .eq-enable-pill,
 html[data-theme="dark"] .eq-icon-action,
+html[data-theme="dark"] .eq-preset-console,
 html[data-theme="dark"] .eq-preset-tools input,
 html[data-theme="dark"] .eq-preset-tools button,
+html[data-theme="dark"] .eq-preset-state-badge,
 html[data-theme="dark"] .eq-soft-button,
 html[data-theme="dark"] .eq-band-chip,
 html[data-theme="dark"] .eq-preset-search,
 html[data-theme="dark"] .eq-preset-filter,
 html[data-theme="dark"] .eq-preset-trigger,
 html[data-theme="dark"] .eq-preset-menu,
+html[data-theme="dark"] .eq-status-cards,
 html[data-theme="dark"] .eq-status-card,
 html[data-theme="dark"] .eq-preset-metadata,
 html[data-theme="dark"] .eq-workbench,
 html[data-theme="dark"] .eq-preamp-bar,
 html[data-theme="dark"] .eq-level-meter,
 html[data-theme="dark"] .eq-curve-shell,
+html[data-theme="dark"] .eq-advanced-grid,
+html[data-theme="dark"] .eq-advanced-section,
 html[data-theme="dark"] .eq-inspector,
 html[data-theme="dark"] .eq-inspector label,
 html[data-theme="dark"] .eq-inspector input[type="number"],
+html[data-theme="dark"] .eq-inspector select,
+html[data-theme="dark"] .eq-profile-row,
+html[data-theme="dark"] .eq-profile-row input,
+html[data-theme="dark"] .eq-profile-row select,
+html[data-theme="dark"] .eq-band-strip,
 html[data-theme="dark"] .eq-compare-row,
+html[data-theme="dark"] .eq-compare-panel,
+html[data-theme="dark"] .eq-ab-slot,
+html[data-theme="dark"] .eq-compare-health,
 html[data-theme="dark"] .channel-balance-panel,
+html[data-theme="dark"] .channel-balance-header,
+html[data-theme="dark"] .channel-balance-status-strip,
+html[data-theme="dark"] .channel-balance-status-strip span,
+html[data-theme="dark"] .channel-console-grid,
 html[data-theme="dark"] .channel-tool-group,
+html[data-theme="dark"] .channel-balance-lane,
+html[data-theme="dark"] .channel-trim-lane label,
 html[data-theme="dark"] .channel-calibration-readout span,
 html[data-theme="dark"] .channel-balance-meter,
+html[data-theme="dark"] .channel-balance-readout,
 html[data-theme="dark"] .channel-balance-readout span {
   border-color: rgba(150, 168, 190, 0.16);
   background: rgba(18, 25, 35, 0.82);
@@ -1155,7 +1651,10 @@ html[data-theme="dark"] .eq-preset-tools input,
 html[data-theme="dark"] .eq-preset-tools button,
 html[data-theme="dark"] .eq-soft-button,
 html[data-theme="dark"] .eq-band-chip,
-html[data-theme="dark"] .eq-inspector input[type="number"] {
+html[data-theme="dark"] .eq-inspector input[type="number"],
+html[data-theme="dark"] .eq-inspector select,
+html[data-theme="dark"] .eq-profile-row input,
+html[data-theme="dark"] .eq-profile-row select {
   color: rgba(226, 236, 248, 0.92);
 }
 
@@ -1165,20 +1664,27 @@ html[data-theme="dark"] .eq-preset-search,
 html[data-theme="dark"] .eq-status-card span,
 html[data-theme="dark"] .eq-preamp-bar span,
 html[data-theme="dark"] .eq-preset-tools span,
+html[data-theme="dark"] .eq-preset-save-field span,
 html[data-theme="dark"] .eq-preset-menu-heading,
 html[data-theme="dark"] .eq-preset-metadata p,
 html[data-theme="dark"] .eq-preset-metadata em,
 html[data-theme="dark"] .eq-level-meter em,
 html[data-theme="dark"] .eq-level-meter p,
 html[data-theme="dark"] .eq-inspector-title span,
+html[data-theme="dark"] .eq-section-heading span,
 html[data-theme="dark"] .eq-inspector label span,
 html[data-theme="dark"] .eq-inspector em,
+html[data-theme="dark"] .eq-profile-status,
 html[data-theme="dark"] .eq-compare-row span,
+html[data-theme="dark"] .eq-compare-heading p,
 html[data-theme="dark"] .eq-compare-toggle,
+html[data-theme="dark"] .eq-ab-summary,
+html[data-theme="dark"] .channel-balance-status-strip em,
 html[data-theme="dark"] .channel-tool-group header span,
 html[data-theme="dark"] .channel-tool-group label > span,
 html[data-theme="dark"] .channel-calibration-readout em,
 html[data-theme="dark"] .channel-balance-wide em,
+html[data-theme="dark"] .channel-balance-lane em,
 html[data-theme="dark"] .channel-balance-readout em,
 html[data-theme="dark"] .eq-band-chip strong {
   color: rgba(164, 181, 202, 0.82);
@@ -1190,7 +1696,10 @@ html[data-theme="dark"] .eq-status-card strong,
 html[data-theme="dark"] .eq-preamp-bar strong,
 html[data-theme="dark"] .eq-preset-metadata span,
 html[data-theme="dark"] .eq-inspector-title strong,
+html[data-theme="dark"] .eq-section-heading strong,
+html[data-theme="dark"] .eq-ab-slot-header strong,
 html[data-theme="dark"] .eq-compare-label,
+html[data-theme="dark"] .channel-balance-status-strip strong,
 html[data-theme="dark"] .channel-tool-group header strong,
 html[data-theme="dark"] .channel-tool-group label strong,
 html[data-theme="dark"] .channel-calibration-readout strong,
@@ -1212,7 +1721,8 @@ html[data-theme="dark"] .eq-preset-option[data-selected="true"],
 html[data-theme="dark"] .eq-status-card[data-active="true"],
 html[data-theme="dark"] .eq-preset-metadata strong,
 html[data-theme="dark"] .eq-band-chip[data-selected="true"],
-html[data-theme="dark"] .eq-soft-button[data-active="true"] {
+html[data-theme="dark"] .eq-soft-button[data-active="true"],
+html[data-theme="dark"] .eq-preset-state-badge[data-readonly="false"] {
   color: #9ae7ee;
   border-color: rgba(127, 216, 230, 0.28);
   background: rgba(28, 84, 96, 0.34);
@@ -1232,6 +1742,7 @@ html[data-theme="dark"] .eq-preset-option:hover {
 
 html[data-theme="dark"] .eq-status-card[data-risk="true"],
 html[data-theme="dark"] .eq-level-meter[data-risk="true"],
+html[data-theme="dark"] .channel-balance-status-strip[data-risk="true"] span:last-child,
 html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
   color: #ffd0b2;
   border-color: rgba(255, 151, 96, 0.32);
@@ -1239,6 +1750,8 @@ html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
 }
 
 html[data-theme="dark"] .eq-level-meter,
+html[data-theme="dark"] .channel-balance-lane,
+html[data-theme="dark"] .channel-trim-lane label,
 html[data-theme="dark"] .channel-calibration-readout span,
 html[data-theme="dark"] .channel-balance-readout span {
   background: rgba(11, 17, 25, 0.66);
@@ -1311,16 +1824,29 @@ html[data-theme="dark"] .eq-panel-error {
     flex-direction: column;
   }
 
-  .eq-status-cards,
   .eq-workbench,
   .eq-preset-metadata,
-  .channel-balance-grid {
+  .eq-preset-console,
+  .channel-balance-grid,
+  .channel-console-grid {
     grid-template-columns: 1fr;
   }
 
   .eq-preamp-bar {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
+  }
+
+  .eq-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-ab-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-inspector-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .eq-level-meter {
@@ -1328,17 +1854,34 @@ html[data-theme="dark"] .eq-panel-error {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .eq-band-strip {
+  .eq-band-list {
     grid-template-columns: repeat(5, minmax(58px, 1fr));
   }
 }
 
 @media (max-width: 680px) {
-  .eq-status-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .eq-status-card {
+    flex-basis: calc(50% - 6px);
   }
 
-  .eq-band-strip {
+  .channel-balance-status-strip span {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  .channel-control-main {
+    flex-direction: column;
+  }
+
+  .channel-balance-segmented,
+  .channel-tool-matrix {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-inspector-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-band-list {
     grid-template-columns: repeat(2, minmax(58px, 1fr));
   }
 }

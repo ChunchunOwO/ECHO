@@ -11450,9 +11450,63 @@ html[data-theme="dark"] .history-play-count {
   gap: 12px;
 }
 
+.connect-hqplayer-local-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-accent-border);
+  border-radius: 8px;
+  background: var(--theme-accent-bg);
+}
+
+.connect-hqplayer-local-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 14px;
+  font-weight: 860;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-hqplayer-local-card span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-accent-text);
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .connect-hqplayer-toggle-row,
 .connect-hqplayer-segments {
   flex-wrap: wrap;
+}
+
+.connect-hqplayer-advanced {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.connect-hqplayer-advanced summary {
+  width: max-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: var(--theme-subtle-text);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.connect-hqplayer-advanced[open] {
+  gap: 12px;
+}
+
+.connect-hqplayer-advanced[open] summary {
+  margin-bottom: 10px;
 }
 
 .connect-hqplayer-segments {
@@ -11561,6 +11615,12 @@ html[data-theme="dark"] .history-play-count {
 
 .connect-hqplayer-status-grid .is-error strong {
   color: var(--theme-danger-text);
+}
+
+.connect-hqplayer-status-grid__wide strong {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .connect-hqplayer-plan {
@@ -11852,6 +11912,12 @@ html[data-theme="dark"] .history-play-count {
 .connect-device-icon[data-protocol="airplay"] {
   color: var(--theme-warning-text);
   background: var(--theme-warning-bg);
+}
+
+.connect-device-icon[data-protocol="hqplayer"] {
+  color: var(--theme-accent-text);
+  border-color: var(--theme-accent-border);
+  background: var(--theme-accent-bg);
 }
 
 .connect-device-copy {

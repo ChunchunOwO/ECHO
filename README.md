@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="./README_EN.md">English README</a>
+  <span>&nbsp;|&nbsp;</span>
   <a href="https://github.com/moekotori/echo/releases/latest">Latest Release</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="https://qm.qq.com/q/OdpngxJU86">QQ 群聊</a>
@@ -26,6 +28,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/package-json/v/moekotori/echo?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/github/stars/moekotori/echo?style=flat-square&logo=github" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/downloads/moekotori/echo/total?style=flat-square&logo=github" alt="GitHub downloads" />
   <img src="https://img.shields.io/badge/Electron-37.x-47848f?style=flat-square" alt="Electron 37" />
   <img src="https://img.shields.io/badge/React-18.2-61dafb?style=flat-square" alt="React 18.2" />
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square" alt="TypeScript 5" />

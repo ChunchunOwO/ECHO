@@ -792,13 +792,14 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       this.raopModule.setLogHandler?.((event) => this.addDebugEvent('log', this.formatNativeLog(event)), 'info', 'info', 'warn');
       const advertiseInterfaces = this.getAdvertiseInterfaces();
       const advertiseInterface = advertiseInterfaces[0] ?? null;
+      const advertisedMac = advertiseInterface?.mac ?? '02:45:43:48:4F:00';
       this.advertisedInterface = advertiseInterface;
       const portBase = await findAvailableTcpPort(null, 6000, 100);
       this.receiverHandle = await this.raopModule.startReceiver(
         {
           name: this.advertisedName,
           model: airPlayModel,
-          ...(advertiseInterface ? { mac: advertiseInterface.mac } : {}),
+          mac: advertisedMac,
           metadata: true,
           portBase,
           portRange: 100,
@@ -813,7 +814,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
             name: this.advertisedName,
             model: airPlayModel,
             address: item.address,
-            mac: item.mac,
+            mac: advertisedMac,
             port: portBase,
           });
           this.mdnsAdvertisers.push(mdnsAdvertiser);
@@ -826,7 +827,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         'mdns',
         advertisedAddresses.length > 0
           ? `fallback advertisers on ${advertisedAddresses.join(', ')}`
-          : 'no eligible LAN IPv4 interface for AirPlay discovery',
+          : 'AirPlay mDNS advertiser did not start on any eligible LAN IPv4 interface',
       );
       this.addDebugEvent(
         'start',
@@ -838,7 +839,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         enabled: true,
         state: 'idle',
         nativeAvailable: true,
-        error: null,
+        error: advertisedAddresses.length > 0 ? null : 'AirPlay discovery unavailable: mDNS advertiser did not start on any LAN interface.',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Disc3 } from 'lucide-react';
 import type { LibraryAlbum, LibraryPage } from '../../../shared/types/library';
+import { useI18n } from '../../i18n/I18nProvider';
 import { InfiniteScrollSentinel } from '../ui/InfiniteScrollSentinel';
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../ui/MediaWallScrollSpacer';
 
@@ -14,6 +15,7 @@ type ArtistAlbumGridProps = {
 const pageSize = 12;
 
 export const ArtistAlbumGrid = ({ artistId, artistName, onAlbumSelect }: ArtistAlbumGridProps): JSX.Element => {
+  const { t } = useI18n();
   const [albums, setAlbums] = useState<LibraryAlbum[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -52,7 +54,7 @@ export const ArtistAlbumGrid = ({ artistId, artistName, onAlbumSelect }: ArtistA
           setPage(1);
           setTotal(0);
           setHasMore(false);
-          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read artist albums.');
+          setError(t('artistDetail.albums.error.desktopBridge'));
           return;
         }
 
@@ -84,7 +86,7 @@ export const ArtistAlbumGrid = ({ artistId, artistName, onAlbumSelect }: ArtistA
         }
       }
     },
-    [artistId],
+    [artistId, t],
   );
 
   useEffect(() => {
@@ -128,26 +130,26 @@ export const ArtistAlbumGrid = ({ artistId, artistName, onAlbumSelect }: ArtistA
 
   if (!isLoading && albums.length === 0 && !error) {
     return (
-      <section className="artist-section artist-section-muted" aria-label={`${artistName} albums`}>
+      <section className="artist-section artist-section-muted" aria-label={t('artistDetail.albums.aria', { artist: artistName })}>
         <header>
           <div>
-            <span>Albums</span>
-            <h2>Albums by {artistName}</h2>
+            <span>{t('artistDetail.tab.albums')}</span>
+            <h2>{t('artistDetail.albums.heading', { artist: artistName })}</h2>
           </div>
         </header>
-        <p className="artist-detail-empty">No albums are grouped under this artist yet.</p>
+        <p className="artist-detail-empty">{t('artistDetail.albums.empty')}</p>
       </section>
     );
   }
 
   return (
-    <section className="artist-section" aria-label={`${artistName} albums`}>
+    <section className="artist-section" aria-label={t('artistDetail.albums.aria', { artist: artistName })}>
       <header>
         <div>
-          <span>Albums</span>
-          <h2>Albums by {artistName}</h2>
+          <span>{t('artistDetail.tab.albums')}</span>
+          <h2>{t('artistDetail.albums.heading', { artist: artistName })}</h2>
         </div>
-        <small>{albums.length === total ? `${total} albums` : `${albums.length} of ${total} albums`}</small>
+        <small>{albums.length === total ? t('artistDetail.albums.count', { count: total }) : t('artistDetail.albums.loadedCount', { loaded: albums.length, total })}</small>
       </header>
 
       <div className="artist-album-strip" ref={albumWallRef}>
@@ -181,7 +183,7 @@ export const ArtistAlbumGrid = ({ artistId, artistName, onAlbumSelect }: ArtistA
               </div>
               <div className="artist-album-copy">
                 <strong>{album.title}</strong>
-                <span>{[album.year ? String(album.year) : null, `${album.trackCount} tracks`].filter(Boolean).join(' / ')}</span>
+                <span>{[album.year ? String(album.year) : null, t('artistDetail.meta.tracks', { count: album.trackCount })].filter(Boolean).join(' / ')}</span>
               </div>
             </article>
           );

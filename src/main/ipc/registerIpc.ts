@@ -45,6 +45,7 @@ import { registerDownloadsIpc } from './downloadsIpc';
 import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
+import { registerMiniPlayerIpc } from './miniPlayerIpc';
 import { registerMvIpc } from './mvIpc';
 import { registerHqPlayerIpc } from './hqPlayerIpc';
 import { registerPlaybackIpc } from './playbackIpc';
@@ -532,6 +533,7 @@ export const registerIpc = (): void => {
   registerConnectIpc();
   registerDiscordPresenceIpc();
   registerDesktopLyricsIpc();
+  registerMiniPlayerIpc();
   registerDownloadsIpc();
   registerPluginIpc();
   registerLastFmIpc();

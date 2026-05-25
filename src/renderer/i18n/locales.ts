@@ -7,7 +7,113 @@ export const localeOptions: Array<{ locale: Locale; label: string }> = [
   { locale: 'en-US', label: 'English' },
 ];
 
+type ArtistDetailTranslationKey =
+  | 'artistDetail.action.addToQueue'
+  | 'artistDetail.action.back'
+  | 'artistDetail.action.playArtist'
+  | 'artistDetail.action.readingArtist'
+  | 'artistDetail.action.refreshInfo'
+  | 'artistDetail.action.shuffle'
+  | 'artistDetail.albums.aria'
+  | 'artistDetail.albums.count'
+  | 'artistDetail.albums.empty'
+  | 'artistDetail.albums.error.desktopBridge'
+  | 'artistDetail.albums.heading'
+  | 'artistDetail.albums.loadedCount'
+  | 'artistDetail.aroundWeb.aria'
+  | 'artistDetail.aroundWeb.heading'
+  | 'artistDetail.aria.details'
+  | 'artistDetail.aria.events'
+  | 'artistDetail.aria.facts'
+  | 'artistDetail.aria.metadata'
+  | 'artistDetail.aria.onlineSources'
+  | 'artistDetail.aria.overview'
+  | 'artistDetail.aria.relationshipMap'
+  | 'artistDetail.aria.sections'
+  | 'artistDetail.duration.hours'
+  | 'artistDetail.duration.minutes'
+  | 'artistDetail.duration.reading'
+  | 'artistDetail.empty.relationships'
+  | 'artistDetail.error.desktopBridgeRead'
+  | 'artistDetail.events.configureProviders'
+  | 'artistDetail.events.collapse'
+  | 'artistDetail.events.collapsedHint'
+  | 'artistDetail.events.count'
+  | 'artistDetail.events.expand'
+  | 'artistDetail.events.noConcerts'
+  | 'artistDetail.events.noConcertsRegion'
+  | 'artistDetail.events.providerKeysRequired'
+  | 'artistDetail.events.venuePending'
+  | 'artistDetail.fact.albums'
+  | 'artistDetail.fact.loaded'
+  | 'artistDetail.fact.sources'
+  | 'artistDetail.fact.tracks'
+  | 'artistDetail.label.artist'
+  | 'artistDetail.label.overview'
+  | 'artistDetail.meta.albums'
+  | 'artistDetail.meta.loadedTracks'
+  | 'artistDetail.meta.tracks'
+  | 'artistDetail.missing.description'
+  | 'artistDetail.missing.title'
+  | 'artistDetail.overview.about'
+  | 'artistDetail.overview.bioFallback'
+  | 'artistDetail.relation.bpm'
+  | 'artistDetail.relation.collaboration'
+  | 'artistDetail.relation.evidence'
+  | 'artistDetail.relation.genre'
+  | 'artistDetail.relation.history'
+  | 'artistDetail.relation.link'
+  | 'artistDetail.relation.local'
+  | 'artistDetail.relation.member'
+  | 'artistDetail.relation.sameAlbum'
+  | 'artistDetail.relation.similar'
+  | 'artistDetail.section.concertInfo'
+  | 'artistDetail.section.events'
+  | 'artistDetail.section.localNetwork'
+  | 'artistDetail.section.relationshipMap'
+  | 'artistDetail.status.collectedLocally'
+  | 'artistDetail.status.linkedArtists'
+  | 'artistDetail.status.loadingSignals'
+  | 'artistDetail.status.localLibrary'
+  | 'artistDetail.status.readingRelationships'
+  | 'artistDetail.status.readySoon'
+  | 'artistDetail.tab.albums'
+  | 'artistDetail.tab.overview'
+  | 'artistDetail.tab.songs'
+  | 'artistDetail.tracks.action.addToQueueAria'
+  | 'artistDetail.tracks.action.more'
+  | 'artistDetail.tracks.action.moreAria'
+  | 'artistDetail.tracks.action.playNext'
+  | 'artistDetail.tracks.action.playNextAria'
+  | 'artistDetail.tracks.aria'
+  | 'artistDetail.tracks.column.actions'
+  | 'artistDetail.tracks.column.album'
+  | 'artistDetail.tracks.column.signal'
+  | 'artistDetail.tracks.column.time'
+  | 'artistDetail.tracks.column.title'
+  | 'artistDetail.tracks.confirm.delete'
+  | 'artistDetail.tracks.empty'
+  | 'artistDetail.tracks.error.actionUnavailable'
+  | 'artistDetail.tracks.error.desktopBridgeActions'
+  | 'artistDetail.tracks.error.desktopBridgeEdit'
+  | 'artistDetail.tracks.error.desktopBridgeRead'
+  | 'artistDetail.tracks.error.noCoverSaved'
+  | 'artistDetail.tracks.error.noCoverToCopy'
+  | 'artistDetail.tracks.error.remoteFileAction'
+  | 'artistDetail.tracks.formatAria'
+  | 'artistDetail.tracks.heading'
+  | 'artistDetail.tracks.loadedCount'
+  | 'artistDetail.tracks.loading'
+  | 'artistDetail.tracks.loadingTrack'
+  | 'artistDetail.tracks.status.addedToPlaylist'
+  | 'artistDetail.tracks.status.albumNotFound'
+  | 'artistDetail.tracks.status.notInQueue'
+  | 'artistDetail.tracks.status.reloadedTags'
+  | 'artistDetail.tracks.status.removedFromQueue'
+  | 'artistDetail.tracks.unknownAlbum';
+
 export type TranslationKey =
+  | ArtistDetailTranslationKey
   | 'app.navigation.main'
   | 'app.navigation.utility'
   | 'app.toolbar.quickActions'
@@ -1464,6 +1570,107 @@ const zhCN: TranslationMap = {
   'library.artists.sort.nameAsc': '名称 A-Z',
   'library.artists.sort.nameDesc': '名称 Z-A',
   'library.artists.title': '艺术家',
+  'artistDetail.action.addToQueue': '加入队列',
+  'artistDetail.action.back': '艺术家',
+  'artistDetail.action.playArtist': '播放艺术家',
+  'artistDetail.action.readingArtist': '正在读取',
+  'artistDetail.action.refreshInfo': '刷新信息',
+  'artistDetail.action.shuffle': '随机播放',
+  'artistDetail.albums.aria': '{artist} 的专辑',
+  'artistDetail.albums.count': '{count} 张专辑',
+  'artistDetail.albums.empty': '这个艺术家还没有归档专辑。',
+  'artistDetail.albums.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家专辑。',
+  'artistDetail.albums.heading': '{artist} 的专辑',
+  'artistDetail.albums.loadedCount': '已载入 {loaded}/{total} 张专辑',
+  'artistDetail.aria.details': '{artist} 艺术家详情',
+  'artistDetail.aria.events': '艺术家演出',
+  'artistDetail.aria.facts': '艺术家资料',
+  'artistDetail.aria.metadata': '艺术家元数据',
+  'artistDetail.aria.onlineSources': '在线艺术家来源',
+  'artistDetail.aria.overview': '艺术家概览',
+  'artistDetail.aria.relationshipMap': '艺术家关系图',
+  'artistDetail.aria.sections': '{artist} 详情分区',
+  'artistDetail.duration.hours': '已载入 {hours} 小时 {minutes} 分钟',
+  'artistDetail.duration.minutes': '已载入 {minutes} 分钟',
+  'artistDetail.duration.reading': '正在读取时长',
+  'artistDetail.empty.relationships': '暂未找到本地一跳关系。',
+  'artistDetail.error.desktopBridgeRead': '桌面桥接不可用。请在 ECHO Next 桌面版中读取这个艺术家。',
+  'artistDetail.events.configureProviders': '演出信息需要配置 Bandsintown、Ticketmaster 或 SeatGeek 密钥；未配置时不会读取真实演出数据。',
+  'artistDetail.events.collapse': '收起',
+  'artistDetail.events.collapsedHint': '已找到 {count} 场演出，展开后查看日期、场馆和票务入口。',
+  'artistDetail.events.count': '{count} 场演出',
+  'artistDetail.events.expand': '展开',
+  'artistDetail.events.noConcerts': '暂未匹配到近期演出。',
+  'artistDetail.events.noConcertsRegion': '暂未在 {region} 匹配到近期演出。',
+  'artistDetail.events.providerKeysRequired': '需要配置来源密钥',
+  'artistDetail.events.venuePending': '场地待公布',
+  'artistDetail.fact.albums': '专辑',
+  'artistDetail.fact.loaded': '已载入',
+  'artistDetail.fact.sources': '来源',
+  'artistDetail.fact.tracks': '歌曲',
+  'artistDetail.label.artist': '艺术家',
+  'artistDetail.label.overview': '概览',
+  'artistDetail.meta.albums': '{count} 张专辑',
+  'artistDetail.meta.loadedTracks': '已载入 {loaded}/{total}',
+  'artistDetail.meta.tracks': '{count} 首歌',
+  'artistDetail.missing.description': '返回艺术家页并刷新曲库，即可查看最新目录。',
+  'artistDetail.missing.title': '艺术家不存在或已从曲库移除。',
+  'artistDetail.overview.about': '关于 {artist}',
+  'artistDetail.overview.bioFallback': '来自你的本地曲库。在线艺术家信息会在后台轻量读取。',
+  'artistDetail.relation.bpm': 'BPM',
+  'artistDetail.relation.collaboration': '合作',
+  'artistDetail.relation.evidence': '{label} / {evidence}',
+  'artistDetail.relation.genre': '流派',
+  'artistDetail.relation.history': '播放历史',
+  'artistDetail.relation.link': '链接',
+  'artistDetail.relation.local': '本地曲库信号',
+  'artistDetail.relation.member': '成员',
+  'artistDetail.relation.sameAlbum': '同专辑',
+  'artistDetail.relation.similar': '相似',
+  'artistDetail.section.concertInfo': '演出信息',
+  'artistDetail.section.events': '演出',
+  'artistDetail.section.localNetwork': '本地网络',
+  'artistDetail.section.relationshipMap': '关系图',
+  'artistDetail.status.collectedLocally': '本地收藏',
+  'artistDetail.status.linkedArtists': '{count} 位关联艺术家',
+  'artistDetail.status.loadingSignals': '正在读取本地信号',
+  'artistDetail.status.localLibrary': '本地曲库',
+  'artistDetail.status.readingRelationships': '正在读取艺术家关系...',
+  'artistDetail.status.readySoon': '即将就绪',
+  'artistDetail.tab.albums': '专辑',
+  'artistDetail.tab.overview': '概览',
+  'artistDetail.tab.songs': '歌曲',
+  'artistDetail.tracks.action.addToQueueAria': '将 {title} 加入队列',
+  'artistDetail.tracks.action.more': '更多',
+  'artistDetail.tracks.action.moreAria': '{title} 的更多操作',
+  'artistDetail.tracks.action.playNext': '下一首播放',
+  'artistDetail.tracks.action.playNextAria': '下一首播放 {title}',
+  'artistDetail.tracks.aria': '{artist} 的歌曲',
+  'artistDetail.tracks.column.actions': '操作',
+  'artistDetail.tracks.column.album': '专辑',
+  'artistDetail.tracks.column.signal': '信号',
+  'artistDetail.tracks.column.time': '时长',
+  'artistDetail.tracks.column.title': '标题',
+  'artistDetail.tracks.confirm.delete': '删除这个音乐文件？\n{title}',
+  'artistDetail.tracks.empty': '这个艺术家还没有归档歌曲。',
+  'artistDetail.tracks.error.actionUnavailable': '这个歌曲操作暂不可用。',
+  'artistDetail.tracks.error.desktopBridgeActions': '桌面桥接不可用。请在 ECHO Next 桌面版中使用文件操作。',
+  'artistDetail.tracks.error.desktopBridgeEdit': '桌面桥接不可用。请在 ECHO Next 桌面版中编辑内嵌标签。',
+  'artistDetail.tracks.error.desktopBridgeRead': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家歌曲。',
+  'artistDetail.tracks.error.noCoverSaved': '没有保存任何封面图。',
+  'artistDetail.tracks.error.noCoverToCopy': '这首歌没有可复制的封面图。',
+  'artistDetail.tracks.error.remoteFileAction': '远程歌曲暂不支持本地文件操作。',
+  'artistDetail.tracks.formatAria': '歌曲格式',
+  'artistDetail.tracks.heading': '{artist} 的歌曲',
+  'artistDetail.tracks.loadedCount': '已载入 {loaded}/{total} 首歌',
+  'artistDetail.tracks.loading': '正在加载歌曲...',
+  'artistDetail.tracks.loadingTrack': '正在加载歌曲',
+  'artistDetail.tracks.status.addedToPlaylist': '已加入歌单：{playlist}',
+  'artistDetail.tracks.status.albumNotFound': '此艺术家视图中找不到专辑：{album}',
+  'artistDetail.tracks.status.notInQueue': '播放队列中没有这首歌：{title}',
+  'artistDetail.tracks.status.reloadedTags': '已从内嵌标签重新加载：{title}',
+  'artistDetail.tracks.status.removedFromQueue': '已从播放队列移除：{title}',
+  'artistDetail.tracks.unknownAlbum': '未知专辑',
   'library.count.total': '共 {count} 个',
   'library.sort.createdAsc': '创建最早',
   'library.sort.createdDesc': '创建最新',
@@ -2448,6 +2655,107 @@ const zhTW: TranslationMap = {
   'library.artists.sort.nameAsc': '名稱 A-Z',
   'library.artists.sort.nameDesc': '名稱 Z-A',
   'library.artists.title': '藝術家',
+  'artistDetail.action.addToQueue': '加入佇列',
+  'artistDetail.action.back': '藝術家',
+  'artistDetail.action.playArtist': '播放藝術家',
+  'artistDetail.action.readingArtist': '正在讀取',
+  'artistDetail.action.refreshInfo': '重新整理資訊',
+  'artistDetail.action.shuffle': '隨機播放',
+  'artistDetail.albums.aria': '{artist} 的專輯',
+  'artistDetail.albums.count': '{count} 張專輯',
+  'artistDetail.albums.empty': '這位藝術家尚未歸檔專輯。',
+  'artistDetail.albums.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家專輯。',
+  'artistDetail.albums.heading': '{artist} 的專輯',
+  'artistDetail.albums.loadedCount': '已載入 {loaded}/{total} 張專輯',
+  'artistDetail.aria.details': '{artist} 藝術家詳情',
+  'artistDetail.aria.events': '藝術家演出',
+  'artistDetail.aria.facts': '藝術家資料',
+  'artistDetail.aria.metadata': '藝術家中繼資料',
+  'artistDetail.aria.onlineSources': '線上藝術家來源',
+  'artistDetail.aria.overview': '藝術家概覽',
+  'artistDetail.aria.relationshipMap': '藝術家關係圖',
+  'artistDetail.aria.sections': '{artist} 詳情分區',
+  'artistDetail.duration.hours': '已載入 {hours} 小時 {minutes} 分鐘',
+  'artistDetail.duration.minutes': '已載入 {minutes} 分鐘',
+  'artistDetail.duration.reading': '正在讀取時長',
+  'artistDetail.empty.relationships': '暫未找到本地一跳關係。',
+  'artistDetail.error.desktopBridgeRead': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取這位藝術家。',
+  'artistDetail.events.configureProviders': '演出資訊需要配置 Bandsintown、Ticketmaster 或 SeatGeek 金鑰；未配置時不會讀取真實演出資料。',
+  'artistDetail.events.collapse': '收起',
+  'artistDetail.events.collapsedHint': '已找到 {count} 場演出，展開後查看日期、場館和票務入口。',
+  'artistDetail.events.count': '{count} 場演出',
+  'artistDetail.events.expand': '展開',
+  'artistDetail.events.noConcerts': '暫未匹配到近期演出。',
+  'artistDetail.events.noConcertsRegion': '暫未在 {region} 匹配到近期演出。',
+  'artistDetail.events.providerKeysRequired': '需要配置來源金鑰',
+  'artistDetail.events.venuePending': '場地待公布',
+  'artistDetail.fact.albums': '專輯',
+  'artistDetail.fact.loaded': '已載入',
+  'artistDetail.fact.sources': '來源',
+  'artistDetail.fact.tracks': '歌曲',
+  'artistDetail.label.artist': '藝術家',
+  'artistDetail.label.overview': '概覽',
+  'artistDetail.meta.albums': '{count} 張專輯',
+  'artistDetail.meta.loadedTracks': '已載入 {loaded}/{total}',
+  'artistDetail.meta.tracks': '{count} 首歌',
+  'artistDetail.missing.description': '返回藝術家頁並重新整理曲庫，即可查看最新目錄。',
+  'artistDetail.missing.title': '藝術家不存在或已從曲庫移除。',
+  'artistDetail.overview.about': '關於 {artist}',
+  'artistDetail.overview.bioFallback': '來自你的本地曲庫。線上藝術家資訊會在背景輕量讀取。',
+  'artistDetail.relation.bpm': 'BPM',
+  'artistDetail.relation.collaboration': '合作',
+  'artistDetail.relation.evidence': '{label} / {evidence}',
+  'artistDetail.relation.genre': '流派',
+  'artistDetail.relation.history': '播放歷史',
+  'artistDetail.relation.link': '連結',
+  'artistDetail.relation.local': '本地曲庫訊號',
+  'artistDetail.relation.member': '成員',
+  'artistDetail.relation.sameAlbum': '同專輯',
+  'artistDetail.relation.similar': '相似',
+  'artistDetail.section.concertInfo': '演出資訊',
+  'artistDetail.section.events': '演出',
+  'artistDetail.section.localNetwork': '本地網路',
+  'artistDetail.section.relationshipMap': '關係圖',
+  'artistDetail.status.collectedLocally': '本地收藏',
+  'artistDetail.status.linkedArtists': '{count} 位關聯藝術家',
+  'artistDetail.status.loadingSignals': '正在讀取本地訊號',
+  'artistDetail.status.localLibrary': '本地曲庫',
+  'artistDetail.status.readingRelationships': '正在讀取藝術家關係...',
+  'artistDetail.status.readySoon': '即將就緒',
+  'artistDetail.tab.albums': '專輯',
+  'artistDetail.tab.overview': '概覽',
+  'artistDetail.tab.songs': '歌曲',
+  'artistDetail.tracks.action.addToQueueAria': '將 {title} 加入佇列',
+  'artistDetail.tracks.action.more': '更多',
+  'artistDetail.tracks.action.moreAria': '{title} 的更多操作',
+  'artistDetail.tracks.action.playNext': '下一首播放',
+  'artistDetail.tracks.action.playNextAria': '下一首播放 {title}',
+  'artistDetail.tracks.aria': '{artist} 的歌曲',
+  'artistDetail.tracks.column.actions': '操作',
+  'artistDetail.tracks.column.album': '專輯',
+  'artistDetail.tracks.column.signal': '訊號',
+  'artistDetail.tracks.column.time': '時長',
+  'artistDetail.tracks.column.title': '標題',
+  'artistDetail.tracks.confirm.delete': '刪除這個音樂檔案？\n{title}',
+  'artistDetail.tracks.empty': '這位藝術家尚未歸檔歌曲。',
+  'artistDetail.tracks.error.actionUnavailable': '這個歌曲操作暫不可用。',
+  'artistDetail.tracks.error.desktopBridgeActions': '桌面橋接不可用。請在 ECHO Next 桌面版中使用檔案操作。',
+  'artistDetail.tracks.error.desktopBridgeEdit': '桌面橋接不可用。請在 ECHO Next 桌面版中編輯內嵌標籤。',
+  'artistDetail.tracks.error.desktopBridgeRead': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家歌曲。',
+  'artistDetail.tracks.error.noCoverSaved': '沒有儲存任何封面圖。',
+  'artistDetail.tracks.error.noCoverToCopy': '這首歌沒有可複製的封面圖。',
+  'artistDetail.tracks.error.remoteFileAction': '遠端歌曲暫不支援本地檔案操作。',
+  'artistDetail.tracks.formatAria': '歌曲格式',
+  'artistDetail.tracks.heading': '{artist} 的歌曲',
+  'artistDetail.tracks.loadedCount': '已載入 {loaded}/{total} 首歌',
+  'artistDetail.tracks.loading': '正在載入歌曲...',
+  'artistDetail.tracks.loadingTrack': '正在載入歌曲',
+  'artistDetail.tracks.status.addedToPlaylist': '已加入歌單：{playlist}',
+  'artistDetail.tracks.status.albumNotFound': '此藝術家視圖中找不到專輯：{album}',
+  'artistDetail.tracks.status.notInQueue': '播放佇列中沒有這首歌：{title}',
+  'artistDetail.tracks.status.reloadedTags': '已從內嵌標籤重新載入：{title}',
+  'artistDetail.tracks.status.removedFromQueue': '已從播放佇列移除：{title}',
+  'artistDetail.tracks.unknownAlbum': '未知專輯',
   'library.count.total': '共 {count} 個',
   'library.sort.createdAsc': '建立最早',
   'library.sort.createdDesc': '建立最新',
@@ -3352,6 +3660,107 @@ const jaJP: TranslationMap = {
   'library.artists.sort.nameAsc': '名前 A-Z',
   'library.artists.sort.nameDesc': '名前 Z-A',
   'library.artists.title': 'アーティスト',
+  'artistDetail.action.addToQueue': 'キューに追加',
+  'artistDetail.action.back': 'アーティスト',
+  'artistDetail.action.playArtist': 'アーティストを再生',
+  'artistDetail.action.readingArtist': '読み込み中',
+  'artistDetail.action.refreshInfo': '情報を更新',
+  'artistDetail.action.shuffle': 'シャッフル',
+  'artistDetail.albums.aria': '{artist} のアルバム',
+  'artistDetail.albums.count': '{count} アルバム',
+  'artistDetail.albums.empty': 'このアーティストに紐づくアルバムはまだありません。',
+  'artistDetail.albums.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストのアルバムを読み込んでください。',
+  'artistDetail.albums.heading': '{artist} のアルバム',
+  'artistDetail.albums.loadedCount': '{loaded}/{total} アルバムを読み込み済み',
+  'artistDetail.aria.details': '{artist} のアーティスト詳細',
+  'artistDetail.aria.events': 'アーティストのイベント',
+  'artistDetail.aria.facts': 'アーティスト情報',
+  'artistDetail.aria.metadata': 'アーティストメタデータ',
+  'artistDetail.aria.onlineSources': 'オンラインアーティスト情報源',
+  'artistDetail.aria.overview': 'アーティスト概要',
+  'artistDetail.aria.relationshipMap': 'アーティスト関連マップ',
+  'artistDetail.aria.sections': '{artist} 詳細セクション',
+  'artistDetail.duration.hours': '{hours} 時間 {minutes} 分を読み込み済み',
+  'artistDetail.duration.minutes': '{minutes} 分を読み込み済み',
+  'artistDetail.duration.reading': '長さを読み込み中',
+  'artistDetail.empty.relationships': 'ローカルの直接的な関連はまだ見つかっていません。',
+  'artistDetail.error.desktopBridgeRead': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でこのアーティストを読み込んでください。',
+  'artistDetail.events.configureProviders': '公演情報には Bandsintown、Ticketmaster、SeatGeek のキー設定が必要です。未設定の場合、実際の公演データは読み込みません。',
+  'artistDetail.events.collapse': '折りたたむ',
+  'artistDetail.events.collapsedHint': '{count} 件の公演が見つかりました。展開すると日付、会場、チケットリンクを確認できます。',
+  'artistDetail.events.count': '{count} 件の公演',
+  'artistDetail.events.expand': '展開',
+  'artistDetail.events.noConcerts': '今後の公演は見つかりませんでした。',
+  'artistDetail.events.noConcertsRegion': '{region} で今後の公演は見つかりませんでした。',
+  'artistDetail.events.providerKeysRequired': '提供元キーが必要です',
+  'artistDetail.events.venuePending': '会場は未定です',
+  'artistDetail.fact.albums': 'アルバム',
+  'artistDetail.fact.loaded': '読み込み済み',
+  'artistDetail.fact.sources': '情報源',
+  'artistDetail.fact.tracks': '曲',
+  'artistDetail.label.artist': 'アーティスト',
+  'artistDetail.label.overview': '概要',
+  'artistDetail.meta.albums': '{count} アルバム',
+  'artistDetail.meta.loadedTracks': '{loaded}/{total} 読み込み済み',
+  'artistDetail.meta.tracks': '{count} 曲',
+  'artistDetail.missing.description': 'アーティスト一覧に戻ってライブラリを更新すると最新のカタログを確認できます。',
+  'artistDetail.missing.title': 'アーティストが存在しないか、ライブラリから削除されました。',
+  'artistDetail.overview.about': '{artist} について',
+  'artistDetail.overview.bioFallback': 'ローカルライブラリから収集しました。オンラインのアーティスト情報はバックグラウンドで軽く読み込まれます。',
+  'artistDetail.relation.bpm': 'BPM',
+  'artistDetail.relation.collaboration': 'コラボ',
+  'artistDetail.relation.evidence': '{label} / {evidence}',
+  'artistDetail.relation.genre': 'ジャンル',
+  'artistDetail.relation.history': '再生履歴',
+  'artistDetail.relation.link': 'リンク',
+  'artistDetail.relation.local': 'ローカルライブラリ信号',
+  'artistDetail.relation.member': 'メンバー',
+  'artistDetail.relation.sameAlbum': '同じアルバム',
+  'artistDetail.relation.similar': '類似',
+  'artistDetail.section.concertInfo': '公演情報',
+  'artistDetail.section.events': 'イベント',
+  'artistDetail.section.localNetwork': 'ローカルネットワーク',
+  'artistDetail.section.relationshipMap': '関連マップ',
+  'artistDetail.status.collectedLocally': 'ローカル収集',
+  'artistDetail.status.linkedArtists': '{count} 関連アーティスト',
+  'artistDetail.status.loadingSignals': 'ローカル信号を読み込み中',
+  'artistDetail.status.localLibrary': 'ローカルライブラリ',
+  'artistDetail.status.readingRelationships': 'アーティスト関連を読み込み中...',
+  'artistDetail.status.readySoon': 'まもなく準備完了',
+  'artistDetail.tab.albums': 'アルバム',
+  'artistDetail.tab.overview': '概要',
+  'artistDetail.tab.songs': '曲',
+  'artistDetail.tracks.action.addToQueueAria': '{title} をキューに追加',
+  'artistDetail.tracks.action.more': 'その他',
+  'artistDetail.tracks.action.moreAria': '{title} のその他の操作',
+  'artistDetail.tracks.action.playNext': '次に再生',
+  'artistDetail.tracks.action.playNextAria': '{title} を次に再生',
+  'artistDetail.tracks.aria': '{artist} の曲',
+  'artistDetail.tracks.column.actions': '操作',
+  'artistDetail.tracks.column.album': 'アルバム',
+  'artistDetail.tracks.column.signal': '信号',
+  'artistDetail.tracks.column.time': '時間',
+  'artistDetail.tracks.column.title': 'タイトル',
+  'artistDetail.tracks.confirm.delete': 'この音楽ファイルを削除しますか？\n{title}',
+  'artistDetail.tracks.empty': 'このアーティストに紐づく曲はまだありません。',
+  'artistDetail.tracks.error.actionUnavailable': 'この曲の操作はまだ利用できません。',
+  'artistDetail.tracks.error.desktopBridgeActions': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でファイル操作を使ってください。',
+  'artistDetail.tracks.error.desktopBridgeEdit': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で埋め込みタグを編集してください。',
+  'artistDetail.tracks.error.desktopBridgeRead': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストの曲を読み込んでください。',
+  'artistDetail.tracks.error.noCoverSaved': 'この曲のカバーアートは保存されませんでした。',
+  'artistDetail.tracks.error.noCoverToCopy': 'この曲にはコピーできるカバーアートがありません。',
+  'artistDetail.tracks.error.remoteFileAction': 'リモート曲はまだローカルファイル操作に対応していません。',
+  'artistDetail.tracks.formatAria': '曲の形式',
+  'artistDetail.tracks.heading': '{artist} の曲',
+  'artistDetail.tracks.loadedCount': '{loaded}/{total} 曲を読み込み済み',
+  'artistDetail.tracks.loading': '曲を読み込み中...',
+  'artistDetail.tracks.loadingTrack': '曲を読み込み中',
+  'artistDetail.tracks.status.addedToPlaylist': 'プレイリストに追加しました: {playlist}',
+  'artistDetail.tracks.status.albumNotFound': 'このアーティスト表示でアルバムが見つかりません: {album}',
+  'artistDetail.tracks.status.notInQueue': 'この曲はキューにありません: {title}',
+  'artistDetail.tracks.status.reloadedTags': '埋め込みタグを再読み込みしました: {title}',
+  'artistDetail.tracks.status.removedFromQueue': 'キューから削除しました: {title}',
+  'artistDetail.tracks.unknownAlbum': '不明なアルバム',
   'library.count.total': '全 {count} 件',
   'library.sort.createdAsc': '作成が古い順',
   'library.sort.createdDesc': '作成が新しい順',
@@ -4336,6 +4745,107 @@ const enUS: TranslationMap = {
   'library.artists.sort.nameAsc': 'Name A-Z',
   'library.artists.sort.nameDesc': 'Name Z-A',
   'library.artists.title': 'Artists',
+  'artistDetail.action.addToQueue': 'Add to Queue',
+  'artistDetail.action.back': 'Artists',
+  'artistDetail.action.playArtist': 'Play Artist',
+  'artistDetail.action.readingArtist': 'Reading Artist',
+  'artistDetail.action.refreshInfo': 'Refresh Info',
+  'artistDetail.action.shuffle': 'Shuffle',
+  'artistDetail.albums.aria': '{artist} albums',
+  'artistDetail.albums.count': '{count} albums',
+  'artistDetail.albums.empty': 'No albums are grouped under this artist yet.',
+  'artistDetail.albums.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artist albums.',
+  'artistDetail.albums.heading': 'Albums by {artist}',
+  'artistDetail.albums.loadedCount': '{loaded} of {total} albums',
+  'artistDetail.aria.details': '{artist} artist details',
+  'artistDetail.aria.events': 'Artist events',
+  'artistDetail.aria.facts': 'Artist facts',
+  'artistDetail.aria.metadata': 'Artist metadata',
+  'artistDetail.aria.onlineSources': 'Online artist sources',
+  'artistDetail.aria.overview': 'Artist overview',
+  'artistDetail.aria.relationshipMap': 'Artist relationship map',
+  'artistDetail.aria.sections': '{artist} detail sections',
+  'artistDetail.duration.hours': '{hours} hr {minutes} min loaded',
+  'artistDetail.duration.minutes': '{minutes} min loaded',
+  'artistDetail.duration.reading': 'Reading length',
+  'artistDetail.empty.relationships': 'No local 1-hop relationships found yet.',
+  'artistDetail.error.desktopBridgeRead': 'Desktop bridge unavailable. Open ECHO Next in Electron to read this artist.',
+  'artistDetail.events.configureProviders': 'Concert info needs Bandsintown, Ticketmaster, or SeatGeek keys. Without keys, ECHO will not load real concert data.',
+  'artistDetail.events.collapse': 'Collapse',
+  'artistDetail.events.collapsedHint': '{count} concerts found. Expand to view dates, venues, and ticket links.',
+  'artistDetail.events.count': '{count} concerts',
+  'artistDetail.events.expand': 'Expand',
+  'artistDetail.events.noConcerts': 'No upcoming concerts matched.',
+  'artistDetail.events.noConcertsRegion': 'No upcoming concerts matched {region}.',
+  'artistDetail.events.providerKeysRequired': 'Provider keys required',
+  'artistDetail.events.venuePending': 'Venue to be announced',
+  'artistDetail.fact.albums': 'Albums',
+  'artistDetail.fact.loaded': 'Loaded',
+  'artistDetail.fact.sources': 'Sources',
+  'artistDetail.fact.tracks': 'Tracks',
+  'artistDetail.label.artist': 'Artist',
+  'artistDetail.label.overview': 'Overview',
+  'artistDetail.meta.albums': '{count} albums',
+  'artistDetail.meta.loadedTracks': '{loaded}/{total} loaded',
+  'artistDetail.meta.tracks': '{count} tracks',
+  'artistDetail.missing.description': 'Return to Artists and refresh the library to see the latest catalog.',
+  'artistDetail.missing.title': 'Artist does not exist or has been removed from the library.',
+  'artistDetail.overview.about': 'About {artist}',
+  'artistDetail.overview.bioFallback': 'Collected from your local library. Online artist information loads quietly in the background.',
+  'artistDetail.relation.bpm': 'BPM',
+  'artistDetail.relation.collaboration': 'Collaboration',
+  'artistDetail.relation.evidence': '{label} / {evidence}',
+  'artistDetail.relation.genre': 'Genre',
+  'artistDetail.relation.history': 'History',
+  'artistDetail.relation.link': 'Link',
+  'artistDetail.relation.local': 'Local library signal',
+  'artistDetail.relation.member': 'Member',
+  'artistDetail.relation.sameAlbum': 'Same album',
+  'artistDetail.relation.similar': 'Similar',
+  'artistDetail.section.concertInfo': 'Concert information',
+  'artistDetail.section.events': 'Events',
+  'artistDetail.section.localNetwork': 'Local network',
+  'artistDetail.section.relationshipMap': 'Relationship Map',
+  'artistDetail.status.collectedLocally': 'Collected locally',
+  'artistDetail.status.linkedArtists': '{count} linked artists',
+  'artistDetail.status.loadingSignals': 'Loading local signals',
+  'artistDetail.status.localLibrary': 'Local library',
+  'artistDetail.status.readingRelationships': 'Reading artist relationships...',
+  'artistDetail.status.readySoon': 'Ready soon',
+  'artistDetail.tab.albums': 'Albums',
+  'artistDetail.tab.overview': 'Overview',
+  'artistDetail.tab.songs': 'Songs',
+  'artistDetail.tracks.action.addToQueueAria': 'Add {title} to queue',
+  'artistDetail.tracks.action.more': 'More',
+  'artistDetail.tracks.action.moreAria': 'More actions for {title}',
+  'artistDetail.tracks.action.playNext': 'Play next',
+  'artistDetail.tracks.action.playNextAria': 'Play {title} next',
+  'artistDetail.tracks.aria': 'Songs by {artist}',
+  'artistDetail.tracks.column.actions': 'Actions',
+  'artistDetail.tracks.column.album': 'Album',
+  'artistDetail.tracks.column.signal': 'Signal',
+  'artistDetail.tracks.column.time': 'Time',
+  'artistDetail.tracks.column.title': 'Title',
+  'artistDetail.tracks.confirm.delete': 'Delete the music file?\n{title}',
+  'artistDetail.tracks.empty': 'No songs are grouped under this artist yet.',
+  'artistDetail.tracks.error.actionUnavailable': 'This track action is not available yet.',
+  'artistDetail.tracks.error.desktopBridgeActions': 'Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.',
+  'artistDetail.tracks.error.desktopBridgeEdit': 'Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.',
+  'artistDetail.tracks.error.desktopBridgeRead': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artist tracks.',
+  'artistDetail.tracks.error.noCoverSaved': 'No cover art was saved for this track.',
+  'artistDetail.tracks.error.noCoverToCopy': 'This track does not have cover art to copy.',
+  'artistDetail.tracks.error.remoteFileAction': 'Remote tracks do not support local file actions yet.',
+  'artistDetail.tracks.formatAria': 'Track format',
+  'artistDetail.tracks.heading': 'Songs by {artist}',
+  'artistDetail.tracks.loadedCount': '{loaded} of {total} tracks',
+  'artistDetail.tracks.loading': 'Loading songs...',
+  'artistDetail.tracks.loadingTrack': 'Loading track',
+  'artistDetail.tracks.status.addedToPlaylist': 'Added to playlist: {playlist}',
+  'artistDetail.tracks.status.albumNotFound': 'Album not found in this artist view: {album}',
+  'artistDetail.tracks.status.notInQueue': 'This song is not in the queue: {title}',
+  'artistDetail.tracks.status.reloadedTags': 'Reloaded embedded tags: {title}',
+  'artistDetail.tracks.status.removedFromQueue': 'Removed from queue: {title}',
+  'artistDetail.tracks.unknownAlbum': 'Unknown Album',
   'library.count.total': '{count} total',
   'library.sort.createdAsc': 'Created Oldest',
   'library.sort.createdDesc': 'Created Newest',

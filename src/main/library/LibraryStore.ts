@@ -3357,7 +3357,7 @@ export class LibraryStore {
        ${whereSql}
        GROUP BY 1
        ORDER BY date DESC
-       LIMIT 14`,
+       LIMIT 371`,
       ...params,
     );
 

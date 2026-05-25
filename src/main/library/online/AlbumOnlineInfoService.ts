@@ -192,6 +192,23 @@ const wikipediaJson = (language: string, title: string): Promise<unknown> =>
     }),
   );
 
+const wikipediaExtractJson = (language: string, title: string, maxChars: number): Promise<unknown> =>
+  wikipediaLimiter.run(() => {
+    const params = new URLSearchParams({
+      action: 'query',
+      prop: 'extracts',
+      explaintext: '1',
+      exchars: String(maxChars),
+      redirects: '1',
+      titles: title,
+      format: 'json',
+    });
+    return fetchJson(`https://${language}.wikipedia.org/w/api.php?${params.toString()}`, {
+      'Api-User-Agent': 'ECHO-Next/26.5.19 (https://github.com/moekotori/echo)',
+      'User-Agent': 'ECHO-Next/26.5.19 (https://github.com/moekotori/echo)',
+    });
+  });
+
 const wikipediaSearchJson = (language: string, query: string): Promise<unknown> =>
   wikipediaLimiter.run(() =>
     fetchJson(`https://${language}.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=3`, {
@@ -214,6 +231,29 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 const isInformationSummary = (value: unknown): value is AlbumInformationSummary => {
   const record = asRecord(value);
   return Boolean(text(record.title) && text(record.extract) && text(record.language));
+};
+
+const pageExtractFromQuery = (value: unknown): string | null => {
+  const pages = asRecord(asRecord(asRecord(value).query).pages);
+  for (const page of Object.values(pages).map(asRecord)) {
+    if (page.missing) {
+      continue;
+    }
+    const extract = text(page.extract);
+    if (extract) {
+      return extract;
+    }
+  }
+  return null;
+};
+
+const normalizeExtract = (value: string, maxLength: number): string => {
+  const normalized = value
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3).trim()}...` : normalized;
 };
 
 const parseInformationCache = (value: unknown): ParsedInformationCache => {
@@ -365,15 +405,12 @@ export class AlbumOnlineInfoService {
 
   private async fetchOnlineInfo(snapshot: AlbumSnapshot, language: string): Promise<OnlinePayload> {
     const errors: string[] = [];
-    let musicBrainz: MusicBrainzReleasePayload | null = null;
 
-    try {
-      musicBrainz = await this.fetchMusicBrainzRelease(snapshot);
-    } catch (error) {
-      errors.push(`MusicBrainz: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    const [information, artistInformation] = await Promise.all([
+    const [musicBrainz, information, artistInformation] = await Promise.all([
+      this.fetchMusicBrainzRelease(snapshot).catch((error: unknown) => {
+        errors.push(`MusicBrainz: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      }),
       this.fetchWikipediaInformation(snapshot, language).catch((error: unknown) => {
         errors.push(`Wikipedia album: ${error instanceof Error ? error.message : String(error)}`);
         return null;
@@ -522,20 +559,25 @@ export class AlbumOnlineInfoService {
             key: text(page.key),
             title: text(page.title),
             score: Math.max(similarity(snapshot.album.title, text(page.title)), similarity(query, text(page.title))),
-          }))
+        }))
           .filter((page): page is { key: string; title: string; score: number } => Boolean(page.key && page.title))
           .sort((left, right) => right.score - left.score)[0];
         const pageTitle = best?.key ?? query;
-        const data = asRecord(await wikipediaJson(language, pageTitle));
+        const [summaryPayload, extractPayload] = await Promise.all([
+          wikipediaJson(language, pageTitle),
+          wikipediaExtractJson(language, pageTitle, 2600),
+        ]);
+        const data = asRecord(summaryPayload);
         const extract = text(data.extract);
         const title = text(data.title);
-        if (!extract || !title) {
+        const richExtract = pageExtractFromQuery(extractPayload) ?? extract;
+        if (!richExtract || !title) {
           continue;
         }
         return {
           title,
           description: text(data.description),
-          extract: extract.length > 1300 ? `${extract.slice(0, 1297).trim()}...` : extract,
+          extract: normalizeExtract(richExtract, 2400),
           url: text(asRecord(asRecord(data.content_urls).desktop).page),
           language,
           thumbnailUrl: text(asRecord(data.thumbnail).source),
@@ -569,20 +611,25 @@ export class AlbumOnlineInfoService {
             key: text(page.key),
             title: text(page.title),
             score: Math.max(similarity(artist, text(page.title)), similarity(query, text(page.title))),
-          }))
+        }))
           .filter((page): page is { key: string; title: string; score: number } => Boolean(page.key && page.title))
           .sort((left, right) => right.score - left.score)[0];
         const pageTitle = best?.key ?? query;
-        const data = asRecord(await wikipediaJson(language, pageTitle));
+        const [summaryPayload, extractPayload] = await Promise.all([
+          wikipediaJson(language, pageTitle),
+          wikipediaExtractJson(language, pageTitle, 3600),
+        ]);
+        const data = asRecord(summaryPayload);
         const extract = text(data.extract);
         const title = text(data.title);
-        if (!extract || !title) {
+        const richExtract = pageExtractFromQuery(extractPayload) ?? extract;
+        if (!richExtract || !title) {
           continue;
         }
         return {
           title,
           description: text(data.description),
-          extract: extract.length > 1300 ? `${extract.slice(0, 1297).trim()}...` : extract,
+          extract: normalizeExtract(richExtract, 3200),
           url: text(asRecord(asRecord(data.content_urls).desktop).page),
           language,
           thumbnailUrl: text(asRecord(data.thumbnail).source),

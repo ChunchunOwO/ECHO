@@ -41,6 +41,7 @@ import {
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
   channelBalanceMinGainDb,
+  type AudioExportFormat,
   type ChannelBalanceMonoMode,
   type ChannelBalanceState,
 } from '../../shared/types/audio';
@@ -288,6 +289,7 @@ export const defaultSettings: AppSettings = {
   appearanceThemePresetOverrides: {},
   appearanceCustomThemes: [],
   appearanceThemeCustomId: null,
+  appearanceThemePresetsExpanded: false,
   appearancePreferences: { ...defaultAppearancePreferences },
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
@@ -406,6 +408,9 @@ export const defaultSettings: AppSettings = {
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
   desktopLyricsBounds: null,
+  miniPlayerEnabled: false,
+  miniPlayerLocked: false,
+  miniPlayerBounds: null,
   mvEnabled: true,
   mvEnabledProviders: ['bilibili', 'youtube'],
   mvProviderOrder: ['bilibili', 'youtube'],
@@ -441,6 +446,7 @@ export const defaultSettings: AppSettings = {
   backgroundSpacePauseEnabled: false,
   localShortcuts: createDefaultLocalShortcuts(),
   globalShortcuts: createDefaultGlobalShortcuts(),
+  audioExportFormat: 'mp3',
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
@@ -456,6 +462,7 @@ export const defaultSettings: AppSettings = {
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  smtcLyricsEnabled: false,
   taskbarPlaybackControlsEnabled: false,
 };
 
@@ -779,6 +786,9 @@ const normalizeSongsSort = (value: unknown): LibrarySort =>
 const normalizeReplayGainMode = (value: unknown): ReplayGainMode =>
   value === 'track' || value === 'album' || value === 'off' ? value : 'track';
 
+const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
+  value === 'wav' || value === 'flac' || value === 'ogg' || value === 'mp3' ? value : defaultSettings.audioExportFormat ?? 'mp3';
+
 const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { ...defaultAppearancePreferences };
@@ -863,6 +873,29 @@ const migrateRememberedAudioOutput = (
     outputMode: 'system',
     sharedBackend: 'auto',
     latencyProfile: 'balanced',
+  };
+};
+
+const normalizeMiniPlayerBounds = (value: unknown): DesktopLyricsBounds | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<DesktopLyricsBounds>;
+  const x = Number(input.x);
+  const y = Number(input.y);
+  const width = Number(input.width);
+  const height = Number(input.height);
+
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  return {
+    x: Math.round(clamp(x, -32000, 32000)),
+    y: Math.round(clamp(y, -32000, 32000)),
+    width: Math.round(clamp(width, 280, 800)),
+    height: Math.round(clamp(height, 84, 260)),
   };
 };
 
@@ -1207,6 +1240,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
     appearanceCustomThemes,
     appearanceThemeCustomId,
+    appearanceThemePresetsExpanded: settings.appearanceThemePresetsExpanded === true,
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: migrateRememberedAudioOutput(
@@ -1379,6 +1413,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled !== false,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled !== false,
     desktopLyricsBounds: normalizeDesktopLyricsBounds(settings.desktopLyricsBounds),
+    miniPlayerEnabled: settings.miniPlayerEnabled === true,
+    miniPlayerLocked: settings.miniPlayerLocked === true,
+    miniPlayerBounds: normalizeMiniPlayerBounds(settings.miniPlayerBounds),
     mvEnabled: settings.mvEnabled !== false,
     mvEnabledProviders: normalizeMvProviderList(settings.mvEnabledProviders, defaultSettings.mvEnabledProviders),
     mvProviderOrder: [
@@ -1436,6 +1473,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     backgroundSpacePauseEnabled: false,
     localShortcuts: normalizeLocalShortcuts(settings.localShortcuts),
     globalShortcuts: normalizeGlobalShortcuts(settings.globalShortcuts),
+    audioExportFormat: normalizeAudioExportFormat(settings.audioExportFormat),
     playbackSpeed: Number.isFinite(playbackSpeed)
       ? Math.max(0.5, Math.min(2, playbackSpeed))
       : defaultSettings.playbackSpeed,
@@ -1458,6 +1496,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
         : defaultSettings.lastFmMinScrobbleSeconds,
     lastFmAuthToken: normalizeOptionalText(settings.lastFmAuthToken),
     smtcEnabled: settings.smtcEnabled !== false,
+    smtcLyricsEnabled: settings.smtcLyricsEnabled === true,
     taskbarPlaybackControlsEnabled: settings.taskbarPlaybackControlsEnabled === true,
   };
 };

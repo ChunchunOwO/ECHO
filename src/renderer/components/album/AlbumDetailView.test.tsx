@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AlbumOnlineInfo, LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
+import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 import { AlbumDetailView } from './AlbumDetailView';
 
 const queueMock = {
@@ -69,6 +69,20 @@ const track = (): LibraryTrack => ({
   fieldSources: {},
 });
 
+const artist = (): LibraryArtist => ({
+  id: 'artist-1',
+  name: 'Echo Unit',
+  sortName: 'Echo Unit',
+  role: 'both',
+  trackCount: 1,
+  albumCount: 1,
+  coverId: null,
+  coverThumb: null,
+  avatarUrl: null,
+  avatarThumbUrl: null,
+  avatarStatus: null,
+});
+
 const onlineInfo = (): AlbumOnlineInfo => ({
   albumId: 'album-1',
   status: 'ready',
@@ -102,16 +116,24 @@ const onlineInfo = (): AlbumOnlineInfo => ({
   errors: [],
 });
 
-const installLibrary = (): { getAlbumOnlineInfo: ReturnType<typeof vi.fn> } => {
+const installLibrary = (): { getAlbumOnlineInfo: ReturnType<typeof vi.fn>; getArtists: ReturnType<typeof vi.fn> } => {
   const getAlbumOnlineInfo = vi.fn().mockResolvedValue(onlineInfo());
+  const getArtists = vi.fn().mockResolvedValue({
+    items: [artist()],
+    page: 1,
+    pageSize: 50,
+    total: 1,
+    hasMore: false,
+  });
   window.echo = {
     library: {
       getAlbum: vi.fn().mockResolvedValue({ coverLarge: null }),
       getAlbumOnlineInfo,
+      getArtists,
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
     },
   } as unknown as Window['echo'];
-  return { getAlbumOnlineInfo };
+  return { getAlbumOnlineInfo, getArtists };
 };
 
 afterEach(() => {
@@ -154,5 +176,21 @@ describe('AlbumDetailView', () => {
 
     expect(await screen.findByText('Artist profile - en.wikipedia.org')).toBeTruthy();
     expect(screen.getByText('Echo Unit artist overview.')).toBeTruthy();
+  });
+
+  it('opens the album artist detail from the hero artist name', async () => {
+    const { getArtists } = installLibrary();
+    const navigate = vi.fn();
+    window.addEventListener('app:navigate:artist-detail', navigate);
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open artist Echo Unit' }));
+
+    await waitFor(() => expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Echo Unit', sort: 'default' }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.artist.id).toBe('artist-1');
+
+    window.removeEventListener('app:navigate:artist-detail', navigate);
   });
 });

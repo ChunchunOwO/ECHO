@@ -280,6 +280,9 @@ export class WindowsSmtcService implements SmtcService {
       recentErrors: this.recentErrors.map((event) => ({ ...event })),
       recoveryInFlight: false,
       recoveryAttemptsInWindow: 0,
+      canRecover: false,
+      lastRecoveryAt: null,
+      lyricsEnabled: false,
     };
   }
 

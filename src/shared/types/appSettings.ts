@@ -1,4 +1,4 @@
-import type { AudioDsdOutputMode, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
+import type { AudioDsdOutputMode, AudioExportFormat, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
 import type { DuplicateTrackMode } from './library';
 import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
@@ -154,6 +154,7 @@ export type AppSettings = {
   appearanceThemePresetOverrides?: AppThemePresetOverrides;
   appearanceCustomThemes?: AppThemeCustomTheme[];
   appearanceThemeCustomId?: string | null;
+  appearanceThemePresetsExpanded?: boolean;
   appearancePreferences?: AppearancePreferences;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;
@@ -272,6 +273,9 @@ export type AppSettings = {
   desktopLyricsRomanizationEnabled?: boolean;
   desktopLyricsTranslationEnabled?: boolean;
   desktopLyricsBounds?: DesktopLyricsBounds | null;
+  miniPlayerEnabled?: boolean;
+  miniPlayerLocked?: boolean;
+  miniPlayerBounds?: DesktopLyricsBounds | null;
   mvEnabled?: boolean;
   mvEnabledProviders: NetworkMvProviderId[];
   mvProviderOrder: NetworkMvProviderId[];
@@ -307,6 +311,7 @@ export type AppSettings = {
   backgroundSpacePauseEnabled?: boolean;
   localShortcuts?: LocalShortcutSettings;
   globalShortcuts?: GlobalShortcutSettings;
+  audioExportFormat?: AudioExportFormat;
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;
@@ -322,5 +327,6 @@ export type AppSettings = {
   lastFmMinScrobbleSeconds: number;
   lastFmAuthToken: string | null;
   smtcEnabled: boolean;
+  smtcLyricsEnabled: boolean;
   taskbarPlaybackControlsEnabled: boolean;
 };

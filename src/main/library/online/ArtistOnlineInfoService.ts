@@ -71,6 +71,7 @@ const successTtlMs = 30 * 24 * 60 * 60 * 1000;
 const shortTtlMs = 60 * 60 * 1000;
 const maxRelatedArtists = 8;
 const maxExternalLinks = 8;
+const wikipediaFallbackLanguages = ['zh', 'ja', 'en'] as const;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -104,6 +105,11 @@ const wikipediaLanguageForLocale = (locale: AppLocale | undefined): 'zh' | 'ja' 
   }
   return 'zh';
 };
+
+const wikipediaLanguagePriority = (language: 'zh' | 'ja' | 'en'): Array<'zh' | 'ja' | 'en'> => [
+  language,
+  ...wikipediaFallbackLanguages.filter((fallback) => fallback !== language),
+];
 
 const cacheKeyFor = (artistId: string, artistName: string, language: string, region: string | null): string =>
   `${artistId}:${language}:${normalizeText(region)}:${normalizeText(artistName)}`;
@@ -264,7 +270,7 @@ export class ArtistOnlineInfoService {
     return { removedRows };
   }
 
-  private async fetchOnlineInfo(artistName: string, language: string): Promise<OnlinePayload> {
+  private async fetchOnlineInfo(artistName: string, language: 'zh' | 'ja' | 'en'): Promise<OnlinePayload> {
     const errors: string[] = [];
     const [bio, musicBrainz] = await Promise.all([
       this.fetchWikipediaBio(artistName, language).catch((error: unknown) => {
@@ -281,12 +287,12 @@ export class ArtistOnlineInfoService {
     const sourceLabels: string[] = [];
     const imageCredits: string[] = [];
     if (bio) {
-      sourceLabels.push(`${language}.wikipedia.org`);
+      sourceLabels.push(`${bio.language}.wikipedia.org`);
       if (bio.url) {
         externalLinks.push({ label: bio.title, url: bio.url, source: 'wikipedia' });
       }
       if (bio.thumbnailUrl) {
-        imageCredits.push(`${bio.title} image via ${language}.wikipedia.org`);
+        imageCredits.push(`${bio.title} image via ${bio.language}.wikipedia.org`);
       }
     }
     if (musicBrainz) {
@@ -304,7 +310,26 @@ export class ArtistOnlineInfoService {
     };
   }
 
-  private async fetchWikipediaBio(artistName: string, language: string): Promise<ArtistOnlineInfoBio | null> {
+  private async fetchWikipediaBio(artistName: string, preferredLanguage: 'zh' | 'ja' | 'en'): Promise<ArtistOnlineInfoBio | null> {
+    let lastError: unknown = null;
+    for (const language of wikipediaLanguagePriority(preferredLanguage)) {
+      try {
+        const bio = await this.fetchWikipediaBioInLanguage(artistName, language);
+        if (bio) {
+          return bio;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+    return null;
+  }
+
+  private async fetchWikipediaBioInLanguage(artistName: string, language: 'zh' | 'ja' | 'en'): Promise<ArtistOnlineInfoBio | null> {
     const queries = [
       artistName,
       `${artistName} musician`,

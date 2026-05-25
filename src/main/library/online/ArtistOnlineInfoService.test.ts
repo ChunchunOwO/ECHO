@@ -86,6 +86,59 @@ describe('ArtistOnlineInfoService', () => {
     database.close();
   });
 
+  it('falls back to Japanese Wikipedia when the current locale has no artist page', async () => {
+    const database = createDatabase(':memory:');
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.includes('zh.wikipedia.org/w/rest.php/v1/search/page')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ pages: [] }),
+        };
+      }
+      if (url.includes('ja.wikipedia.org/w/rest.php/v1/search/page')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ pages: [{ key: 'Aiobahn', title: 'Aiobahn' }] }),
+        };
+      }
+      if (url.includes('ja.wikipedia.org/api/rest_v1/page/summary/Aiobahn')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            title: 'Aiobahn',
+            description: '韓国の音楽家',
+            extract: 'Aiobahn は韓国の電子音楽家、DJ、音楽プロデューサー。',
+            content_urls: { desktop: { page: 'https://ja.wikipedia.org/wiki/Aiobahn' } },
+          }),
+        };
+      }
+      if (url.includes('/ws/2/artist/?query=')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ artists: [] }),
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    const service = new ArtistOnlineInfoService(database, fetcher);
+
+    const result = await service.getArtistOnlineInfo(artist({ name: 'Aiobahn' }), {
+      locale: 'zh-CN',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.bio?.language).toBe('ja');
+    expect(result.bio?.extract).toContain('電子音楽家');
+    expect(result.sourceLabels).toEqual(['ja.wikipedia.org']);
+    expect(result.externalLinks.map((link) => link.url)).toEqual(['https://ja.wikipedia.org/wiki/Aiobahn']);
+    database.close();
+  });
+
   it('degrades to unavailable and short-caches provider failures', async () => {
     const database = createDatabase(':memory:');
     const fetcher = vi.fn().mockResolvedValue({

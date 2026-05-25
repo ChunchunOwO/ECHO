@@ -99,6 +99,7 @@ const settingsBase: AppSettings = {
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  smtcLyricsEnabled: false,
   taskbarPlaybackControlsEnabled: false,
 };
 

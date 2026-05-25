@@ -64,6 +64,9 @@ export class NoopSmtcService implements SmtcService {
       recentErrors: [],
       recoveryInFlight: false,
       recoveryAttemptsInWindow: 0,
+      canRecover: false,
+      lastRecoveryAt: null,
+      lyricsEnabled: false,
     };
   }
 }

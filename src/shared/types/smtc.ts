@@ -79,4 +79,7 @@ export type SmtcDiagnostics = {
   recentErrors: SmtcDiagnosticEvent[];
   recoveryInFlight: boolean;
   recoveryAttemptsInWindow: number;
+  canRecover: boolean;
+  lastRecoveryAt: string | null;
+  lyricsEnabled: boolean;
 };

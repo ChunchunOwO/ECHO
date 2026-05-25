@@ -1912,13 +1912,14 @@ html[data-theme-preset="darkSideMoon"] .album-track-copy strong,
 html[data-theme-preset="darkSideMoon"] .artist-album-copy strong,
 html[data-theme-preset="darkSideMoon"] .artist-track-copy strong,
 html[data-theme-preset="darkSideMoon"] .album-fact strong,
-html[data-theme-preset="darkSideMoon"] .artist-stat-grid strong {
+html[data-theme-preset="darkSideMoon"] .artist-overview-copy h2,
+html[data-theme-preset="darkSideMoon"] .artist-sidebar-facts strong {
   color: var(--theme-heading-text);
   text-shadow: 0 2px 18px rgb(2 4 12 / 0.42);
 }
 
 html[data-theme-preset="darkSideMoon"] .album-detail-copy p,
-html[data-theme-preset="darkSideMoon"] .artist-hero-copy p,
+html[data-theme-preset="darkSideMoon"] .artist-overview-copy p,
 html[data-theme-preset="darkSideMoon"] .album-detail-meta,
 html[data-theme-preset="darkSideMoon"] .artist-hero-meta,
 html[data-theme-preset="darkSideMoon"] .album-detail-kicker,
@@ -1926,7 +1927,8 @@ html[data-theme-preset="darkSideMoon"] .artist-detail-kicker,
 html[data-theme-preset="darkSideMoon"] .album-detail-facts span,
 html[data-theme-preset="darkSideMoon"] .artist-section header span,
 html[data-theme-preset="darkSideMoon"] .artist-section header small,
-html[data-theme-preset="darkSideMoon"] .artist-stat-grid span,
+html[data-theme-preset="darkSideMoon"] .artist-overview-copy > span,
+html[data-theme-preset="darkSideMoon"] .artist-sidebar-facts span,
 html[data-theme-preset="darkSideMoon"] .album-track-toolbar,
 html[data-theme-preset="darkSideMoon"] .album-track-header,
 html[data-theme-preset="darkSideMoon"] .artist-track-header,
@@ -1969,7 +1971,6 @@ html[data-theme-preset="darkSideMoon"] .album-detail-tab[aria-current='page']::a
 }
 
 html[data-theme-preset="darkSideMoon"] .album-detail-cover,
-html[data-theme-preset="darkSideMoon"] .artist-hero-avatar,
 html[data-theme-preset="darkSideMoon"] .artist-album-cover,
 html[data-theme-preset="darkSideMoon"] .artist-track-cover {
   color: var(--theme-muted-text);
@@ -1984,7 +1985,7 @@ html[data-theme-preset="darkSideMoon"] .artist-track-cover {
 }
 
 html[data-theme-preset="darkSideMoon"] .artist-hero,
-html[data-theme-preset="darkSideMoon"] .artist-stat-grid div,
+html[data-theme-preset="darkSideMoon"] .artist-detail-tabs,
 html[data-theme-preset="darkSideMoon"] .artist-detail-missing {
   border-color: rgb(246 240 216 / 0.16);
   background: var(--dark-side-panel-gradient);
@@ -2751,6 +2752,74 @@ html[data-theme-preset="darkSideMoon"] .app-shell--lyrics-player-drawer .lyrics-
   max-width: 620px;
 }
 
+.settings-theme-preset-panel {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+}
+
+.settings-theme-preset-summary {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: var(--theme-panel-bg);
+  box-shadow: var(--theme-shadow-panel);
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-theme-preset-summary:hover {
+  border-color: var(--theme-panel-border-strong);
+  background: var(--theme-panel-bg-strong);
+}
+
+.settings-theme-preset-summary-preview {
+  display: block;
+  width: 52px;
+  height: 34px;
+  border-radius: 7px;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.42),
+    0 6px 14px rgb(30 25 24 / 0.1);
+}
+
+.settings-theme-preset-summary > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-theme-preset-summary strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-preset-summary em {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 720;
+}
+
+.settings-theme-preset-summary > svg {
+  color: var(--theme-muted-text);
+  transition: transform 160ms ease;
+}
+
+.settings-theme-preset-summary[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
 .settings-theme-preset-grid {
   display: grid;
   width: 100%;
@@ -3009,49 +3078,135 @@ html[data-theme-preset="darkSideMoon"] .app-shell--lyrics-player-drawer .lyrics-
 }
 
 .settings-theme-custom-mock-titlebar {
-  min-height: 28px;
+  min-height: 18px;
 }
 
 .settings-theme-custom-mock-body {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px;
+  grid-template-columns: minmax(82px, 0.28fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
 }
 
 .settings-theme-custom-mock-body aside,
 .settings-theme-custom-mock-body main {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   padding: 8px;
   border-radius: 7px;
 }
 
-.settings-theme-custom-mock-body aside span,
-.settings-theme-custom-mock-body main span,
-.settings-theme-custom-mock-player span {
-  min-height: 18px;
-  border-radius: 6px;
+.settings-theme-custom-mock-body aside {
+  align-content: start;
 }
 
-.settings-theme-custom-mock-body main span:last-child {
+.settings-theme-custom-mock-body main {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-theme-custom-mock-body aside span {
+  display: flex;
+  align-items: center;
   min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.2;
 }
 
-.settings-theme-custom-mock-body main span:last-child,
-.settings-theme-custom-mock-body main span:nth-last-child(2) {
+.settings-theme-custom-mock-card,
+.settings-theme-custom-mock-row,
+.settings-theme-custom-mock-accent {
+  min-width: 0;
+  border-radius: 7px;
+}
+
+.settings-theme-custom-mock-card {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  min-height: 54px;
+  padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+.settings-theme-custom-mock-card strong {
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-custom-mock-card em {
+  overflow: hidden;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.25;
+  opacity: 0.92;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-custom-mock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-theme-custom-mock-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-custom-mock-row strong {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.settings-theme-custom-mock-accent {
   display: grid;
   place-items: center;
+  min-height: 34px;
+  padding: 0 10px;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 900;
+  line-height: 1.1;
 }
 
 .settings-theme-custom-mock-player {
-  display: grid;
-  grid-template-columns: repeat(3, 42px);
+  display: flex;
+  align-items: center;
   gap: 7px;
   justify-content: end;
-  padding: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.settings-theme-custom-mock-player strong {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-custom-mock-player span {
+  flex: 0 0 38px;
+  min-height: 16px;
+  border-radius: 999px;
 }
 
 .settings-theme-custom-section {
@@ -3573,7 +3728,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .album-detail-track-console,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .album-detail-tabs,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-hero,
-.app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-stat-grid div,
+.app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-detail-tabs,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-album-card,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-track-row,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-detail-missing,
@@ -3590,7 +3745,6 @@ html[data-theme="dark"] .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true
 }
 
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .album-detail-cover,
-.app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-hero-avatar,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-album-cover,
 .app-shell--wallpaper-ready[data-wallpaper-ui-zero="true"] .artist-track-cover {
   box-shadow: none;

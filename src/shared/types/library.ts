@@ -536,6 +536,7 @@ export type ArtistConcertEvent = {
   url: string | null;
   ticketUrl?: string | null;
   venueUrl?: string | null;
+  imageUrl?: string | null;
 };
 
 export type ArtistConcertInfo = {

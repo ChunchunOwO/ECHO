@@ -1,6 +1,8 @@
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioExportRequest,
+  AudioExportResult,
   AudioOutputSettings,
   AudioSessionResetEvent,
   AudioStatus,
@@ -36,6 +38,7 @@ import type {
 } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../shared/types/desktopLyrics';
+import type { MiniPlayerState } from '../shared/types/miniPlayer';
 import type {
   AddLocalAudioFilesToPlaylistResult,
   AlbumOnlineInfo,
@@ -270,6 +273,14 @@ export type EchoApi = {
     getLastAudioStatus: () => Promise<AudioStatus | null>;
     onStateChanged: (handler: (state: DesktopLyricsState) => void) => () => void;
     onAudioStatus: (handler: (status: AudioStatus) => void) => () => void;
+  };
+  miniPlayer: {
+    show: () => Promise<MiniPlayerState>;
+    hide: () => Promise<MiniPlayerState>;
+    getState: () => Promise<MiniPlayerState>;
+    setLocked: (locked: boolean) => Promise<MiniPlayerState>;
+    resetBounds: () => Promise<MiniPlayerState>;
+    onStateChanged: (handler: (state: MiniPlayerState) => void) => () => void;
   };
   library: {
     chooseFolder: () => Promise<string | null>;
@@ -561,6 +572,7 @@ export type EchoApi = {
   };
   smtc: {
     getDiagnostics: () => Promise<SmtcDiagnostics>;
+    restart: () => Promise<SmtcDiagnostics>;
     setLyricsProgress: (progress: SmtcLyricsProgress | null) => Promise<void>;
     onCommand: (handler: (command: SmtcCommand) => void) => () => void;
   };
@@ -596,6 +608,7 @@ export type EchoApi = {
     onSessionReset: (handler: (event: AudioSessionResetEvent) => void) => () => void;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
+    exportFile: (request: AudioExportRequest) => Promise<AudioExportResult | null>;
     openAsioControlPanel?: (settings: Pick<AudioOutputSettings, 'deviceIndex' | 'deviceName'>) => Promise<void>;
     resetEngine: () => Promise<AudioStatus>;
     forceRestart: (reason?: string) => Promise<AudioStatus>;

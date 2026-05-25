@@ -1,11 +1,12 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Import, Loader2 } from 'lucide-react';
+import { Download, FileDown, Loader2, Monitor } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { AudioStatus } from '../../../shared/types/audio';
+import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { PlaybackStatus } from '../../../shared/types/playback';
+import type { MiniPlayerState } from '../../../shared/types/miniPlayer';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
 import {
@@ -102,6 +103,39 @@ const readFixedVolumeEnabledPatch = (patch: unknown): boolean | null => {
 
   const value = (patch as { fixedVolumeEnabled?: unknown }).fixedVolumeEnabled;
   return typeof value === 'boolean' ? value : null;
+};
+
+const audioExportFormatSet = new Set<AudioExportFormat>(audioExportFormats);
+const audioExportFormatLabels: Record<AudioExportFormat, string> = {
+  mp3: 'MP3',
+  wav: 'WAV',
+  flac: 'FLAC',
+  ogg: 'OGG',
+};
+
+const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
+  audioExportFormatSet.has(value as AudioExportFormat) ? (value as AudioExportFormat) : 'mp3';
+
+const readAudioExportFormat = (settings: unknown): AudioExportFormat => {
+  if (!settings || typeof settings !== 'object') {
+    return 'mp3';
+  }
+
+  return normalizeAudioExportFormat((settings as { audioExportFormat?: unknown }).audioExportFormat);
+};
+
+const readAudioExportFormatPatch = (patch: unknown): AudioExportFormat | null => {
+  if (!patch || typeof patch !== 'object' || !Object.prototype.hasOwnProperty.call(patch, 'audioExportFormat')) {
+    return null;
+  }
+
+  return normalizeAudioExportFormat((patch as { audioExportFormat?: unknown }).audioExportFormat);
+};
+
+const formatPlaybackRate = (value: unknown): string => {
+  const numeric = Number(value);
+  const safeRate = Number.isFinite(numeric) ? Math.max(0.5, Math.min(2, numeric)) : 1;
+  return `${safeRate.toFixed(2)}x`;
 };
 
 type PlayerDownloadNotice = {
@@ -420,6 +454,10 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
   const [smtcEnabled, setSmtcEnabled] = useState(true);
   const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
   const [fixedVolumeEnabled, setFixedVolumeEnabled] = useState(false);
+  const [audioExportFormat, setAudioExportFormat] = useState<AudioExportFormat>('mp3');
+  const [isAudioExporting, setIsAudioExporting] = useState(false);
+  const [miniPlayerState, setMiniPlayerState] = useState<MiniPlayerState | null>(null);
+  const [isMiniPlayerBusy, setIsMiniPlayerBusy] = useState(false);
   const [streamingDownloadJobId, setStreamingDownloadJobId] = useState<string | null>(null);
   const [streamingDownloadNotice, setStreamingDownloadNotice] = useState<PlayerDownloadNotice | null>(null);
   const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
@@ -670,6 +708,22 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
   const currentLibraryArtistName = currentTrack?.artist?.trim() || currentTrack?.albumArtist?.trim() || '';
   const canOpenCurrentArtist = Boolean(currentLibraryArtistName);
+  const currentExportPlaybackRate = playbackAudioStatus?.playbackRate ?? audioStatus?.playbackRate ?? 1;
+  const audioExportFormatLabel = audioExportFormatLabels[audioExportFormat];
+  const canExportCurrentAudio = Boolean(
+    filePath &&
+      !isCurrentStreamingTrack &&
+      !isSpotifyCurrentTrack &&
+      !isReceiverPlaybackActive &&
+      !isAirPlayReceiverPlaybackActive,
+  );
+  const audioExportButtonTitle = !filePath
+    ? '没有可导出的本地文件'
+    : !canExportCurrentAudio
+      ? '当前来源不支持文件导出'
+      : isAudioExporting
+        ? '正在导出当前文件'
+        : `导出当前文件为 ${audioExportFormatLabel}（${formatPlaybackRate(currentExportPlaybackRate)}）`;
   const handleOpenCurrentArtist = useCallback((): void => {
     if (!currentLibraryArtistName) {
       return;
@@ -821,6 +875,101 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
     }
   }, [currentStreamingDownloadProvider, currentTrack, showStreamingDownloadNotice, streamingTrackProviderTrackId]);
 
+  const handleExportCurrentAudio = useCallback(async (): Promise<void> => {
+    const sourcePath = filePath;
+    const audio = window.echo?.audio;
+    const exportTitle = currentTrack?.title?.trim() || playbackAudioStatus?.currentTrackTitle?.trim() || titleFromPath(sourcePath);
+    const exportArtist = currentTrack?.artist?.trim() || playbackAudioStatus?.currentTrackArtist?.trim() || null;
+
+    if (!sourcePath || !canExportCurrentAudio) {
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: '无法导出当前文件',
+          detail: sourcePath ? '当前来源不是本地音频文件。' : '还没有正在播放的本地音频文件。',
+          progress: null,
+        },
+        5500,
+      );
+      return;
+    }
+
+    if (!audio?.exportFile) {
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: '导出服务不可用',
+          detail: '请在 ECHO Next 桌面端中导出音频文件。',
+          progress: null,
+        },
+        5500,
+      );
+      return;
+    }
+
+    setIsAudioExporting(true);
+    showStreamingDownloadNotice({
+      tone: 'info',
+      title: `准备导出：${exportTitle}`,
+      detail: `${audioExportFormatLabel} · ${formatPlaybackRate(currentExportPlaybackRate)}`,
+      progress: null,
+    });
+
+    try {
+      const result = await audio.exportFile({
+        filePath: sourcePath,
+        format: audioExportFormat,
+        playbackRate: currentExportPlaybackRate,
+        title: exportTitle,
+        artist: exportArtist,
+        album: currentTrack?.album ?? playbackAudioStatus?.currentTrackAlbum ?? null,
+        albumArtist: currentTrack?.albumArtist ?? playbackAudioStatus?.currentTrackAlbumArtist ?? null,
+      });
+
+      if (!result) {
+        setStreamingDownloadNotice(null);
+        return;
+      }
+
+      showStreamingDownloadNotice(
+        {
+          tone: 'success',
+          title: `导出完成：${exportTitle}`,
+          detail: result.filePath,
+          progress: 100,
+        },
+        4500,
+      );
+    } catch (exportError) {
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: `导出失败：${exportTitle}`,
+          detail: exportError instanceof Error ? exportError.message : String(exportError),
+          progress: null,
+        },
+        7000,
+      );
+    } finally {
+      setIsAudioExporting(false);
+    }
+  }, [
+    audioExportFormat,
+    audioExportFormatLabel,
+    canExportCurrentAudio,
+    currentExportPlaybackRate,
+    currentTrack?.album,
+    currentTrack?.albumArtist,
+    currentTrack?.artist,
+    currentTrack?.title,
+    filePath,
+    playbackAudioStatus?.currentTrackAlbum,
+    playbackAudioStatus?.currentTrackAlbumArtist,
+    playbackAudioStatus?.currentTrackArtist,
+    playbackAudioStatus?.currentTrackTitle,
+    showStreamingDownloadNotice,
+  ]);
+
   useEffect(() => {
     if (!isSpotifyCurrentTrack || !currentTrack?.providerTrackId || !window.echo?.spotify?.getPlaybackState) {
       return;
@@ -880,6 +1029,7 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
       if (typeof getSettings !== 'function') {
         setAudioAnalysisEnabled(true);
         setFixedVolumeEnabled(false);
+        setAudioExportFormat('mp3');
         return;
       }
 
@@ -888,12 +1038,14 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
           if (!cancelled) {
             setAudioAnalysisEnabled(readAudioAnalysisEnabled(settings));
             setFixedVolumeEnabled(readFixedVolumeEnabled(settings));
+            setAudioExportFormat(readAudioExportFormat(settings));
           }
         })
         .catch(() => {
           if (!cancelled) {
             setAudioAnalysisEnabled(true);
             setFixedVolumeEnabled(false);
+            setAudioExportFormat('mp3');
           }
         });
     };
@@ -908,6 +1060,10 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
         if (fixedVolumePatch !== null) {
           setFixedVolumeEnabled(fixedVolumePatch);
         }
+        const audioExportFormatPatch = readAudioExportFormatPatch(event.detail);
+        if (audioExportFormatPatch !== null) {
+          setAudioExportFormat(audioExportFormatPatch);
+        }
       }
 
       refreshPlayerAudioSettings();
@@ -921,6 +1077,50 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
       window.removeEventListener('settings:changed', handleSettingsChanged);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const miniPlayer = window.echo?.miniPlayer;
+
+    if (!miniPlayer) {
+      setMiniPlayerState(null);
+      return undefined;
+    }
+
+    void miniPlayer.getState()
+      .then((state) => {
+        if (!cancelled) {
+          setMiniPlayerState(state);
+        }
+      })
+      .catch(() => undefined);
+
+    const unsubscribe = miniPlayer.onStateChanged?.((state) => {
+      setMiniPlayerState(state);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
+  const handleToggleMiniPlayer = useCallback(async (): Promise<void> => {
+    const miniPlayer = window.echo?.miniPlayer;
+    if (!miniPlayer) {
+      return;
+    }
+
+    setIsMiniPlayerBusy(true);
+    try {
+      const nextState = miniPlayerState?.visible ? await miniPlayer.hide() : await miniPlayer.show();
+      setMiniPlayerState(nextState);
+    } catch (miniPlayerError) {
+      setError(miniPlayerError instanceof Error ? miniPlayerError.message : String(miniPlayerError));
+    } finally {
+      setIsMiniPlayerBusy(false);
+    }
+  }, [miniPlayerState?.visible]);
 
   const refreshCurrentTrackLiked = useCallback(async (): Promise<void> => {
     if (!trackId || (!isLibraryCurrentTrack && !isProviderLikedStreamingTrack) || !window.echo?.library) {
@@ -1836,6 +2036,16 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
       </div>
 
       <div className="output-status">
+        <button
+          className={`icon-button ${miniPlayerState?.visible ? 'is-soft-active' : ''}`}
+          type="button"
+          aria-label={miniPlayerState?.visible ? '隐藏迷你播放器' : '显示迷你播放器'}
+          title={miniPlayerState?.visible ? '隐藏迷你播放器' : '显示迷你播放器'}
+          disabled={!window.echo?.miniPlayer || isMiniPlayerBusy}
+          onClick={() => void handleToggleMiniPlayer()}
+        >
+          {isMiniPlayerBusy ? <Loader2 className="spinning-icon" size={17} /> : <Monitor size={17} />}
+        </button>
         <PlayerVolumeControl
           status={audioStatus}
           fixedVolumeEnabled={fixedVolumeEnabled}
@@ -1879,8 +2089,15 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
             )}
           </button>
         ) : null}
-        <button className="icon-button" type="button" aria-label="音频控制" title="音频控制" onClick={onOpenAudioSettings}>
-          <Import size={17} />
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="导出当前文件"
+          title={audioExportButtonTitle}
+          disabled={!canExportCurrentAudio || isAudioExporting}
+          onClick={() => void handleExportCurrentAudio()}
+        >
+          {isAudioExporting ? <Loader2 className="spinning-icon" size={17} /> : <FileDown size={17} />}
         </button>
       </div>
     </footer>

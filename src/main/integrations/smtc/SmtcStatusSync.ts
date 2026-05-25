@@ -35,6 +35,7 @@ type SmtcSyncState = {
   lastCommandAt: string | null;
   lastError: SmtcDiagnosticEvent | null;
   recentErrors: SmtcDiagnosticEvent[];
+  lastRecoveryAt: string | null;
 };
 
 const state: SmtcSyncState = {
@@ -59,6 +60,7 @@ const state: SmtcSyncState = {
   lastCommandAt: null,
   lastError: null,
   recentErrors: [],
+  lastRecoveryAt: null,
 };
 
 const smtcRecoveryWindowMs = 60_000;
@@ -142,8 +144,16 @@ const shouldApplyLyricsProgress = (progress: SmtcLyricsProgress | null, status: 
       (!progress.trackId || !status.currentTrackId || progress.trackId === status.currentTrackId),
   );
 
+const isSmtcLyricsEnabled = (): boolean => {
+  try {
+    return getAppSettings().smtcLyricsEnabled === true;
+  } catch {
+    return false;
+  }
+};
+
 const appendLyricsProgressToArtist = (artist: string, progress: SmtcLyricsProgress | null, status: AudioStatus): string => {
-  if (!shouldApplyLyricsProgress(progress, status)) {
+  if (!isSmtcLyricsEnabled() || !shouldApplyLyricsProgress(progress, status)) {
     return artist;
   }
 
@@ -246,6 +256,9 @@ const metadataKeyForStatus = (status: AudioStatus): string => `${status.currentT
 const smtcPlaybackStateForStatus = (status: AudioStatus): SmtcPlaybackState =>
   status.state === 'loading' && (status.currentTrackId || status.currentFilePath) ? 'playing' : status.state;
 
+const isRecoverableHostState = (hostState: SmtcDiagnostics['hostState']): boolean =>
+  hostState === 'unavailable' || hostState === 'error' || hostState === 'stopped';
+
 export const bindSmtcCommandBridge = (
   service: SmtcService,
   getWindow: () => Pick<BrowserWindow, 'webContents' | 'isDestroyed'> | null = getMainWindow,
@@ -305,6 +318,11 @@ export const syncSmtcStatus = async (status: AudioStatus = getAudioSession().get
       logWarn('[SMTC] Failed to sync timeline', { error: error instanceof Error ? error.message : String(error) });
       recordSmtcDiagnosticError('sync', `Failed to sync timeline: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  const diagnostics = service.getDiagnostics?.();
+  if (diagnostics && isSmtcSettingEnabled() && isRecoverableHostState(diagnostics.hostState)) {
+    void recoverSmtcIntegration(`host-state:${diagnostics.hostState}`);
   }
 };
 
@@ -409,6 +427,7 @@ export const recoverSmtcIntegration = async (reason = 'runtime-recovery'): Promi
   }
 
   smtcRecoveryInFlight = true;
+  state.lastRecoveryAt = new Date().toISOString();
   try {
     logInfo('[SMTC] attempting lightweight integration recovery', { reason });
     await disposeSmtcIntegration();
@@ -426,6 +445,17 @@ export const recoverSmtcIntegration = async (reason = 'runtime-recovery'): Promi
   } finally {
     smtcRecoveryInFlight = false;
   }
+};
+
+export const restartSmtcIntegration = async (reason = 'manual-restart'): Promise<SmtcDiagnostics> => {
+  state.lastRecoveryAt = new Date().toISOString();
+  logInfo('[SMTC] manual integration restart requested', { reason });
+  await disposeSmtcIntegration();
+  await disposeAndResetSmtcService();
+  if (isSmtcSettingEnabled()) {
+    await initializeSmtcIntegration();
+  }
+  return getSmtcDiagnostics();
 };
 
 export const resetSmtcRecoveryStateForTests = (): void => {
@@ -476,6 +506,9 @@ const fallbackSmtcDiagnostics = (): SmtcDiagnostics => ({
   recentErrors: [],
   recoveryInFlight: smtcRecoveryInFlight,
   recoveryAttemptsInWindow: getRecoveryAttemptsInWindow(),
+  canRecover: false,
+  lastRecoveryAt: state.lastRecoveryAt,
+  lyricsEnabled: isSmtcLyricsEnabled(),
 });
 
 export const getSmtcDiagnostics = (): SmtcDiagnostics => {
@@ -488,6 +521,7 @@ export const getSmtcDiagnostics = (): SmtcDiagnostics => {
       ? 'unsupported'
       : serviceDiagnostics.hostState;
   const recentErrors = combineDiagnosticErrors(serviceDiagnostics);
+  const canRecover = enabled && platform === 'win32' && isRecoverableHostState(hostState) && getRecoveryAttemptsInWindow() < smtcMaxRecoveriesPerWindow;
 
   return {
     ...serviceDiagnostics,
@@ -511,5 +545,8 @@ export const getSmtcDiagnostics = (): SmtcDiagnostics => {
     recentErrors,
     recoveryInFlight: smtcRecoveryInFlight,
     recoveryAttemptsInWindow: getRecoveryAttemptsInWindow(),
+    canRecover,
+    lastRecoveryAt: state.lastRecoveryAt,
+    lyricsEnabled: isSmtcLyricsEnabled(),
   };
 };

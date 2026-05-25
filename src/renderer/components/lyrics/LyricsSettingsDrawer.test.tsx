@@ -91,6 +91,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...overrides,
+  smtcLyricsEnabled: overrides.smtcLyricsEnabled ?? false,
   taskbarPlaybackControlsEnabled: overrides.taskbarPlaybackControlsEnabled ?? false,
 });
 

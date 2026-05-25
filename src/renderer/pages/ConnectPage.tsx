@@ -1193,9 +1193,7 @@ export const ConnectPage = (): JSX.Element => {
             <span>{airPlayReceiverStatus.advertisedName}</span>
             <small>{airPlayReceiverStatus.currentClient ? `来自 ${airPlayReceiverStatus.currentClient.address}` : '等待 iPhone / iPad'}</small>
             <small>
-              {airPlayReceiverStatus.nativeAvailable
-                ? 'RAOP 后端已加载'
-                : airPlayReceiverStatus.error ?? '需要可用的 AirPlay 原生后端'}
+              {airPlayReceiverStatus.error ?? (airPlayReceiverStatus.nativeAvailable ? 'RAOP 后端已加载' : '需要可用的 AirPlay 原生后端')}
             </small>
             <small>使用 AirPlay 后进度条将被锁定</small>
           </div>

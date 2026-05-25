@@ -39,7 +39,8 @@ import { isLibraryRecoveryMode } from './libraryRecoveryMode';
 import { applyNetworkProxySettings } from '../network/proxySettings';
 import { markStartupStage, openSafeModeStartupConsoleIfEnabled } from '../diagnostics/StartupDiagnostics';
 import { closeDevConsoleWindow } from '../diagnostics/DevConsoleService';
-import { restoreDesktopLyricsWindowOnStartup } from './desktopLyricsWindow';
+import { closeDesktopLyricsWindow, restoreDesktopLyricsWindowOnStartup } from './desktopLyricsWindow';
+import { closeMiniPlayerWindow, restoreMiniPlayerWindowOnStartup } from './miniPlayerWindow';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -289,6 +290,7 @@ export const registerAppLifecycle = (): void => {
       scheduleDeferredStartupDataProtection(dataProtection.userDataPath, mainWindow);
     }
     restoreDesktopLyricsWindowOnStartup();
+    restoreMiniPlayerWindowOnStartup();
     if (libraryRecoveryMode) {
       notifyLibraryRecoveryMode();
       markStartupStage('library-recovery:dialog-scheduled');
@@ -345,6 +347,8 @@ export const registerAppLifecycle = (): void => {
 
   const cleanupBeforeQuit = async (): Promise<void> => {
     closeDevConsoleWindow();
+    closeDesktopLyricsWindow();
+    closeMiniPlayerWindow();
     savePlaybackMemoryNow();
     disposeLastFmIntegration();
     disposeDiscordPresenceIntegration();

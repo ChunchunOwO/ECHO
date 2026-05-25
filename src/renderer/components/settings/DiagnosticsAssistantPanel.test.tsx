@@ -101,6 +101,9 @@ const baseSmtcDiagnostics: SmtcDiagnostics = {
   recentErrors: [],
   recoveryInFlight: false,
   recoveryAttemptsInWindow: 0,
+  canRecover: false,
+  lastRecoveryAt: null,
+  lyricsEnabled: false,
 };
 
 beforeEach(() => {

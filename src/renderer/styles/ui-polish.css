@@ -212,7 +212,6 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .queue-page-header h1,
 .queue-section-heading h2,
 .album-detail-copy h1,
-.artist-hero-copy h1,
 .settings-header h1 {
   color: var(--theme-heading-text);
 }
@@ -224,7 +223,6 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .queue-kicker,
 .playlist-list-item small,
 .album-detail-meta,
-.artist-hero-copy p,
 .settings-nav-desc,
 .setting-info p {
   color: var(--theme-muted-text);
@@ -294,8 +292,6 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .queue-now-card,
 .queue-toolbar,
 .queue-empty-state,
-.artist-hero,
-.artist-stat-grid div,
 .artist-detail-missing {
   border-color: var(--echo-polish-border);
   border-radius: var(--radius-md);
@@ -306,8 +302,7 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .settings-section,
 .downloads-panel,
 .remote-source-card,
-.queue-now-card,
-.artist-hero {
+.queue-now-card {
   background: var(--echo-polish-surface-strong);
 }
 
@@ -631,7 +626,6 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .queue-now-cover,
 .queue-row-cover,
 .album-detail-cover,
-.artist-hero-avatar,
 .artist-album-cover,
 .artist-track-cover,
 .download-search-thumb,

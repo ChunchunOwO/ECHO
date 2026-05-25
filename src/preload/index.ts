@@ -1139,6 +1139,20 @@ const echoApi: EchoApi = {
       return () => ipcRenderer.off(IpcChannels.DesktopLyricsAudioStatus, listener);
     },
   },
+  miniPlayer: {
+    show: () => ipcRenderer.invoke(IpcChannels.MiniPlayerShow),
+    hide: () => ipcRenderer.invoke(IpcChannels.MiniPlayerHide),
+    getState: () => ipcRenderer.invoke(IpcChannels.MiniPlayerGetState),
+    setLocked: (locked) => ipcRenderer.invoke(IpcChannels.MiniPlayerSetLocked, locked),
+    resetBounds: () => ipcRenderer.invoke(IpcChannels.MiniPlayerResetBounds),
+    onStateChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: unknown): void => {
+        handler(state as Awaited<ReturnType<EchoApi['miniPlayer']['getState']>>);
+      };
+      ipcRenderer.on(IpcChannels.MiniPlayerStateChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.MiniPlayerStateChanged, listener);
+    },
+  },
   library: {
     chooseFolder: () => ipcRenderer.invoke(IpcChannels.LibraryChooseFolder),
     chooseImportFiles: () => ipcRenderer.invoke(IpcChannels.LibraryChooseImportFiles),
@@ -1530,6 +1544,7 @@ const echoApi: EchoApi = {
   },
   smtc: {
     getDiagnostics: () => ipcRenderer.invoke(IpcChannels.SmtcGetDiagnostics),
+    restart: () => ipcRenderer.invoke(IpcChannels.SmtcRestart),
     setLyricsProgress: (progress: SmtcLyricsProgress | null) => ipcRenderer.invoke(IpcChannels.SmtcSetLyricsProgress, progress),
     onCommand: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, command: SmtcCommand): void => {
@@ -1628,6 +1643,7 @@ const echoApi: EchoApi = {
       return nextStatus;
     },
     openAsioControlPanel: (settings) => ipcRenderer.invoke(IpcChannels.AudioOpenAsioControlPanel, settings),
+    exportFile: (request) => ipcRenderer.invoke(IpcChannels.AudioExportFile, request),
     resetEngine: () => ipcRenderer.invoke(IpcChannels.AudioResetEngine),
     forceRestart: (reason) => ipcRenderer.invoke(IpcChannels.AudioForceRestart, reason),
     restartWindowsAudioService: () => ipcRenderer.invoke(IpcChannels.AudioRestartWindowsAudioService),

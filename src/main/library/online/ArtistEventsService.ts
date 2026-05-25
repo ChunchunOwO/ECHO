@@ -19,6 +19,29 @@ export type BandsintownEventsRequest = {
   now?: Date;
 };
 
+export type TicketmasterEventsRequest = {
+  artistId?: string | null;
+  artistName: string;
+  apiKey: string | null | undefined;
+  region?: string | null;
+  force?: boolean;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+  now?: Date;
+};
+
+export type ArtistEventsRequest = {
+  artistId?: string | null;
+  artistName: string;
+  bandsintownAppId?: string | null;
+  ticketmasterApiKey?: string | null;
+  region?: string | null;
+  force?: boolean;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+  now?: Date;
+};
+
 type BandsintownVenue = {
   name?: unknown;
   city?: unknown;
@@ -34,6 +57,15 @@ type BandsintownEvent = {
   url?: unknown;
   offers?: unknown;
   venue?: unknown;
+};
+
+type TicketmasterEvent = {
+  id?: unknown;
+  name?: unknown;
+  url?: unknown;
+  dates?: unknown;
+  _embedded?: unknown;
+  images?: unknown;
 };
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -86,6 +118,17 @@ const buildBandsintownEventsUrl = (artistName: string, appId: string): string =>
   return `https://rest.bandsintown.com/artists/${encodedArtist}/events?${params.toString()}`;
 };
 
+const buildTicketmasterEventsUrl = (artistName: string, apiKey: string): string => {
+  const params = new URLSearchParams({
+    apikey: apiKey.trim(),
+    keyword: artistName.trim(),
+    classificationName: 'music',
+    size: '20',
+    sort: 'date,asc',
+  });
+  return `https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`;
+};
+
 const firstOfferUrl = (value: unknown): string | null => {
   const offers = Array.isArray(value) ? value.map(asRecord) : [];
   for (const offer of offers) {
@@ -131,7 +174,75 @@ const parseBandsintownEvent = (value: unknown): ArtistConcertEvent | null => {
   };
 };
 
-const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number): Promise<unknown> => {
+const parseTicketmasterDate = (datesValue: unknown): { startsAt: string | null; timezone: string | null; timeTbd: boolean } => {
+  const dates = asRecord(datesValue);
+  const start = asRecord(dates.start);
+  const dateTime = text(start.dateTime);
+  const localDate = text(start.localDate);
+  const localTime = text(start.localTime);
+  return {
+    startsAt: dateTime ?? (localDate ? `${localDate}T${localTime ?? '00:00:00'}` : null),
+    timezone: text(dates.timezone),
+    timeTbd: Boolean(start.dateTBD) || Boolean(start.noSpecificTime),
+  };
+};
+
+const ticketmasterImageUrl = (imagesValue: unknown): string | null => {
+  const images = Array.isArray(imagesValue) ? imagesValue.map(asRecord) : [];
+  const scored = images
+    .map((image) => {
+      const url = text(image.url);
+      const width = Number(image.width ?? 0);
+      const height = Number(image.height ?? 0);
+      if (!url || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return null;
+      }
+      const ratio = width / height;
+      const landscapeBonus = ratio >= 1.4 ? 10000 : 0;
+      return { url, score: landscapeBonus + width * height };
+    })
+    .filter((image): image is { url: string; score: number } => Boolean(image))
+    .sort((left, right) => right.score - left.score);
+
+  return scored[0]?.url ?? null;
+};
+
+const parseTicketmasterEvent = (value: unknown): ArtistConcertEvent | null => {
+  const event = asRecord(value) as TicketmasterEvent;
+  const id = text(event.id);
+  const title = text(event.name);
+  const { startsAt, timezone, timeTbd } = parseTicketmasterDate(event.dates);
+  if (!id || !title || !startsAt) {
+    return null;
+  }
+
+  const embedded = asRecord(event._embedded);
+  const venues = Array.isArray(embedded.venues) ? embedded.venues.map(asRecord) : [];
+  const venue = venues[0] ?? {};
+  const city = asRecord(venue.city);
+  const state = asRecord(venue.state);
+  const country = asRecord(venue.country);
+
+  return {
+    id: `ticketmaster:${id}`,
+    source: 'ticketmaster',
+    sourceLabel: 'Ticketmaster',
+    title,
+    startsAt,
+    timezone,
+    timeTbd,
+    venueName: text(venue.name),
+    city: text(city.name),
+    region: text(state.stateCode) ?? text(state.name),
+    country: text(country.countryCode) ?? text(country.name),
+    url: text(event.url),
+    ticketUrl: text(event.url),
+    venueUrl: text(venue.url),
+    imageUrl: ticketmasterImageUrl(event.images),
+  };
+};
+
+const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number, source: ArtistConcertEvent['source']): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -143,7 +254,7 @@ const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: 
       },
     });
     if (!response.ok) {
-      throw new Error(`bandsintown_request_failed:${response.status}`);
+      throw new Error(`${source}_request_failed:${response.status}`);
     }
     return response.json();
   } finally {
@@ -156,6 +267,81 @@ export class ArtistEventsService {
     private readonly fetcher: FetchLike = fetchWithNetworkProxy as FetchLike,
     private readonly database: EchoDatabase | null = null,
   ) {}
+
+  async getArtistEvents(request: ArtistEventsRequest): Promise<ArtistConcertInfo> {
+    const artistName = request.artistName.trim();
+    const region = request.region?.trim() || null;
+    const now = request.now ?? new Date();
+    const tasks: Array<Promise<ArtistConcertInfo>> = [];
+
+    if (request.bandsintownAppId?.trim()) {
+      tasks.push(this.getBandsintownEvents({
+        artistId: request.artistId,
+        artistName,
+        appId: request.bandsintownAppId,
+        region,
+        force: request.force,
+        timeoutMs: request.timeoutMs,
+        fetcher: request.fetcher,
+        now,
+      }));
+    }
+
+    if (request.ticketmasterApiKey?.trim()) {
+      tasks.push(this.getTicketmasterEvents({
+        artistId: request.artistId,
+        artistName,
+        apiKey: request.ticketmasterApiKey,
+        region,
+        force: request.force,
+        timeoutMs: request.timeoutMs,
+        fetcher: request.fetcher,
+        now,
+      }));
+    }
+
+    if (!artistName || tasks.length === 0) {
+      return {
+        status: 'not_configured',
+        region,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Configure artist event providers in Settings to load concerts.',
+      };
+    }
+
+    const results = await Promise.all(tasks);
+    const sources = Array.from(new Set(results.flatMap((result) => result.sources)));
+    const deduped = new Map<string, ArtistConcertEvent>();
+    for (const event of results.flatMap((result) => result.events)) {
+      const key = [
+        normalizeCacheText(event.title),
+        normalizeCacheText(event.venueName),
+        normalizeCacheText(event.city),
+        event.startsAt,
+      ].join(':');
+      if (!deduped.has(key)) {
+        deduped.set(key, event);
+      }
+    }
+
+    const events = Array.from(deduped.values()).sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+    const status = results.some((result) => result.status === 'ready')
+      ? 'ready'
+      : results.some((result) => result.status === 'unavailable')
+        ? 'unavailable'
+        : 'not_configured';
+
+    return {
+      status,
+      region,
+      sources,
+      events,
+      fetchedAt: results.find((result) => result.fetchedAt)?.fetchedAt ?? now.toISOString(),
+      message: status === 'unavailable' ? results.find((result) => result.message)?.message : undefined,
+    };
+  }
 
   async getBandsintownEvents(request: BandsintownEventsRequest): Promise<ArtistConcertInfo> {
     const artistName = request.artistName.trim();
@@ -188,6 +374,7 @@ export class ArtistEventsService {
         buildBandsintownEventsUrl(artistName, appId),
         request.fetcher ?? this.fetcher,
         request.timeoutMs ?? 7000,
+        'bandsintown',
       );
       const events = (Array.isArray(payload) ? payload : [])
         .map(parseBandsintownEvent)
@@ -210,6 +397,70 @@ export class ArtistEventsService {
         status: 'unavailable',
         region,
         sources: ['bandsintown'],
+        events: [],
+        fetchedAt,
+        message: error instanceof Error ? error.message : String(error),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    }
+  }
+
+  async getTicketmasterEvents(request: TicketmasterEventsRequest): Promise<ArtistConcertInfo> {
+    const artistName = request.artistName.trim();
+    const apiKey = request.apiKey?.trim() ?? '';
+    const region = request.region?.trim() || null;
+    const now = request.now ?? new Date();
+    const fetchedAt = now.toISOString();
+    const cacheKey = cacheKeyFor('ticketmaster', request.artistId, artistName, region);
+
+    if (!artistName || !apiKey) {
+      return {
+        status: 'not_configured',
+        region,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Configure Ticketmaster apikey in Settings to load upcoming concerts.',
+      };
+    }
+
+    if (request.force !== true) {
+      const cached = this.readEventCache(cacheKey, now);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    try {
+      const payload = await fetchJsonWithTimeout(
+        buildTicketmasterEventsUrl(artistName, apiKey),
+        request.fetcher ?? this.fetcher,
+        request.timeoutMs ?? 7000,
+        'ticketmaster',
+      );
+      const embedded = asRecord(asRecord(payload)._embedded);
+      const events = (Array.isArray(embedded.events) ? embedded.events : [])
+        .map(parseTicketmasterEvent)
+        .filter((event): event is ArtistConcertEvent => Boolean(event))
+        .filter((event) => matchesRegion(event, region))
+        .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+
+      const result: ArtistConcertInfo = {
+        status: 'ready',
+        region,
+        sources: ['ticketmaster'],
+        events,
+        fetchedAt,
+        message: events.length ? undefined : 'No upcoming Ticketmaster events matched this artist and region.',
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    } catch (error) {
+      const result: ArtistConcertInfo = {
+        status: 'unavailable',
+        region,
+        sources: ['ticketmaster'],
         events: [],
         fetchedAt,
         message: error instanceof Error ? error.message : String(error),
@@ -274,7 +525,7 @@ export class ArtistEventsService {
         artistId,
         normalizeCacheText(artistName),
         region,
-        'bandsintown',
+        info.sources[0] ?? 'bandsintown',
         JSON.stringify(info.events),
         JSON.stringify(info.sources),
         info.status,

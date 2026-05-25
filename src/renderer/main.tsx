@@ -8,6 +8,7 @@ import '@fontsource/outfit/800.css';
 import '@fontsource/outfit/900.css';
 import { App } from './app/App';
 import { DesktopLyricsApp } from './desktop-lyrics/DesktopLyricsApp';
+import { MiniPlayerApp } from './mini-player/MiniPlayerApp';
 import {
   applyAppearancePreferences,
   loadPersistedAppearancePreferences,
@@ -16,6 +17,7 @@ import {
 } from './preferences/appearancePreferences';
 import { applyThemeMode, loadPersistedThemeMode, readThemeMode, watchSystemThemeMode } from './preferences/themePreferences';
 import type { AppearancePreferences, AppSettings } from '../shared/types/appSettings';
+import { PlaybackQueueProvider } from './stores/PlaybackQueueProvider';
 import { getAppBridge } from './utils/echoBridge';
 import './styles/tokens.css';
 import './styles/theme.css';
@@ -32,6 +34,7 @@ import './styles/legacy-theme-bridge.css';
 import './styles/ui-polish.css';
 import './styles/theme-presets.css';
 import './styles/desktop-lyrics.css';
+import './styles/mini-player.css';
 
 const appearancePreferences = readAppearancePreferences();
 const themeMode = readThemeMode();
@@ -113,9 +116,14 @@ void loadPersistedAppearancePreferences()
 void appBridge?.getSettings().then(loadLyricsFontFiles).catch(() => undefined);
 
 const isDesktopLyricsWindow = new URLSearchParams(window.location.search).get('desktopLyrics') === '1';
+const isMiniPlayerWindow = new URLSearchParams(window.location.search).get('miniPlayer') === '1';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    {isDesktopLyricsWindow ? <DesktopLyricsApp /> : <App />}
+    {isMiniPlayerWindow ? (
+      <PlaybackQueueProvider>
+        <MiniPlayerApp />
+      </PlaybackQueueProvider>
+    ) : isDesktopLyricsWindow ? <DesktopLyricsApp /> : <App />}
   </React.StrictMode>,
 );

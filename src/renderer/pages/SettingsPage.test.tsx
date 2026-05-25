@@ -95,6 +95,7 @@ const settings: AppSettings = {
   lastFmMinScrobbleSeconds: 30,
   lastFmAuthToken: null,
   smtcEnabled: true,
+  smtcLyricsEnabled: false,
   taskbarPlaybackControlsEnabled: false,
 };
 
@@ -1425,7 +1426,7 @@ describe('SettingsPage', () => {
     expect(await within(row).findByText('2/2')).toBeTruthy();
   });
 
-  it('edits and tests HQPlayer foundation settings without changing the audio output path', async () => {
+  it('keeps HQPlayer controls out of Playback settings because Connect owns that surface', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue({ ...settings, hqPlayer: hqPlayerSettings });
     resetSettingsMock.mockResolvedValue(settings);
@@ -1436,47 +1437,9 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
 
-    const row = (await screen.findByText('settings.playback.hqplayer.title')).closest('.setting-row') as HTMLElement;
-    const collapseButton = within(row).getByRole('button', { name: '折叠' });
-    expect(collapseButton.getAttribute('aria-expanded')).toBe('true');
-    fireEvent.click(collapseButton);
-    expect(within(row).queryByLabelText('settings.playback.hqplayer.host')).toBeNull();
-    fireEvent.click(within(row).getByRole('button', { name: '展开' }));
-    expect(within(row).getByLabelText('settings.playback.hqplayer.host')).toBeTruthy();
-    fireEvent.click(within(row).getByText('settings.playback.hqplayer.enable').closest('.settings-inline-toggle')?.querySelector('button') as HTMLButtonElement);
-    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.mode.remote' }));
-    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.defaultBackend.ask' }));
-    fireEvent.change(within(row).getByLabelText('settings.playback.hqplayer.host'), { target: { value: '192.0.2.20' } });
-    fireEvent.change(within(row).getByLabelText('settings.playback.hqplayer.port'), { target: { value: '4321' } });
-
-    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.test' }));
-
-    await waitFor(() =>
-      expect(hqPlayerTestConnectionMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          enabled: true,
-          connectionMode: 'remote',
-          defaultPlaybackBackend: 'ask',
-          host: '192.0.2.20',
-          port: 4321,
-        }),
-      ),
-    );
-    expect(await within(row).findByText('settings.playback.hqplayer.result.ok')).toBeTruthy();
-
-    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.save' }));
-
-    await waitFor(() =>
-      expect(hqPlayerSetSettingsMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          enabled: true,
-          connectionMode: 'remote',
-          defaultPlaybackBackend: 'ask',
-          host: '192.0.2.20',
-          port: 4321,
-        }),
-      ),
-    );
+    expect(screen.queryByText('settings.playback.hqplayer.title')).toBeNull();
+    expect(hqPlayerTestConnectionMock).not.toHaveBeenCalled();
+    expect(hqPlayerSetSettingsMock).not.toHaveBeenCalled();
     expect(audioSetOutputMock).not.toHaveBeenCalled();
   });
 

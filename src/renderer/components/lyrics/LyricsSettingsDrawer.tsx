@@ -1808,43 +1808,44 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>优先显示歌词源提供的中文翻译；没有翻译时不显示额外文本。</p>
 
-          <label className="audio-toggle-row">
-            <span>
-              <Captions size={17} />
-              <strong>逐字歌词高亮</strong>
-            </span>
-            <input
-              type="checkbox"
-              checked={effectiveSettings.lyricsWordHighlightEnabled !== false}
-              disabled={isBusy}
-              onChange={(event) => void patchSettings({ lyricsWordHighlightEnabled: event.currentTarget.checked })}
-            />
-          </label>
-          <p>仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。</p>
-
-          {showPersistentControls ? (
-          <>
-          <label className="lyrics-drawer-range">
-            <span>
-              <strong>
-                <SlidersHorizontal size={15} />
-                逐字高亮清晰度
-              </strong>
-              <em>{wordHighlightClarityLabel}</em>
-            </span>
-            <input
-              type="range"
-              min={40}
-              max={100}
-              step={1}
-              value={wordHighlightClarityPercent}
-              disabled={isBusy || effectiveSettings.lyricsWordHighlightEnabled === false}
-              onChange={(event) => patchSettingsDebounced({ lyricsWordHighlightClarityPercent: Number(event.currentTarget.value) })}
-            />
-          </label>
-          <p>默认“正常”；调高会让当前词未唱到的部分更完整，调低会更有逐字推进感。</p>
-          </>
-          ) : null}
+          <div className="lyrics-word-highlight-settings">
+            <label className="audio-toggle-row lyrics-word-highlight-toggle">
+              <span>
+                <Captions size={17} />
+                <strong>逐字歌词高亮</strong>
+              </span>
+              <input
+                type="checkbox"
+                checked={effectiveSettings.lyricsWordHighlightEnabled !== false}
+                disabled={isBusy}
+                onChange={(event) => void patchSettings({ lyricsWordHighlightEnabled: event.currentTarget.checked })}
+              />
+            </label>
+            {showPersistentControls ? (
+              <label className="lyrics-drawer-range lyrics-word-clarity-range">
+                <span>
+                  <strong>
+                    <SlidersHorizontal size={15} />
+                    逐字高亮清晰度
+                  </strong>
+                  <em>{wordHighlightClarityLabel}</em>
+                </span>
+                <input
+                  type="range"
+                  min={40}
+                  max={100}
+                  step={1}
+                  value={wordHighlightClarityPercent}
+                  disabled={isBusy || effectiveSettings.lyricsWordHighlightEnabled === false}
+                  onChange={(event) => patchSettingsDebounced({ lyricsWordHighlightClarityPercent: Number(event.currentTarget.value) })}
+                />
+              </label>
+            ) : null}
+          </div>
+          <div className="lyrics-word-highlight-notes">
+            <p>仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。</p>
+            {showPersistentControls ? <p>默认“正常”；调高会让当前词未唱到的部分更完整，调低会更有逐字推进感。</p> : null}
+          </div>
 
           {showPersistentControls ? (
           <>

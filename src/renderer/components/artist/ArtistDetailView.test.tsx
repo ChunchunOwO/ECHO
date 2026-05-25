@@ -1,9 +1,10 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistDetailView } from './ArtistDetailView';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { ArtistInsights, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import { I18nProvider } from '../../i18n/I18nProvider';
 
 const queueMock = {
   appendToQueue: vi.fn(),
@@ -66,7 +67,7 @@ vi.mock('./ArtistTrackList', async () => {
         onLoadedTracksChange?.(mockTracks, mockTotal, mockIsLoading);
       }, [onLoadedTracksChange]);
 
-      return mockTracks.length === 0 && !mockIsLoading ? <p>这个艺术家还没有可显示的歌曲。</p> : <section>Mock tracks</section>;
+      return mockTracks.length === 0 && !mockIsLoading ? <p>No songs are grouped under this artist yet.</p> : <section>Mock tracks</section>;
     },
   };
 });
@@ -143,6 +144,15 @@ const installLibrary = (
   } as unknown as Window['echo'];
 };
 
+const renderDetail = (artistValue: LibraryArtist, onBack = vi.fn()) => {
+  window.localStorage.setItem('echo-next.locale', 'en-US');
+  return render(
+    <I18nProvider>
+      <ArtistDetailView artist={artistValue} onBack={onBack} />
+    </I18nProvider>,
+  );
+};
+
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
@@ -162,7 +172,7 @@ describe('ArtistDetailView', () => {
     mockIsLoading = true;
     installLibrary();
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     await screen.findByText('Echo Unit');
     expect((screen.getByRole('button', { name: /Reading Artist/i }) as HTMLButtonElement).disabled).toBe(true);
@@ -171,57 +181,74 @@ describe('ArtistDetailView', () => {
   it('shows the empty track state from the artist track section', async () => {
     installLibrary();
 
-    render(<ArtistDetailView artist={artist({ trackCount: 0 })} onBack={vi.fn()} />);
+    renderDetail(artist({ trackCount: 0 }));
 
-    expect(await screen.findByText('这个艺术家还没有可显示的歌曲。')).toBeTruthy();
+    expect(await screen.findByText('No songs are grouped under this artist yet.')).toBeTruthy();
   });
 
-  it('renders a round artist avatar in the detail hero when one is cached', async () => {
+  it('renders a panoramic artist image in the detail hero when one is cached', async () => {
     installLibrary(vi.fn().mockResolvedValue(artist({
       avatarThumbUrl: 'echo-artist-image://thumb/echo-unit',
       avatarUrl: 'echo-artist-image://large/echo-unit',
       avatarStatus: 'matched',
     })));
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     await screen.findByText('Echo Unit');
-    const hero = document.querySelector('.artist-hero-avatar') as HTMLElement | null;
-    const image = hero?.querySelector('img') as HTMLImageElement | null;
-    expect(hero?.dataset.cover).toBe('true');
+    const hero = document.querySelector('.artist-hero') as HTMLElement | null;
+    const image = document.querySelector('.artist-hero-backdrop') as HTMLImageElement | null;
+    expect(hero?.dataset.hasBackdrop).toBe('true');
     expect(image?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit');
-    expect(image?.getAttribute('sizes')).toBe('240px');
-    expect(image?.getAttribute('srcset')).toBe('echo-artist-image://thumb/echo-unit 192w, echo-artist-image://large/echo-unit 1024w');
+    expect(image?.getAttribute('sizes')).toBeNull();
+    expect(image?.getAttribute('srcset')).toBeNull();
     expect(screen.queryByText('EC')).toBeNull();
   });
 
-  it('falls back to the round letter mark when the detail hero image fails', async () => {
+  it('uses the original album cover for the panoramic fallback instead of the compressed thumb', async () => {
+    installLibrary(vi.fn().mockResolvedValue(artist({
+      coverId: 'cover 1',
+      coverThumb: 'echo-cover://album/cover%201',
+    })));
+
+    renderDetail(artist());
+
+    await screen.findByText('Echo Unit');
+    const image = document.querySelector('.artist-hero-backdrop') as HTMLImageElement | null;
+    expect(image?.getAttribute('src')).toBe('echo-cover://original/cover%201');
+  });
+
+  it('falls back to the letter mark when the detail hero image fails', async () => {
     installLibrary(vi.fn().mockResolvedValue(artist({
       avatarUrl: 'echo-artist-image://large/echo-unit',
       avatarStatus: 'matched',
     })));
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     await screen.findByText('Echo Unit');
-    const image = document.querySelector('.artist-hero-avatar img') as HTMLImageElement;
+    const image = document.querySelector('.artist-hero-backdrop') as HTMLImageElement;
     fireEvent.error(image);
 
-    expect(document.querySelector('.artist-hero-avatar img')).toBeNull();
+    expect(document.querySelector('.artist-hero-backdrop')).toBeNull();
     expect(screen.getByText('EC')).toBeTruthy();
   });
 
   it('updates the detail hero when the same artist receives an avatar', async () => {
     const getArtist = vi.fn().mockResolvedValue(artist());
     installLibrary(getArtist);
-    const { rerender } = render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    const { rerender } = renderDetail(artist());
 
     await screen.findByText('Echo Unit');
     expect(screen.getByText('EC')).toBeTruthy();
 
-    rerender(<ArtistDetailView artist={artist({ avatarUrl: 'echo-artist-image://large/echo-unit', avatarStatus: 'matched' })} onBack={vi.fn()} />);
+    rerender(
+      <I18nProvider>
+        <ArtistDetailView artist={artist({ avatarUrl: 'echo-artist-image://large/echo-unit', avatarStatus: 'matched' })} onBack={vi.fn()} />
+      </I18nProvider>,
+    );
 
-    await waitFor(() => expect(document.querySelector('.artist-hero-avatar img')?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit'));
+    await waitFor(() => expect(document.querySelector('.artist-hero-backdrop')?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit'));
     expect(screen.queryByText('EC')).toBeNull();
   });
 
@@ -232,7 +259,7 @@ describe('ArtistDetailView', () => {
     mockTotal = 2;
     installLibrary();
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     await waitFor(() => expect((screen.getByRole('button', { name: /Play Artist/i }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: /Play Artist/i }));
@@ -251,7 +278,7 @@ describe('ArtistDetailView', () => {
     installLibrary();
     const onBack = vi.fn();
 
-    render(<ArtistDetailView artist={artist()} onBack={onBack} />);
+    renderDetail(artist(), onBack);
 
     await screen.findByText('Echo Unit');
     vi.useFakeTimers();
@@ -269,10 +296,13 @@ describe('ArtistDetailView', () => {
   it('restores the page surface scroll position after returning from an artist album', async () => {
     installLibrary();
 
+    window.localStorage.setItem('echo-next.locale', 'en-US');
     const { container } = render(
-      <main className="page-surface">
-        <ArtistDetailView artist={artist()} onBack={vi.fn()} />
-      </main>,
+      <I18nProvider>
+        <main className="page-surface">
+          <ArtistDetailView artist={artist()} onBack={vi.fn()} />
+        </main>
+      </I18nProvider>,
     );
     const pageSurface = container.querySelector('.page-surface') as HTMLElement;
     pageSurface.scrollTop = 480;
@@ -292,10 +322,55 @@ describe('ArtistDetailView', () => {
       onlineArtistInfoRegion: 'HK',
     });
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     await screen.findByText('Bandsintown');
     expect(screen.getByText('No upcoming concerts matched HK.')).toBeTruthy();
+  });
+
+  it('uses the localized concert setup copy when no concert provider is configured', async () => {
+    installLibrary(
+      vi.fn().mockResolvedValue(artist()),
+      {},
+      vi.fn().mockResolvedValue(artistInsights({
+        concerts: {
+          status: 'not_configured',
+          region: null,
+          sources: [],
+          events: [],
+          fetchedAt: null,
+          message: 'Configure Bandsintown app_id in Settings to load upcoming concerts.',
+        },
+      })),
+    );
+
+    renderDetail(artist());
+
+    expect(await screen.findByText(/Concert info needs Bandsintown/)).toBeTruthy();
+    expect(screen.queryByText(/app_id/)).toBeNull();
+  });
+
+  it('does not show a Bandsintown setup message after Ticketmaster is configured', async () => {
+    installLibrary(
+      vi.fn().mockResolvedValue(artist()),
+      { onlineArtistInfoTicketmasterApiKey: 'ticketmaster-key' },
+      vi.fn().mockResolvedValue(artistInsights({
+        concerts: {
+          status: 'not_configured',
+          region: null,
+          sources: [],
+          events: [],
+          fetchedAt: null,
+          message: 'Configure Bandsintown app_id in Settings to load upcoming concerts.',
+        },
+      })),
+    );
+
+    renderDetail(artist());
+
+    expect(await screen.findByText('Ticketmaster')).toBeTruthy();
+    expect(screen.getByText('No upcoming concerts matched.')).toBeTruthy();
+    expect(screen.queryByText(/Bandsintown app_id/)).toBeNull();
   });
 
   it('renders online artist bio links and concert cards after the background insights load', async () => {
@@ -337,18 +412,23 @@ describe('ArtistDetailView', () => {
               url: 'https://bandsintown.example/events/evt-1',
               ticketUrl: null,
               venueUrl: null,
+              imageUrl: 'https://img.example/event.jpg',
             },
           ],
         },
       }));
     installLibrary(vi.fn().mockResolvedValue(artist()), { onlineArtistInfoBandsintownAppId: 'echo-next', onlineArtistInfoRegion: 'HK' }, getArtistInsights);
 
-    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+    renderDetail(artist());
 
     expect(await screen.findByText(/fictional test artist/)).toBeTruthy();
     expect(screen.getByText('en.wikipedia.org')).toBeTruthy();
     expect(screen.getByText('MusicBrainz')).toBeTruthy();
+    expect(screen.getByText('1 concerts found. Expand to view dates, venues, and ticket links.')).toBeTruthy();
+    expect(screen.queryByText('Echo Unit Live')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Expand/ }));
     expect(screen.getByText('Echo Unit Live')).toBeTruthy();
+    expect(document.querySelector('.artist-event-cover img')?.getAttribute('src')).toBe('https://img.example/event.jpg');
     await waitFor(() =>
       expect(getArtistInsights).toHaveBeenCalledWith('artist-1', {
         limit: 12,

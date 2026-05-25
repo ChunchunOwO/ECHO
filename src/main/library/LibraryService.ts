@@ -573,10 +573,11 @@ export class LibraryService {
           })
         : Promise.resolve(emptyArtistOnlineInfo('Artist online info service is unavailable.')),
       this.artistEventsService
-        ? this.artistEventsService.getBandsintownEvents({
+        ? this.artistEventsService.getArtistEvents({
             artistId: localInsights.artist.id,
             artistName: localInsights.artist.name,
-            appId: settings.onlineArtistInfoBandsintownAppId,
+            bandsintownAppId: settings.onlineArtistInfoBandsintownAppId,
+            ticketmasterApiKey: settings.onlineArtistInfoTicketmasterApiKey,
             region,
             force: options.forceOnline,
           })

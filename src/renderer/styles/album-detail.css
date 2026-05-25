@@ -115,11 +115,26 @@
   letter-spacing: 0;
 }
 
-.album-detail-copy p {
+.album-detail-artist-link {
+  width: fit-content;
   margin: 0;
+  padding: 0;
   color: #334153;
+  border: 0;
+  background: transparent;
   font-size: 20px;
+  font-family: inherit;
+  font-weight: 620;
   line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.album-detail-artist-link:hover,
+.album-detail-artist-link:focus-visible {
+  color: #6b4fe8;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .album-detail-meta {
@@ -591,6 +606,7 @@
   font-size: 15px;
   font-weight: 580;
   line-height: 1.86;
+  white-space: pre-line;
 }
 
 .album-information-article a {
@@ -848,9 +864,14 @@ html[data-theme="dark"] .album-track-copy strong {
   color: var(--echo-heading-text);
 }
 
-html[data-theme="dark"] .album-detail-copy p,
+html[data-theme="dark"] .album-detail-artist-link,
 html[data-theme="dark"] .album-track-row {
   color: var(--color-text);
+}
+
+html[data-theme="dark"] .album-detail-artist-link:hover,
+html[data-theme="dark"] .album-detail-artist-link:focus-visible {
+  color: var(--color-accent);
 }
 
 html[data-theme="dark"] .album-detail-cover {

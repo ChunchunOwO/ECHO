@@ -56,7 +56,10 @@ const installLibrary = (getArtistTracks: ReturnType<typeof vi.fn>): void => {
   } as unknown as Window['echo'];
 };
 
-const renderWithI18n = (element: JSX.Element) => render(<I18nProvider>{element}</I18nProvider>);
+const renderWithI18n = (element: JSX.Element) => {
+  window.localStorage.setItem('echo-next.locale', 'en-US');
+  return render(<I18nProvider>{element}</I18nProvider>);
+};
 
 afterEach(() => {
   cleanup();

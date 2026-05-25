@@ -193,6 +193,7 @@ const makeAppSettings = (
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...overrides,
+  smtcLyricsEnabled: overrides.smtcLyricsEnabled ?? false,
   taskbarPlaybackControlsEnabled: overrides.taskbarPlaybackControlsEnabled ?? false,
 });
 
@@ -3042,7 +3043,32 @@ describe("LyricsPage", () => {
     expect(page.dataset.lyricsColorMode).toBe("theme");
   });
 
-  it("applies smart readable colors immediately when enabled", async () => {
+  it("applies smart readable colors immediately for theme backgrounds", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, {
+      lyricsColor: "#FFFFFF",
+      lyricsSmartReadableColorsEnabled: true,
+      lyricsBackgroundMode: "theme",
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    await waitFor(() => expect(page.dataset.smartReadable).toBe("true"));
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
+    expect(page.style.getPropertyValue("--lyrics-smart-secondary-color")).toMatch(/^rgb\(/);
+    expect(document.documentElement.dataset.lyricsSmartReadable).toBeUndefined();
+  });
+
+  it("waits for sampled artwork before applying smart readable colors to cover backgrounds", async () => {
     const track = makeTrack();
     mockEcho(track, 0, {
       lyricsColor: "#FFFFFF",
@@ -3061,10 +3087,8 @@ describe("LyricsPage", () => {
     await screen.findByRole("heading", { name: "Test Song" });
     const page = container.querySelector(".lyrics-page") as HTMLElement;
 
-    await waitFor(() => expect(page.dataset.smartReadable).toBe("true"));
-    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
-    expect(page.style.getPropertyValue("--lyrics-smart-secondary-color")).toMatch(/^rgb\(/);
-    expect(document.documentElement.dataset.lyricsSmartReadable).toBeUndefined();
+    expect(page.dataset.smartReadable).toBeUndefined();
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toBe("");
   });
 
   it("applies lyrics readability enhancement in pure lyrics mode", async () => {

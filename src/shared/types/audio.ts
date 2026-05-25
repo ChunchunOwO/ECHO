@@ -12,6 +12,24 @@ export type FfmpegToolchainSource = 'explicit' | 'bundled' | 'dev-bundled' | 'sy
 export type AudioDsdOutputMode = 'pcm' | 'dop';
 export type ActiveDsdOutputMode = 'pcm' | 'dop' | 'native' | null;
 export type AudioAutomixMode = 'off' | 'armed' | 'transitioning';
+export const audioExportFormats = ['mp3', 'wav', 'flac', 'ogg'] as const;
+export type AudioExportFormat = (typeof audioExportFormats)[number];
+
+export type AudioExportRequest = {
+  filePath: string;
+  format: AudioExportFormat;
+  playbackRate?: number;
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  albumArtist?: string | null;
+};
+
+export type AudioExportResult = {
+  filePath: string;
+  format: AudioExportFormat;
+  playbackRate: number;
+};
 
 export type AudioAutomixStatus = {
   enabled: boolean;

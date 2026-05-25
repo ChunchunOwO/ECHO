@@ -147,6 +147,9 @@ const fallbackSmtcDiagnostics = (): SmtcDiagnosticSnapshot => ({
   recentErrors: [],
   recoveryInFlight: false,
   recoveryAttemptsInWindow: 0,
+  canRecover: false,
+  lastRecoveryAt: null,
+  lyricsEnabled: false,
 });
 
 const smtcHostStateLabel: Record<SmtcDiagnostics['hostState'], string> = {
@@ -449,6 +452,9 @@ export const formatDiagnosticAssistantText = (
     ['lastError', smtcDiagnostics.lastError?.message ?? null],
     ['recoveryInFlight', smtcDiagnostics.recoveryInFlight],
     ['recoveryAttemptsInWindow', smtcDiagnostics.recoveryAttemptsInWindow],
+    ['canRecover', smtcDiagnostics.canRecover],
+    ['lastRecoveryAt', smtcDiagnostics.lastRecoveryAt],
+    ['lyricsEnabled', smtcDiagnostics.lyricsEnabled],
   ];
   const findings = buildAudioDiagnosticFindings(diagnostics).map((finding) =>
     `- [${finding.severity}] ${finding.title}: ${finding.detail}`,
@@ -499,7 +505,7 @@ export const DiagnosticsAssistantPanel = ({ lastCrashSummary }: DiagnosticsAssis
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [deviceListError, setDeviceListError] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<'refresh' | 'copy' | 'markdown' | 'zip' | 'audio-report' | 'folder' | null>(null);
+  const [busyAction, setBusyAction] = useState<'refresh' | 'copy' | 'markdown' | 'zip' | 'audio-report' | 'folder' | 'smtc-restart' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -559,6 +565,24 @@ export const DiagnosticsAssistantPanel = ({ lastCrashSummary }: DiagnosticsAssis
       void refreshDiagnostics();
     }
   }, [isExpanded, refreshDiagnostics]);
+
+  const restartSmtc = useCallback(async (): Promise<void> => {
+    setBusyAction('smtc-restart');
+    setMessage(null);
+    setError(null);
+    try {
+      const smtc = getSmtcBridge();
+      if (typeof smtc?.restart !== 'function') {
+        throw new Error('SMTC restart bridge is unavailable');
+      }
+      setSmtcDiagnostics(await smtc.restart());
+      setMessage('SMTC support restarted');
+    } catch (restartError) {
+      setError(restartError instanceof Error ? restartError.message : String(restartError));
+    } finally {
+      setBusyAction(null);
+    }
+  }, []);
 
   const runDiagnosticsAction = useCallback(async (
     action: Exclude<typeof busyAction, null>,
@@ -712,6 +736,20 @@ export const DiagnosticsAssistantPanel = ({ lastCrashSummary }: DiagnosticsAssis
               <strong>系统媒体控件</strong>
               <span>{formatSmtcState(smtcDiagnostics)}</span>
             </div>
+            <div className="settings-chip-row">
+              <span data-tone={smtcDiagnostics.hostState === 'running' ? 'ready' : smtcDiagnostics.canRecover ? 'warning' : 'paused'}>
+                {smtcDiagnostics.recoveryInFlight ? 'recovering' : smtcDiagnostics.hostState}
+              </span>
+              <button
+                className="settings-action-button"
+                type="button"
+                disabled={isBusy || !smtcDiagnostics.enabled || smtcDiagnostics.platform !== 'win32'}
+                onClick={() => void restartSmtc()}
+              >
+                <RefreshCw size={15} />
+                {busyAction === 'smtc-restart' ? 'Restarting SMTC...' : 'Restart SMTC'}
+              </button>
+            </div>
             <div className="diagnostics-assistant-device-list">
               <article data-active={smtcDiagnostics.hostState === 'running'}>
                 <span>
@@ -726,6 +764,13 @@ export const DiagnosticsAssistantPanel = ({ lastCrashSummary }: DiagnosticsAssis
                   <small>{formatValue(smtcDiagnostics.lastCommandAt)}</small>
                 </span>
                 <em>{smtcDiagnostics.recoveryInFlight ? 'recovering' : `${smtcDiagnostics.recoveryAttemptsInWindow} recovery`}</em>
+              </article>
+              <article data-active={smtcDiagnostics.lyricsEnabled}>
+                <span>
+                  <strong>Lyrics in SMTC</strong>
+                  <small>{formatValue(smtcDiagnostics.lastRecoveryAt)}</small>
+                </span>
+                <em>{smtcDiagnostics.lyricsEnabled ? 'on' : 'off'}</em>
               </article>
               {smtcDiagnostics.lastError ? (
                 <article data-active={false}>

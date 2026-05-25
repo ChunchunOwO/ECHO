@@ -4,6 +4,7 @@ import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryPlaylist,
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { openAlbumDetailForTrack } from '../../utils/albumNavigation';
 import { resolvePlaylistForTrackAdd } from '../../utils/appPrompt';
 import { getLibraryBridge } from '../../utils/echoBridge';
@@ -586,6 +587,23 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     setFailedThumbCover(true);
   }, [coverLarge, failedLargeCover]);
 
+  const handleOpenAlbumArtist = useCallback((): void => {
+    const artistName = album.albumArtist.trim();
+    if (!artistName) {
+      return;
+    }
+
+    void openArtistDetailByName(artistName)
+      .then((artist) => {
+        if (!artist) {
+          setTrackActionMessage(`Artist not found: ${artistName}`);
+        }
+      })
+      .catch((error) => {
+        setTrackActionMessage(error instanceof Error ? error.message : String(error));
+      });
+  }, [album.albumArtist]);
+
   const renderOnlineState = (section: 'credits' | 'information'): JSX.Element | null => {
     const info = onlineInfoState.info;
     const isEmpty =
@@ -767,7 +785,9 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <div className="album-detail-copy">
             <span className="album-detail-kicker">Album</span>
             <h1>{album.title}</h1>
-            <p>{album.albumArtist}</p>
+            <button className="album-detail-artist-link" type="button" aria-label={`Open artist ${album.albumArtist}`} onClick={handleOpenAlbumArtist}>
+              {album.albumArtist}
+            </button>
 
             <div className="album-detail-meta" aria-label="Album metadata">
               {albumMetadata.map((item) => (

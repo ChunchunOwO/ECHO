@@ -61,6 +61,74 @@ const fallbackSettings: DesktopLyricsSettings = {
 
 const colorSwatches = ['#FFFFFF', '#FFD166', '#6EE7B7', '#7DD3FC', '#F0ABFC', '#FB7185'];
 const forwardedStatusMaxAgeMs = 45_000;
+const desktopLyricsStageHorizontalPaddingPx = 36;
+const desktopLyricsOverflowTolerancePx = 4;
+
+type DesktopLyricsTextFitOptions = {
+  text: string;
+  availableWidthPx: number;
+  fontSizePx: number;
+  fontFamily: string;
+  fontWeight: number;
+  scalePercent: number;
+};
+
+let desktopLyricsMeasureCanvas: HTMLCanvasElement | null = null;
+
+const estimateDesktopLyricsTextWidth = (text: string, fontSizePx: number): number =>
+  Array.from(text).reduce((width, char) => {
+    if (/\s/u.test(char)) {
+      return width + fontSizePx * 0.35;
+    }
+    if (/[\u0000-\u007f]/u.test(char)) {
+      return width + fontSizePx * 0.58;
+    }
+    return width + fontSizePx;
+  }, 0);
+
+const measureDesktopLyricsTextWidth = (
+  text: string,
+  fontSizePx: number,
+  fontFamily: string,
+  fontWeight: number,
+): number => {
+  if (typeof document === 'undefined') {
+    return estimateDesktopLyricsTextWidth(text, fontSizePx);
+  }
+
+  desktopLyricsMeasureCanvas ??= document.createElement('canvas');
+  const context = (() => {
+    try {
+      return desktopLyricsMeasureCanvas?.getContext('2d') ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  if (!context) {
+    return estimateDesktopLyricsTextWidth(text, fontSizePx);
+  }
+
+  context.font = `${fontWeight} ${fontSizePx}px ${fontFamily}`;
+  return context.measureText(text).width;
+};
+
+export const shouldShowDesktopLyricsText = ({
+  text,
+  availableWidthPx,
+  fontSizePx,
+  fontFamily,
+  fontWeight,
+  scalePercent,
+}: DesktopLyricsTextFitOptions): boolean => {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return true;
+  }
+
+  const scaledTextWidth =
+    measureDesktopLyricsTextWidth(normalizedText, fontSizePx, fontFamily, fontWeight) * (scalePercent / 100);
+  return scaledTextWidth <= Math.max(0, availableWidthPx) + desktopLyricsOverflowTolerancePx;
+};
 
 const emptyLyrics = (offsetMs = 0): DesktopLyricsStateSnapshot => ({
   kind: 'empty',
@@ -218,6 +286,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const [forwardedUpdatedAtMs, setForwardedUpdatedAtMs] = useState(0);
   const [lyrics, setLyrics] = useState<DesktopLyricsStateSnapshot>(() => emptyLyrics());
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [viewportWidthPx, setViewportWidthPx] = useState(() => window.innerWidth);
   const lyricsRequestRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -247,6 +316,12 @@ export const DesktopLyricsApp = (): JSX.Element => {
     } catch {
       setPlaybackClock(null);
     }
+  }, []);
+
+  useEffect(() => {
+    const updateViewportWidth = (): void => setViewportWidthPx(window.innerWidth);
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
   }, []);
 
   useEffect(() => {
@@ -455,17 +530,37 @@ export const DesktopLyricsApp = (): JSX.Element => {
     : lineText(currentLine)
       ? secondaryTexts
       : [clockHasIdentity(activeClock) ? 'Desktop Lyrics' : '等待播放'];
+  const desktopLyricsFontFamily = [
+    serializeFontList(settings.desktopLyricsFontFamily),
+    '"Noto Sans SC"',
+    '"Microsoft YaHei"',
+    '"Segoe UI"',
+    'sans-serif',
+  ].join(', ');
+  const availableTextWidthPx = Math.max(0, viewportWidthPx - desktopLyricsStageHorizontalPaddingPx);
+  const shouldShowPrimaryText = shouldShowDesktopLyricsText({
+    text: primaryText,
+    availableWidthPx: availableTextWidthPx,
+    fontSizePx: settings.desktopLyricsFontSizePx,
+    fontFamily: desktopLyricsFontFamily,
+    fontWeight: 700,
+    scalePercent: settings.desktopLyricsScalePercent,
+  });
+  const visibleFittingSecondaryTexts = visibleSecondaryTexts.filter((text) =>
+    shouldShowDesktopLyricsText({
+      text,
+      availableWidthPx: availableTextWidthPx,
+      fontSizePx: settings.desktopLyricsFontSizePx * 0.56,
+      fontFamily: desktopLyricsFontFamily,
+      fontWeight: 600,
+      scalePercent: settings.desktopLyricsScalePercent,
+    }),
+  );
 
   const style = {
     '--desktop-lyrics-font-size': `${settings.desktopLyricsFontSizePx}px`,
     '--desktop-lyrics-scale': (settings.desktopLyricsScalePercent / 100).toFixed(2),
-    '--desktop-lyrics-font-family': [
-      serializeFontList(settings.desktopLyricsFontFamily),
-      '"Noto Sans SC"',
-      '"Microsoft YaHei"',
-      '"Segoe UI"',
-      'sans-serif',
-    ].join(', '),
+    '--desktop-lyrics-font-family': desktopLyricsFontFamily,
     '--desktop-lyrics-color': settings.desktopLyricsColor,
     '--desktop-lyrics-stroke-color': settings.desktopLyricsStrokeColor,
     '--desktop-lyrics-opacity': (settings.desktopLyricsOpacityPercent / 100).toFixed(2),
@@ -479,8 +574,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
     >
       <section className="desktop-lyrics-stage" aria-label="Desktop lyrics">
         <div className="desktop-lyrics-lines">
-          <strong>{primaryText}</strong>
-          {visibleSecondaryTexts.map((text, index) => (
+          {shouldShowPrimaryText ? <strong>{primaryText}</strong> : null}
+          {visibleFittingSecondaryTexts.map((text, index) => (
             <span key={`${index}-${text}`}>{text}</span>
           ))}
         </div>

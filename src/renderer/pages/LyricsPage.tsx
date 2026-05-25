@@ -1362,6 +1362,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         return null;
       }
 
+      if (lyricsSmartReadableImageUrl && !mvReadableSample && !imageReadableSample) {
+        return null;
+      }
+
       return createReadableLyricsColorVars({
         sample: mvReadableSample ?? imageReadableSample,
         userColor: lyricsDisplaySettings.lyricsColor,
@@ -1373,6 +1377,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       imageReadableSample,
       lyricsDisplaySettings.lyricsColor,
       lyricsSmartReadableEnabled,
+      lyricsSmartReadableImageUrl,
       mvReadableSample,
     ],
   );
@@ -3176,7 +3181,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       className="lyrics-page"
       data-background={effectiveLyricsBackgroundMode}
       data-lyrics-color-mode={lyricsUsesManualColor ? "manual" : "theme"}
-      data-smart-readable={lyricsSmartReadableEnabled ? "true" : undefined}
+      data-smart-readable={smartReadableColors ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}
       data-custom-lrc-dragging={isCustomLyricsDragging}
       data-view-mode={lyricsViewMode}

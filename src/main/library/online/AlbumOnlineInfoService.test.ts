@@ -113,4 +113,82 @@ describe('AlbumOnlineInfoService', () => {
     expect(run.mock.calls[0]).toContain(JSON.stringify({ version: 2, album: null, artist: null }));
     vi.unstubAllGlobals();
   });
+
+  it('prefers longer Wikipedia page extracts over short summaries', async () => {
+    const run = vi.fn();
+    const database = {
+      prepare: vi.fn((sql: string) => {
+        if (sql.startsWith('SELECT *')) {
+          return { get: vi.fn(() => null) };
+        }
+        if (sql.startsWith('PRAGMA')) {
+          return { all: vi.fn(() => [{ name: 'cache_key' }, { name: 'information_json' }]) };
+        }
+        return { run };
+      }),
+    } as unknown as EchoDatabase;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      if (url.hostname === 'musicbrainz.org') {
+        return {
+          ok: true,
+          json: async () => ({ releases: [] }),
+        };
+      }
+      if (url.pathname.includes('/w/rest.php/v1/search/page')) {
+        const query = url.searchParams.get('q') ?? '';
+        return {
+          ok: true,
+          json: async () => ({
+            pages: [
+              {
+                key: query.includes('Cache Album') ? 'Cache_Album' : 'Cache_Artist',
+                title: query.includes('Cache Album') ? 'Cache Album' : 'Cache Artist',
+              },
+            ],
+          }),
+        };
+      }
+      if (url.pathname.includes('/api/rest_v1/page/summary/')) {
+        const title = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+        return {
+          ok: true,
+          json: async () => ({
+            title: title.replace(/_/gu, ' '),
+            description: title.includes('Artist') ? 'Artist' : 'Album',
+            extract: 'Short summary.',
+            content_urls: { desktop: { page: `https://example.test/${title}` } },
+            thumbnail: { source: null },
+          }),
+        };
+      }
+      if (url.pathname.includes('/w/api.php')) {
+        const title = url.searchParams.get('titles') ?? '';
+        return {
+          ok: true,
+          json: async () => ({
+            query: {
+              pages: {
+                1: {
+                  extract: title.includes('Artist')
+                    ? 'Long artist biography paragraph one.\n\nLong artist biography paragraph two with career details.'
+                    : 'Long album background paragraph with release context.',
+                },
+              },
+            },
+          }),
+        };
+      }
+      throw new Error(`unexpected_url:${url.toString()}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await new AlbumOnlineInfoService(database).getAlbumOnlineInfo({ album: album(), tracks: [track()] }, { locale: 'en-US' });
+
+    expect(result.information?.extract).toBe('Long album background paragraph with release context.');
+    expect(result.artistInformation?.extract).toContain('career details');
+    expect(result.artistInformation?.extract).toContain('\n\n');
+    expect(result.artistInformation?.extract).not.toBe('Short summary.');
+    vi.unstubAllGlobals();
+  });
 });

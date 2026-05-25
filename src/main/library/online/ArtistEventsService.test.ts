@@ -123,6 +123,110 @@ describe('ArtistEventsService', () => {
     expect(result.events.map((event) => event.id)).toEqual(['bandsintown:jp']);
   });
 
+  it('maps Ticketmaster event payloads when a Ticketmaster key is configured', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        _embedded: {
+          events: [
+            {
+              id: 'tm-1',
+              name: 'Echo Unit Live',
+              url: 'https://ticketmaster.example/events/tm-1',
+              images: [
+                { url: 'https://img.example/square.jpg', width: 305, height: 305 },
+                { url: 'https://img.example/wide.jpg', width: 1024, height: 576 },
+              ],
+              dates: {
+                start: {
+                  dateTime: '2026-06-01T11:00:00Z',
+                },
+                timezone: 'Asia/Hong_Kong',
+              },
+              _embedded: {
+                venues: [
+                  {
+                    name: 'Echo Arena',
+                    city: { name: 'Hong Kong' },
+                    state: { stateCode: 'HK' },
+                    country: { countryCode: 'HK' },
+                    url: 'https://ticketmaster.example/venues/echo-arena',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await new ArtistEventsService(fetcher).getTicketmasterEvents({
+      artistName: 'Echo Unit',
+      apiKey: 'ticketmaster-key',
+      region: 'HK',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['ticketmaster']);
+    expect(result.events).toEqual([
+      {
+        id: 'ticketmaster:tm-1',
+        source: 'ticketmaster',
+        sourceLabel: 'Ticketmaster',
+        title: 'Echo Unit Live',
+        startsAt: '2026-06-01T11:00:00Z',
+        timezone: 'Asia/Hong_Kong',
+        timeTbd: false,
+        venueName: 'Echo Arena',
+        city: 'Hong Kong',
+        region: 'HK',
+        country: 'HK',
+        url: 'https://ticketmaster.example/events/tm-1',
+        ticketUrl: 'https://ticketmaster.example/events/tm-1',
+        venueUrl: 'https://ticketmaster.example/venues/echo-arena',
+        imageUrl: 'https://img.example/wide.jpg',
+      },
+    ]);
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('https://app.ticketmaster.com/discovery/v2/events.json?');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('apikey=ticketmaster-key');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('classificationName=music');
+  });
+
+  it('uses Ticketmaster without requiring Bandsintown in the combined artist events request', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        _embedded: {
+          events: [
+            {
+              id: 'tm-1',
+              name: 'Echo Unit Live',
+              dates: { start: { localDate: '2026-06-01' } },
+              _embedded: { venues: [{ name: 'Echo Arena', city: { name: 'Hong Kong' }, country: { countryCode: 'HK' } }] },
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: 'Echo Unit',
+      bandsintownAppId: null,
+      ticketmasterApiKey: 'ticketmaster-key',
+      region: 'Hong Kong',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['ticketmaster']);
+    expect(result.events.map((event) => event.id)).toEqual(['ticketmaster:tm-1']);
+    expect(result.message).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('degrades to unavailable when Bandsintown fails', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       ok: false,

@@ -5,6 +5,8 @@ import { normalizeAudioOutputModeForPlatform, normalizeAudioSharedBackendForPlat
 import type {
   AudioDiagnostics,
   AudioDeviceInfo,
+  AudioExportRequest,
+  AudioExportResult,
   AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
@@ -27,6 +29,7 @@ import type {
   EqState,
 } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
+import { exportAudioFile } from '../audio/AudioExportService';
 import { getEqBridge } from '../audio/EqBridge';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
@@ -407,6 +410,9 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   }));
+  ipcMain.handle(IpcChannels.AudioExportFile, async (event, request: AudioExportRequest): Promise<AudioExportResult | null> =>
+    exportAudioFile(request, BrowserWindow.fromWebContents(event.sender)),
+  );
   ipcMain.handle(IpcChannels.AudioOpenAsioControlPanel, async (_event, settings: unknown): Promise<void> => {
     try {
       const normalized = normalizeOutputSettings({ ...(typeof settings === 'object' && settings ? settings : {}), outputMode: 'asio' });

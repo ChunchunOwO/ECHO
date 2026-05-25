@@ -23,6 +23,7 @@ import {
   Pause,
   Play,
   Power,
+  RefreshCw,
   RotateCcw,
   RotateCw,
   Search,
@@ -37,18 +38,19 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
+import type {
+  AudioDeviceInfo,
+  AudioExportFormat,
+  AudioOutputMode,
+  AudioOutputSettings,
+  AudioSharedBackend,
+  AudioStatus,
+  ChannelBalanceState,
+  PlaybackSpeedMode,
+} from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import { isDownloadFeatureUnlockCode } from '../../shared/constants/featureUnlocks';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
-import type {
-  HqPlayerConnectionMode,
-  HqPlayerConnectionState,
-  HqPlayerConnectionTestResult,
-  HqPlayerDefaultPlaybackBackend,
-  HqPlayerSettings,
-  HqPlayerStatus,
-} from '../../shared/types/hqplayer';
 import type {
   AppSettings,
   AppThemeCustomTheme,
@@ -60,6 +62,7 @@ import type {
   NetworkProxyTestResult,
 } from '../../shared/types/appSettings';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
+import type { MiniPlayerState } from '../../shared/types/miniPlayer';
 import {
   createDefaultGlobalShortcuts,
   createDefaultLocalShortcuts,
@@ -78,6 +81,7 @@ import type { DownloadSettings } from '../../shared/types/downloads';
 import type { DataBackupStatus } from '../../shared/types/settingsBackup';
 import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { PlaybackStatus } from '../../shared/types/playback';
+import type { SmtcDiagnostics } from '../../shared/types/smtc';
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type {
   ArtistImageCacheSummary,
@@ -147,10 +151,10 @@ import {
   getDiscordPresenceBridge,
   getDownloadsBridge,
   getEqBridge,
-  getHqPlayerBridge,
   getLastFmBridge,
   getLibraryBridge,
   getPluginsBridge,
+  getSmtcBridge,
 } from '../utils/echoBridge';
 
 const normalizeAsioOutputChannelStart = (value: unknown): number | undefined => {
@@ -186,6 +190,13 @@ const playbackSpeedModes: Array<{ mode: PlaybackSpeedMode; label: string }> = [
   { mode: 'nightcore', label: 'Nightcore' },
   { mode: 'daycore', label: 'Daycore' },
   { mode: 'speed', label: '普通变速' },
+];
+
+const audioExportFormatOptions: Array<{ format: AudioExportFormat; label: string }> = [
+  { format: 'mp3', label: 'MP3' },
+  { format: 'wav', label: 'WAV' },
+  { format: 'flac', label: 'FLAC' },
+  { format: 'ogg', label: 'OGG' },
 ];
 
 const globalShortcutActionMeta: Array<{
@@ -383,61 +394,6 @@ const getSharedBackendOptionsForPlatform = (
 const getSharedBackendDescriptionKey = (platform: NodeJS.Platform | 'unknown'): TranslationKey =>
   platform === 'linux' ? 'settings.playback.sharedBackend.linuxDescription' : 'settings.playback.sharedBackend.description';
 
-const defaultHqPlayerUiSettings: HqPlayerSettings = {
-  enabled: false,
-  connectionMode: 'localDesktop',
-  host: '127.0.0.1',
-  port: null,
-  executablePath: null,
-  allowLaunch: false,
-  mediaServerEnabled: false,
-  mediaServerPort: null,
-  defaultPlaybackBackend: 'echoNative',
-  profileName: null,
-};
-
-const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
-const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
-
-const getHqPlayerStatusKey = (state: HqPlayerConnectionState): TranslationKey => {
-  switch (state) {
-    case 'available':
-      return 'settings.playback.hqplayer.status.available';
-    case 'checking':
-      return 'settings.playback.hqplayer.status.checking';
-    case 'disabled':
-      return 'settings.playback.hqplayer.status.disabled';
-    case 'not-configured':
-      return 'settings.playback.hqplayer.status.notConfigured';
-    case 'unavailable':
-    default:
-      return 'settings.playback.hqplayer.status.unavailable';
-  }
-};
-
-const getHqPlayerConnectionModeKey = (mode: HqPlayerConnectionMode): TranslationKey =>
-  `settings.playback.hqplayer.mode.${mode}` as TranslationKey;
-
-const getHqPlayerBackendKey = (backend: HqPlayerDefaultPlaybackBackend): TranslationKey =>
-  `settings.playback.hqplayer.defaultBackend.${backend}` as TranslationKey;
-
-const formatHqPlayerEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
-  settings.port ? `${settings.host}:${settings.port}` : settings.host;
-
-const parseHqPlayerPort = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const port = Number(trimmed);
-  if (!Number.isFinite(port)) {
-    return null;
-  }
-
-  return Math.min(65535, Math.max(1, Math.round(port)));
-};
-
 const getCompatiblePlaybackDevices = (devices: AudioDeviceInfo[], outputMode: AudioOutputMode): AudioDeviceInfo[] => {
   if (outputMode === 'system') {
     return [];
@@ -482,7 +438,6 @@ const inferAppWallpaperMediaType = (filePath: string): NonNullable<AppSettings['
 
 const hasOwn = <T extends object>(value: T, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key);
 
-const formatMvPercent = (value: number | undefined, fallback: number): string => `${Math.round(value ?? fallback)}%`;
 const formatMvThreshold = (threshold: number | undefined): string => `${Math.round((threshold ?? 0.7) * 100)}%`;
 const mvThresholdFromPercent = (value: number): number => Math.max(30, Math.min(100, Math.round(value))) / 100;
 
@@ -3358,11 +3313,6 @@ export const SettingsPage = (): JSX.Element => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  const [hqPlayerDraft, setHqPlayerDraft] = useState<HqPlayerSettings>(defaultHqPlayerUiSettings);
-  const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
-  const [hqPlayerBusy, setHqPlayerBusy] = useState<'save' | 'test' | null>(null);
-  const [hqPlayerTestResult, setHqPlayerTestResult] = useState<HqPlayerConnectionTestResult | null>(null);
-  const [hqPlayerExpanded, setHqPlayerExpanded] = useState(true);
   const [selectedThemePreset, setSelectedThemePreset] = useState<AppThemePreset>(() => readThemePreset());
   const [themeCustomThemes, setThemeCustomThemes] = useState<AppThemeCustomTheme[]>(() => readThemeCustomThemes());
   const [activeThemeCustomId, setActiveThemeCustomId] = useState<string | null>(() => readThemeCustomId());
@@ -3374,6 +3324,8 @@ export const SettingsPage = (): JSX.Element => {
   const skipNextThemePreviewRef = useRef(false);
   const wallpaperPersistTimerRef = useRef<number | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
+  const [smtcDiagnostics, setSmtcDiagnostics] = useState<SmtcDiagnostics | null>(null);
+  const [smtcRestarting, setSmtcRestarting] = useState(false);
   const [taskbarPlaybackStatus, setTaskbarPlaybackStatus] = useState<TaskbarPlaybackStatus | null>(null);
   const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
   const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
@@ -3643,24 +3595,6 @@ export const SettingsPage = (): JSX.Element => {
         terms: ['关闭账号失效通知', '账号失效通知', '左上角通知', '消息推送', 'account notice', 'account expiry notice', 'login expired', 'notification'],
       },
       {
-        id: 'row-hqplayer',
-        sectionKey: 'playback',
-        targetId: 'settings-row-hqplayer',
-        title: t('settings.playback.hqplayer.title'),
-        description: t('settings.playback.hqplayer.description'),
-        terms: [
-          t('settings.playback.hqplayer.title'),
-          t('settings.playback.hqplayer.description'),
-          'hqplayer',
-          'hq player',
-          'network audio adapter',
-          'naa',
-          'external playback',
-          'hi-fi',
-          'hifi',
-        ],
-      },
-      {
         id: 'row-audio-status',
         sectionKey: 'playback',
         targetId: 'settings-row-audio-status',
@@ -3693,6 +3627,14 @@ export const SettingsPage = (): JSX.Element => {
         title: '固定音量',
         description: '锁定 ECHO 音量控制为 100%，ReplayGain 仍独立生效。',
         terms: ['固定音量', 'fixed volume', 'roon', '音量锁定', 'volume lock', 'ReplayGain'],
+      },
+      {
+        id: 'row-mini-player',
+        sectionKey: 'playback',
+        targetId: 'settings-row-mini-player',
+        title: '迷你播放器',
+        description: '独立透明置顶小窗，适合游戏时看封面、歌名和进度。',
+        terms: ['迷你播放器', 'mini player', 'overlay', 'always on top', '置顶', '游戏', '鼠标穿透', '进度条', '封面'],
       },
       {
         id: 'row-gapless-playback',
@@ -4062,21 +4004,6 @@ export const SettingsPage = (): JSX.Element => {
     [segmentCurrentTrack, segmentDurationSeconds, segmentIsSpotifyTrack, segmentTrackId],
   );
 
-  const refreshHqPlayerStatus = useCallback(async () => {
-    const hqPlayer = getHqPlayerBridge();
-
-    if (!hqPlayer) {
-      setHqPlayerStatus(null);
-      return;
-    }
-
-    try {
-      setHqPlayerStatus(await hqPlayer.getStatus());
-    } catch {
-      setHqPlayerStatus(null);
-    }
-  }, []);
-
   const refreshDevices = useCallback(async () => {
     try {
       const audio = getAudioBridge();
@@ -4141,6 +4068,37 @@ export const SettingsPage = (): JSX.Element => {
       setTaskbarPlaybackStatus(await app.getTaskbarPlaybackStatus());
     } catch {
       setTaskbarPlaybackStatus(null);
+    }
+  }, []);
+
+  const refreshSmtcDiagnostics = useCallback(async () => {
+    try {
+      const smtc = getSmtcBridge();
+
+      if (!smtc?.getDiagnostics) {
+        setSmtcDiagnostics(null);
+        return;
+      }
+
+      setSmtcDiagnostics(await smtc.getDiagnostics());
+    } catch {
+      setSmtcDiagnostics(null);
+    }
+  }, []);
+
+  const restartSmtcSupport = useCallback(async () => {
+    setSmtcRestarting(true);
+    setError(null);
+    try {
+      const smtc = getSmtcBridge();
+      if (typeof smtc?.restart !== 'function') {
+        throw new Error('SMTC restart bridge is unavailable.');
+      }
+      setSmtcDiagnostics(await smtc.restart());
+    } catch (restartError) {
+      setError(restartError instanceof Error ? restartError.message : String(restartError));
+    } finally {
+      setSmtcRestarting(false);
     }
   }, []);
 
@@ -4263,7 +4221,6 @@ export const SettingsPage = (): JSX.Element => {
       }
       setSharedBackend(normalizeAudioSharedBackendForPlatform(settings.rememberedAudioOutput?.sharedBackend ?? 'auto', rendererPlatform));
       setChannelBalanceState(settings.channelBalance ?? defaultSettingsChannelBalance);
-      setHqPlayerDraft(settings.hqPlayer ?? defaultHqPlayerUiSettings);
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
@@ -4289,7 +4246,6 @@ export const SettingsPage = (): JSX.Element => {
       void refreshStatus();
       if (activeSection === 'playback') {
         void refreshDevices();
-        void refreshHqPlayerStatus();
       }
     });
     const timer = window.setInterval(() => {
@@ -4300,7 +4256,7 @@ export const SettingsPage = (): JSX.Element => {
       cancelInitialRefresh();
       window.clearInterval(timer);
     };
-  }, [activeSection, refreshDevices, refreshHqPlayerStatus, refreshStatus]);
+  }, [activeSection, refreshDevices, refreshStatus]);
 
   useEffect(() => {
     if (activeSection !== 'integrations') {
@@ -4309,11 +4265,12 @@ export const SettingsPage = (): JSX.Element => {
 
     return scheduleSettingsIdleTask(() => {
       void refreshDiscordPresenceStatus();
+      void refreshSmtcDiagnostics();
       void refreshTaskbarPlaybackStatus();
       void refreshLastFmStatus();
       void refreshAccountStatuses();
     });
-  }, [activeSection, refreshAccountStatuses, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshTaskbarPlaybackStatus]);
+  }, [activeSection, refreshAccountStatuses, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshSmtcDiagnostics, refreshTaskbarPlaybackStatus]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -5041,6 +4998,7 @@ export const SettingsPage = (): JSX.Element => {
   const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
   const themeCustomWarnings = getThemeContrastWarnings(themeCustomValues);
   const selectedThemePresetOption = themePresetOptions.find((option) => option.preset === selectedThemePreset) ?? themePresetOptions[0];
+  const themePresetsExpanded = appSettings?.appearanceThemePresetsExpanded === true;
   const themeCustomGradientPreview = `linear-gradient(135deg, ${themeCustomValues.appBg} 0%, ${themeCustomValues.appBg2} 52%, ${themeCustomValues.appBg3} 100%)`;
 
   const updateThemeCustomColor = (field: ThemeColorField, value: string): void => {
@@ -5408,56 +5366,65 @@ export const SettingsPage = (): JSX.Element => {
       });
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
 
-  const patchHqPlayerDraft = useCallback((patch: Partial<HqPlayerSettings>): void => {
-    setHqPlayerDraft((current) => ({ ...current, ...patch }));
-    setHqPlayerTestResult(null);
-  }, []);
+  const applyMiniPlayerState = useCallback(
+    (state: MiniPlayerState): void => {
+      setAppSettings((current) => (current ? { ...current, ...state.settings } : current));
+      dispatchSettingsChanged(state.settings);
+      setError(null);
+    },
+    [dispatchSettingsChanged],
+  );
 
-  const handleHqPlayerSave = useCallback(async (): Promise<void> => {
-    const hqPlayer = getHqPlayerBridge();
+  const handleMiniPlayerVisibleChange = useCallback(
+    async (visible: boolean): Promise<void> => {
+      const miniPlayer = window.echo?.miniPlayer;
 
-    if (!hqPlayer) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save HQPlayer settings.');
+      if (!miniPlayer) {
+        patchAppSettings({ miniPlayerEnabled: visible });
+        return;
+      }
+
+      try {
+        const state = visible ? await miniPlayer.show() : await miniPlayer.hide();
+        applyMiniPlayerState(state);
+      } catch (miniPlayerError) {
+        setError(miniPlayerError instanceof Error ? miniPlayerError.message : String(miniPlayerError));
+      }
+    },
+    [applyMiniPlayerState, patchAppSettings],
+  );
+
+  const handleMiniPlayerLockedChange = useCallback(
+    async (locked: boolean): Promise<void> => {
+      const miniPlayer = window.echo?.miniPlayer;
+
+      if (!miniPlayer) {
+        patchAppSettings({ miniPlayerLocked: locked });
+        return;
+      }
+
+      try {
+        applyMiniPlayerState(await miniPlayer.setLocked(locked));
+      } catch (miniPlayerError) {
+        setError(miniPlayerError instanceof Error ? miniPlayerError.message : String(miniPlayerError));
+      }
+    },
+    [applyMiniPlayerState, patchAppSettings],
+  );
+
+  const handleMiniPlayerResetBounds = useCallback(async (): Promise<void> => {
+    const miniPlayer = window.echo?.miniPlayer;
+
+    if (!miniPlayer) {
       return;
     }
 
-    setHqPlayerBusy('save');
-    setHqPlayerTestResult(null);
     try {
-      const saved = await hqPlayer.setSettings(hqPlayerDraft);
-      setHqPlayerDraft(saved);
-      setAppSettings((current) => (current ? { ...current, hqPlayer: saved } : current));
-      setHqPlayerStatus(await hqPlayer.getStatus());
-      dispatchSettingsChanged({ hqPlayer: saved });
-      setError(null);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
-    } finally {
-      setHqPlayerBusy(null);
+      applyMiniPlayerState(await miniPlayer.resetBounds());
+    } catch (miniPlayerError) {
+      setError(miniPlayerError instanceof Error ? miniPlayerError.message : String(miniPlayerError));
     }
-  }, [dispatchSettingsChanged, hqPlayerDraft]);
-
-  const handleHqPlayerTestConnection = useCallback(async (): Promise<void> => {
-    const hqPlayer = getHqPlayerBridge();
-
-    if (!hqPlayer) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to test HQPlayer.');
-      return;
-    }
-
-    setHqPlayerBusy('test');
-    setHqPlayerTestResult(null);
-    try {
-      const result = await hqPlayer.testConnection(hqPlayerDraft);
-      setHqPlayerTestResult(result);
-      setHqPlayerStatus(await hqPlayer.getStatus());
-      setError(null);
-    } catch (testError) {
-      setError(testError instanceof Error ? testError.message : String(testError));
-    } finally {
-      setHqPlayerBusy(null);
-    }
-  }, [hqPlayerDraft]);
+  }, [applyMiniPlayerState]);
 
   const handleNetworkProxySave = useCallback((): void => {
     const app = getAppBridge();
@@ -7800,6 +7767,11 @@ export const SettingsPage = (): JSX.Element => {
         : discordPresenceStatus.available
           ? 'Enabled'
           : 'Discord not running';
+  const smtcLabel = !appSettings?.smtcEnabled
+    ? 'Disabled'
+    : smtcDiagnostics?.recoveryInFlight
+      ? 'Recovering'
+      : smtcDiagnostics?.hostState ?? 'Not checked';
   const lastFmLabel = !lastFmStatus?.enabled
     ? t('common.disabled')
     : lastFmStatus.connected
@@ -7817,14 +7789,6 @@ export const SettingsPage = (): JSX.Element => {
         threshold: lastFmStatus.activeTrack.thresholdSeconds,
       })
     : t('settings.integrations.lastfm.noActiveTrack');
-  const hqPlayerState: HqPlayerConnectionState =
-    hqPlayerStatus?.state ?? (hqPlayerDraft.enabled ? (hqPlayerDraft.port ? 'unavailable' : 'not-configured') : 'disabled');
-  const hqPlayerCheckedLabel = hqPlayerStatus?.lastCheckedAt ? formatProtectionTimestamp(hqPlayerStatus.lastCheckedAt) : 'n/a';
-  const hqPlayerEndpointLabel = formatHqPlayerEndpoint({
-    host: hqPlayerStatus?.endpoint.host ?? hqPlayerDraft.host,
-    port: hqPlayerStatus?.endpoint.port ?? hqPlayerDraft.port,
-  });
-
   return (
     <div className="settings-page no-drag">
       <header className="settings-header">
@@ -8069,40 +8033,51 @@ export const SettingsPage = (): JSX.Element => {
                 description="备份设置、曲库索引、播放记忆、账号本地状态、壁纸、封面缓存和元数据；备份前会校验曲库数据库，坏数据会被拒绝。"
               >
                 <div className="settings-data-backup-panel">
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
-                    <ToggleButton
-                      active={dataBackupEnabled}
-                      disabled={!appSettings || !dataBackupDirectory || dataBackupRunning}
-                      onClick={() =>
-                        patchAppSettings({
-                          autoDataBackupEnabled: !dataBackupEnabled,
-                        })
-                      }
-                    />
-                    <StatusText tone={dataBackupEnabled ? 'good' : 'muted'}>
-                      {dataBackupEnabled ? '已开启自动备份' : dataBackupDirectory ? '已设置目录，自动备份未开启' : '请先选择备份目录'}
-                    </StatusText>
-                  </div>
-                  <div className="settings-chip-row settings-chip-row--left">
-                    {([3, 7, 30] as const).map((days) => (
-                      <ChipButton
-                        active={dataBackupIntervalDays === days}
-                        key={days}
-                        onClick={() => patchAppSettings({ autoDataBackupIntervalDays: days })}
-                      >
-                        {days === 30 ? '每月' : `${days} 天`}
-                      </ChipButton>
-                    ))}
+                  <div className="settings-data-backup-primary">
+                    <div className="settings-data-backup-switch">
+                      <ToggleButton
+                        active={dataBackupEnabled}
+                        disabled={!appSettings || !dataBackupDirectory || dataBackupRunning}
+                        onClick={() =>
+                          patchAppSettings({
+                            autoDataBackupEnabled: !dataBackupEnabled,
+                          })
+                        }
+                      />
+                      <div>
+                        <strong>{dataBackupEnabled ? '自动备份已开启' : '自动备份未开启'}</strong>
+                        <StatusText tone={dataBackupEnabled ? 'good' : 'muted'}>
+                          {dataBackupDirectory ? '目录已设置，可手动备份或开启定期备份' : '请先选择备份目录'}
+                        </StatusText>
+                      </div>
+                    </div>
+                    <div className="settings-data-backup-frequency" aria-label="自动备份周期">
+                      {([3, 7, 30] as const).map((days) => (
+                        <ChipButton
+                          active={dataBackupIntervalDays === days}
+                          key={days}
+                          onClick={() => patchAppSettings({ autoDataBackupIntervalDays: days })}
+                        >
+                          {days === 30 ? '每月' : `${days} 天`}
+                        </ChipButton>
+                      ))}
+                    </div>
                   </div>
                   <div className="settings-data-backup-meta">
-                    <span>目录</span>
-                    <strong>{dataBackupDirectory ?? '未设置'}</strong>
-                    <span>上次</span>
-                    <strong>{dataBackupLastLabel}</strong>
-                    <span>下次</span>
-                    <strong>{dataBackupNextLabel}</strong>
+                    <span>
+                      <em>目录</em>
+                      <strong>{dataBackupDirectory ?? '未设置'}</strong>
+                    </span>
+                    <span>
+                      <em>上次备份</em>
+                      <strong>{dataBackupLastLabel}</strong>
+                    </span>
+                    <span>
+                      <em>下次执行</em>
+                      <strong>{dataBackupNextLabel}</strong>
+                    </span>
                   </div>
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                  <div className="settings-data-backup-actions">
                     <button className="settings-action-button" type="button" disabled={dataBackupRunning} onClick={() => void handleChooseDataBackupDirectory()}>
                       <FolderOpen size={15} />
                       {dataBackupBusy === 'choose' ? '选择中...' : '选择目录'}
@@ -8311,6 +8286,19 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
+              <SettingRow title="音频导出格式" description="底栏导出按钮使用这个格式；导出速度跟随当前播放速度。">
+                <div className="settings-chip-row">
+                  {audioExportFormatOptions.map((item) => (
+                    <ChipButton
+                      active={(appSettings?.audioExportFormat ?? 'mp3') === item.format}
+                      key={item.format}
+                      onClick={() => patchAppSettings({ audioExportFormat: item.format })}
+                    >
+                      {item.label}
+                    </ChipButton>
+                  ))}
+                </div>
+              </SettingRow>
               <SettingRow
                 id="settings-row-fixed-volume"
                 highlighted={highlightedSettingId === 'settings-row-fixed-volume'}
@@ -8335,6 +8323,45 @@ export const SettingsPage = (): JSX.Element => {
                       }
                     }}
                   />
+                </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-mini-player"
+                highlighted={highlightedSettingId === 'settings-row-mini-player'}
+                title="迷你播放器"
+                description="独立透明置顶小窗，只显示封面、歌名和进度；锁定后鼠标穿透，适合窗口化或无边框全屏游戏。"
+              >
+                <div className="settings-chip-row">
+                  <StatusText tone={appSettings?.miniPlayerEnabled ? 'good' : 'muted'}>
+                    {appSettings?.miniPlayerEnabled ? '已显示' : '未显示'}
+                  </StatusText>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={!appSettings || !window.echo?.miniPlayer}
+                    onClick={() => void handleMiniPlayerVisibleChange(!(appSettings?.miniPlayerEnabled ?? false))}
+                  >
+                    <Headphones size={15} />
+                    {appSettings?.miniPlayerEnabled ? '隐藏' : '显示'}
+                  </button>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={!appSettings || !window.echo?.miniPlayer}
+                    onClick={() => void handleMiniPlayerLockedChange(!(appSettings?.miniPlayerLocked ?? false))}
+                  >
+                    <Lock size={15} />
+                    {appSettings?.miniPlayerLocked ? '解锁点击' : '锁定穿透'}
+                  </button>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={!appSettings || !window.echo?.miniPlayer}
+                    onClick={() => void handleMiniPlayerResetBounds()}
+                  >
+                    <RotateCcw size={15} />
+                    重置位置
+                  </button>
                 </div>
               </SettingRow>
               <SettingRow
@@ -8557,147 +8584,6 @@ export const SettingsPage = (): JSX.Element => {
                   disabled={!appSettings}
                   onClick={() => handleMonoAudioToggle(!(channelBalanceState.enabled && channelBalanceState.monoMode === 'sum'))}
                 />
-              </SettingRow>
-              <SettingRow
-                className="setting-row--full setting-row--compact-panel"
-                id="settings-row-hqplayer"
-                highlighted={highlightedSettingId === 'settings-row-hqplayer'}
-                title={t('settings.playback.hqplayer.title')}
-                description={t('settings.playback.hqplayer.description')}
-              >
-                <div className="settings-cache-panel settings-cache-panel--hqplayer">
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
-                    <div className="settings-inline-toggle">
-                      <span>{t('settings.playback.hqplayer.enable')}</span>
-                      <ToggleButton
-                        active={hqPlayerDraft.enabled}
-                        disabled={!appSettings}
-                        onClick={() => patchHqPlayerDraft({ enabled: !hqPlayerDraft.enabled })}
-                      />
-                    </div>
-                    <button
-                      className="settings-action-button"
-                      type="button"
-                      disabled={!appSettings || hqPlayerBusy === 'save'}
-                      onClick={() => void handleHqPlayerSave()}
-                    >
-                      <Save size={15} />
-                      {hqPlayerBusy === 'save' ? t('settings.playback.hqplayer.saving') : t('settings.playback.hqplayer.save')}
-                    </button>
-                    <button
-                      className="settings-action-button"
-                      type="button"
-                      disabled={!appSettings || hqPlayerBusy === 'test'}
-                      onClick={() => void handleHqPlayerTestConnection()}
-                    >
-                      <RotateCw className={hqPlayerBusy === 'test' ? 'spinning-icon' : undefined} size={15} />
-                      {hqPlayerBusy === 'test' ? t('settings.playback.hqplayer.testing') : t('settings.playback.hqplayer.test')}
-                    </button>
-                    <button
-                      aria-controls="settings-hqplayer-body"
-                      aria-expanded={hqPlayerExpanded}
-                      className="settings-action-button"
-                      type="button"
-                      onClick={() => setHqPlayerExpanded((current) => !current)}
-                    >
-                      <ChevronDown size={15} />
-                      {hqPlayerExpanded ? '折叠' : '展开'}
-                    </button>
-                  </div>
-                  {hqPlayerExpanded ? (
-                    <div id="settings-hqplayer-body" className="settings-cache-panel settings-cache-panel--bare">
-                      <div className="settings-chip-row settings-chip-row--left">
-                        {hqPlayerConnectionModes.map((mode) => (
-                          <ChipButton
-                            active={hqPlayerDraft.connectionMode === mode}
-                            key={mode}
-                            onClick={() => patchHqPlayerDraft({ connectionMode: mode })}
-                          >
-                            {t(getHqPlayerConnectionModeKey(mode))}
-                          </ChipButton>
-                        ))}
-                      </div>
-                      <div className="settings-chip-row settings-chip-row--left">
-                        {hqPlayerDefaultBackends.map((backend) => (
-                          <ChipButton
-                            active={hqPlayerDraft.defaultPlaybackBackend === backend}
-                            key={backend}
-                            onClick={() => patchHqPlayerDraft({ defaultPlaybackBackend: backend })}
-                          >
-                            {t(getHqPlayerBackendKey(backend))}
-                          </ChipButton>
-                        ))}
-                      </div>
-                      <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
-                        <label className="settings-number-field">
-                          <span>{t('settings.playback.hqplayer.host')}</span>
-                          <input
-                            aria-label={t('settings.playback.hqplayer.host')}
-                            type="text"
-                            value={hqPlayerDraft.host}
-                            onChange={(event) => patchHqPlayerDraft({ host: event.currentTarget.value })}
-                          />
-                        </label>
-                        <label className="settings-number-field">
-                          <span>{t('settings.playback.hqplayer.port')}</span>
-                          <input
-                            aria-label={t('settings.playback.hqplayer.port')}
-                            type="number"
-                            min={1}
-                            max={65535}
-                            value={hqPlayerDraft.port ?? ''}
-                            onChange={(event) => patchHqPlayerDraft({ port: parseHqPlayerPort(event.currentTarget.value) })}
-                          />
-                        </label>
-                        <label className="settings-number-field">
-                          <span>{t('settings.playback.hqplayer.profileName')}</span>
-                          <input
-                            aria-label={t('settings.playback.hqplayer.profileName')}
-                            type="text"
-                            value={hqPlayerDraft.profileName ?? ''}
-                            onChange={(event) => patchHqPlayerDraft({ profileName: event.currentTarget.value.trim() || null })}
-                          />
-                        </label>
-                        <div className="settings-inline-toggle">
-                          <span>{t('settings.playback.hqplayer.mediaServer')}</span>
-                          <ToggleButton
-                            active={hqPlayerDraft.mediaServerEnabled}
-                            disabled={!appSettings}
-                            onClick={() => patchHqPlayerDraft({ mediaServerEnabled: !hqPlayerDraft.mediaServerEnabled })}
-                          />
-                        </div>
-                      </div>
-                      <div className="settings-status-grid">
-                        <span>
-                          <em>{t('settings.playback.hqplayer.field.status')}</em>
-                          <strong>{t(getHqPlayerStatusKey(hqPlayerState))}</strong>
-                        </span>
-                        <span>
-                          <em>{t('settings.playback.hqplayer.field.endpoint')}</em>
-                          <strong>{hqPlayerEndpointLabel}</strong>
-                        </span>
-                        <span>
-                          <em>{t('settings.playback.hqplayer.field.defaultBackend')}</em>
-                          <strong>{t(getHqPlayerBackendKey(hqPlayerDraft.defaultPlaybackBackend))}</strong>
-                        </span>
-                        <span>
-                          <em>{t('settings.playback.hqplayer.field.lastChecked')}</em>
-                          <strong>{hqPlayerCheckedLabel}</strong>
-                        </span>
-                      </div>
-                      {hqPlayerTestResult ? (
-                        <p className={hqPlayerTestResult.ok ? 'settings-inline-note' : 'settings-inline-error'}>
-                          {t(hqPlayerTestResult.ok ? 'settings.playback.hqplayer.result.ok' : 'settings.playback.hqplayer.result.failed')}
-                          {hqPlayerTestResult.error ? `: ${hqPlayerTestResult.error}` : ''}
-                        </p>
-                      ) : null}
-                      <p className="settings-inline-note">{t('settings.playback.hqplayer.note')}</p>
-                    </div>
-                  ) : null}
-                </div>
-              </SettingRow>
-              <SettingRow title={t('settings.playback.wireless.title')} description={t('settings.playback.wireless.description')}>
-                <ToggleButton />
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--audio-status"
@@ -9023,24 +8909,6 @@ export const SettingsPage = (): JSX.Element => {
                       onChange={(value) => patchMvSettings({ immersiveBackgroundOverlayOpacityPercent: value })}
                     />
                   </div>
-                  <div className="settings-status-grid">
-                    <span>
-                      <em>{t('mvSettings.immersive.zoom')}</em>
-                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundScalePercent, 115)}</strong>
-                    </span>
-                    <span>
-                      <em>{t('mvSettings.immersive.blur')}</em>
-                      <strong>{appSettings?.mvImmersiveBackgroundBlurPx ?? 0}px</strong>
-                    </span>
-                    <span>
-                      <em>{t('mvSettings.immersive.brightness')}</em>
-                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundBrightnessPercent, 100)}</strong>
-                    </span>
-                    <span>
-                      <em>{t('mvSettings.immersive.overlay')}</em>
-                      <strong>{formatMvPercent(appSettings?.mvImmersiveBackgroundOverlayOpacityPercent, 0)}</strong>
-                    </span>
-                  </div>
                 </div>
               </SettingRow>
             </SettingSection>
@@ -9235,10 +9103,38 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.integrations.smtc.title')}
                 description={t('settings.integrations.smtc.description')}
               >
+                <div className="settings-chip-row">
+                  <StatusText tone={smtcDiagnostics?.hostState === 'running' ? 'good' : 'muted'}>{smtcLabel}</StatusText>
+                  <button className="settings-action-button" type="button" onClick={() => void refreshSmtcDiagnostics()}>
+                    <RefreshCw size={15} />
+                    刷新状态
+                  </button>
+                  <button
+                    className="settings-action-button"
+                    type="button"
+                    disabled={smtcRestarting || !(appSettings?.smtcEnabled ?? true)}
+                    onClick={() => void restartSmtcSupport()}
+                  >
+                    <RotateCw size={15} />
+                    {smtcRestarting ? '重启中...' : '重启 SMTC'}
+                  </button>
+                  <ToggleButton
+                    active={appSettings?.smtcEnabled ?? true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ smtcEnabled: !(appSettings?.smtcEnabled ?? true) })}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-smtc-lyrics"
+                highlighted={highlightedSettingId === 'settings-row-smtc-lyrics'}
+                title="SMTC 歌词显示"
+                description="允许把当前歌词行附加到 Windows 媒体信息里；默认关闭，避免污染歌手字段。"
+              >
                 <ToggleButton
-                  active={appSettings?.smtcEnabled ?? true}
-                  disabled={!appSettings}
-                  onClick={() => patchAppSettings({ smtcEnabled: !(appSettings?.smtcEnabled ?? true) })}
+                  active={appSettings?.smtcLyricsEnabled ?? false}
+                  disabled={!appSettings || !(appSettings?.smtcEnabled ?? true)}
+                  onClick={() => patchAppSettings({ smtcLyricsEnabled: !(appSettings?.smtcLyricsEnabled ?? false) })}
                 />
               </SettingRow>
               <SettingRow
@@ -9490,40 +9386,61 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.appearance.themePreset.title')}
                 description={t('settings.appearance.themePreset.description')}
               >
-                <div className="settings-theme-preset-grid">
-                  {themePresetOptions.map((option) => {
-                    const activePreset = selectedThemePreset;
-                    const isActive = activePreset === option.preset;
+                <div className="settings-theme-preset-panel">
+                  <button
+                    aria-expanded={themePresetsExpanded}
+                    className="settings-theme-preset-summary"
+                    type="button"
+                    onClick={() => patchAppSettings({ appearanceThemePresetsExpanded: !themePresetsExpanded })}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="settings-theme-preset-summary-preview"
+                      style={{ background: selectedThemePresetOption.preview } as CSSProperties}
+                    />
+                    <span>
+                      <strong>{activeThemeCustom?.name ?? t(selectedThemePresetOption.labelKey)}</strong>
+                      <em>{themePresetsExpanded ? '收起主题预设' : '展开主题预设'}</em>
+                    </span>
+                    <ChevronDown size={16} />
+                  </button>
+                  {themePresetsExpanded ? (
+                    <div className="settings-theme-preset-grid">
+                      {themePresetOptions.map((option) => {
+                        const activePreset = selectedThemePreset;
+                        const isActive = activePreset === option.preset;
 
-                    return (
-                      <button
-                        aria-pressed={isActive}
-                        className={`settings-theme-preset-card${isActive ? ' active' : ''}`}
-                        data-preset={option.preset}
-                        key={option.preset}
-                        onClick={() => handleThemePresetChange(option.preset)}
-                        title={t(option.descriptionKey)}
-                        type="button"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="settings-theme-preset-preview"
-                          style={{ background: option.preview } as CSSProperties}
-                        >
-                          {isActive ? <Check size={16} /> : null}
-                        </span>
-                        <span className="settings-theme-preset-copy">
-                          <strong>{t(option.labelKey)}</strong>
-                          <em>{t(option.descriptionKey)}</em>
-                        </span>
-                        <span aria-hidden="true" className="settings-theme-preset-swatches">
-                          {option.swatches.map((swatch) => (
-                            <span key={swatch} style={{ background: swatch } as CSSProperties} />
-                          ))}
-                        </span>
-                      </button>
-                    );
-                  })}
+                        return (
+                          <button
+                            aria-pressed={isActive}
+                            className={`settings-theme-preset-card${isActive ? ' active' : ''}`}
+                            data-preset={option.preset}
+                            key={option.preset}
+                            onClick={() => handleThemePresetChange(option.preset)}
+                            title={t(option.descriptionKey)}
+                            type="button"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="settings-theme-preset-preview"
+                              style={{ background: option.preview } as CSSProperties}
+                            >
+                              {isActive ? <Check size={16} /> : null}
+                            </span>
+                            <span className="settings-theme-preset-copy">
+                              <strong>{t(option.labelKey)}</strong>
+                              <em>{t(option.descriptionKey)}</em>
+                            </span>
+                            <span aria-hidden="true" className="settings-theme-preset-swatches">
+                              {option.swatches.map((swatch) => (
+                                <span key={swatch} style={{ background: swatch } as CSSProperties} />
+                              ))}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               </SettingRow>
               <SettingRow
@@ -9613,20 +9530,30 @@ export const SettingsPage = (): JSX.Element => {
                     <div className="settings-theme-custom-mock-titlebar" style={{ background: themeCustomValues.titlebar }} />
                     <div className="settings-theme-custom-mock-body" style={{ background: themeCustomValues.panel }}>
                       <aside style={{ background: themeCustomValues.sidebar }}>
-                        <span style={{ background: themeCustomValues.chip }} />
-                        <span style={{ background: themeCustomValues.rowActive }} />
-                        <span style={{ background: themeCustomValues.chip }} />
+                        <span style={{ background: themeCustomValues.chip, color: themeCustomValues.text }}>曲库</span>
+                        <span style={{ background: themeCustomValues.rowActive, color: themeCustomValues.heading }}>外观</span>
+                        <span style={{ background: themeCustomValues.chip, color: themeCustomValues.muted }}>歌词</span>
                       </aside>
                       <main>
-                        <span style={{ background: themeCustomValues.row }} />
-                        <span style={{ background: themeCustomValues.rowHover }} />
-                        <span style={{ background: themeCustomValues.field }} />
-                        <span style={{ background: themeCustomValues.accent, color: themeCustomValues.onAccent }}>
-                          Aa
-                        </span>
+                        <div className="settings-theme-custom-mock-card" style={{ background: themeCustomValues.field, color: themeCustomValues.text }}>
+                          <strong style={{ color: themeCustomValues.heading }}>Aa 主题预览</strong>
+                          <em style={{ color: themeCustomValues.muted }}>标题、正文和弱化文字</em>
+                        </div>
+                        <div className="settings-theme-custom-mock-row" style={{ background: themeCustomValues.row, color: themeCustomValues.text }}>
+                          <span>播放列表</span>
+                          <strong style={{ color: themeCustomValues.accentStrong }}>128</strong>
+                        </div>
+                        <div className="settings-theme-custom-mock-row" style={{ background: themeCustomValues.rowHover, color: themeCustomValues.text }}>
+                          <span>悬停状态</span>
+                          <strong style={{ color: themeCustomValues.secondary }}>ON</strong>
+                        </div>
+                        <div className="settings-theme-custom-mock-accent" style={{ background: themeCustomValues.accent, color: themeCustomValues.onAccent }}>
+                          主要按钮
+                        </div>
                       </main>
                     </div>
                     <div className="settings-theme-custom-mock-player" style={{ background: themeCustomValues.player }}>
+                      <strong style={{ color: themeCustomValues.heading }}>Now Playing</strong>
                       <span style={{ background: themeCustomValues.success }} />
                       <span style={{ background: themeCustomValues.warning }} />
                       <span style={{ background: themeCustomValues.danger }} />

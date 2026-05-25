@@ -337,7 +337,19 @@ const choosePrimaryColor = (
   const range = getSampleLuminanceRange(sample);
   const scrimOpacity = getLocalScrimOpacity(sample, range.width);
   const targetContrast = sample.complexity > 0.44 || range.width > 0.34 ? strongReadableContrast : minReadableContrast;
+  const softBrightBackground = backgroundLuminance > 0.56 && range.width < 0.28 && sample.complexity < 0.42;
+  const userLuminance = relativeLuminance(userRgb);
+  const userIsLight = userLuminance >= 0.5;
+  if (
+    softBrightBackground &&
+    hasUserHue &&
+    contrastRatio(userLuminance, backgroundLuminance) >= minReadableContrast &&
+    worstRangeContrast(userLuminance, sample, userIsLight, scrimOpacity) >= minReadableContrast
+  ) {
+    return userRgb;
+  }
   const candidates = uniqueColors([
+    userRgb,
     darkTint,
     deepTint,
     shadedTint,
@@ -359,6 +371,8 @@ const choosePrimaryColor = (
       const meanContrast = contrastRatio(luminance, backgroundLuminance);
       const rawRangeContrast = Math.min(contrastRatio(luminance, range.low), contrastRatio(luminance, range.high));
       const assistedRangeContrast = worstRangeContrast(luminance, sample, candidateIsLight, scrimOpacity);
+      const scoredMeanContrast = softBrightBackground ? Math.min(meanContrast, 8.5) : meanContrast;
+      const scoredRangeContrast = softBrightBackground ? Math.min(assistedRangeContrast, 9) : assistedRangeContrast;
       const dominantDirectionBonus =
         backgroundLuminance < 0.36 && candidateIsLight
           ? 0.34
@@ -370,23 +384,35 @@ const choosePrimaryColor = (
       const visibleColorfulness = getVisibleColorfulness(hsl);
       const colorfulnessBonus = clamp(visibleColorfulness, 0, 0.42) * 1.75;
       const neutralPenalty = visibleColorfulness < 0.05 ? 1.05 : 0;
-      const contrastOverflowPenalty = Math.max(0, meanContrast - 15) * 0.035;
+      const comfortableContrastPenalty = softBrightBackground
+        ? Math.max(0, meanContrast - 8.5) * 0.82 + Math.max(0, 0.034 - luminance) * 42
+        : Math.max(0, meanContrast - 15) * 0.035;
       const weakRawPenalty = Math.max(0, minReadableContrast - meanContrast) * 0.18;
+      const userColorAffinityBonus =
+        meanContrast >= minReadableContrast && visibleColorfulness >= 0.04
+          ? (1 - hueDistance(hsl.h, userHsl.h)) * (hasUserHue ? 1.35 : 0.38) +
+            (1 - clamp(
+              (Math.abs(rgb.r - userRgb.r) + Math.abs(rgb.g - userRgb.g) + Math.abs(rgb.b - userRgb.b)) / (255 * 3),
+              0,
+              1,
+            )) * (hasUserHue ? 3.2 : 0.6)
+          : 0;
       return {
         rgb,
         assistedRangeContrast,
         colorfulness: visibleColorfulness,
         meanContrast,
         score:
-          assistedRangeContrast * 1.85 +
-          meanContrast * 0.48 +
+          scoredRangeContrast * 1.85 +
+          scoredMeanContrast * 0.48 +
           rawRangeContrast * 0.28 +
           dominantDirectionBonus +
           mixedBackgroundBonus +
           hueBonus -
           neutralPenalty +
           colorfulnessBonus -
-          contrastOverflowPenalty -
+          comfortableContrastPenalty +
+          userColorAffinityBonus -
           weakRawPenalty,
         textIsLight: candidateIsLight,
       };

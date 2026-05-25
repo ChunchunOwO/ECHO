@@ -125,6 +125,7 @@ const settings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lastFmAuthToken: null,
   smtcEnabled: true,
   ...patch,
+  smtcLyricsEnabled: patch.smtcLyricsEnabled ?? false,
   taskbarPlaybackControlsEnabled: patch.taskbarPlaybackControlsEnabled ?? false,
 });
 

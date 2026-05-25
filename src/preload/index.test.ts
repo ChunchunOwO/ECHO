@@ -164,6 +164,12 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.SmtcGetDiagnostics);
   });
 
+  it('exposes SMTC restart through IPC', async () => {
+    await exposedApi!.smtc.restart();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.SmtcRestart);
+  });
+
   it('subscribes to audio status updates and unsubscribes cleanly', () => {
     const handler = vi.fn();
     const unsubscribe = exposedApi!.audio.onStatus(handler);
@@ -720,6 +726,38 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenRepository);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenExternalUrl, 'https://discord.gg/g7v4WMRq3K');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppTestNetworkProxy);
+  });
+
+  it('exposes mini player window helpers through IPC', async () => {
+    const handler = vi.fn();
+    await exposedApi!.miniPlayer.show();
+    await exposedApi!.miniPlayer.hide();
+    await exposedApi!.miniPlayer.getState();
+    await exposedApi!.miniPlayer.setLocked(true);
+    await exposedApi!.miniPlayer.resetBounds();
+    const unsubscribe = exposedApi!.miniPlayer.onStateChanged(handler);
+    const listener = listeners.get(IpcChannels.MiniPlayerStateChanged);
+    const state = {
+      visible: true,
+      locked: true,
+      bounds: null,
+      settings: {
+        miniPlayerEnabled: true,
+        miniPlayerLocked: true,
+        miniPlayerBounds: null,
+      },
+    };
+
+    listener?.({}, state);
+    unsubscribe();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerShow);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerHide);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerGetState);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerSetLocked, true);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerResetBounds);
+    expect(handler).toHaveBeenCalledWith(state);
+    expect(listeners.has(IpcChannels.MiniPlayerStateChanged)).toBe(false);
   });
 
   it('exposes global shortcut validation and command events', async () => {

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Disc3, ListPlus, MoreHorizontal, Play, SkipForward } from 'lucide-react';
 import type { EditableTrackTags, LibraryAlbum, LibraryPage, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import { useI18n } from '../../i18n/I18nProvider';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { TrackContextMenu } from '../library/TrackContextMenu';
 import type { TrackMenuAction } from '../library/TrackContextMenu';
@@ -66,6 +67,7 @@ export const ArtistTrackList = ({
   onPlayNext,
   onPlayTrack,
 }: ArtistTrackListProps): JSX.Element => {
+  const { t } = useI18n();
   const { removeTrackFromQueue } = usePlaybackQueue();
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
   const [page, setPage] = useState(1);
@@ -154,7 +156,7 @@ export const ArtistTrackList = ({
           setPage(1);
           setTotal(0);
           setHasMore(false);
-          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read artist tracks.');
+          setError(t('artistDetail.tracks.error.desktopBridgeRead'));
           return;
         }
 
@@ -183,7 +185,7 @@ export const ArtistTrackList = ({
         }
       }
     },
-    [artistId],
+    [artistId, t],
   );
 
   useEffect(() => {
@@ -283,7 +285,7 @@ export const ArtistTrackList = ({
       const library = window.echo?.library;
 
       if (!library?.updateTrackTags) {
-        setTagEditorError('Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.');
+        setTagEditorError(t('artistDetail.tracks.error.desktopBridgeEdit'));
         return;
       }
 
@@ -301,7 +303,7 @@ export const ArtistTrackList = ({
         setIsSavingTags(false);
       }
     },
-    [closeTagEditor],
+    [closeTagEditor, t],
   );
 
   const handleGoToAlbum = useCallback(
@@ -310,9 +312,9 @@ export const ArtistTrackList = ({
         return;
       }
 
-      setStatusMessage(`Album not found in this artist view: ${track.album || 'Unknown Album'}`);
+      setStatusMessage(t('artistDetail.tracks.status.albumNotFound', { album: track.album || t('artistDetail.tracks.unknownAlbum') }));
     },
-    [],
+    [t],
   );
 
   const handleTrackMenuAction = useCallback(
@@ -321,7 +323,7 @@ export const ArtistTrackList = ({
       setTrackMenu(null);
 
       if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'reload-embedded-tags') {
-        setError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
+        setError(t('artistDetail.tracks.error.desktopBridgeActions'));
         return;
       }
 
@@ -339,7 +341,7 @@ export const ArtistTrackList = ({
             action === 'open-system' ||
             action === 'delete-song')
         ) {
-          setError('远程歌曲暂不支持本地文件操作。');
+          setError(t('artistDetail.tracks.error.remoteFileAction'));
           return;
         }
 
@@ -360,8 +362,8 @@ export const ArtistTrackList = ({
               const removedCount = removeTrackFromQueue(track.id);
               setStatusMessage(
                 removedCount > 0
-                  ? `已从播放队列移除：${track.title}`
-                  : `播放队列里没有这首歌：${track.title}`,
+                  ? t('artistDetail.tracks.status.removedFromQueue', { title: track.title })
+                  : t('artistDetail.tracks.status.notInQueue', { title: track.title }),
               );
             }
             return;
@@ -382,7 +384,7 @@ export const ArtistTrackList = ({
               if (editingTrack?.id === result.track.id) {
                 setEditingTrack(result.track);
               }
-              setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              setStatusMessage(t('artistDetail.tracks.status.reloadedTags', { title: result.track.title }));
               window.dispatchEvent(new Event('library:changed'));
             }
             return;
@@ -403,16 +405,16 @@ export const ArtistTrackList = ({
             return;
           case 'copy-cover':
             if (!(await library?.copyTrackCover(track.id))) {
-              setError('This track does not have cover art to copy.');
+              setError(t('artistDetail.tracks.error.noCoverToCopy'));
             }
             return;
           case 'save-cover':
             if (!(await library?.saveTrackCover(track.id))) {
-              setError('No cover art was saved for this track.');
+              setError(t('artistDetail.tracks.error.noCoverSaved'));
             }
             return;
           case 'delete-song':
-            if (!window.confirm(`Delete the music file?\n${track.title}`)) {
+            if (!window.confirm(t('artistDetail.tracks.confirm.delete', { title: track.title }))) {
               return;
             }
             await library?.deleteTrackFile(track.id);
@@ -428,37 +430,37 @@ export const ArtistTrackList = ({
 
               await library!.addTrackToPlaylist(playlist.id, track.id);
               window.dispatchEvent(new Event('library:playlists-changed'));
-              setStatusMessage(`Added to playlist: ${playlist.name}`);
+              setStatusMessage(t('artistDetail.tracks.status.addedToPlaylist', { playlist: playlist.name }));
             }
             return;
           default:
-            setError('This track action is not available yet.');
+            setError(t('artistDetail.tracks.error.actionUnavailable'));
         }
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [editingTrack, handleGoToAlbum, onAppendToQueue, onPlayNext, removeTrackFromQueue],
+    [editingTrack, handleGoToAlbum, onAppendToQueue, onPlayNext, removeTrackFromQueue, t],
   );
 
   return (
-    <section className="artist-section artist-track-section" aria-label={`Songs by ${artistName}`}>
+    <section className="artist-section artist-track-section" aria-label={t('artistDetail.tracks.aria', { artist: artistName })}>
       <header>
         <div>
-          <span>Songs</span>
-          <h2>Songs by {artistName}</h2>
+          <span>{t('artistDetail.tab.songs')}</span>
+          <h2>{t('artistDetail.tracks.heading', { artist: artistName })}</h2>
         </div>
-        <small>{tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`}</small>
+        <small>{tracks.length === total ? t('artistDetail.meta.tracks', { count: total }) : t('artistDetail.tracks.loadedCount', { loaded: tracks.length, total })}</small>
       </header>
 
       <div className="artist-track-list" role="list" data-virtualized="true" data-total-count={virtualCount} data-loaded-count={loadedBoundary}>
         {virtualCount > 0 ? (
           <div className="artist-track-header" aria-hidden="true">
-            <span>Title</span>
-            <span>Album</span>
-            <span>Signal</span>
-            <span>Time</span>
-            <span>Actions</span>
+            <span>{t('artistDetail.tracks.column.title')}</span>
+            <span>{t('artistDetail.tracks.column.album')}</span>
+            <span>{t('artistDetail.tracks.column.signal')}</span>
+            <span>{t('artistDetail.tracks.column.time')}</span>
+            <span>{t('artistDetail.tracks.column.actions')}</span>
           </div>
         ) : null}
 
@@ -474,7 +476,7 @@ export const ArtistTrackList = ({
                   data-index={virtualRow.index}
                   style={{ transform: `translateY(${virtualRow.start - scrollMargin}px)` }}
                 >
-                  <div className="artist-track-row artist-track-row-skeleton" role="listitem" aria-label="Loading track" data-skeleton="true">
+                  <div className="artist-track-row artist-track-row-skeleton" role="listitem" aria-label={t('artistDetail.tracks.loadingTrack')} data-skeleton="true">
                     <span className="artist-track-skeleton-cover" aria-hidden="true" />
                     <span className="artist-track-skeleton-copy" aria-hidden="true">
                       <span />
@@ -519,19 +521,19 @@ export const ArtistTrackList = ({
                       <small>{track.artist}</small>
                     </span>
                   </button>
-                  <span className="artist-track-album">{track.album || 'Unknown Album'}</span>
-                  <span className="artist-track-tags" aria-label="Track format">
-                    {tags.length > 0 ? tags.map((tag) => <em key={`${track.id}-${tag}`}>{tag}</em>) : <em>Local</em>}
+                  <span className="artist-track-album">{track.album || t('artistDetail.tracks.unknownAlbum')}</span>
+                  <span className="artist-track-tags" aria-label={t('artistDetail.tracks.formatAria')}>
+                    {tags.length > 0 ? tags.map((tag) => <em key={`${track.id}-${tag}`}>{tag}</em>) : <em>{t('artistDetail.status.localLibrary')}</em>}
                   </span>
                   <span className="artist-track-duration">{formatDuration(track.duration)}</span>
                   <span className="artist-track-actions">
-                    <button type="button" aria-label={`Play ${track.title} next`} title="Play next" onClick={() => onPlayNext(track)}>
+                    <button type="button" aria-label={t('artistDetail.tracks.action.playNextAria', { title: track.title })} title={t('artistDetail.tracks.action.playNext')} onClick={() => onPlayNext(track)}>
                       <SkipForward size={15} />
                     </button>
-                    <button type="button" aria-label={`Add ${track.title} to queue`} title="Add to queue" onClick={() => onAppendToQueue(track)}>
+                    <button type="button" aria-label={t('artistDetail.tracks.action.addToQueueAria', { title: track.title })} title={t('artistDetail.action.addToQueue')} onClick={() => onAppendToQueue(track)}>
                       <ListPlus size={15} />
                     </button>
-                    <button type="button" aria-label={`More actions for ${track.title}`} title="More" onClick={(event) => handleMoreClick(event, track)}>
+                    <button type="button" aria-label={t('artistDetail.tracks.action.moreAria', { title: track.title })} title={t('artistDetail.tracks.action.more')} onClick={(event) => handleMoreClick(event, track)}>
                       <MoreHorizontal size={15} />
                     </button>
                   </span>
@@ -544,8 +546,8 @@ export const ArtistTrackList = ({
 
       {error ? <p className="artist-detail-error">{error}</p> : null}
       {statusMessage ? <p className="artist-detail-status">{statusMessage}</p> : null}
-      {!isLoading && tracks.length === 0 && !error ? <p className="artist-detail-empty">No songs are grouped under this artist yet.</p> : null}
-      {isLoading && tracks.length === 0 ? <p className="artist-detail-loading">Loading songs...</p> : null}
+      {!isLoading && tracks.length === 0 && !error ? <p className="artist-detail-empty">{t('artistDetail.tracks.empty')}</p> : null}
+      {isLoading && tracks.length === 0 ? <p className="artist-detail-loading">{t('artistDetail.tracks.loading')}</p> : null}
 
       {trackMenu ? (
         <TrackContextMenu

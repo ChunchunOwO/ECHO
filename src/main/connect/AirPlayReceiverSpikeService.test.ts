@@ -191,7 +191,7 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(options).not.toHaveProperty('host');
     expect(mdnsStarts).toEqual([
       { address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1', port: options!.portBase },
-      { address: '10.0.0.8', mac: '70:CF:84:CB:1E:D1', port: options!.portBase },
+      { address: '10.0.0.8', mac: '60:CF:84:CB:1E:D1', port: options!.portBase },
     ]);
 
     await service.setEnabled(false);
@@ -199,6 +199,33 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(stopReceiver).toHaveBeenCalledWith(23);
     expect(mdnsStops).toHaveLength(2);
     expect(mdnsStops.every((stop) => stop.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('keeps the receiver enabled but surfaces discovery failure when mDNS cannot advertise', async () => {
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: new FakeAudioSession() as never,
+      getAdvertiseInterfaces: () => [
+        { name: 'Wi-Fi', address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1' },
+      ],
+      createMdnsAdvertiser: () => ({
+        start: vi.fn(async () => {
+          throw new Error('bind EADDRINUSE 0.0.0.0:5353');
+        }),
+        stop: vi.fn(async () => undefined),
+      }),
+      loadRaopModule: async () => ({
+        startReceiver: vi.fn(() => 23),
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+    });
+
+    const status = await service.setEnabled(true);
+
+    expect(status.enabled).toBe(true);
+    expect(status.nativeAvailable).toBe(true);
+    expect(status.error).toContain('AirPlay discovery unavailable');
+    expect(status.debugEvents.some((event) => event.action === 'mdns' && event.message?.includes('EADDRINUSE'))).toBe(true);
   });
 
   it('maps RAOP metadata artwork and PCM events into an AirPlay playback session', async () => {

@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { SmtcDiagnostics, SmtcLyricsProgress } from '../../shared/types/smtc';
-import { getSmtcDiagnostics, syncSmtcLyricsProgress } from '../integrations/smtc/SmtcStatusSync';
+import { getSmtcDiagnostics, restartSmtcIntegration, syncSmtcLyricsProgress } from '../integrations/smtc/SmtcStatusSync';
 
 const nullableText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -35,6 +35,7 @@ const normalizeSmtcLyricsProgress = (value: unknown): SmtcLyricsProgress | null 
 
 export const registerSmtcIpc = (): void => {
   ipcMain.handle(IpcChannels.SmtcGetDiagnostics, (): SmtcDiagnostics => getSmtcDiagnostics());
+  ipcMain.handle(IpcChannels.SmtcRestart, async (): Promise<SmtcDiagnostics> => restartSmtcIntegration());
   ipcMain.handle(IpcChannels.SmtcSetLyricsProgress, async (_event, progress: unknown): Promise<void> => {
     await syncSmtcLyricsProgress(normalizeSmtcLyricsProgress(progress));
   });

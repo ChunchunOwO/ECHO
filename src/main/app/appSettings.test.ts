@@ -38,6 +38,7 @@ describe('app settings normalization', () => {
     expect(settings.appearanceThemePresetOverrides).toEqual({});
     expect(settings.appearanceCustomThemes).toEqual([]);
     expect(settings.appearanceThemeCustomId).toBeNull();
+    expect(settings.appearanceThemePresetsExpanded).toBe(false);
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
@@ -89,6 +90,7 @@ describe('app settings normalization', () => {
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
     expect(settings.audioAnalysisEnabled).toBe(true);
+    expect(settings.smtcLyricsEnabled).toBe(false);
     expect(settings.lyricsNetworkEnabled).toBe(true);
     expect(settings.lyricsEnabledProviders).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
     expect(settings.lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic']);
@@ -131,6 +133,9 @@ describe('app settings normalization', () => {
     expect(settings.desktopLyricsFontFilePath).toBeNull();
     expect(settings.desktopLyricsRomanizationEnabled).toBe(true);
     expect(settings.desktopLyricsTranslationEnabled).toBe(true);
+    expect(settings.miniPlayerEnabled).toBe(false);
+    expect(settings.miniPlayerLocked).toBe(false);
+    expect(settings.miniPlayerBounds).toBeNull();
     expect(settings.mvEnabled).toBe(true);
     expect(settings.mvEnabledProviders).toEqual(['bilibili', 'youtube']);
     expect(settings.mvProviderOrder).toEqual(['bilibili', 'youtube']);
@@ -333,6 +338,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'ginzaNoir' }).appearanceThemePreset).toBe('ginzaNoir');
     expect(normalizeSettings({ appearanceThemePreset: 'frostJazz' }).appearanceThemePreset).toBe('frostJazz');
     expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
+  });
+
+  it('normalizes appearance theme preset expansion state', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({ appearanceThemePresetsExpanded: true }).appearanceThemePresetsExpanded).toBe(true);
+    expect(normalizeSettings({ appearanceThemePresetsExpanded: false }).appearanceThemePresetsExpanded).toBe(false);
+    expect(normalizeSettings({ appearanceThemePresetsExpanded: 'yes' as never }).appearanceThemePresetsExpanded).toBe(false);
   });
 
   it('normalizes appearance theme preset overrides', async () => {
@@ -697,6 +710,27 @@ describe('app settings normalization', () => {
     });
   });
 
+  it('normalizes mini player window settings', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({})).toMatchObject({
+      miniPlayerEnabled: false,
+      miniPlayerLocked: false,
+      miniPlayerBounds: null,
+    });
+    expect(
+      normalizeSettings({
+        miniPlayerEnabled: true,
+        miniPlayerLocked: true,
+        miniPlayerBounds: { x: 12.4, y: 20.6, width: 1200, height: 40 },
+      }),
+    ).toMatchObject({
+      miniPlayerEnabled: true,
+      miniPlayerLocked: true,
+      miniPlayerBounds: { x: 12, y: 21, width: 800, height: 84 },
+    });
+  });
+
   it('normalizes scan performance mode', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -989,6 +1023,9 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioAnalysisEnabled: false }).audioAnalysisEnabled).toBe(false);
     expect(normalizeSettings({ audioAnalysisEnabled: true }).audioAnalysisEnabled).toBe(true);
     expect(normalizeSettings({ audioAnalysisEnabled: 'yes' as never }).audioAnalysisEnabled).toBe(true);
+    expect(normalizeSettings({ smtcLyricsEnabled: true }).smtcLyricsEnabled).toBe(true);
+    expect(normalizeSettings({ smtcLyricsEnabled: false }).smtcLyricsEnabled).toBe(false);
+    expect(normalizeSettings({ smtcLyricsEnabled: 'yes' as never }).smtcLyricsEnabled).toBe(false);
     expect(normalizeSettings({}).audioIssueDiagnosticsWindowEnabled).toBe(false);
     expect(normalizeSettings({ audioIssueDiagnosticsWindowEnabled: true }).audioIssueDiagnosticsWindowEnabled).toBe(true);
     expect(normalizeSettings({ audioIssueDiagnosticsWindowEnabled: 'yes' as never }).audioIssueDiagnosticsWindowEnabled).toBe(false);

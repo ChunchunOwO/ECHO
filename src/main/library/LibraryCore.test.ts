@@ -322,6 +322,7 @@ const createHarness = (
       lastFmMinScrobbleSeconds: 30,
       lastFmAuthToken: null,
       smtcEnabled: true,
+      smtcLyricsEnabled: false,
       taskbarPlaybackControlsEnabled: false,
     }),
     ...overrides,

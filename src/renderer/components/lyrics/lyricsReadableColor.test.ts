@@ -59,6 +59,26 @@ describe('lyricsReadableColor', () => {
     expect(contrastRatio(primary, pinkSample.luminance)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('keeps soft bright backgrounds readable without pushing the active lyric to near black', () => {
+    const lavenderSample = sampleFromRgb(
+      { r: 220, g: 216, b: 236 },
+      {
+        luminanceP10: 0.62,
+        luminanceP90: 0.82,
+        luminanceDeviation: 0.08,
+        saturation: 0.22,
+        edgeContrast: 0.04,
+        complexity: 0.22,
+      },
+    );
+    const vars = createReadableLyricsColorVars({ sample: lavenderSample, userColor: '#314054', themeMode: 'light' });
+    const primary = rgbFromCss(vars['--lyrics-smart-primary-color']);
+
+    expect(relativeLuminance(primary)).toBeGreaterThan(0.035);
+    expect(channelSpread(primary)).toBeGreaterThan(24);
+    expect(contrastRatio(primary, lavenderSample.luminance)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('uses light readable text on black and deep blue backgrounds', () => {
     const blackSample = sampleFromRgb({ r: 5, g: 6, b: 8 });
     const blueSample = sampleFromRgb({ r: 14, g: 31, b: 62 }, { saturation: 0.6, complexity: 0.28 });

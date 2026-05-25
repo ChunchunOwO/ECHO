@@ -251,6 +251,21 @@ export const hideDesktopLyricsWindow = (): DesktopLyricsState => {
   return getDesktopLyricsState();
 };
 
+export const closeDesktopLyricsWindow = (): void => {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) {
+    desktopLyricsWindow = null;
+    return;
+  }
+
+  if (rememberBoundsTimer !== null) {
+    clearTimeout(rememberBoundsTimer);
+    rememberBoundsTimer = null;
+  }
+
+  rememberDesktopLyricsBounds(desktopLyricsWindow);
+  desktopLyricsWindow.destroy();
+};
+
 export const setDesktopLyricsLocked = (locked: boolean): DesktopLyricsState => {
   setAppSettings({ desktopLyricsLocked: locked });
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
@@ -299,8 +314,10 @@ export const receiveDesktopLyricsRendererAudioStatus = (event: IpcMainEvent, sta
     receivedAtMs: Date.now(),
   };
 
-  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    desktopLyricsWindow.webContents.send(IpcChannels.DesktopLyricsAudioStatus, lastForwardedAudioStatus.status);
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.DesktopLyricsAudioStatus, lastForwardedAudioStatus.status);
+    }
   }
 };
 

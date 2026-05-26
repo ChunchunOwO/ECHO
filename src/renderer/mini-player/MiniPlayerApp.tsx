@@ -45,7 +45,7 @@ const defaultMiniPlayerState: MiniPlayerState = {
   settings: {
     miniPlayerEnabled: true,
     miniPlayerLocked: false,
-    miniPlayerAutoHideMainWindow: false,
+    miniPlayerAutoHideMainWindow: true,
     miniPlayerBounds: null,
   },
 };
@@ -182,17 +182,22 @@ export const MiniPlayerApp = (): JSX.Element => {
   const activeAudioStatus = useMemo(() => {
     const forwarded = forwardedAudioStatus;
     const playbackVisualIntent = sharedPlaybackStatus.playbackVisualIntent;
+    const sharedAudioStatus = isUsableAudioStatus(
+      sharedPlaybackStatus.audioStatus,
+      sharedPlaybackStatus.playbackStatus,
+      playbackVisualIntent,
+    )
+      ? sharedPlaybackStatus.audioStatus
+      : null;
     if (
       forwarded?.status.outputMode === 'system' &&
       Date.now() - forwarded.updatedAtMs <= forwardedSystemStatusMaxAgeMs &&
-      isUsableAudioStatus(forwarded.status, sharedPlaybackStatus.playbackStatus, playbackVisualIntent)
+      (!sharedAudioStatus || sharedAudioStatus.outputMode === 'system')
     ) {
       return forwarded.status;
     }
 
-    return isUsableAudioStatus(sharedPlaybackStatus.audioStatus, sharedPlaybackStatus.playbackStatus, playbackVisualIntent)
-      ? sharedPlaybackStatus.audioStatus
-      : null;
+    return sharedAudioStatus;
   }, [
     forwardedAudioStatus,
     sharedPlaybackStatus.audioStatus,

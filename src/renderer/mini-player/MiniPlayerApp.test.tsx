@@ -87,10 +87,14 @@ const makePlaybackStatus = (track: LibraryTrack): PlaybackStatus => ({
 
 const installEchoMock = (
   track: LibraryTrack,
-  options: { desktopLyricsAudioStatus?: AudioStatus | null } = {},
+  options: {
+    audioStatus?: AudioStatus;
+    desktopLyricsAudioStatus?: AudioStatus | null;
+    playbackStatus?: PlaybackStatus;
+  } = {},
 ): void => {
-  const audioStatus = makeAudioStatus(track);
-  const playbackStatus = makePlaybackStatus(track);
+  const audioStatus = options.audioStatus ?? makeAudioStatus(track);
+  const playbackStatus = options.playbackStatus ?? makePlaybackStatus(track);
 
   Object.defineProperty(window, 'echo', {
     configurable: true,
@@ -283,5 +287,53 @@ describe('MiniPlayerApp', () => {
     expect(await screen.findByText('Actual Mini Song')).toBeTruthy();
     expect(screen.getByText('Actual Artist')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('Old Mini Song')).toBeNull());
+  });
+
+  it('prefers forwarded system audio status over stale local system state', async () => {
+    const staleTrack = makeTrack({
+      id: 'stale-track',
+      path: 'D:\\Music\\Midsummer Cat.flac',
+      title: 'Midsummer Cat',
+      artist: 'Sangnoksu',
+      coverThumb: 'echo-cover://thumb/stale-cover',
+    });
+    const liveTrack = makeTrack({
+      id: 'live-track',
+      path: 'D:\\Music\\Sayonara.flac',
+      title: 'Sayonara Cover',
+      artist: 'Sana',
+      coverThumb: null,
+    });
+    installEchoMock(staleTrack, {
+      audioStatus: {
+        ...makeAudioStatus(staleTrack),
+        outputMode: 'system',
+        positionSeconds: 0,
+      },
+      playbackStatus: {
+        ...makePlaybackStatus(staleTrack),
+        positionMs: 0,
+      },
+      desktopLyricsAudioStatus: {
+        ...makeAudioStatus(liveTrack),
+        outputMode: 'system',
+        positionSeconds: 18,
+      },
+    });
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={staleTrack} />
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText('Sayonara Cover')).toBeTruthy();
+    expect(screen.getByText('Sana')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('Midsummer Cat')).toBeNull());
+    await waitFor(() => {
+      const value = Number((document.querySelector('.mini-player-progress-row input') as HTMLInputElement | null)?.value);
+      expect(value).toBeGreaterThanOrEqual(18);
+      expect(value).toBeLessThan(21);
+    });
   });
 });

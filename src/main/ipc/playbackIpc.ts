@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron';
+import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { normalizeAudioOutputModeForPlatform, normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
@@ -29,6 +30,7 @@ import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { getAppSettings } from '../app/appSettings';
 import { resolveLocalAudioFiles } from '../app/localFileOpen';
+import { getMainWindow } from '../app/windowManager';
 import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getStreamingService } from '../streaming/StreamingService';
 import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
@@ -1250,9 +1252,81 @@ const registerPlaybackMemoryPersistence = (): void => {
   });
 };
 
+const mainWindowPlaybackCommands = new Set(['playLocalFile', 'playMediaItem', 'play', 'pause', 'stop', 'seek']);
+const mainWindowPlaybackCommandTimeoutMs = 15_000;
+let mainWindowPlaybackCommandId = 0;
+const pendingMainWindowPlaybackCommands = new Map<
+  string,
+  {
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const relayPlaybackCommandToMainWindow = (event: IpcMainInvokeEvent, rawRequest: unknown): Promise<unknown> => {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('main_window_unavailable');
+  }
+  if (event.sender === mainWindow.webContents) {
+    throw new Error('main_window_playback_proxy_loop');
+  }
+  if (!isRecord(rawRequest) || typeof rawRequest.command !== 'string' || !mainWindowPlaybackCommands.has(rawRequest.command)) {
+    throw new Error('unsupported_main_window_playback_command');
+  }
+
+  const args = Array.isArray(rawRequest.args) ? rawRequest.args : [];
+  const id = `playback-main-window-${Date.now()}-${++mainWindowPlaybackCommandId}`;
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingMainWindowPlaybackCommands.delete(id);
+      reject(new Error('main_window_playback_command_timeout'));
+    }, mainWindowPlaybackCommandTimeoutMs);
+
+    pendingMainWindowPlaybackCommands.set(id, { resolve, reject, timer });
+    mainWindow.webContents.send(IpcChannels.PlaybackMainWindowCommandRequest, {
+      id,
+      command: rawRequest.command,
+      args,
+    });
+  });
+};
+
+const receiveMainWindowPlaybackCommandResult = (event: IpcMainEvent, rawResult: unknown): void => {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return;
+  }
+  if (!isRecord(rawResult) || typeof rawResult.id !== 'string') {
+    return;
+  }
+
+  const pending = pendingMainWindowPlaybackCommands.get(rawResult.id);
+  if (!pending) {
+    return;
+  }
+
+  pendingMainWindowPlaybackCommands.delete(rawResult.id);
+  clearTimeout(pending.timer);
+
+  if (rawResult.ok === true) {
+    pending.resolve(rawResult.value);
+    return;
+  }
+
+  pending.reject(new Error(typeof rawResult.error === 'string' ? rawResult.error : 'main_window_playback_command_failed'));
+};
+
 export const registerPlaybackIpc = (): void => {
   registerPlaybackMemoryPersistence();
   registerExpiredUrlRecovery();
+  ipcMain.handle(IpcChannels.PlaybackMainWindowCommand, relayPlaybackCommandToMainWindow);
+  ipcMain.on(IpcChannels.PlaybackMainWindowCommandResult, receiveMainWindowPlaybackCommandResult);
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
   ipcMain.handle(IpcChannels.PlaybackGetQueueSession, (): PersistedPlaybackSessionV1 | null => getPlaybackSessionStore().load());
   ipcMain.handle(IpcChannels.PlaybackSaveQueueSession, (_event, snapshot: unknown): PersistedPlaybackSessionV1 =>

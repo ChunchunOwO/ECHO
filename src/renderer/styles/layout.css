@@ -305,7 +305,7 @@ html[data-theme="dark"] .app-shell--lyrics .window-control:hover {
   display: block;
   position: fixed;
   right: auto;
-  bottom: clamp(8px, 1.6vh, 16px);
+  bottom: clamp(26px, 3.2vh, 38px);
   left: 50%;
   z-index: 20;
   width: min(820px, calc(100vw - 96px));
@@ -833,7 +833,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready .player-bar {
   }
 
   .lyrics-player-drawer-host {
-    bottom: 10px;
+    bottom: 20px;
     width: calc(100vw - 18px);
   }
 }

@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, Menu, nativeImage, Tray } from 'electron';
+import { IpcChannels } from '../../shared/constants/ipcChannels';
+import type { GlobalShortcutAction } from '../../shared/types/globalShortcuts';
 import { getMainWindow } from './windowManager';
 
 const mainOutputDir = import.meta.dirname;
@@ -9,8 +11,17 @@ const appIconPath = join(mainOutputDir, '../../software.ico');
 let tray: Tray | null = null;
 let quitRequested = false;
 
-const showMainWindow = (): void => {
+const getCommandWindow = () => {
   const window = getMainWindow();
+  if (!window || window.isDestroyed()) {
+    return null;
+  }
+
+  return window;
+};
+
+const showMainWindow = (): void => {
+  const window = getCommandWindow();
 
   if (!window) {
     return;
@@ -21,6 +32,46 @@ const showMainWindow = (): void => {
     window.restore();
   }
   window.focus();
+};
+
+const hideMainWindow = (): void => {
+  const window = getCommandWindow();
+  if (!window) {
+    return;
+  }
+
+  window.hide();
+};
+
+const sendPlaybackCommand = (action: GlobalShortcutAction): void => {
+  const window = getCommandWindow();
+  if (!window) {
+    return;
+  }
+
+  window.webContents.send(IpcChannels.AppGlobalShortcutCommand, action);
+};
+
+const openAudioSettings = (): void => {
+  showMainWindow();
+  sendPlaybackCommand('openAudioSettings');
+};
+
+const quitApp = (): void => {
+  quitRequested = true;
+  app.quit();
+};
+
+const showMiniPlayer = (): void => {
+  void import('./miniPlayerWindow')
+    .then(({ showMiniPlayerWindow }) => showMiniPlayerWindow())
+    .catch(() => undefined);
+};
+
+const hideMiniPlayer = (): void => {
+  void import('./miniPlayerWindow')
+    .then(({ hideMiniPlayerWindow }) => hideMiniPlayerWindow())
+    .catch(() => undefined);
 };
 
 const createTrayIcon = (): Electron.NativeImage => {
@@ -38,25 +89,32 @@ const createTrayIcon = (): Electron.NativeImage => {
   return nativeImage.createFromDataURL(`data:image/svg+xml;charset=utf-8,${svg}`);
 };
 
+const buildTrayMenu = (): Electron.Menu =>
+  Menu.buildFromTemplate([
+    { label: '显示主界面', click: showMainWindow },
+    { label: '隐藏主界面', click: hideMainWindow },
+    { type: 'separator' },
+    { label: '播放 / 暂停', click: () => sendPlaybackCommand('playPause') },
+    { label: '上一首', click: () => sendPlaybackCommand('previousTrack') },
+    { label: '下一首', click: () => sendPlaybackCommand('nextTrack') },
+    { label: '停止播放', click: () => sendPlaybackCommand('stop') },
+    { type: 'separator' },
+    { label: '打开迷你播放器', click: showMiniPlayer },
+    { label: '隐藏迷你播放器', click: hideMiniPlayer },
+    { label: '音频设置', click: openAudioSettings },
+    { type: 'separator' },
+    { label: '退出 ECHO', click: quitApp },
+  ]);
+
 export const ensureTray = (): void => {
   if (tray) {
+    tray.setContextMenu(buildTrayMenu());
     return;
   }
 
   tray = new Tray(createTrayIcon());
   tray.setToolTip('ECHO NEXT');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Show ECHO NEXT', click: showMainWindow },
-      {
-        label: 'Quit',
-        click: () => {
-          quitRequested = true;
-          app.quit();
-        },
-      },
-    ]),
-  );
+  tray.setContextMenu(buildTrayMenu());
   tray.on('click', showMainWindow);
 };
 

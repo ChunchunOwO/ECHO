@@ -90,6 +90,15 @@ const systemSeekConfirmEvents: Array<keyof HTMLMediaElementEventMap> = [
 ];
 const systemPlaybackSupersededMessage = 'audio_session_run_cancelled';
 const audioStatusHandlers = new Set<(status: AudioStatus) => void>();
+const playbackProxyCommands = new Set(['playLocalFile', 'playMediaItem', 'play', 'pause', 'stop', 'seek']);
+const rendererSearchParams = new URLSearchParams(typeof window.location?.search === 'string' ? window.location.search : '');
+const isMainPlaybackRenderer =
+  rendererSearchParams.get('miniPlayer') !== '1' && rendererSearchParams.get('desktopLyrics') !== '1';
+type MainPlaybackCommand = 'playLocalFile' | 'playMediaItem' | 'play' | 'pause' | 'stop' | 'seek';
+
+const invokeMainPlaybackRenderer = <Result>(command: MainPlaybackCommand, args: unknown[] = []): Promise<Result> =>
+  ipcRenderer.invoke(IpcChannels.PlaybackMainWindowCommand, { command, args }) as Promise<Result>;
+
 const readPersistedSystemAudioMode = (): boolean => {
   try {
     const raw = window.localStorage.getItem('echo-next.audio-output-memory');
@@ -699,7 +708,8 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
     emitSystemAudioStatus();
   });
   element.addEventListener('ended', () => {
-    if (systemAudioState !== 'playing' && systemAudioState !== 'loading') {
+    const endedAfterBrowserPause = systemAudioState === 'paused' && element.ended === true;
+    if (systemAudioState !== 'playing' && systemAudioState !== 'loading' && !endedAfterBrowserPause) {
       return;
     }
 
@@ -1405,9 +1415,13 @@ const echoApi: EchoApi = {
         return ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, withNativeSharedOutput(request));
       }
 
-      return await shouldUseSystemAudioForPlayback(request.output)
-        ? playLocalFileWithSystemAudio(request)
-        : ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request);
+      if (await shouldUseSystemAudioForPlayback(request.output)) {
+        return isMainPlaybackRenderer
+          ? playLocalFileWithSystemAudio(request)
+          : invokeMainPlaybackRenderer<PlaybackStatus>('playLocalFile', [request]);
+      }
+
+      return ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request);
     },
     playMediaItem: async (request) => {
       if (requiresNativeChainedPlayback(request)) {
@@ -1416,15 +1430,22 @@ const echoApi: EchoApi = {
         return ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, withNativeSharedOutput(request));
       }
 
-      return await shouldUseSystemAudioForPlayback(request.output)
-        ? playMediaItemWithSystemAudio(request)
-        : ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request);
+      if (await shouldUseSystemAudioForPlayback(request.output)) {
+        return isMainPlaybackRenderer
+          ? playMediaItemWithSystemAudio(request)
+          : invokeMainPlaybackRenderer<PlaybackStatus>('playMediaItem', [request]);
+      }
+
+      return ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request);
     },
     prepareMediaItem: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareMediaItem, request),
     prepareLocalFile: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareLocalFile, request),
     play: async () => {
       if (!await refreshSystemAudioModeActive()) {
         return ipcRenderer.invoke(IpcChannels.PlaybackPlay);
+      }
+      if (!isMainPlaybackRenderer) {
+        return invokeMainPlaybackRenderer<PlaybackStatus>('play');
       }
 
       const element = ensureSystemAudioElement();
@@ -1441,6 +1462,9 @@ const echoApi: EchoApi = {
       if (!await refreshSystemAudioModeActive()) {
         return ipcRenderer.invoke(IpcChannels.PlaybackPause);
       }
+      if (!isMainPlaybackRenderer) {
+        return invokeMainPlaybackRenderer<PlaybackStatus>('pause');
+      }
 
       ensureSystemAudioElement().pause();
       systemAudioState = 'paused';
@@ -1452,12 +1476,18 @@ const echoApi: EchoApi = {
       if (!await refreshSystemAudioModeActive()) {
         return ipcRenderer.invoke(IpcChannels.PlaybackStop);
       }
+      if (!isMainPlaybackRenderer) {
+        return invokeMainPlaybackRenderer<PlaybackStatus>('stop');
+      }
 
       return stopSystemPlayback('stopped');
     },
     seek: async (positionSeconds) => {
       if (!await refreshSystemAudioModeActive()) {
         return ipcRenderer.invoke(IpcChannels.PlaybackSeek, positionSeconds);
+      }
+      if (!isMainPlaybackRenderer) {
+        return invokeMainPlaybackRenderer<PlaybackStatus>('seek', [positionSeconds]);
       }
 
       const element = ensureSystemAudioElement();
@@ -1840,5 +1870,65 @@ const echoApi: EchoApi = {
     },
   },
 };
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const handleMainWindowPlaybackCommand = async (_event: Electron.IpcRendererEvent, rawRequest: unknown): Promise<void> => {
+  if (!isMainPlaybackRenderer || !isPlainRecord(rawRequest) || typeof rawRequest.id !== 'string') {
+    return;
+  }
+
+  const command = typeof rawRequest.command === 'string' ? rawRequest.command : '';
+  const args = Array.isArray(rawRequest.args) ? rawRequest.args : [];
+  if (!playbackProxyCommands.has(command)) {
+    ipcRenderer.send(IpcChannels.PlaybackMainWindowCommandResult, {
+      id: rawRequest.id,
+      ok: false,
+      error: 'unsupported_main_window_playback_command',
+    });
+    return;
+  }
+
+  try {
+    let value: unknown = null;
+    switch (command as MainPlaybackCommand) {
+      case 'playLocalFile':
+        value = await echoApi.playback.playLocalFile(args[0] as PlaybackStartRequest);
+        break;
+      case 'playMediaItem':
+        value = await echoApi.playback.playMediaItem(args[0] as PlaybackMediaStartRequest);
+        break;
+      case 'play':
+        value = await echoApi.playback.play();
+        break;
+      case 'pause':
+        value = await echoApi.playback.pause();
+        break;
+      case 'stop':
+        value = await echoApi.playback.stop();
+        break;
+      case 'seek':
+        value = await echoApi.playback.seek(Number(args[0]));
+        break;
+    }
+
+    ipcRenderer.send(IpcChannels.PlaybackMainWindowCommandResult, {
+      id: rawRequest.id,
+      ok: true,
+      value,
+    });
+  } catch (error) {
+    ipcRenderer.send(IpcChannels.PlaybackMainWindowCommandResult, {
+      id: rawRequest.id,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+if (isMainPlaybackRenderer) {
+  ipcRenderer.on(IpcChannels.PlaybackMainWindowCommandRequest, handleMainWindowPlaybackCommand);
+}
 
 contextBridge.exposeInMainWorld('echo', echoApi);

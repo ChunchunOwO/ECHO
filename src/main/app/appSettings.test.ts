@@ -748,8 +748,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({})).toMatchObject({
       miniPlayerEnabled: false,
       miniPlayerLocked: false,
-      miniPlayerAutoHideMainWindow: false,
+      miniPlayerAutoHideMainWindow: true,
       miniPlayerBounds: null,
+    });
+    expect(
+      normalizeSettings({
+        miniPlayerAutoHideMainWindow: false,
+      }),
+    ).toMatchObject({
+      miniPlayerAutoHideMainWindow: false,
     });
     expect(
       normalizeSettings({

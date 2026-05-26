@@ -121,7 +121,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsMvAutoShowTrackInfoDisabled: true,
-  lyricsCandidatePanelAutoOpenEnabled: true,
+  lyricsCandidatePanelAutoOpenEnabled: false,
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: false,
   lyricsPlayerBarDrawerOpacityPercent: 78,
@@ -386,7 +386,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsEnabled: settings.lyricsEnabled,
   lyricsHeaderHidden: settings.lyricsHeaderHidden,
   lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,
-  lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled !== false,
+  lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled === true,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
   lyricsPlayerBarDrawerOpacityPercent: settings.lyricsPlayerBarDrawerOpacityPercent ?? fallbackSettings.lyricsPlayerBarDrawerOpacityPercent,
@@ -1647,7 +1647,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </span>
             <input
               type="checkbox"
-              checked={effectiveSettings.lyricsCandidatePanelAutoOpenEnabled !== false}
+              checked={effectiveSettings.lyricsCandidatePanelAutoOpenEnabled === true}
               disabled={isBusy}
               onChange={(event) => void patchSettings({ lyricsCandidatePanelAutoOpenEnabled: event.currentTarget.checked })}
             />

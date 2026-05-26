@@ -170,7 +170,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsProviderOrder: ["local", "lrclib", "netease", "qqmusic", "kugou", "kuwo"],
   lyricsHeaderHidden: false,
   lyricsMvAutoShowTrackInfoDisabled: true,
-  lyricsCandidatePanelAutoOpenEnabled: true,
+  lyricsCandidatePanelAutoOpenEnabled: false,
   lyricsEmptyStateHidden: true,
   lyricsFontSizePx: 40,
   lyricsFontFamily: "Microsoft YaHei",
@@ -799,7 +799,7 @@ const selectLyricsDisplaySettings = (
     : fallbackLyricsDisplaySettings.lyricsProviderOrder,
   lyricsHeaderHidden: settings.lyricsHeaderHidden,
   lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,
-  lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled !== false,
+  lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled === true,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsFontFamily: settings.lyricsFontFamily ?? fallbackLyricsDisplaySettings.lyricsFontFamily,
@@ -2077,6 +2077,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       if (Object.keys(patch).length > 0) {
         lyricsDisplaySettingsLoadVersionRef.current += 1;
         setLyricsDisplaySettings((current) => ({ ...current, ...patch }));
+        if (patch.lyricsCandidatePanelAutoOpenEnabled === false) {
+          setIsLyricsMatchPanelClosed(true);
+          setIsLyricsMatchPanelRevealed(false);
+        }
         setIsLyricsDisplaySettingsReady(true);
         return;
       }
@@ -2144,6 +2148,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         ...current,
         lyricsCandidatePanelAutoOpenEnabled: enabled,
       }));
+      if (!enabled) {
+        setIsLyricsMatchPanelClosed(true);
+        setIsLyricsMatchPanelRevealed(false);
+      }
       window.dispatchEvent(new CustomEvent("lyrics:display-settings-changed", { detail: patch }));
 
       if (!app?.setSettings) {
@@ -2155,7 +2163,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         .setSettings(patch)
         .then((nextSettings) => {
           const savedValue = selectLyricsDisplaySettings(nextSettings)
-            .lyricsCandidatePanelAutoOpenEnabled !== false;
+            .lyricsCandidatePanelAutoOpenEnabled === true;
           const savedPatch: Partial<AppSettings> = {
             lyricsCandidatePanelAutoOpenEnabled: savedValue,
           };
@@ -2431,7 +2439,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled !== false,
+              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
         })
@@ -2518,7 +2526,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled !== false,
+              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
           return;
@@ -3214,6 +3222,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
   useEffect(() => {
     if (
+      lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled !== true ||
       lyricsDisplaySettings.lyricsSmartAlignmentEnabled !== true ||
       !smartAlignmentEvaluation ||
       smartAlignmentEvaluation.evidenceCount === 0 ||
@@ -3226,6 +3235,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     setIsLyricsMatchPanelClosed(false);
     setIsLyricsMatchPanelRevealed(true);
   }, [
+    lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled,
     lyricsDisplaySettings.lyricsSmartAlignmentEnabled,
     smartAlignmentEvaluation,
   ]);
@@ -3567,7 +3577,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
             <label className="lyrics-match-auto-open">
               <input
                 type="checkbox"
-                checked={lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled !== false}
+                checked={lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true}
                 onChange={(event) => setLyricsCandidatePanelAutoOpenEnabled(event.currentTarget.checked)}
               />
               <span>自动弹出</span>

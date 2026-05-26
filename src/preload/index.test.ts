@@ -32,6 +32,7 @@ class FakeAudio {
   preservesPitch = true;
   mozPreservesPitch = true;
   webkitPreservesPitch = true;
+  ended = false;
   paused = true;
   duration = 12;
   networkState = 1;
@@ -125,6 +126,7 @@ vi.mock('electron', () => ({
         listeners.delete(channel);
       }
     }),
+    send: vi.fn(),
   },
 }));
 
@@ -144,6 +146,7 @@ describe('preload SMTC API', () => {
     window.localStorage.clear();
     vi.stubGlobal('Audio', FakeAudio);
     vi.mocked(ipcRenderer.invoke).mockReset();
+    vi.mocked(ipcRenderer.send).mockReset();
     vi.mocked(webUtils.getPathForFile).mockReset();
     vi.mocked(webUtils.getPathForFile).mockReturnValue('');
     vi.resetModules();
@@ -345,6 +348,99 @@ describe('preload SMTC API', () => {
       durationMs: 12_000,
       filePath: 'D:\\Music\\song.mp3',
     });
+  });
+
+  it('proxies mini-player system audio playback to the main renderer', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    vi.stubGlobal('window', {
+      localStorage: createTestLocalStorage(),
+      setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval,
+      location: { search: '?miniPlayer=1' },
+    });
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    const proxiedStatus = {
+      state: 'playing',
+      currentTrackId: 'track-mini',
+      positionMs: 0,
+      durationMs: 180_000,
+      filePath: 'D:\\Music\\mini.flac',
+    };
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackMainWindowCommand) {
+        return Promise.resolve(proxiedStatus);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const status = await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\mini.flac',
+      trackId: 'track-mini',
+      probe: { durationSeconds: 180 },
+    });
+
+    expect(status).toEqual(proxiedStatus);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackMainWindowCommand, {
+      command: 'playLocalFile',
+      args: [
+        expect.objectContaining({
+          filePath: 'D:\\Music\\mini.flac',
+          trackId: 'track-mini',
+        }),
+      ],
+    });
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(
+      IpcChannels.AudioCreateSystemStreamUrl,
+      expect.anything(),
+    );
+    expect(fakeAudioInstances).toHaveLength(0);
+  });
+
+  it('executes proxied playback commands in the main renderer', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/proxy-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const listener = listeners.get(IpcChannels.PlaybackMainWindowCommandRequest);
+    expect(listener).toBeTruthy();
+    listener?.({}, {
+      id: 'command-1',
+      command: 'playLocalFile',
+      args: [
+        {
+          filePath: 'D:\\Music\\main.flac',
+          trackId: 'track-main',
+          probe: { durationSeconds: 200 },
+        },
+      ],
+    });
+    await flushPromises();
+
+    expect(fakeAudioInstances).toHaveLength(1);
+    expect(fakeAudioInstances[0].src).toBe('echo-audio://system/proxy-token');
+    expect(ipcRenderer.send).toHaveBeenCalledWith(
+      IpcChannels.PlaybackMainWindowCommandResult,
+      expect.objectContaining({
+        id: 'command-1',
+        ok: true,
+        value: expect.objectContaining({
+          state: 'playing',
+          currentTrackId: 'track-main',
+          filePath: 'D:\\Music\\main.flac',
+        }),
+      }),
+    );
   });
 
   it('resets reused system audio playback to the beginning for a new track', async () => {
@@ -621,6 +717,49 @@ describe('preload SMTC API', () => {
         phase: 'system-audio-ended-before-duration',
       }),
     );
+  });
+
+  it('accepts local system audio ended after the browser pauses at the media tail', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/natural-end-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+    const statuses: Array<Awaited<ReturnType<EchoApi['audio']['getStatus']>>> = [];
+    exposedApi!.audio.onStatus((status) => statuses.push(status));
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\natural-end.flac',
+      trackId: 'track-natural-end',
+      probe: { durationSeconds: 120 },
+    });
+    fakeAudioInstances[0].duration = 120;
+    fakeAudioInstances[0].currentTime = 120;
+    fakeAudioInstances[0].ended = true;
+    fakeAudioInstances[0].paused = true;
+    fakeAudioInstances[0].emit('pause');
+    fakeAudioInstances[0].emit('ended');
+
+    expect(statuses.at(-1)).toMatchObject({
+      outputMode: 'system',
+      state: 'ended',
+      currentTrackId: 'track-natural-end',
+      positionSeconds: 120,
+      error: null,
+    });
+    await expect(exposedApi!.audio.getStatus()).resolves.toMatchObject({
+      outputMode: 'system',
+      state: 'ended',
+      currentTrackId: 'track-natural-end',
+      positionSeconds: 120,
+      error: null,
+    });
   });
 
   it('allows local system audio to end when only the reported duration looks loose', async () => {

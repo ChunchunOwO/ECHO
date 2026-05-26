@@ -141,6 +141,7 @@ const makeAppSettings = (
   lyricsSmartAlignmentEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
+  lyricsCandidatePanelAutoOpenEnabled: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
   lyricsUtatenKanaEnabled: false,
@@ -2188,6 +2189,66 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("does not auto-open the smart alignment candidate panel when auto-open is disabled", async () => {
+    const track = makeTrack();
+    const driftedLines = [
+      { timeMs: 0, text: "First line" },
+      { timeMs: 30000, text: "Second line" },
+      { timeMs: 60000, text: "Third line" },
+    ];
+    mockEcho(track, 10.2, {
+      lyricsSmartAlignmentEnabled: true,
+      lyricsCandidatePanelAutoOpenEnabled: false,
+    });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics({ lines: driftedLines })),
+      searchCandidates: vi.fn().mockImplementation(
+        async (_trackId: string, _query?: string, provider?: string) =>
+          provider === "lrclib"
+            ? [
+                makeLyricsCandidate({
+                  id: "candidate-drifted",
+                  title: "Drifted candidate",
+                  risk: "high",
+                  score: 0.95,
+                }),
+              ]
+            : [],
+      ),
+      previewCandidate: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          id: "preview-drifted",
+          providerLyricsId: "candidate-drifted",
+          lines: [
+            { timeMs: 100, text: "First line" },
+            { timeMs: 30300, text: "Second line" },
+            { timeMs: 60850, text: "Third line" },
+          ],
+        }),
+      ),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    await waitFor(() =>
+      expect(window.echo.lyrics.previewCandidate).toHaveBeenCalledWith("track-1", "candidate-drifted"),
+    );
+    await waitFor(() => expect(container.querySelector(".lyrics-match-panel")).toBeNull());
+    expect(window.echo.lyrics.applyCandidate).not.toHaveBeenCalled();
+  });
+
   it("smoke-tests smart lyrics alignment auto-save, undo, and source reset", async () => {
     const track = makeTrack();
     const { emitAudioStatus } = mockEcho(track, 10.2, { lyricsSmartAlignmentEnabled: true });
@@ -2456,7 +2517,10 @@ describe("LyricsPage", () => {
 
   it("updates when the current track is marked as instrumental from lyrics settings", async () => {
     const track = makeTrack();
-    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    mockEcho(track, 0, {
+      lyricsCandidatePanelAutoOpenEnabled: true,
+      lyricsEmptyStateHidden: false,
+    });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([makeLyricsCandidate({ id: "candidate-1", score: 0.12, risk: "high" })]),
@@ -2569,9 +2633,76 @@ describe("LyricsPage", () => {
     pendingLyrics.resolve(makeTrackLyrics());
   });
 
-  it("does not auto-apply medium risk candidates", async () => {
+  it("keeps the automatic lyrics candidate panel hidden unless auto-open is enabled", async () => {
     const track = makeTrack();
     mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-low-score", score: 0.42 }),
+      ]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1", undefined, "lrclib"),
+    );
+    expect(container.querySelector(".lyrics-match-panel")).toBeNull();
+    expect(window.echo.lyrics.applyCandidate).not.toHaveBeenCalled();
+  });
+
+  it("closes an open automatic lyrics candidate panel when auto-open is disabled", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsCandidatePanelAutoOpenEnabled: true });
+    const setSettings = vi.fn().mockResolvedValue(
+      makeAppSettings({ lyricsCandidatePanelAutoOpenEnabled: false }),
+    );
+    window.echo.app.setSettings = setSettings;
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-low-score", score: 0.42 }),
+      ]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(container.querySelector(".lyrics-match-panel")).toBeTruthy());
+    const autoOpenToggle = container.querySelector<HTMLInputElement>(".lyrics-match-auto-open input");
+    expect(autoOpenToggle?.checked).toBe(true);
+
+    fireEvent.click(autoOpenToggle!);
+
+    await waitFor(() => expect(container.querySelector(".lyrics-match-panel")).toBeNull());
+    expect(setSettings).toHaveBeenCalledWith({ lyricsCandidatePanelAutoOpenEnabled: false });
+  });
+
+  it("does not auto-apply medium risk candidates", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsCandidatePanelAutoOpenEnabled: true });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([
@@ -2645,7 +2776,7 @@ describe("LyricsPage", () => {
 
   it("allows manually applying candidates below the auto-apply threshold", async () => {
     const track = makeTrack();
-    mockEcho(track);
+    mockEcho(track, 0, { lyricsCandidatePanelAutoOpenEnabled: true });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([
@@ -2688,7 +2819,7 @@ describe("LyricsPage", () => {
 
   it("auto-closes the lyrics candidate panel after ten seconds without interaction", async () => {
     const track = makeTrack();
-    mockEcho(track);
+    mockEcho(track, 0, { lyricsCandidatePanelAutoOpenEnabled: true });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([

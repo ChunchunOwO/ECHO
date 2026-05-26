@@ -167,6 +167,7 @@ export type AppSettings = {
   audioUseJuceDecode?: boolean;
   audioDsdOutputMode?: AudioDsdOutputMode;
   audioAsioNativeDsdExperimentalEnabled?: boolean;
+  audioDsdAutoVolumeLockEnabled?: boolean;
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioExclusiveInstabilityFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
@@ -308,6 +309,7 @@ export type AppSettings = {
   channelBalance: ChannelBalanceState;
   playerVolume: number;
   homeWaveformVisualizerEnabled?: boolean;
+  homeRandomHeroTitleEnabled?: boolean;
   playerWaveformProgressEnabled?: boolean;
   fixedVolumeEnabled?: boolean;
   gaplessPlaybackEnabled?: boolean;

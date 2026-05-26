@@ -1445,8 +1445,8 @@ describe('PlaybackQueueProvider playback history session', () => {
       return (
         <>
           <output aria-label="queue-track">{queue.currentTrackId ?? ''}</output>
-          <output aria-label="shared-track">{sharedPlaybackStatus.playbackStatus.currentTrackId ?? ''}</output>
-          <output aria-label="shared-position">{sharedPlaybackStatus.playbackStatus.positionMs}</output>
+          <output aria-label="shared-track">{sharedPlaybackStatus.playbackStatus?.currentTrackId ?? ''}</output>
+          <output aria-label="shared-position">{sharedPlaybackStatus.playbackStatus?.positionMs ?? 0}</output>
         </>
       );
     };
@@ -2405,7 +2405,12 @@ describe('PlaybackQueueProvider playback history session', () => {
   it('publishes the requested track before slow playback IPC resolves', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
-    let emitAudioStatus: ((status: AudioStatus) => void) | null = null;
+    const audioStatusListeners: Array<(status: AudioStatus) => void> = [];
+    const emitAudioStatus = (status: AudioStatus): void => {
+      for (const listener of audioStatusListeners) {
+        listener(status);
+      }
+    };
     let resolveSecondPlay: (() => void) | null = null;
     const playLocalFile = vi
       .fn()
@@ -2465,8 +2470,13 @@ describe('PlaybackQueueProvider playback history session', () => {
           error: null,
         }),
         onStatus: vi.fn((listener: (status: AudioStatus) => void) => {
-          emitAudioStatus = listener;
-          return () => undefined;
+          audioStatusListeners.push(listener);
+          return () => {
+            const index = audioStatusListeners.indexOf(listener);
+            if (index >= 0) {
+              audioStatusListeners.splice(index, 1);
+            }
+          };
         }),
       },
     } as unknown as Window['echo'];
@@ -2517,12 +2527,12 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() => expect(screen.getByLabelText('shared-position').textContent).toBe('0'));
     expect(screen.getByLabelText('visual-state').textContent).toBe('playing');
 
-    if (!emitAudioStatus) {
+    if (audioStatusListeners.length === 0) {
       throw new Error('audio status listener was not captured');
     }
 
     act(() => {
-      emitAudioStatus?.({
+      emitAudioStatus({
         state: 'playing',
         currentTrackId: first.id,
         currentFilePath: first.path,
@@ -2535,8 +2545,10 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(screen.getByLabelText('shared-position').textContent).toBe('0');
     expect(screen.getByLabelText('shared-audio-track').textContent).toBe('');
 
+    const afterPositionGuardMs = Date.now() + 16_000;
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(afterPositionGuardMs);
     act(() => {
-      emitAudioStatus?.({
+      emitAudioStatus({
         state: 'playing',
         currentTrackId: second.id,
         currentFilePath: second.path,
@@ -2550,7 +2562,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(screen.getByLabelText('shared-audio-track').textContent).toBe('');
 
     act(() => {
-      emitAudioStatus?.({
+      emitAudioStatus({
         state: 'playing',
         currentTrackId: second.id,
         currentFilePath: second.path,
@@ -2559,6 +2571,7 @@ describe('PlaybackQueueProvider playback history session', () => {
         error: null,
       } as AudioStatus);
     });
+    dateNowSpy.mockRestore();
     await waitFor(() => expect(screen.getByLabelText('shared-audio-track').textContent).toBe(second.id));
     await waitFor(() => expect(screen.getByLabelText('visual-state').textContent).toBe(''));
   });
@@ -2817,6 +2830,221 @@ describe('PlaybackQueueProvider playback history session', () => {
 });
 
 describe('PlaybackQueueProvider playback modes', () => {
+  it('plays a playlist sequence temporarily and resumes the saved queue after the sequence ends', async () => {
+    const queueTracks = [makeTrack(1), makeTrack(2)];
+    const playlistTracks = [makeTrack(3), makeTrack(4)];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const PlaylistSequenceProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(queueTracks[0], { replaceQueueWith: queueTracks });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>
+          <output aria-label="playlist-active">{queue.playlistPlayback.active ? 'yes' : 'no'}</output>
+          <output aria-label="can-next">{queue.canGoNext ? 'yes' : 'no'}</output>
+          <button type="button" onClick={() => void queue.playPlaylistSequence(playlistTracks, { label: 'Road Mix', playlistId: 'playlist-1' })}>
+            play playlist
+          </button>
+          <button type="button" onClick={() => void queue.playNext({ autoAdvance: true })}>
+            auto next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <PlaylistSequenceProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-1,track-2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-3'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-3,track-4');
+    expect(screen.getByLabelText('playlist-active').textContent).toBe('yes');
+
+    fireEvent.click(screen.getByRole('button', { name: 'auto next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-4'));
+    expect(screen.getByLabelText('can-next').textContent).toBe('yes');
+
+    fireEvent.click(screen.getByRole('button', { name: 'auto next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-2'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-1,track-2');
+    expect(screen.getByLabelText('playlist-active').textContent).toBe('no');
+    expect(playLocalFile.mock.calls.map((call) => call[0].trackId)).toEqual(['track-1', 'track-3', 'track-4', 'track-2']);
+  });
+
+  it('exits playlist sequence playback and resumes the saved queue item', async () => {
+    const queueTracks = [makeTrack(1), makeTrack(2)];
+    const playlistTracks = [makeTrack(3), makeTrack(4)];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const ExitPlaylistSequenceProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(queueTracks[0], { replaceQueueWith: queueTracks });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>
+          <output aria-label="playlist-active">{queue.playlistPlayback.active ? 'yes' : 'no'}</output>
+          <button type="button" onClick={() => void queue.playPlaylistSequence(playlistTracks, { label: 'Road Mix', playlistId: 'playlist-1' })}>
+            play playlist
+          </button>
+          <button type="button" onClick={() => void queue.exitPlaylistSequence()}>
+            exit playlist
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <ExitPlaylistSequenceProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-3'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'exit playlist' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-1,track-2');
+    expect(screen.getByLabelText('playlist-active').textContent).toBe('no');
+    expect(playLocalFile.mock.calls.map((call) => call[0].trackId)).toEqual(['track-1', 'track-3', 'track-1']);
+  });
+
+  it('keeps the persisted queue pointed at the saved queue while playlist playback is active', async () => {
+    const queueTracks = [makeTrack(1), makeTrack(2)];
+    const playlistTracks = [makeTrack(3), makeTrack(4)];
+    const session = makePersistedQueueSession(queueTracks, {
+      mode: {
+        isShuffleEnabled: true,
+        repeatMode: 'all',
+        automixEnabled: false,
+      },
+    });
+    const saveQueueSession = vi.fn(async (snapshot) => snapshot);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        getQueueSession: vi.fn().mockResolvedValue(session),
+        saveQueueSession,
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const PersistedPlaylistSequenceProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>
+          <output aria-label="repeat-mode">{queue.repeatMode}</output>
+          <output aria-label="shuffle-mode">{queue.isShuffleEnabled ? 'on' : 'off'}</output>
+          <button type="button" onClick={() => void queue.playPlaylistSequence(playlistTracks, { label: 'Road Mix', playlistId: 'playlist-1' })}>
+            play playlist
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <PersistedPlaylistSequenceProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+    await waitFor(() => expect(saveQueueSession).toHaveBeenCalled());
+    saveQueueSession.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-3'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-3,track-4');
+    expect(screen.getByLabelText('repeat-mode').textContent).toBe('off');
+    expect(screen.getByLabelText('shuffle-mode').textContent).toBe('off');
+    await waitFor(() => expect(saveQueueSession).toHaveBeenCalled());
+
+    const savedSession = saveQueueSession.mock.calls.at(-1)?.[0] as PersistedPlaybackSessionV1 | undefined;
+    expect(savedSession?.items.map((item) => item.track.id)).toEqual(['track-1', 'track-2']);
+    expect(savedSession).toMatchObject({
+      currentTrackId: 'track-1',
+      mode: {
+        isShuffleEnabled: true,
+        repeatMode: 'all',
+      },
+    });
+  });
+
   it('uses the next queued track for manual next while repeat-one stays enabled', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);

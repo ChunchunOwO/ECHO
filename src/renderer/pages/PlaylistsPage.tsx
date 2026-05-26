@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import { CalendarDays, Check, ChevronDown, Download, FilePlus2, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
@@ -32,6 +33,7 @@ const streamingQualityOptions: Array<{ value: StreamingAudioQuality; label: stri
   { value: 'standard', label: 'Standard' },
 ];
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
+const playlistItemDragMime = 'application/x-echo-playlist-item-id';
 const runningDownloadStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const failedDownloadStatuses = new Set<DownloadJobStatus>(['failed', 'cancelled']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
@@ -273,13 +275,15 @@ export const PlaylistsPage = (): JSX.Element => {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trackMenu, setTrackMenu] = useState<{ track: LibraryTrack; position: { x: number; y: number } } | null>(null);
+  const [draggedPlaylistItemId, setDraggedPlaylistItemId] = useState<string | null>(null);
+  const [dropTargetPlaylistItemId, setDropTargetPlaylistItemId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const playlistDownloadRunIdRef = useRef(0);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
   const newPlaylistInputRef = useRef<HTMLInputElement>(null);
   const qualityMenuRef = useRef<HTMLDivElement | null>(null);
   const playlistMenuRef = useRef<HTMLDivElement | null>(null);
-  const { currentTrack, currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
+  const { currentTrack, currentTrackId, playlistPlayback, playPlaylistSequence, exitPlaylistSequence, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0] ?? null,
     [playlists, selectedPlaylistId],
@@ -288,10 +292,19 @@ export const PlaylistsPage = (): JSX.Element => {
     selectedPlaylist?.sourceProvider === 'netease' && selectedPlaylist.sourcePlaylistId === neteaseDailyRecommendSourcePlaylistId;
   const isSelectedPlaylistProtected = selectedPlaylist?.kind === 'system';
   const isSelectedPlaylistRemote = Boolean(selectedPlaylist && selectedPlaylist.sourceProvider !== 'local');
+  const canReorderSelectedPlaylist =
+    Boolean(selectedPlaylist) &&
+    !isSelectedPlaylistProtected &&
+    !isSelectedPlaylistRemote &&
+    selectedPlaylist?.sortMode === 'manual' &&
+    playlistSearch.length === 0 &&
+    playlistSearchInput.trim().length === 0;
   const selectedStreamingPlaylistUrl = selectedPlaylist ? streamingPlaylistUrl(selectedPlaylist) : null;
   const currentStreamingQuality = streamingQualityOptions.find((option) => option.value === streamingQuality) ?? streamingQualityOptions[0];
   const canDownloadSelectedPlaylist =
     downloadsFeatureUnlocked && (selectedPlaylist?.sourceProvider === 'netease' || selectedPlaylist?.sourceProvider === 'qqmusic');
+  const isSelectedPlaylistPlaybackActive =
+    playlistPlayback.active && Boolean(selectedPlaylist) && playlistPlayback.playlistId === selectedPlaylist?.id;
   const displayTracks = useMemo(
     () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
     [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
@@ -391,6 +404,7 @@ export const PlaylistsPage = (): JSX.Element => {
             source: queueSource,
             startSeconds: Math.max(0, status.positionMs / 1000),
             forceRefresh: true,
+            preservePlaylistPlayback: true,
           },
         );
         setError(null);
@@ -513,6 +527,11 @@ export const PlaylistsPage = (): JSX.Element => {
       setItemsPage(emptyItemsPage());
     }
   }, [loadItems, selectedPlaylist]);
+
+  useEffect(() => {
+    setDraggedPlaylistItemId(null);
+    setDropTargetPlaylistItemId(null);
+  }, [selectedPlaylist?.id, playlistSearch]);
 
   useEffect(() => {
     const downloads = getDownloadsBridge();
@@ -794,16 +813,24 @@ export const PlaylistsPage = (): JSX.Element => {
   };
 
   const handlePlayAll = async (): Promise<void> => {
+    if (isSelectedPlaylistPlaybackActive) {
+      await exitPlaylistSequence();
+      setStatusMessage('已退出歌单播放，恢复原队列');
+      return;
+    }
+
     if (playableTracks.length === 0) {
-      setError('这个歌单没有可播放的本地歌曲。');
+      setError('这个歌单没有可播放的歌曲。');
       return;
     }
 
     try {
-      await playTrack(playableTracks[0], {
-        replaceQueueWith: playableTracks,
+      await playPlaylistSequence(playableTracks, {
+        label: selectedPlaylist?.name,
+        playlistId: selectedPlaylist?.id,
         source: queueSource,
       });
+      setStatusMessage(`正在按歌单顺序播放：${selectedPlaylist?.name ?? '当前歌单'}`);
     } catch (playError) {
       setError(playError instanceof Error ? playError.message : String(playError));
     }
@@ -1187,6 +1214,102 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   };
 
+  const isTrackReorderable = useCallback(
+    (track: LibraryTrack): boolean => canReorderSelectedPlaylist && Boolean(track.playlistItemId),
+    [canReorderSelectedPlaylist],
+  );
+
+  const handlePlaylistItemDragStart = useCallback(
+    (event: DragEvent<HTMLDivElement>, track: LibraryTrack): void => {
+      if (!canReorderSelectedPlaylist || !track.playlistItemId) {
+        event.preventDefault();
+        return;
+      }
+
+      setDraggedPlaylistItemId(track.playlistItemId);
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(playlistItemDragMime, track.playlistItemId);
+      event.dataTransfer.setData('text/plain', track.playlistItemId);
+    },
+    [canReorderSelectedPlaylist],
+  );
+
+  const handlePlaylistItemDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>, track: LibraryTrack): void => {
+      if (!canReorderSelectedPlaylist || !track.playlistItemId || draggedPlaylistItemId === track.playlistItemId) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setDropTargetPlaylistItemId(track.playlistItemId);
+    },
+    [canReorderSelectedPlaylist, draggedPlaylistItemId],
+  );
+
+  const handlePlaylistItemDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, targetTrack: LibraryTrack): void => {
+      event.preventDefault();
+      const library = window.echo?.library;
+      const selectedPlaylistForDrop = selectedPlaylist;
+      const sourceItemId =
+        draggedPlaylistItemId ||
+        event.dataTransfer.getData(playlistItemDragMime) ||
+        event.dataTransfer.getData('text/plain');
+      const targetItemId = targetTrack.playlistItemId ?? '';
+
+      setDraggedPlaylistItemId(null);
+      setDropTargetPlaylistItemId(null);
+
+      if (!canReorderSelectedPlaylist || !library?.movePlaylistItem || !selectedPlaylistForDrop || !sourceItemId || !targetItemId || sourceItemId === targetItemId) {
+        return;
+      }
+
+      const fromIndex = itemsPage.items.findIndex((item) => item.id === sourceItemId);
+      const toIndex = itemsPage.items.findIndex((item) => item.id === targetItemId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+
+      setError(null);
+      setStatusMessage('正在保存歌单顺序...');
+      setItemsPage((current) => {
+        const currentFromIndex = current.items.findIndex((item) => item.id === sourceItemId);
+        const currentToIndex = current.items.findIndex((item) => item.id === targetItemId);
+        if (currentFromIndex < 0 || currentToIndex < 0 || currentFromIndex === currentToIndex) {
+          return current;
+        }
+
+        const nextItems = [...current.items];
+        const [movedItem] = nextItems.splice(currentFromIndex, 1);
+        nextItems.splice(Math.max(0, Math.min(currentToIndex, nextItems.length)), 0, movedItem);
+        return {
+          ...current,
+          items: nextItems.map((item, index) => ({ ...item, position: index })),
+        };
+      });
+
+      void (async () => {
+        try {
+          await library.movePlaylistItem(selectedPlaylistForDrop.id, sourceItemId, toIndex);
+          await loadItems(selectedPlaylistForDrop.id);
+          setStatusMessage('歌单顺序已保存');
+          window.dispatchEvent(new Event('library:playlists-changed'));
+        } catch (moveError) {
+          setError(moveError instanceof Error ? moveError.message : String(moveError));
+          setStatusMessage(null);
+          await loadItems(selectedPlaylistForDrop.id);
+        }
+      })();
+    },
+    [canReorderSelectedPlaylist, draggedPlaylistItemId, itemsPage.items, loadItems, selectedPlaylist],
+  );
+
+  const handlePlaylistItemDragEnd = useCallback((): void => {
+    setDraggedPlaylistItemId(null);
+    setDropTargetPlaylistItemId(null);
+  }, []);
+
   const handleTrackPlay = async (track: LibraryTrack): Promise<void> => {
     const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
     const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
@@ -1195,9 +1318,11 @@ export const PlaylistsPage = (): JSX.Element => {
     }
 
     try {
-      await playTrack(playableTrack, {
-        replaceQueueWith: playableTracks,
+      await playPlaylistSequence(playableTracks, {
+        label: selectedPlaylist?.name,
+        playlistId: selectedPlaylist?.id,
         source: queueSource,
+        startTrackId: playableTrack.id,
       });
     } catch (playError) {
       setError(playError instanceof Error ? playError.message : String(playError));
@@ -1577,9 +1702,9 @@ export const PlaylistsPage = (): JSX.Element => {
                     ) : null}
                   </div>
                 ) : null}
-                <button className="primary-action" type="button" disabled={playableTracks.length === 0} onClick={() => void handlePlayAll()}>
+                <button className="primary-action" type="button" disabled={playableTracks.length === 0 && !isSelectedPlaylistPlaybackActive} onClick={() => void handlePlayAll()}>
                   <Play size={16} />
-                  <span>播放全部</span>
+                  <span>{isSelectedPlaylistPlaybackActive ? '退出歌单播放' : '播放歌单'}</span>
                 </button>
                 <button className="secondary-action" type="button" disabled={playableTracks.length === 0} onClick={handleAddAllToQueue}>
                   <ListPlus size={16} />
@@ -1727,6 +1852,13 @@ export const PlaylistsPage = (): JSX.Element => {
               likedTrackIds={likedTrackIds}
               onToggleLiked={(track) => void handleToggleLiked(track)}
               onOpenTrackMenu={handleOpenTrackMenu}
+              isTrackDraggable={isTrackReorderable}
+              draggedTrackId={draggedPlaylistItemId}
+              dropTargetTrackId={dropTargetPlaylistItemId}
+              onTrackDragStart={handlePlaylistItemDragStart}
+              onTrackDragOver={handlePlaylistItemDragOver}
+              onTrackDrop={handlePlaylistItemDrop}
+              onTrackDragEnd={handlePlaylistItemDragEnd}
               onPlay={handleTrackPlay}
             />
           </>

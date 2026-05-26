@@ -64,6 +64,7 @@ export type PlaybackStartRequest = {
 
 export type PlaybackPrepareLocalFileRequest = {
   filePath: string;
+  inputHeaders?: Record<string, string>;
   trackId?: string;
   probe?: PlaybackProbeHint;
   replayGain?: ReplayGainTrackData | null;

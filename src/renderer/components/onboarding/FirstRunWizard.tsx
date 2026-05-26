@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, CheckCircle2, FolderOpen, HardDrive, Headphones, Loader2, ScanLine, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, FolderOpen, HardDrive, Headphones, Loader2, LogIn, Palette, ScanLine, Sparkles, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AudioOutputMode } from '../../../shared/types/audio';
-import type { AppSettings, ScanPerformanceMode } from '../../../shared/types/appSettings';
+import type { AppSettings, AppThemeMode, AppThemePreset, ScanPerformanceMode } from '../../../shared/types/appSettings';
 import { detectRendererPlatform, isAdvancedNativeOutputPlatform, isNativeSharedOutputPlatform } from '../../../shared/utils/audioPlatformCapabilities';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
+import { updateThemePreferences } from '../../preferences/themePreferences';
 import { rememberLibraryScanStatus } from '../../stores/libraryScanSession';
 
 type FirstRunWizardProps = {
@@ -14,7 +15,7 @@ type FirstRunWizardProps = {
   onCompleted: (settings: AppSettings | null) => void;
 };
 
-type FirstRunStepId = 'library' | 'cache' | 'scan' | 'audio' | 'summary';
+type FirstRunStepId = 'library' | 'cache' | 'scan' | 'audio' | 'appearance' | 'accounts' | 'summary';
 
 type FirstRunStep = {
   id: FirstRunStepId;
@@ -43,6 +44,21 @@ const outputModes: Array<FirstRunOption<AudioOutputMode>> = [
   { mode: 'shared', labelKey: 'firstRun.audio.shared.label', descriptionKey: 'firstRun.audio.shared.description', hintKey: 'firstRun.audio.shared.hint' },
   { mode: 'exclusive', labelKey: 'firstRun.audio.exclusive.label', descriptionKey: 'firstRun.audio.exclusive.description', hintKey: 'firstRun.audio.exclusive.hint' },
   { mode: 'asio', labelKey: 'firstRun.audio.asio.label', descriptionKey: 'firstRun.audio.asio.description', hintKey: 'firstRun.audio.asio.hint' },
+];
+
+const themeModes: Array<FirstRunOption<AppThemeMode>> = [
+  { mode: 'light', labelKey: 'settings.appearance.theme.light', descriptionKey: 'firstRun.theme.light.description', hintKey: 'firstRun.theme.light.hint' },
+  { mode: 'dark', labelKey: 'settings.appearance.theme.dark', descriptionKey: 'firstRun.theme.dark.description', hintKey: 'firstRun.theme.dark.hint' },
+  { mode: 'system', labelKey: 'settings.appearance.theme.followSystem', descriptionKey: 'firstRun.theme.system.description', hintKey: 'firstRun.theme.system.hint' },
+];
+
+const themePresets: Array<{ preset: AppThemePreset; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
+  { preset: 'classic', labelKey: 'settings.appearance.themePreset.classic', descriptionKey: 'settings.appearance.themePreset.classic.description' },
+  { preset: 'sakuraMilk', labelKey: 'settings.appearance.themePreset.sakuraMilk', descriptionKey: 'settings.appearance.themePreset.sakuraMilk.description' },
+  { preset: 'mintCandy', labelKey: 'settings.appearance.themePreset.mintCandy', descriptionKey: 'settings.appearance.themePreset.mintCandy.description' },
+  { preset: 'echoTwilight', labelKey: 'settings.appearance.themePreset.echoTwilight', descriptionKey: 'settings.appearance.themePreset.echoTwilight.description' },
+  { preset: 'graphiteAurora', labelKey: 'settings.appearance.themePreset.graphiteAurora', descriptionKey: 'settings.appearance.themePreset.graphiteAurora.description' },
+  { preset: 'darkSideMoon', labelKey: 'settings.appearance.themePreset.darkSideMoon', descriptionKey: 'settings.appearance.themePreset.darkSideMoon.description' },
 ];
 
 const detectFirstRunPlatform = (): NodeJS.Platform | 'unknown' =>
@@ -108,6 +124,22 @@ const firstRunSteps: FirstRunStep[] = [
     icon: Headphones,
   },
   {
+    id: 'appearance',
+    labelKey: 'firstRun.step.appearance.label',
+    eyebrowKey: 'firstRun.step.appearance.eyebrow',
+    titleKey: 'firstRun.step.appearance.title',
+    descriptionKey: 'firstRun.step.appearance.description',
+    icon: Palette,
+  },
+  {
+    id: 'accounts',
+    labelKey: 'firstRun.step.accounts.label',
+    eyebrowKey: 'firstRun.step.accounts.eyebrow',
+    titleKey: 'firstRun.step.accounts.title',
+    descriptionKey: 'firstRun.step.accounts.description',
+    icon: LogIn,
+  },
+  {
     id: 'summary',
     labelKey: 'firstRun.step.summary.label',
     eyebrowKey: 'firstRun.step.summary.eyebrow',
@@ -125,6 +157,8 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
   const [musicFolderPath, setMusicFolderPath] = useState<string | null>(null);
   const [cacheDirectory, setCacheDirectory] = useState<string | null | undefined>(undefined);
   const [scanMode, setScanMode] = useState<ScanPerformanceMode>(initialSettings?.scanPerformanceMode ?? 'balanced');
+  const [appearanceTheme, setAppearanceTheme] = useState<AppThemeMode>(initialSettings?.appearanceTheme ?? 'light');
+  const [appearanceThemePreset, setAppearanceThemePreset] = useState<AppThemePreset>(initialSettings?.appearanceThemePreset ?? 'classic');
   const [outputMode, setOutputMode] = useState<AudioOutputMode>(() => {
     const rememberedMode = initialSettings?.rememberedAudioOutput?.outputMode ?? 'system';
     return getSupportedFirstRunOutputModes(rendererPlatform).some((item) => item.mode === rememberedMode) ? rememberedMode : 'system';
@@ -149,6 +183,8 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
 
   const scanModeLabel = t(scanModes.find((item) => item.mode === scanMode)?.labelKey ?? 'firstRun.scan.balanced.label');
   const outputModeLabel = t(firstRunOutputModes.find((item) => item.mode === outputMode)?.labelKey ?? 'firstRun.audio.system.label');
+  const appearanceThemeLabel = t(themeModes.find((item) => item.mode === appearanceTheme)?.labelKey ?? 'settings.appearance.theme.light');
+  const appearancePresetLabel = t(themePresets.find((item) => item.preset === appearanceThemePreset)?.labelKey ?? 'settings.appearance.themePreset.classic');
 
   const chooseMusicFolder = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -233,8 +269,16 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
       };
       const nextSettings = await app.setSettings({
         onboardingCompleted: true,
+        appearanceTheme,
+        appearanceThemeCustomId: null,
+        appearanceThemePreset,
         scanPerformanceMode: scanMode,
         rememberedAudioOutput,
+      });
+      updateThemePreferences(appearanceTheme, appearanceThemePreset, nextSettings.appearanceThemePresetOverrides ?? {}, {
+        animate: true,
+        customThemeId: null,
+        customThemes: nextSettings.appearanceCustomThemes ?? [],
       });
 
       await window.echo?.audio?.setOutput?.({ outputMode }).catch(() => undefined);
@@ -256,7 +300,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
     } finally {
       setBusy(null);
     }
-  }, [cacheDirectory, initialSettings, musicFolderPath, onClose, onCompleted, outputMode, scanMode, scanNow, t]);
+  }, [appearanceTheme, appearanceThemePreset, cacheDirectory, initialSettings, musicFolderPath, onClose, onCompleted, outputMode, scanMode, scanNow, t]);
 
   const goToPreviousStep = (): void => {
     setActiveStepId(firstRunSteps[Math.max(0, activeStepIndex - 1)]!.id);
@@ -321,7 +365,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
         );
       case 'audio':
         return (
-          <div className="first-run-options first-run-options--cards">
+          <div className="first-run-options first-run-options--cards first-run-options--compact">
             {firstRunOutputModes.map((item) => (
               <button
                 className={outputMode === item.mode ? 'is-active' : undefined}
@@ -335,6 +379,71 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
                 <em>{t(item.hintKey)}</em>
               </button>
             ))}
+          </div>
+        );
+      case 'appearance':
+        return (
+          <div className="first-run-appearance-guide">
+            <div>
+              <p className="first-run-selection-label">{t('firstRun.theme.modeTitle')}</p>
+              <div className="first-run-options first-run-options--cards first-run-options--compact">
+                {themeModes.map((item) => (
+                  <button
+                    className={appearanceTheme === item.mode ? 'is-active' : undefined}
+                    key={item.mode}
+                    type="button"
+                    aria-pressed={appearanceTheme === item.mode}
+                    onClick={() => setAppearanceTheme(item.mode)}
+                  >
+                    <strong>{t(item.labelKey)}</strong>
+                    <span>{t(item.descriptionKey)}</span>
+                    <em>{t(item.hintKey)}</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="first-run-selection-label">{t('firstRun.theme.presetTitle')}</p>
+              <div className="first-run-theme-presets">
+                {themePresets.map((item) => (
+                  <button
+                    className={appearanceThemePreset === item.preset ? 'is-active' : undefined}
+                    key={item.preset}
+                    type="button"
+                    aria-pressed={appearanceThemePreset === item.preset}
+                    onClick={() => setAppearanceThemePreset(item.preset)}
+                  >
+                    <span className="first-run-theme-swatch" data-preset={item.preset} aria-hidden="true" />
+                    <strong>{t(item.labelKey)}</strong>
+                    <span>{t(item.descriptionKey)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      case 'accounts':
+        return (
+          <div className="first-run-account-guide">
+            <ol>
+              <li>
+                <strong>{t('firstRun.accounts.open.title')}</strong>
+                <span>{t('firstRun.accounts.open.description')}</span>
+              </li>
+              <li>
+                <strong>{t('firstRun.accounts.login.title')}</strong>
+                <span>{t('firstRun.accounts.login.description')}</span>
+              </li>
+              <li>
+                <strong>{t('firstRun.accounts.cookie.title')}</strong>
+                <span>{t('firstRun.accounts.cookie.description')}</span>
+              </li>
+              <li>
+                <strong>{t('firstRun.accounts.spotify.title')}</strong>
+                <span>{t('firstRun.accounts.spotify.description')}</span>
+              </li>
+            </ol>
+            <p>{t('firstRun.accounts.note')}</p>
           </div>
         );
       case 'summary':
@@ -422,6 +531,14 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
               <div>
                 <dt>{t('firstRun.summary.output')}</dt>
                 <dd>{outputModeLabel}</dd>
+              </div>
+              <div>
+                <dt>{t('firstRun.summary.theme')}</dt>
+                <dd>{t('firstRun.summary.themeValue', { mode: appearanceThemeLabel, preset: appearancePresetLabel })}</dd>
+              </div>
+              <div>
+                <dt>{t('firstRun.summary.accounts')}</dt>
+                <dd>{t('firstRun.summary.accountsLater')}</dd>
               </div>
             </dl>
             <p>{t('firstRun.summary.noFileMove')}</p>

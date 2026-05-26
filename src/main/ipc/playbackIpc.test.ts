@@ -423,6 +423,7 @@ describe('playback media prepare IPC', () => {
         currentFilePath: request.filePath,
       };
     });
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     let resolveStreaming!: (source: {
       url: string;
       requiresProxy: boolean;
@@ -533,6 +534,7 @@ describe('playback media prepare IPC', () => {
   it('falls back to a matching local track when QQ Music rejects a playable VIP stream', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const playLocalFile = vi.fn().mockResolvedValue(undefined);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     const resolvePlayback = vi.fn().mockRejectedValue(new Error('QQ 音乐返回无播放权限（104003）。请确认当前登录的是已开通会员的 QQ 音乐账号。'));
     const getTracks = vi.fn().mockReturnValue({
       items: [

@@ -83,6 +83,21 @@ const requireText = (value: unknown, name: string): string => {
   return value;
 };
 
+const normalizeInputHeaders = (value: unknown): Record<string, string> | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const headers: Record<string, string> = {};
+  for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof headerValue === 'string' && key.trim()) {
+      headers[key] = headerValue;
+    }
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+};
+
 const optionalPositiveNumber = (value: unknown): number | undefined => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return undefined;
@@ -473,6 +488,7 @@ const normalizePrepareLocalFileRequest = (value: unknown): PlaybackPrepareLocalF
 
   return {
     filePath: normalizePlaybackFilePath(requireText(input.filePath, 'filePath')),
+    inputHeaders: normalizeInputHeaders(input.inputHeaders),
     trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : undefined,
     probe: normalizeProbeHint(input.probe),
     replayGain: normalizeReplayGainTrackData(input.replayGain),

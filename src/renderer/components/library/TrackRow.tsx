@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react';
-import type { KeyboardEvent, MouseEvent } from 'react';
-import { Download, ListPlus, Loader2, MoreHorizontal, Music2 } from 'lucide-react';
+import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
+import { Download, GripVertical, ListPlus, Loader2, MoreHorizontal, Music2 } from 'lucide-react';
 import { isDisplayableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { isDsdCodec, isHiResAudioSpec } from '../../../shared/utils/audioQuality';
@@ -29,6 +29,13 @@ type TrackRowProps = {
   downloadProgress?: number | null;
   onShowVersions?: (track: LibraryTrack) => void;
   onOpenMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
+  isDraggable?: boolean;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  onDragStart?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onDragOver?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onDrop?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onDragEnd?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
 };
 
 const formatDuration = (duration: number): string => {
@@ -94,7 +101,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu, isDraggable = false, isDragging = false, isDropTarget = false, onDragStart, onDragOver, onDrop, onDragEnd }: TrackRowProps): JSX.Element => {
     const t = useOptionalI18n()?.t ?? translateFallback;
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
@@ -209,20 +216,57 @@ export const TrackRow = memo(
 
       setFailedCoverUrl(track.coverThumb);
     }, [track.coverThumb, track.id]);
+    const handleDragStart = useCallback(
+      (event: DragEvent<HTMLDivElement>): void => {
+        onDragStart?.(event, track);
+      },
+      [onDragStart, track],
+    );
+    const handleDragOver = useCallback(
+      (event: DragEvent<HTMLDivElement>): void => {
+        onDragOver?.(event, track);
+      },
+      [onDragOver, track],
+    );
+    const handleDrop = useCallback(
+      (event: DragEvent<HTMLDivElement>): void => {
+        onDrop?.(event, track);
+      },
+      [onDrop, track],
+    );
+    const handleDragEnd = useCallback(
+      (event: DragEvent<HTMLDivElement>): void => {
+        onDragEnd?.(event, track);
+      },
+      [onDragEnd, track],
+    );
 
     return (
       <div
         className="track-row"
         data-clickable={Boolean(onPlay) && !isUnavailable}
+        data-draggable={isDraggable ? 'true' : undefined}
+        data-dragging={isDragging ? 'true' : undefined}
+        data-drop-target={isDropTarget ? 'true' : undefined}
         data-playing={isPlaying}
         data-selected={isSelected ? 'true' : undefined}
         data-unavailable={isUnavailable ? 'true' : undefined}
+        draggable={isDraggable}
         role="listitem"
         tabIndex={onPlay && !isUnavailable ? 0 : undefined}
         onClick={handleRowClick}
         onContextMenu={handleContextMenu}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragStart={handleDragStart}
+        onDrop={handleDrop}
         onKeyDown={handleKeyDown}
       >
+        {isDraggable ? (
+          <span className="track-drag-handle" aria-label={`拖动调整顺序：${track.title}`} title="拖动调整顺序">
+            <GripVertical size={16} />
+          </span>
+        ) : null}
         <div className="track-cover" data-empty={!shouldShowCover} aria-hidden="true">
           {shouldShowCover ? (
             <img alt="" decoding="async" draggable={false} height={96} loading="lazy" src={track.coverThumb!} width={96} onError={handleCoverError} />
@@ -328,7 +372,14 @@ export const TrackRow = memo(
     previous.isDownloading === next.isDownloading &&
     previous.downloadProgress === next.downloadProgress &&
     previous.onShowVersions === next.onShowVersions &&
-    previous.onOpenMenu === next.onOpenMenu,
+    previous.onOpenMenu === next.onOpenMenu &&
+    previous.isDraggable === next.isDraggable &&
+    previous.isDragging === next.isDragging &&
+    previous.isDropTarget === next.isDropTarget &&
+    previous.onDragStart === next.onDragStart &&
+    previous.onDragOver === next.onDragOver &&
+    previous.onDrop === next.onDrop &&
+    previous.onDragEnd === next.onDragEnd,
 );
 
 TrackRow.displayName = 'TrackRow';

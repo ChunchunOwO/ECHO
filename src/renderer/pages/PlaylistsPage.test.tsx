@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { DragEvent } from 'react';
 import type { DownloadJob } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack } from '../../shared/types/library';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
@@ -9,18 +10,36 @@ import { PlaylistsPage } from './PlaylistsPage';
 vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
     tracks,
+    isTrackDraggable,
+    onTrackDragEnd,
+    onTrackDragOver,
+    onTrackDragStart,
+    onTrackDrop,
     onOpenTrackMenu,
     onPlay,
     onToggleLiked,
   }: {
     tracks: LibraryTrack[];
+    isTrackDraggable?: (track: LibraryTrack) => boolean;
+    onTrackDragEnd?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+    onTrackDragOver?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+    onTrackDragStart?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+    onTrackDrop?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
     onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
     onPlay?: (track: LibraryTrack) => void;
     onToggleLiked?: (track: LibraryTrack) => void;
   }) => (
     <div data-testid="playlist-track-list">
       {tracks.map((track) => (
-        <div key={track.playlistItemId ?? track.id}>
+        <div
+          data-testid={`playlist-track-row-${track.playlistItemId ?? track.id}`}
+          draggable={isTrackDraggable?.(track) ?? false}
+          key={track.playlistItemId ?? track.id}
+          onDragEnd={(event) => onTrackDragEnd?.(event, track)}
+          onDragOver={(event) => onTrackDragOver?.(event, track)}
+          onDragStart={(event) => onTrackDragStart?.(event, track)}
+          onDrop={(event) => onTrackDrop?.(event, track)}
+        >
           <button type="button" onClick={() => onPlay?.(track)}>
             {track.title}
           </button>
@@ -149,6 +168,18 @@ const downloadJob = (overrides: Partial<DownloadJob> = {}): DownloadJob => ({
   ...overrides,
 });
 
+const dragDataTransfer = () => {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: '',
+    effectAllowed: '',
+    getData: vi.fn((type: string) => data.get(type) ?? ''),
+    setData: vi.fn((type: string, value: string) => {
+      data.set(type, value);
+    }),
+  };
+};
+
 const renderPlaylistsPage = () =>
   render(
     <PlaybackQueueProvider>
@@ -258,14 +289,14 @@ describe('PlaylistsPage actions menu', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remote Song' }));
     await waitFor(() =>
-      expect(playMediaItem).toHaveBeenCalledWith({
+      expect(playMediaItem).toHaveBeenCalledWith(expect.objectContaining({
         item: expect.objectContaining({
           mediaType: 'streaming',
           provider: 'qqmusic',
           providerTrackId: 'song-mid',
           quality: 'hires',
         }),
-      }),
+      })),
     );
 
     fireEvent.click(qualityButton);
@@ -273,11 +304,11 @@ describe('PlaylistsPage actions menu', () => {
     expect(qualityButton.textContent).toContain('Standard');
     fireEvent.click(screen.getByRole('button', { name: 'Remote Song' }));
     await waitFor(() =>
-      expect(playMediaItem).toHaveBeenLastCalledWith({
+      expect(playMediaItem).toHaveBeenLastCalledWith(expect.objectContaining({
         item: expect.objectContaining({
           quality: 'standard',
         }),
-      }),
+      })),
     );
   });
 
@@ -326,14 +357,14 @@ describe('PlaylistsPage actions menu', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'NetEase Song' }));
     await waitFor(() =>
-      expect(playMediaItem).toHaveBeenCalledWith({
+      expect(playMediaItem).toHaveBeenCalledWith(expect.objectContaining({
         item: expect.objectContaining({
           mediaType: 'streaming',
           provider: 'netease',
           providerTrackId: '123',
           quality: 'hires',
         }),
-      }),
+      })),
     );
   });
 
@@ -353,6 +384,111 @@ describe('PlaylistsPage actions menu', () => {
 
     await screen.findByRole('button', { name: 'Song One' });
     expect(screen.queryByRole('button', { name: 'Streaming quality' })).toBeNull();
+  });
+
+  it('starts playlist playback from the primary action and lets the user exit it', async () => {
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 180000,
+        filePath: request.filePath,
+      }),
+    );
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist()]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([item()])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '播放歌单' }));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-1' })));
+    expect(await screen.findByText('正在按歌单顺序播放：Road Mix')).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: '退出歌单播放' }));
+
+    expect(await screen.findByText('已退出歌单播放，恢复原队列')).toBeTruthy();
+  });
+
+  it('saves manual order changes for local playlists after dragging rows', async () => {
+    const firstItem = item();
+    const secondItem = item({
+      id: 'item-2',
+      mediaId: 'track-2',
+      titleSnapshot: 'Song Two',
+      position: 1,
+      track: track({ id: 'track-2', title: 'Song Two' }),
+    });
+    const movePlaylistItem = vi.fn().mockResolvedValue(undefined);
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ itemCount: 2 })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([firstItem, secondItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        movePlaylistItem,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    const firstRow = await screen.findByTestId('playlist-track-row-item-1');
+    const secondRow = await screen.findByTestId('playlist-track-row-item-2');
+    expect(firstRow).toHaveProperty('draggable', true);
+
+    const dataTransfer = dragDataTransfer();
+    fireEvent.dragStart(firstRow, { dataTransfer });
+    fireEvent.dragOver(secondRow, { dataTransfer });
+    fireEvent.drop(secondRow, { dataTransfer });
+
+    await waitFor(() => expect(movePlaylistItem).toHaveBeenCalledWith('playlist-1', 'item-1', 1));
+    expect(await screen.findByText('歌单顺序已保存')).toBeTruthy();
+  });
+
+  it('keeps remote playlists out of manual drag sorting', async () => {
+    const remoteTrackItem = item({
+      mediaType: 'stream_track',
+      mediaId: 'streaming:netease:123',
+      sourceProvider: 'netease',
+      sourceItemId: '123',
+      titleSnapshot: 'NetEase Song',
+      track: null,
+    });
+    const movePlaylistItem = vi.fn().mockResolvedValue(undefined);
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ sourceProvider: 'netease', sourcePlaylistId: '123' })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([remoteTrackItem])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+        movePlaylistItem,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    const remoteRow = await screen.findByTestId('playlist-track-row-item-1');
+    expect(remoteRow).toHaveProperty('draggable', false);
+
+    const dataTransfer = dragDataTransfer();
+    fireEvent.dragStart(remoteRow, { dataTransfer });
+    fireEvent.drop(remoteRow, { dataTransfer });
+
+    expect(movePlaylistItem).not.toHaveBeenCalled();
   });
 
   it('adds selected local audio files to the current local playlist', async () => {
@@ -561,6 +697,9 @@ describe('PlaylistsPage actions menu', () => {
       },
       playback: {
         getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ downloadsFeatureUnlocked: true }),
       },
       streaming: {
         resolvePlayback,

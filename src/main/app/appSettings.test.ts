@@ -154,6 +154,7 @@ describe('app settings normalization', () => {
     expect(settings.mvMaxQuality).toBe('max');
     expect(settings.mvAllow60fps).toBe(true);
     expect(settings.homeWaveformVisualizerEnabled).toBe(false);
+    expect(settings.homeRandomHeroTitleEnabled).toBe(true);
     expect(settings.gaplessPlaybackEnabled).toBe(false);
   });
 
@@ -186,6 +187,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ homeWaveformVisualizerEnabled: true }).homeWaveformVisualizerEnabled).toBe(true);
     expect(normalizeSettings({ homeWaveformVisualizerEnabled: false }).homeWaveformVisualizerEnabled).toBe(false);
     expect(normalizeSettings({ homeWaveformVisualizerEnabled: 'true' }).homeWaveformVisualizerEnabled).toBe(false);
+  });
+
+  it('keeps the home random hero title enabled unless explicitly disabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).homeRandomHeroTitleEnabled).toBe(true);
+    expect(normalizeSettings({ homeRandomHeroTitleEnabled: true }).homeRandomHeroTitleEnabled).toBe(true);
+    expect(normalizeSettings({ homeRandomHeroTitleEnabled: false }).homeRandomHeroTitleEnabled).toBe(false);
+    expect(normalizeSettings({ homeRandomHeroTitleEnabled: 'false' }).homeRandomHeroTitleEnabled).toBe(true);
   });
 
   it('normalizes automatic data backup settings safely', async () => {
@@ -1031,6 +1041,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: true }).audioAsioNativeDsdExperimentalEnabled).toBe(true);
     expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: false }).audioAsioNativeDsdExperimentalEnabled).toBe(false);
     expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: 'yes' as never }).audioAsioNativeDsdExperimentalEnabled).toBe(false);
+  });
+
+  it('keeps DSD auto volume lock disabled until explicitly enabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioDsdAutoVolumeLockEnabled).toBe(false);
+    expect(normalizeSettings({ audioDsdAutoVolumeLockEnabled: true }).audioDsdAutoVolumeLockEnabled).toBe(true);
+    expect(normalizeSettings({ audioDsdAutoVolumeLockEnabled: false }).audioDsdAutoVolumeLockEnabled).toBe(false);
+    expect(normalizeSettings({ audioDsdAutoVolumeLockEnabled: 'yes' as never }).audioDsdAutoVolumeLockEnabled).toBe(false);
   });
 
   it('keeps SOXR fallback enabled by default for stable playback', async () => {

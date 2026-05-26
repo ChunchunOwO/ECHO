@@ -53,6 +53,25 @@ const signalVisualReleaseMs = 190;
 const signalVisualMotionAttackMs = 82;
 const signalVisualMotionReleaseMs = 220;
 const signalVisualOpacityMs = 130;
+export const defaultHomeHeroTitle = '从你的音乐库开始播放。';
+export const homeHeroTitleOptions = [
+  '从这里开始听。',
+  '今天先听哪张专辑？',
+  '你的下一首在这里。',
+  '挑一首，马上开播。',
+  '把音乐库交给随机。',
+  '今天在用核电听歌吗？',
+  '#define int long long',
+  '不会还有人没开随机吧？',
+  '这首歌 O(1) 好听。',
+  '音量别太大，邻居会 AC。',
+  '正在把歌单编译进大脑。',
+  '缓存命中：快乐。',
+  '当前播放：赛博玄学。',
+  '从最近常听开始。',
+  '让收藏开始发声。',
+  '专辑封面已经排好队。',
+] as const;
 
 type HomeRouteId = Extract<AppRouteId, 'albums' | 'artists' | 'folders' | 'history' | 'inbox' | 'liked' | 'playlists' | 'queue' | 'songs'>;
 type RecentPanelMode = 'added' | 'played';
@@ -204,11 +223,20 @@ const emptyHomePageData: HomePageData = {
 let cachedHomePageData: HomePageData | null = null;
 let cachedRecentPanelMode: RecentPanelMode = 'added';
 let cachedHomeWaveformVisualizerEnabled: boolean | null = null;
+let cachedHomeRandomHeroTitleEnabled: boolean | null = null;
+let cachedHomeHeroTitle: string | null = null;
+
+const pickHomeHeroTitle = (): string => {
+  const index = Math.min(homeHeroTitleOptions.length - 1, Math.floor(Math.random() * homeHeroTitleOptions.length));
+  return homeHeroTitleOptions[index];
+};
 
 export const resetHomePageCacheForTest = (): void => {
   cachedHomePageData = null;
   cachedRecentPanelMode = 'added';
   cachedHomeWaveformVisualizerEnabled = null;
+  cachedHomeRandomHeroTitleEnabled = null;
+  cachedHomeHeroTitle = null;
 };
 
 const formatCompactNumber = (value: number): string => {
@@ -558,6 +586,9 @@ const navigateHomeRoute = (routeId: HomeRouteId): void => {
 const readHomeWaveformVisualizerEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.homeWaveformVisualizerEnabled === true;
 
+const readHomeRandomHeroTitleEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.homeRandomHeroTitleEnabled !== false;
+
 const useHomeWaveformVisualizerEnabled = (): boolean => {
   const [enabled, setEnabled] = useState(() => cachedHomeWaveformVisualizerEnabled ?? false);
 
@@ -570,6 +601,39 @@ const useHomeWaveformVisualizerEnabled = (): boolean => {
 
       const nextEnabled = readHomeWaveformVisualizerEnabled(settings);
       cachedHomeWaveformVisualizerEnabled = nextEnabled;
+      if (!cancelled) {
+        setEnabled(nextEnabled);
+      }
+    };
+
+    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => undefined);
+
+    const handleSettingsChanged = (event: Event): void => {
+      applySettings((event as CustomEvent<Partial<AppSettings> | null | undefined>).detail);
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  return enabled;
+};
+
+const useHomeRandomHeroTitleEnabled = (): boolean => {
+  const [enabled, setEnabled] = useState(() => cachedHomeRandomHeroTitleEnabled ?? true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'homeRandomHeroTitleEnabled')) {
+        return;
+      }
+
+      const nextEnabled = readHomeRandomHeroTitleEnabled(settings);
+      cachedHomeRandomHeroTitleEnabled = nextEnabled;
       if (!cancelled) {
         setEnabled(nextEnabled);
       }
@@ -1056,6 +1120,12 @@ export const HomePage = (): JSX.Element => {
   const focusTrack = queue.currentTrack ?? queue.lastPlayedTrack ?? recentTracks[0] ?? (recentHistory[0] ? trackFromHistory(recentHistory[0]) : null);
   const audioStatus = playbackStatusSnapshot.audioStatus;
   const homeWaveformVisualizerEnabled = useHomeWaveformVisualizerEnabled();
+  const homeRandomHeroTitleEnabled = useHomeRandomHeroTitleEnabled();
+  const [randomHomeHeroTitle] = useState(() => {
+    cachedHomeHeroTitle ??= pickHomeHeroTitle();
+    return cachedHomeHeroTitle;
+  });
+  const homeHeroTitle = homeRandomHeroTitleEnabled ? randomHomeHeroTitle : defaultHomeHeroTitle;
   const topArtist = stats?.topArtists[0]?.artist ?? focusTrack?.artist ?? 'ECHO';
 
   const playTrack = useCallback(
@@ -1456,7 +1526,7 @@ export const HomePage = (): JSX.Element => {
             <Radio size={15} />
             今日回声
           </span>
-          <h1>从你的音乐库开始播放。</h1>
+          <h1>{homeHeroTitle}</h1>
           <p>
             {focusTrack
               ? `接上 ${focusTrack.artist || '未知艺术家'} 的「${focusTrack.title}」，或者从最近入库里挑一张封面开始。`

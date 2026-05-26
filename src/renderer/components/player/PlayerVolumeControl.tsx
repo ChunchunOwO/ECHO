@@ -13,6 +13,7 @@ type PlayerVolumeControlProps = {
   onOpenChange: (isOpen: boolean) => void;
   onCommitVolume?: (volume: number) => Promise<void>;
   fixedVolumeEnabled?: boolean;
+  fixedVolumeAutoReason?: string | null;
   onFixedVolumeChange?: (enabled: boolean) => void;
 };
 
@@ -37,6 +38,7 @@ export const PlayerVolumeControl = ({
   onOpenChange,
   onCommitVolume,
   fixedVolumeEnabled = false,
+  fixedVolumeAutoReason = null,
   onFixedVolumeChange,
 }: PlayerVolumeControlProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
@@ -48,6 +50,7 @@ export const PlayerVolumeControl = ({
   const pendingCommitRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
   const Icon = volume <= 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+  const fixedVolumeToggleDisabled = Boolean(fixedVolumeAutoReason);
 
   useEffect(() => {
     if (isOpen) {
@@ -289,9 +292,10 @@ export const PlayerVolumeControl = ({
           <button
             className={`volume-fixed-button ${fixedVolumeEnabled ? 'volume-fixed-button--active' : ''}`}
             type="button"
+            disabled={fixedVolumeToggleDisabled}
             aria-pressed={fixedVolumeEnabled}
-            aria-label={fixedVolumeEnabled ? t('playerVolume.fixed.disable') : t('playerVolume.fixed.enable')}
-            title={fixedVolumeEnabled ? t('playerVolume.fixed.enabled') : t('playerVolume.fixed.title')}
+            aria-label={fixedVolumeAutoReason ?? (fixedVolumeEnabled ? t('playerVolume.fixed.disable') : t('playerVolume.fixed.enable'))}
+            title={fixedVolumeAutoReason ?? (fixedVolumeEnabled ? t('playerVolume.fixed.enabled') : t('playerVolume.fixed.title'))}
             onClick={() => void toggleFixedVolume()}
           >
             <Lock size={14} />

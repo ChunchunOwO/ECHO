@@ -246,7 +246,7 @@ html[data-theme="dark"] .lyrics-custom-lrc-drop {
 }
 
 .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-scroll {
-  width: min(100%, 1320px);
+  width: 100%;
   justify-self: center;
   padding-inline: clamp(22px, 5vw, 120px);
   transform: none;

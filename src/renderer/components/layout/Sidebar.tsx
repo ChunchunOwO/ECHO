@@ -77,9 +77,6 @@ export const Sidebar = ({
           );
         })}
       </nav>
-
-      <div className="sidebar-spacer" />
-
       <nav className="nav-list utility-nav" aria-label={t('app.navigation.utility')}>
         {utilityRoutes.map((route) => {
           const Icon = route.icon;

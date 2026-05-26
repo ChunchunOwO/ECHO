@@ -574,6 +574,24 @@
   cursor: pointer;
 }
 
+.track-row[data-draggable="true"] {
+  grid-template-columns: 20px 56px minmax(0, 1fr) 54px max-content;
+  cursor: grab;
+}
+
+.track-row[data-dragging="true"] {
+  opacity: 0.58;
+  transform: scale(0.995);
+}
+
+.track-row[data-drop-target="true"] {
+  border-color: var(--theme-accent-border);
+  background: var(--theme-list-row-bg-active);
+  box-shadow:
+    inset 3px 0 0 var(--theme-accent-solid-bg),
+    0 10px 24px rgba(35, 55, 80, 0.08);
+}
+
 .track-row:focus-visible {
   outline: 2px solid var(--theme-focus-ring);
   outline-offset: 1px;
@@ -607,6 +625,25 @@
   color: var(--theme-danger-text);
   border-color: var(--theme-danger-border);
   background: var(--theme-danger-bg);
+}
+
+.track-drag-handle {
+  display: grid;
+  width: 20px;
+  height: 36px;
+  place-items: center;
+  color: var(--theme-muted-text);
+  border-radius: 7px;
+  cursor: grab;
+}
+
+.track-drag-handle:hover {
+  color: var(--theme-accent-text);
+  background: var(--theme-control-bg);
+}
+
+.track-row[data-dragging="true"] .track-drag-handle {
+  cursor: grabbing;
 }
 
 .track-cover {

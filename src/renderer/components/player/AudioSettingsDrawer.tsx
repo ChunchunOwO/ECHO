@@ -778,6 +778,7 @@ export const AudioSettingsDrawer = ({
   const [useJuceDecode, setUseJuceDecode] = useState(status?.useJuceDecodeRequested === true);
   const [useDsdDop, setUseDsdDop] = useState(status?.dsdOutputModeRequested === 'dop');
   const [asioNativeDsdExperimentalEnabled, setAsioNativeDsdExperimentalEnabled] = useState(false);
+  const [dsdAutoVolumeLockEnabled, setDsdAutoVolumeLockEnabled] = useState(false);
   const [asioUnavailableFallbackEnabled, setAsioUnavailableFallbackEnabled] = useState(false);
   const [exclusiveInstabilityFallbackEnabled, setExclusiveInstabilityFallbackEnabled] = useState(false);
   const [soxrFallbackEnabled, setSoxrFallbackEnabled] = useState(true);
@@ -1059,6 +1060,7 @@ export const AudioSettingsDrawer = ({
         setUseJuceDecode(settings.audioUseJuceDecode === true);
         setUseDsdDop(settings.audioDsdOutputMode === 'dop');
         setAsioNativeDsdExperimentalEnabled(settings.audioAsioNativeDsdExperimentalEnabled === true);
+        setDsdAutoVolumeLockEnabled(settings.audioDsdAutoVolumeLockEnabled === true);
         setAsioUnavailableFallbackEnabled(settings.audioAsioUnavailableFallbackEnabled === true);
         setExclusiveInstabilityFallbackEnabled(settings.audioExclusiveInstabilityFallbackEnabled === true);
         setSoxrFallbackEnabled(settings.audioSoxrFallbackEnabled !== false);
@@ -1485,6 +1487,20 @@ export const AudioSettingsDrawer = ({
 
   const toggleAsioNativeDsdExperimental = (enabled: boolean): void => {
     toggleDsdDirectChain(enabled);
+  };
+
+  const toggleDsdAutoVolumeLock = (enabled: boolean): void => {
+    const previous = dsdAutoVolumeLockEnabled;
+    setDsdAutoVolumeLockEnabled(enabled);
+    void window.echo?.app
+      .setSettings({ audioDsdAutoVolumeLockEnabled: enabled })
+      .then((nextSettings) => {
+        window.dispatchEvent(new CustomEvent('settings:changed', { detail: nextSettings ?? { audioDsdAutoVolumeLockEnabled: enabled } }));
+      })
+      .catch((volumeLockError) => {
+        setDsdAutoVolumeLockEnabled(previous);
+        setError(volumeLockError instanceof Error ? volumeLockError.message : String(volumeLockError));
+      });
   };
 
   const toggleAsioUnavailableFallback = (enabled: boolean): void => {
@@ -2003,6 +2019,20 @@ export const AudioSettingsDrawer = ({
                 {t('audioDrawer.note.asioNativeDsd')}
                 <span className="audio-section-note-inline-warning">需要使用 ASIO</span>
               </p>
+
+              <label className="audio-toggle-row">
+                <span>
+                  <Lock size={17} />
+                  <strong>{t('audioDrawer.option.dsdAutoVolumeLock')}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={dsdAutoVolumeLockEnabled}
+                  disabled={isBusy}
+                  onChange={(event) => toggleDsdAutoVolumeLock(event.currentTarget.checked)}
+                />
+              </label>
+              <p>{t('audioDrawer.note.dsdAutoVolumeLock')}</p>
 
               <label className="audio-toggle-row">
                 <span>

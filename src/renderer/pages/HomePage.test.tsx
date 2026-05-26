@@ -13,7 +13,7 @@ import type {
 } from '../../shared/types/library';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
-import { HomePage, resetHomePageCacheForTest } from './HomePage';
+import { HomePage, defaultHomeHeroTitle, homeHeroTitleOptions, resetHomePageCacheForTest } from './HomePage';
 
 const queueState = vi.hoisted(() => ({
   value: {
@@ -317,13 +317,14 @@ const installLibraryMock = (overrides: Partial<NonNullable<Window['echo']>['libr
   return library;
 };
 
-const installAppSettingsMock = (settings: { homeWaveformVisualizerEnabled?: boolean } = {}) => {
-    const app = {
-      getSettings: vi.fn().mockResolvedValue({
-        homeWaveformVisualizerEnabled: false,
-        ...settings,
-      }),
-    };
+const installAppSettingsMock = (settings: { homeRandomHeroTitleEnabled?: boolean; homeWaveformVisualizerEnabled?: boolean } = {}) => {
+  const app = {
+    getSettings: vi.fn().mockResolvedValue({
+      homeRandomHeroTitleEnabled: true,
+      homeWaveformVisualizerEnabled: false,
+      ...settings,
+    }),
+  };
   window.echo = {
     ...(window.echo ?? {}),
     app,
@@ -386,6 +387,57 @@ describe('HomePage', () => {
     expect(document.querySelector('.home-recent-panel .home-played-rail img')?.getAttribute('src')).toBe('echo-cover://large/played-album-cover');
     expect(library.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 8, sort: 'recent' });
     expect(library.getPlaybackHistory).toHaveBeenCalledWith({ page: 1, pageSize: 12, sort: 'recent' });
+  });
+
+  it('picks one random hero title and keeps it stable for the home session', async () => {
+    installLibraryMock();
+    expect(homeHeroTitleOptions).toEqual(expect.arrayContaining(['今天在用核电听歌吗？', '#define int long long']));
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.62);
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    const expectedTitle = homeHeroTitleOptions[Math.floor(0.62 * homeHeroTitleOptions.length)];
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(expectedTitle);
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(expectedTitle);
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the fixed home title when random hero titles are disabled', async () => {
+    installLibraryMock();
+    installAppSettingsMock({ homeRandomHeroTitleEnabled: false });
+    vi.spyOn(Math, 'random').mockReturnValue(0.62);
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(defaultHomeHeroTitle));
+  });
+
+  it('updates the home hero title when the random setting changes', async () => {
+    installLibraryMock();
+    installAppSettingsMock({ homeRandomHeroTitleEnabled: true });
+    vi.spyOn(Math, 'random').mockReturnValue(0.62);
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    const expectedTitle = homeHeroTitleOptions[Math.floor(0.62 * homeHeroTitleOptions.length)];
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(expectedTitle);
+
+    window.dispatchEvent(new CustomEvent('settings:changed', { detail: { homeRandomHeroTitleEnabled: false } }));
+
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(defaultHomeHeroTitle));
+
+    window.dispatchEvent(new CustomEvent('settings:changed', { detail: { homeRandomHeroTitleEnabled: true } }));
+
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(expectedTitle));
   });
 
   it('reuses cached home data when the page mounts again', async () => {

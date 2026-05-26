@@ -126,6 +126,26 @@ type PlaybackModeMemory = {
   repeatMode: RepeatMode;
 };
 
+type PlaylistPlaybackSnapshot = {
+  items: QueueItem[];
+  history: QueueItem[];
+  currentQueueId: string | null;
+  currentTrackId: string | null;
+  lastPlayedTrack: LibraryTrack | null;
+  resume: PersistedPlaybackSessionResume | null;
+  mode: PlaybackModeMemory;
+  automixEnabled: boolean;
+};
+
+type PlaylistPlaybackState = {
+  active: boolean;
+  label: string | null;
+  playlistId: string | null;
+  snapshot: PlaylistPlaybackSnapshot | null;
+};
+
+type PlaylistPlaybackInfo = Pick<PlaylistPlaybackState, 'active' | 'label' | 'playlistId'>;
+
 const hqPlayerTakeoverStorageKey = 'echo-next.hqplayer-takeover-enabled';
 
 const readHqPlayerTakeoverEnabled = (): boolean => {
@@ -164,6 +184,13 @@ type ReplaceQueueOptions = {
   source?: QueueSource;
 };
 
+type PlayPlaylistSequenceOptions = {
+  label?: string;
+  playlistId?: string;
+  source?: QueueSource;
+  startTrackId?: string;
+};
+
 type PlayTrackOptions = {
   source?: QueueSource;
   replaceQueueWith?: LibraryTrack[];
@@ -172,6 +199,7 @@ type PlayTrackOptions = {
   forceHqPlayerConnect?: boolean;
   startSeconds?: number;
   forceRefresh?: boolean;
+  preservePlaylistPlayback?: boolean;
 };
 
 type PlayNextOptions = {
@@ -203,6 +231,7 @@ type PlaybackQueueContextValue = {
   automixEnabled: boolean;
   hqPlayerTakeoverEnabled: boolean;
   gaplessPlaybackEnabled: boolean;
+  playlistPlayback: PlaylistPlaybackInfo;
   canGoPrevious: boolean;
   canGoNext: boolean;
   replaceQueue: (tracks: LibraryTrack[], options?: ReplaceQueueOptions) => void;
@@ -215,6 +244,8 @@ type PlaybackQueueContextValue = {
   moveQueueItem: (fromIndex: number, toIndex: number) => void;
   playQueueItem: (queueId: string) => Promise<PlaybackStatus>;
   playTrack: (track: LibraryTrack, options?: PlayTrackOptions) => Promise<PlaybackStatus>;
+  playPlaylistSequence: (tracks: LibraryTrack[], options?: PlayPlaylistSequenceOptions) => Promise<PlaybackStatus | null>;
+  exitPlaylistSequence: () => Promise<PlaybackStatus | null>;
   openTemporaryLocalFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
   playPrevious: () => Promise<PlaybackStatus | null>;
   playNext: (options?: PlayNextOptions) => Promise<PlaybackStatus | null>;
@@ -308,6 +339,13 @@ const defaultHydratedPlaybackSession: HydratedPlaybackSession = {
   ...defaultPlaybackQueueMemory,
   mode: defaultPlaybackModeMemory,
   automixEnabled: false,
+};
+
+const defaultPlaylistPlaybackState: PlaylistPlaybackState = {
+  active: false,
+  label: null,
+  playlistId: null,
+  snapshot: null,
 };
 
 const isRepeatMode = (value: unknown): value is RepeatMode => value === 'off' || value === 'one' || value === 'all';
@@ -969,6 +1007,27 @@ const resolveSequentialNextItem = (items: QueueItem[], item: QueueItem, repeatMo
   return index === items.length - 1 && repeatMode === 'all' && items.length > 1 ? items[0] ?? null : null;
 };
 
+const resolveSnapshotResumeItem = (snapshot: PlaylistPlaybackSnapshot, mode: 'current' | 'next'): QueueItem | null => {
+  if (snapshot.items.length === 0) {
+    return null;
+  }
+
+  const currentIndex = findCurrentIndex(snapshot.items, snapshot.currentQueueId, snapshot.currentTrackId);
+  if (mode === 'current') {
+    return currentIndex >= 0 ? snapshot.items[currentIndex] ?? null : snapshot.items[0] ?? null;
+  }
+
+  if (currentIndex < 0) {
+    return snapshot.items[0] ?? null;
+  }
+
+  if (currentIndex < snapshot.items.length - 1) {
+    return snapshot.items[currentIndex + 1] ?? null;
+  }
+
+  return snapshot.mode.repeatMode === 'all' && snapshot.items.length > 1 ? snapshot.items[0] ?? null : null;
+};
+
 const resolveSequentialAutomixNextItem = (items: QueueItem[], item: QueueItem, repeatMode: RepeatMode): QueueItem | null => {
   const index = items.findIndex((candidate) => candidate.queueId === item.queueId);
   if (index < 0) {
@@ -1068,6 +1127,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const [automixEnabled, setAutomixEnabledState] = useState(initialSession.automixEnabled);
   const [hqPlayerTakeoverEnabled, setHqPlayerTakeoverEnabledState] = useState(readHqPlayerTakeoverEnabled);
   const [gaplessPlaybackEnabled, setGaplessPlaybackEnabledState] = useState(false);
+  const [playlistPlaybackState, setPlaylistPlaybackState] = useState<PlaylistPlaybackState>(defaultPlaylistPlaybackState);
 
   const itemsRef = useRef(items);
   const currentQueueIdRef = useRef(currentQueueId);
@@ -1081,6 +1141,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const gaplessPlaybackEnabledRef = useRef(gaplessPlaybackEnabled);
   const audioAnalysisEnabledRef = useRef<boolean | null>(null);
   const isShuffleEnabledRef = useRef(isShuffleEnabled);
+  const playlistPlaybackStateRef = useRef(playlistPlaybackState);
   const playbackHistorySessionRef = useRef<PlaybackHistorySession | null>(null);
   const pausedSessionTimerRef = useRef<number | null>(null);
   const playRequestTokenRef = useRef(0);
@@ -1124,6 +1185,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     const resolved = typeof nextHistory === 'function' ? nextHistory(historyRef.current) : nextHistory;
     historyRef.current = resolved;
     setHistoryState(resolved);
+  }, []);
+
+  const setPlaylistPlaybackStateInternal = useCallback((state: PlaylistPlaybackState): void => {
+    playlistPlaybackStateRef.current = state;
+    setPlaylistPlaybackState(state);
   }, []);
 
   const setResumeMemory = useCallback((resume: PersistedPlaybackSessionResume | null): void => {
@@ -1191,25 +1257,86 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       const hydratedAutomixEnabled = automixTemporarilyDisabled ? false : session.automixEnabled;
       automixEnabledRef.current = hydratedAutomixEnabled;
       setAutomixEnabledState(hydratedAutomixEnabled);
+      setPlaylistPlaybackStateInternal(defaultPlaylistPlaybackState);
+    },
+    [setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setItems, setLastPlayedTrack, setPlaylistPlaybackStateInternal, setResumeMemory],
+  );
+
+  const createPlaylistPlaybackSnapshot = useCallback((): PlaylistPlaybackSnapshot => ({
+    items: itemsRef.current,
+    history: historyRef.current,
+    currentQueueId: currentQueueIdRef.current,
+    currentTrackId: currentTrackIdRef.current,
+    lastPlayedTrack: lastPlayedTrackRef.current,
+    resume: resumeMemoryRef.current,
+    mode: {
+      isShuffleEnabled: isShuffleEnabledRef.current,
+      repeatMode: repeatModeRef.current,
+    },
+    automixEnabled: automixTemporarilyDisabled ? false : automixEnabledRef.current,
+  }), []);
+
+  const applyPlaylistPlaybackSnapshot = useCallback(
+    (snapshot: PlaylistPlaybackSnapshot): void => {
+      setItems(snapshot.items);
+      setHistory(snapshot.history);
+      setCurrentQueueId(snapshot.currentQueueId);
+      setCurrentTrackIdInternal(snapshot.currentTrackId);
+      setLastPlayedTrack(snapshot.lastPlayedTrack);
+      setResumeMemory(snapshot.resume);
+      isShuffleEnabledRef.current = snapshot.mode.isShuffleEnabled;
+      setIsShuffleEnabled(snapshot.mode.isShuffleEnabled);
+      repeatModeRef.current = snapshot.mode.repeatMode;
+      setRepeatMode(snapshot.mode.repeatMode);
+      const nextAutomixEnabled = automixTemporarilyDisabled ? false : snapshot.automixEnabled;
+      automixEnabledRef.current = nextAutomixEnabled;
+      setAutomixEnabledState(nextAutomixEnabled);
     },
     [setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setItems, setLastPlayedTrack, setResumeMemory],
   );
 
-  const createCurrentPersistedSession = useCallback((): PersistedPlaybackSessionV1 =>
-    createPersistedSessionSnapshot({
-      version: 1,
-      items: itemsRef.current,
-      currentQueueId: currentQueueIdRef.current,
-      currentTrackId: currentTrackIdRef.current,
-      lastPlayedTrack: lastPlayedTrackRef.current,
-      history: historyRef.current,
-      resume: resumeMemoryRef.current,
-      mode: {
-        isShuffleEnabled: isShuffleEnabledRef.current,
-        repeatMode: repeatModeRef.current,
-      },
-      automixEnabled: automixTemporarilyDisabled ? false : automixEnabledRef.current,
-    }), []);
+  const restorePlaylistPlaybackSnapshotOnly = useCallback((): PlaylistPlaybackSnapshot | null => {
+    const playlistState = playlistPlaybackStateRef.current;
+    if (!playlistState.active || !playlistState.snapshot) {
+      return null;
+    }
+
+    setPlaylistPlaybackStateInternal(defaultPlaylistPlaybackState);
+    applyPlaylistPlaybackSnapshot(playlistState.snapshot);
+    return playlistState.snapshot;
+  }, [applyPlaylistPlaybackSnapshot, setPlaylistPlaybackStateInternal]);
+
+  const createCurrentPersistedSession = useCallback((): PersistedPlaybackSessionV1 => {
+    const playlistSnapshot = playlistPlaybackStateRef.current.active ? playlistPlaybackStateRef.current.snapshot : null;
+    const session: HydratedPlaybackSession = playlistSnapshot
+      ? {
+          version: 1,
+          items: playlistSnapshot.items,
+          currentQueueId: playlistSnapshot.currentQueueId,
+          currentTrackId: playlistSnapshot.currentTrackId,
+          lastPlayedTrack: playlistSnapshot.lastPlayedTrack,
+          history: playlistSnapshot.history,
+          resume: playlistSnapshot.resume,
+          mode: playlistSnapshot.mode,
+          automixEnabled: playlistSnapshot.automixEnabled,
+        }
+      : {
+          version: 1,
+          items: itemsRef.current,
+          currentQueueId: currentQueueIdRef.current,
+          currentTrackId: currentTrackIdRef.current,
+          lastPlayedTrack: lastPlayedTrackRef.current,
+          history: historyRef.current,
+          resume: resumeMemoryRef.current,
+          mode: {
+            isShuffleEnabled: isShuffleEnabledRef.current,
+            repeatMode: repeatModeRef.current,
+          },
+          automixEnabled: automixTemporarilyDisabled ? false : automixEnabledRef.current,
+        };
+
+    return createPersistedSessionSnapshot(session);
+  }, []);
 
   const persistPlaybackSessionNow = useCallback(async (): Promise<void> => {
     if (!sessionHydratedRef.current) {
@@ -2300,8 +2427,86 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     };
   }, [finishPlaybackHistorySession, prepareNextMediaItem, schedulePlaybackSessionPersistence, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setLastPlayedTrack, startPlaybackHistorySession]);
 
+  const finishPlaylistSequence = useCallback(
+    async (resumeMode: 'current' | 'next'): Promise<PlaybackStatus | null> => {
+      const playlistState = playlistPlaybackStateRef.current;
+      if (!playlistState.active || !playlistState.snapshot) {
+        return null;
+      }
+
+      const snapshot = playlistState.snapshot;
+      const target = resolveSnapshotResumeItem(snapshot, resumeMode);
+      applyPlaylistPlaybackSnapshot(snapshot);
+      setPlaylistPlaybackStateInternal(defaultPlaylistPlaybackState);
+
+      if (!target) {
+        schedulePlaybackSessionPersistence();
+        return null;
+      }
+
+      const status = await playLocalTrack(target, { routeToConnectOutput: true });
+      commitPlayedItem(target, status, { recordHistory: false, previousItem: null });
+      return status;
+    },
+    [applyPlaylistPlaybackSnapshot, commitPlayedItem, playLocalTrack, schedulePlaybackSessionPersistence, setPlaylistPlaybackStateInternal],
+  );
+
+  const exitPlaylistSequence = useCallback((): Promise<PlaybackStatus | null> => finishPlaylistSequence('current'), [finishPlaylistSequence]);
+
+  const playPlaylistSequence = useCallback(
+    async (tracks: LibraryTrack[], options: PlayPlaylistSequenceOptions = {}): Promise<PlaybackStatus | null> => {
+      const playableTracks = tracks.filter((track) => track.unavailable !== true);
+      if (playableTracks.length === 0) {
+        return null;
+      }
+
+      const source = options.source ?? manualSource;
+      const currentPlaylistState = playlistPlaybackStateRef.current;
+      const snapshot = currentPlaylistState.active && currentPlaylistState.snapshot
+        ? currentPlaylistState.snapshot
+        : createPlaylistPlaybackSnapshot();
+      const nextItems = playableTracks.map((track) => createQueueItem(track, source));
+      const itemToPlay =
+        (options.startTrackId ? nextItems.find((item) => item.track.id === options.startTrackId) : null) ??
+        nextItems[0] ??
+        null;
+
+      if (!itemToPlay) {
+        return null;
+      }
+
+      setPlaylistPlaybackStateInternal({
+        active: true,
+        label: options.label ?? source.label,
+        playlistId: options.playlistId ?? null,
+        snapshot,
+      });
+      isShuffleEnabledRef.current = false;
+      setIsShuffleEnabled(false);
+      repeatModeRef.current = 'off';
+      setRepeatMode('off');
+
+      try {
+        const status = await playLocalTrack(itemToPlay, { routeToConnectOutput: true });
+        setItems(nextItems);
+        setHistory([]);
+        commitPlayedItem(itemToPlay, status, { recordHistory: false, previousItem: null });
+        return status;
+      } catch (error) {
+        const latestPlaylistState = playlistPlaybackStateRef.current;
+        if (latestPlaylistState.active && latestPlaylistState.snapshot === snapshot) {
+          setPlaylistPlaybackStateInternal(defaultPlaylistPlaybackState);
+          applyPlaylistPlaybackSnapshot(snapshot);
+        }
+        throw error;
+      }
+    },
+    [applyPlaylistPlaybackSnapshot, commitPlayedItem, createPlaylistPlaybackSnapshot, playLocalTrack, setHistory, setItems, setPlaylistPlaybackStateInternal],
+  );
+
   const replaceQueue = useCallback(
     (tracks: LibraryTrack[], options: ReplaceQueueOptions = {}): void => {
+      restorePlaylistPlaybackSnapshotOnly();
       const nextItems = tracks.map((track) => createQueueItem(track, options.source ?? manualSource));
       const startItem = options.startTrackId ? nextItems.find((item) => item.track.id === options.startTrackId) ?? null : null;
 
@@ -2312,14 +2517,15 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         setCurrentTrackIdInternal(startItem.track.id);
       }
     },
-    [setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setItems],
   );
 
   const appendToQueue = useCallback(
     (track: LibraryTrack, source: QueueSource = manualSource): void => {
+      restorePlaylistPlaybackSnapshotOnly();
       setItems((current) => [...current, createQueueItem(track, source)]);
     },
-    [setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setItems],
   );
 
   const appendTracksToQueue = useCallback(
@@ -2328,13 +2534,15 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         return;
       }
 
+      restorePlaylistPlaybackSnapshotOnly();
       setItems((current) => [...current, ...tracks.map((track) => createQueueItem(track, source))]);
     },
-    [setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setItems],
   );
 
   const playTrackNext = useCallback(
     (track: LibraryTrack, source: QueueSource = manualSource): void => {
+      restorePlaylistPlaybackSnapshotOnly();
       setItems((current) => {
         const currentIndex = findCurrentIndex(current, currentQueueIdRef.current, currentTrackIdRef.current);
         const insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
@@ -2342,11 +2550,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         return [...current.slice(0, insertIndex), nextItem, ...current.slice(insertIndex)];
       });
     },
-    [setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setItems],
   );
 
   const removeQueueItem = useCallback(
     (queueId: string): void => {
+      restorePlaylistPlaybackSnapshotOnly();
       setItems((current) => current.filter((item) => item.queueId !== queueId));
       setHistory((current) => current.filter((item) => item.queueId !== queueId));
 
@@ -2354,11 +2563,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         setCurrentQueueId(null);
       }
     },
-    [setCurrentQueueId, setHistory, setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setCurrentQueueId, setHistory, setItems],
   );
 
   const removeTrackFromQueue = useCallback(
     (trackId: string): number => {
+      restorePlaylistPlaybackSnapshotOnly();
       const queuedCount = itemsRef.current.filter((item) => item.track.id === trackId).length;
       if (queuedCount === 0) {
         return 0;
@@ -2374,17 +2584,19 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
       return queuedCount;
     },
-    [setCurrentQueueId, setHistory, setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setCurrentQueueId, setHistory, setItems],
   );
 
   const clearQueue = useCallback((): void => {
+    restorePlaylistPlaybackSnapshotOnly();
     setItems([]);
     setHistory([]);
     setCurrentQueueId(null);
-  }, [setCurrentQueueId, setHistory, setItems]);
+  }, [restorePlaylistPlaybackSnapshotOnly, setCurrentQueueId, setHistory, setItems]);
 
   const moveQueueItem = useCallback(
     (fromIndex: number, toIndex: number): void => {
+      restorePlaylistPlaybackSnapshotOnly();
       setItems((current) => {
         if (current.length === 0 || fromIndex < 0 || fromIndex >= current.length) {
           return current;
@@ -2396,7 +2608,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         return next;
       });
     },
-    [setItems],
+    [restorePlaylistPlaybackSnapshotOnly, setItems],
   );
 
   const playQueueItem = useCallback(
@@ -2493,6 +2705,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
   const playTrack = useCallback(
     async (track: LibraryTrack, options: PlayTrackOptions = {}): Promise<PlaybackStatus> => {
+      if (options.preservePlaylistPlayback !== true) {
+        restorePlaylistPlaybackSnapshotOnly();
+      }
       const source = options.source ?? manualSource;
       const replacementTracks = options.replaceQueueWith;
       const previousItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
@@ -2537,7 +2752,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       commitPlayedItem(itemToPlay, status, { previousItem });
       return status;
     },
-    [commitPlayedItem, playLocalTrack, setHistory, setItems],
+    [commitPlayedItem, playLocalTrack, restorePlaylistPlaybackSnapshotOnly, setHistory, setItems],
   );
 
   const openTemporaryLocalFiles = useCallback(
@@ -2556,6 +2771,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       const source: QueueSource = { type: 'local-file', label: 'Local files' };
       const nextItems = result.tracks.map((track) => createQueueItem(track, source));
       const firstItem = nextItems[0];
+      restorePlaylistPlaybackSnapshotOnly();
       const previousItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
       const status = await playLocalTrack(firstItem, { routeToConnectOutput: true });
 
@@ -2564,7 +2780,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
       return result;
     },
-    [commitPlayedItem, playLocalTrack, setItems],
+    [commitPlayedItem, playLocalTrack, restorePlaylistPlaybackSnapshotOnly, setItems],
   );
 
   const playPrevious = useCallback(async (): Promise<PlaybackStatus | null> => {
@@ -2673,6 +2889,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
 
     if (!target) {
+      if (playlistPlaybackStateRef.current.active) {
+        return finishPlaylistSequence('next');
+      }
+
       return activeRepeatMode === 'one' ? repeatCurrentItem() : null;
     }
 
@@ -2687,7 +2907,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
     commitPlayedItem(target, status);
     return status;
-  }, [commitPlayedItem, fetchLibraryRandomQueueRefresh, fetchLibraryShuffleTarget, isHqPlayerConnectOutputActive, playLocalTrack, playTrack, setHistory, setItems]);
+  }, [commitPlayedItem, fetchLibraryRandomQueueRefresh, fetchLibraryShuffleTarget, finishPlaylistSequence, isHqPlayerConnectOutputActive, playLocalTrack, playTrack, setHistory, setItems]);
 
   const activateHqPlayerTakeover = useCallback(async (): Promise<PlaybackStatus | null> => {
     const activeItem =
@@ -2852,8 +3072,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return true;
     }
 
+    if (playlistPlaybackState.active && currentIndex >= items.length - 1 && playlistPlaybackState.snapshot) {
+      return Boolean(resolveSnapshotResumeItem(playlistPlaybackState.snapshot, 'next'));
+    }
+
     return currentIndex < 0 || currentIndex < items.length - 1 || repeatMode === 'all';
-  }, [currentItem, currentQueueId, currentTrackId, history, isShuffleEnabled, items, lastPlayedTrack, repeatMode]);
+  }, [currentItem, currentQueueId, currentTrackId, history, isShuffleEnabled, items, lastPlayedTrack, playlistPlaybackState, repeatMode]);
 
   const value = useMemo<PlaybackQueueContextValue>(
     () => ({
@@ -2870,6 +3094,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       automixEnabled,
       hqPlayerTakeoverEnabled,
       gaplessPlaybackEnabled,
+      playlistPlayback: {
+        active: playlistPlaybackState.active,
+        label: playlistPlaybackState.label,
+        playlistId: playlistPlaybackState.playlistId,
+      },
       canGoPrevious,
       canGoNext,
       replaceQueue,
@@ -2882,6 +3111,8 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       moveQueueItem,
       playQueueItem,
       playTrack,
+      playPlaylistSequence,
+      exitPlaylistSequence,
       openTemporaryLocalFiles,
       playPrevious,
       playNext,
@@ -2905,6 +3136,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       currentQueueId,
       currentTrack,
       currentTrackId,
+      exitPlaylistSequence,
       history,
       activateHqPlayerTakeover,
       automixEnabled,
@@ -2915,9 +3147,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       lastPlayedTrack,
       moveQueueItem,
       playNext,
+      playPlaylistSequence,
       playPrevious,
       playQueueItem,
       playTrack,
+      playlistPlaybackState,
       setHqPlayerTakeoverEnabled,
       openTemporaryLocalFiles,
       playTrackNext,

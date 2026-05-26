@@ -46,6 +46,7 @@ const receiverOptions = {
   name: 'ECHO Next',
   model: 'ECHO-Next-AirPlay-Spike',
   metadata: true,
+  latencies: '1000:1000',
   portBase: 49000,
   portRange: 10,
 };

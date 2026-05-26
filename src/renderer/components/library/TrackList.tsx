@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
+import type { DragEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { TrackRow } from './TrackRow';
@@ -30,12 +31,19 @@ type TrackListProps = {
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
   onVisibleTrackIdsChange?: (trackIds: string[]) => void;
+  isTrackDraggable?: (track: LibraryTrack) => boolean;
+  draggedTrackId?: string | null;
+  dropTargetTrackId?: string | null;
+  onTrackDragStart?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onTrackDragOver?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onTrackDrop?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
+  onTrackDragEnd?: (event: DragEvent<HTMLDivElement>, track: LibraryTrack) => void;
 };
 
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, isTrackDraggable, draggedTrackId = null, dropTargetTrackId = null, onTrackDragStart, onTrackDragOver, onTrackDrop, onTrackDragEnd }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
@@ -213,6 +221,9 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
                       isSelected={selectedTrackIds[track.id] === true}
                       duplicateHiddenCount={duplicateHiddenCounts[track.id] ?? 0}
                       track={track}
+                      isDraggable={isTrackDraggable?.(track) ?? false}
+                      isDragging={draggedTrackId === (track.playlistItemId ?? track.id)}
+                      isDropTarget={dropTargetTrackId === (track.playlistItemId ?? track.id)}
                       onPlay={onPlay}
                       onToggleSelected={onToggleSelected}
                       onAddToQueue={onAddToQueue}
@@ -224,6 +235,10 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
                       downloadProgress={downloadProgressByTrackId[track.id]}
                       onShowVersions={onShowVersions}
                       onOpenMenu={onOpenTrackMenu}
+                      onDragStart={onTrackDragStart}
+                      onDragOver={onTrackDragOver}
+                      onDrop={onTrackDrop}
+                      onDragEnd={onTrackDragEnd}
                     />
                   ) : (
                     <div className="track-row track-row-skeleton" role="listitem" aria-label="Loading track" data-skeleton="true">

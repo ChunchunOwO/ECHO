@@ -1022,8 +1022,9 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 .settings-page #settings-sec-integrations > .settings-account-panel {
   order: -90;
   padding: 0 0 14px;
-  border-top: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--theme-panel-border) 70%, transparent);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .settings-page .settings-account-panel-header {

@@ -3700,6 +3700,25 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-home-random-hero-title',
+        sectionKey: 'general',
+        targetId: 'settings-row-home-random-hero-title',
+        title: t('settings.general.homeRandomHeroTitle.title'),
+        description: t('settings.general.homeRandomHeroTitle.description'),
+        terms: [
+          t('settings.general.homeRandomHeroTitle.title'),
+          t('settings.general.homeRandomHeroTitle.description'),
+          '首页随机标题',
+          '主页随机标题',
+          '随机标题',
+          '网络梗',
+          'random',
+          'random title',
+          'home random title',
+          '#define int long long',
+        ],
+      },
+      {
         id: 'row-artist-streaming-albums',
         sectionKey: 'general',
         targetId: 'settings-row-artist-streaming-albums',
@@ -6245,7 +6264,7 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     if (!cookie) {
-      setAccountErrors((current) => ({ ...current, [provider]: '请先粘贴 Cookie。网页登录不会自动同步到 ECHO Next。' }));
+      setAccountErrors((current) => ({ ...current, [provider]: '请先粘贴 Cookie；或使用“登录并同步”自动保存登录 Cookie。' }));
       return;
     }
 
@@ -6272,7 +6291,7 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     if (provider !== 'spotify' && !accountStatusByProvider[provider]?.connected && accountCookies[provider].trim().length === 0) {
-      setAccountErrors((current) => ({ ...current, [provider]: '尚未保存 Cookie。请先打开登录页，在网页登录后复制 Cookie 并保存。' }));
+      setAccountErrors((current) => ({ ...current, [provider]: '尚未保存 Cookie。请先使用“登录并同步”自动保存，或手动粘贴 Cookie 后保存。' }));
       return;
     }
 
@@ -8379,6 +8398,22 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       homeWaveformVisualizerEnabled: appSettings?.homeWaveformVisualizerEnabled !== true,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-home-random-hero-title"
+                highlighted={highlightedSettingId === 'settings-row-home-random-hero-title'}
+                title={t('settings.general.homeRandomHeroTitle.title')}
+                description={t('settings.general.homeRandomHeroTitle.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.homeRandomHeroTitleEnabled ?? true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      homeRandomHeroTitleEnabled: !(appSettings?.homeRandomHeroTitleEnabled ?? true),
                     })
                   }
                 />

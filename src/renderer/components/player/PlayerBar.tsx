@@ -9,6 +9,7 @@ import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { MiniPlayerState } from '../../../shared/types/miniPlayer';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
+import { translateFallback } from '../../i18n/I18nProvider';
 import {
   isSpotifyTrack,
   pauseSpotifyPlayback,
@@ -124,6 +125,23 @@ const readFixedVolumeEnabledPatch = (patch: unknown): boolean | null => {
   return typeof value === 'boolean' ? value : null;
 };
 
+const readDsdAutoVolumeLockEnabled = (settings: unknown): boolean => {
+  if (!settings || typeof settings !== 'object') {
+    return false;
+  }
+
+  return (settings as { audioDsdAutoVolumeLockEnabled?: unknown }).audioDsdAutoVolumeLockEnabled === true;
+};
+
+const readDsdAutoVolumeLockEnabledPatch = (patch: unknown): boolean | null => {
+  if (!patch || typeof patch !== 'object') {
+    return null;
+  }
+
+  const value = (patch as { audioDsdAutoVolumeLockEnabled?: unknown }).audioDsdAutoVolumeLockEnabled;
+  return typeof value === 'boolean' ? value : null;
+};
+
 const audioExportFormatSet = new Set<AudioExportFormat>(audioExportFormats);
 const audioExportFormatLabels: Record<AudioExportFormat, string> = {
   mp3: 'MP3',
@@ -155,6 +173,27 @@ const formatPlaybackRate = (value: unknown): string => {
   const numeric = Number(value);
   const safeRate = Number.isFinite(numeric) ? Math.max(0.5, Math.min(2, numeric)) : 1;
   return `${safeRate.toFixed(2)}x`;
+};
+
+const clampPlayerVolume = (value: unknown, fallback = 1): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : fallback;
+};
+
+const isDsdVolumeLockStatus = (status: AudioStatus | null): boolean => {
+  if (!status || ['idle', 'stopped', 'ended', 'error'].includes(status.state)) {
+    return false;
+  }
+
+  if (status.activeDsdOutputMode) {
+    return true;
+  }
+
+  if (/(?:dsd|dsf|dff)/i.test(status.codec ?? '')) {
+    return true;
+  }
+
+  return /\.(?:dsf|dff)$/i.test(status.currentFilePath ?? '');
 };
 
 type PlayerDownloadNotice = {
@@ -482,6 +521,8 @@ export const PlayerBar = ({
   const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
   const [playerWaveformProgressEnabled, setPlayerWaveformProgressEnabled] = useState(false);
   const [fixedVolumeEnabled, setFixedVolumeEnabled] = useState(false);
+  const [dsdAutoVolumeLockEnabled, setDsdAutoVolumeLockEnabled] = useState(false);
+  const [dsdAutoVolumeLocked, setDsdAutoVolumeLocked] = useState(false);
   const [audioExportFormat, setAudioExportFormat] = useState<AudioExportFormat>('mp3');
   const [isAudioExporting, setIsAudioExporting] = useState(false);
   const [miniPlayerState, setMiniPlayerState] = useState<MiniPlayerState | null>(null);
@@ -508,6 +549,8 @@ export const PlayerBar = ({
     trackKey: null as string | null,
     updatedAtMs: performance.now(),
   });
+  const dsdAutoVolumeLockRestoreRef = useRef<number | null>(null);
+  const dsdAutoVolumeLockRequestRef = useRef(0);
 
   const shouldIgnoreAudioStatus = useCallback((nextAudioStatus: AudioStatus): boolean => {
     const lastAction = lastPlaybackActionStatusRef.current;
@@ -734,6 +777,11 @@ export const PlayerBar = ({
   const streamingTrackBpmConfidence = currentTrack?.bpmConfidence ?? null;
   const streamingTrackAnalysisStatus = currentTrack?.analysisStatus ?? null;
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
+  const shouldAutoLockDsdVolume =
+    dsdAutoVolumeLockEnabled &&
+    !fixedVolumeEnabled &&
+    !isSpotifyCurrentTrack &&
+    isDsdVolumeLockStatus(playbackAudioStatus);
   const currentLibraryArtistName = currentTrack?.artist?.trim() || currentTrack?.albumArtist?.trim() || '';
   const canOpenCurrentArtist = Boolean(currentLibraryArtistName);
   const currentExportPlaybackRate = playbackAudioStatus?.playbackRate ?? audioStatus?.playbackRate ?? 1;
@@ -761,6 +809,59 @@ export const PlayerBar = ({
       console.warn('Failed to open artist detail from player bar', error);
     });
   }, [currentLibraryArtistName]);
+
+  useEffect(() => {
+    const audio = window.echo?.audio;
+    if (!audio) {
+      return;
+    }
+
+    const applyVolume = async (volume: number): Promise<void> => {
+      const requestId = ++dsdAutoVolumeLockRequestRef.current;
+      const nextStatus = await audio.setOutput({ volume });
+      if (dsdAutoVolumeLockRequestRef.current === requestId) {
+        setAudioStatus(nextStatus);
+      }
+    };
+
+    if (shouldAutoLockDsdVolume) {
+      if (dsdAutoVolumeLocked) {
+        return;
+      }
+
+      const restoreVolume = clampPlayerVolume(playbackAudioStatus?.volume ?? audioStatus?.volume, 1);
+      dsdAutoVolumeLockRestoreRef.current = restoreVolume < 0.999 ? restoreVolume : null;
+      setDsdAutoVolumeLocked(true);
+      void applyVolume(1).catch((volumeError) => {
+        setDsdAutoVolumeLocked(false);
+        dsdAutoVolumeLockRestoreRef.current = null;
+        setError(volumeError instanceof Error ? volumeError.message : String(volumeError));
+      });
+      return;
+    }
+
+    if (!dsdAutoVolumeLocked) {
+      return;
+    }
+
+    const restoreVolume = dsdAutoVolumeLockRestoreRef.current;
+    dsdAutoVolumeLockRestoreRef.current = null;
+    setDsdAutoVolumeLocked(false);
+
+    if (fixedVolumeEnabled || restoreVolume === null) {
+      return;
+    }
+
+    void applyVolume(restoreVolume).catch((volumeError) => {
+      setError(volumeError instanceof Error ? volumeError.message : String(volumeError));
+    });
+  }, [
+    audioStatus?.volume,
+    dsdAutoVolumeLocked,
+    fixedVolumeEnabled,
+    playbackAudioStatus?.volume,
+    shouldAutoLockDsdVolume,
+  ]);
 
   const clearStreamingDownloadNoticeTimer = useCallback((): void => {
     if (streamingDownloadNoticeTimerRef.current !== null) {
@@ -1058,6 +1159,7 @@ export const PlayerBar = ({
         setAudioAnalysisEnabled(true);
         setPlayerWaveformProgressEnabled(false);
         setFixedVolumeEnabled(false);
+        setDsdAutoVolumeLockEnabled(false);
         setAudioExportFormat('mp3');
         return;
       }
@@ -1068,6 +1170,7 @@ export const PlayerBar = ({
             setAudioAnalysisEnabled(readAudioAnalysisEnabled(settings));
             setPlayerWaveformProgressEnabled(readPlayerWaveformProgressEnabled(settings));
             setFixedVolumeEnabled(readFixedVolumeEnabled(settings));
+            setDsdAutoVolumeLockEnabled(readDsdAutoVolumeLockEnabled(settings));
             setAudioExportFormat(readAudioExportFormat(settings));
           }
         })
@@ -1076,6 +1179,7 @@ export const PlayerBar = ({
             setAudioAnalysisEnabled(true);
             setPlayerWaveformProgressEnabled(false);
             setFixedVolumeEnabled(false);
+            setDsdAutoVolumeLockEnabled(false);
             setAudioExportFormat('mp3');
           }
         });
@@ -1094,6 +1198,10 @@ export const PlayerBar = ({
         const fixedVolumePatch = readFixedVolumeEnabledPatch(event.detail);
         if (fixedVolumePatch !== null) {
           setFixedVolumeEnabled(fixedVolumePatch);
+        }
+        const dsdAutoVolumeLockPatch = readDsdAutoVolumeLockEnabledPatch(event.detail);
+        if (dsdAutoVolumeLockPatch !== null) {
+          setDsdAutoVolumeLockEnabled(dsdAutoVolumeLockPatch);
         }
         const audioExportFormatPatch = readAudioExportFormatPatch(event.detail);
         if (audioExportFormatPatch !== null) {
@@ -2098,7 +2206,8 @@ export const PlayerBar = ({
         </button>
         <PlayerVolumeControl
           status={audioStatus}
-          fixedVolumeEnabled={fixedVolumeEnabled}
+          fixedVolumeEnabled={fixedVolumeEnabled || dsdAutoVolumeLocked}
+          fixedVolumeAutoReason={dsdAutoVolumeLocked ? translateFallback('playerVolume.fixed.dsdAutoLocked') : null}
           isOpen={openPopover === 'volume'}
           onError={setError}
           onFixedVolumeChange={setFixedVolumeEnabled}

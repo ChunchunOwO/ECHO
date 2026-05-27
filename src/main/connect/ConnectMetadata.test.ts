@@ -68,7 +68,7 @@ describe('Connect metadata', () => {
     expect(xml).toContain('<dc:title>A &amp; &lt;B&gt;</dc:title>');
     expect(xml).toContain('<upnp:artist>Artist &quot;Q&quot;</upnp:artist>');
     expect(xml).toContain('<upnp:album>Album &apos;Z&apos;</upnp:album>');
-    expect(xml).toContain('<upnp:albumArtURI>http://192.168.1.20:45000/connect/cover/a&amp;b</upnp:albumArtURI>');
+    expect(xml).toContain('<upnp:albumArtURI dlna:profileID="JPEG_TN">http://192.168.1.20:45000/connect/cover/a&amp;b</upnp:albumArtURI>');
     expect(xml).toContain(`protocolInfo="${protocolInfoForMime('audio/mpeg')}"`);
     expect(xml).toContain('size="123456"');
   });

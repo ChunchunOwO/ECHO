@@ -1075,7 +1075,20 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
     let mimeType = mimeTypeForAudioPath(filePath);
     let sizeBytes: number | null = null;
 
-    if (!isHttpUrl(filePath)) {
+    if (isHttpUrl(filePath)) {
+      const deviceMimeType = this.selectDeviceMimeType(device, mimeType);
+      if (deviceMimeType) {
+        const direct = await this.httpServer.createRemoteAudioUrl(filePath, { host, audioMimeType: deviceMimeType });
+        streamUrl = direct.url;
+        mimeType = direct.mimeType;
+        sizeBytes = direct.sizeBytes;
+      } else {
+        const transcoded = await this.httpServer.createTranscodeUrl(filePath, { host });
+        streamUrl = transcoded.url;
+        mimeType = transcoded.mimeType;
+        sizeBytes = transcoded.sizeBytes;
+      }
+    } else {
       if (!existsSync(filePath)) {
         throw new Error(`投送文件不存在：${filePath}`);
       }

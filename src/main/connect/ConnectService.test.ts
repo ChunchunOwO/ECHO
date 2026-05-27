@@ -387,8 +387,10 @@ describe('ConnectService HQPlayer output device', () => {
       const setUriCall = soapCalls.find((call) => call.soapAction?.includes('#SetAVTransportURI'));
       expect(setUriCall?.body).toContain('CurrentURI');
       expect(setUriCall?.body).toContain('/connect/audio/');
+      expect(setUriCall?.body).toContain('song.flac');
       expect(setUriCall?.body).toContain('&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_TN&quot;&gt;');
       expect(setUriCall?.body).toContain('/connect/cover/');
+      expect(setUriCall?.body).toContain('cover.jpg');
       expect(soapCalls.some((call) => call.soapAction?.includes('#Play'))).toBe(true);
       expect(mocks.audioSession.pause).toHaveBeenCalledOnce();
       await service.dispose();
@@ -446,6 +448,52 @@ describe('ConnectService HQPlayer output device', () => {
     } finally {
       rmSync(tempRoot, { force: true, recursive: true });
     }
+  });
+
+  it('proxies HTTP audio through the local Connect server before handing it to DLNA devices', async () => {
+    const remoteAudioUrl = 'https://cdn.example.test/audio/song.flac?token=fresh';
+    const trackWithRemoteAudio: LibraryTrack = {
+      ...localTrack,
+      path: remoteAudioUrl,
+      sourceUrl: remoteAudioUrl,
+      coverId: null,
+    } as LibraryTrack & { sourceUrl: string };
+    const soapCalls: Array<{ soapAction: string | null; body: string }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      soapCalls.push({
+        soapAction: typeof init?.headers === 'object' && init.headers !== null && !Array.isArray(init.headers)
+          ? String((init.headers as Record<string, string>).SOAPAction ?? '')
+          : null,
+        body: typeof init?.body === 'string' ? init.body : '',
+      });
+      return {
+        ok: true,
+        text: () => Promise.resolve('<s:Envelope><s:Body /></s:Envelope>'),
+      };
+    }));
+    mocks.libraryService.resolveCoverAsset.mockReturnValue(null);
+    mocks.audioSession.getStatus.mockReturnValue({
+      state: 'playing',
+      currentTrackId: trackWithRemoteAudio.id,
+      currentFilePath: remoteAudioUrl,
+      positionSeconds: 0,
+    });
+    const { ConnectService } = await import('./ConnectService');
+    const service = new ConnectService(createHqPlayerService());
+    const merge = service as unknown as { mergeDiscoveredDlnaDevices: (devices: DlnaDevice[], now?: number) => void };
+    merge.mergeDiscoveredDlnaDevices([dlnaDevice({ address: '127.0.0.1' })], Date.parse('2026-05-21T01:00:00.000Z'));
+
+    await service.connect({
+      deviceId: 'dlna:uuid:streamer-1',
+      track: trackWithRemoteAudio,
+      filePath: remoteAudioUrl,
+    });
+
+    const setUriCall = soapCalls.find((call) => call.soapAction?.includes('#SetAVTransportURI'));
+    expect(setUriCall?.body).toContain('/connect/audio/');
+    expect(setUriCall?.body).toContain('song.flac');
+    expect(setUriCall?.body).not.toContain('cdn.example.test');
+    await service.dispose();
   });
 
   it('keeps FLAC direct when a renderer advertises application/flac', async () => {

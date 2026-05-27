@@ -277,9 +277,26 @@ export class ConnectHttpServer {
     const fileStat = statSync(filePath);
 
     return {
-      url: `http://${options.host}:${this.port}/connect/audio/${token}`,
+      url: `http://${options.host}:${this.port}/connect/audio/${token}/${dlnaFriendlyAudioName(filePath, mimeType)}`,
       mimeType,
       sizeBytes: fileStat.size,
+    };
+  }
+
+  async createRemoteAudioUrl(remoteUrl: string, options: TokenUrlOptions): Promise<{ url: string; mimeType: string; sizeBytes: null }> {
+    await this.ensureStarted();
+    const mimeType = options.audioMimeType ?? mimeTypeForAudioPath(remoteUrl);
+    const token = this.createToken({
+      kind: 'remote-audio',
+      remoteUrl,
+      mimeType,
+      expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
+    });
+
+    return {
+      url: `http://${options.host}:${this.port}/connect/audio/${token}/${dlnaFriendlyAudioName(remoteUrl, mimeType)}`,
+      mimeType,
+      sizeBytes: null,
     };
   }
 
@@ -297,7 +314,7 @@ export class ConnectHttpServer {
     });
 
     return {
-      url: `http://${options.host}:${this.port}/connect/transcode/${token}`,
+      url: `http://${options.host}:${this.port}/connect/transcode/${token}/stream.mp3`,
       mimeType: 'audio/mpeg',
       sizeBytes: null,
     };
@@ -318,7 +335,7 @@ export class ConnectHttpServer {
       expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
     });
 
-    return `http://${options.host}:${this.port}/connect/cover/${token}`;
+    return `http://${options.host}:${this.port}/connect/cover/${token}/cover.jpg`;
   }
 
   async createRemoteCoverUrl(remoteUrl: string, options: TokenUrlOptions): Promise<string> {
@@ -333,7 +350,7 @@ export class ConnectHttpServer {
       expiresAtMs: Date.now() + (options.ttlMs ?? defaultTokenTtlMs),
     });
 
-    return `http://${options.host}:${this.port}/connect/cover/${token}`;
+    return `http://${options.host}:${this.port}/connect/cover/${token}/cover.jpg`;
   }
 
   clearExpiredTokens(now = Date.now()): void {
@@ -431,6 +448,11 @@ export class ConnectHttpServer {
         return;
       }
 
+      if (record.kind === 'remote-audio') {
+        await this.serveRemoteAudio(record, request, response);
+        return;
+      }
+
       if (record.kind === 'transcode') {
         this.serveTranscodedAudio(record, request, response);
         return;
@@ -465,7 +487,9 @@ export class ConnectHttpServer {
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, max-age=0, no-store',
       'Content-Type': record.mimeType,
+      'ContentFeatures.DLNA.ORG': dlnaContentFeaturesForMime(record.mimeType),
       'Last-Modified': fileStat.mtime.toUTCString(),
+      'transferMode.dlna.org': 'Streaming',
     };
     const range = safeHeader(request.headers.range);
 
@@ -523,6 +547,67 @@ export class ConnectHttpServer {
     pipeFileReadStream(response, record.filePath);
   }
 
+  private async serveRemoteAudio(record: RemoteAudioToken, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const headers: Record<string, string> = {
+      Accept: '*/*',
+    };
+    const range = safeHeader(request.headers.range);
+    if (range) {
+      headers.Range = range;
+    }
+
+    try {
+      const upstream = await fetch(record.remoteUrl, {
+        method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+      const contentType = upstream.headers.get('content-type')?.split(';')[0]?.trim() || record.mimeType;
+      const contentLength = upstream.headers.get('content-length');
+      const contentRange = upstream.headers.get('content-range');
+      const acceptRanges = upstream.headers.get('accept-ranges') || 'bytes';
+      const statusCode = upstream.status === 206 ? 206 : upstream.ok ? 200 : upstream.status;
+      const bytes = contentLength && /^\d+$/u.test(contentLength) ? Number(contentLength) : null;
+
+      this.recordDebugEvent(request, {
+        kind: 'audio',
+        statusCode,
+        bytes,
+        message: `remote:${contentType}`,
+      });
+
+      const responseHeaders: Record<string, string> = {
+        'Accept-Ranges': acceptRanges,
+        'Cache-Control': 'private, max-age=0, no-store',
+        'Content-Type': contentType,
+        'ContentFeatures.DLNA.ORG': dlnaContentFeaturesForMime(record.mimeType),
+        'transferMode.dlna.org': 'Streaming',
+      };
+      if (contentLength) {
+        responseHeaders['Content-Length'] = contentLength;
+      }
+      if (contentRange) {
+        responseHeaders['Content-Range'] = contentRange;
+      }
+
+      response.writeHead(statusCode, responseHeaders);
+      if (request.method === 'HEAD' || !upstream.body) {
+        response.end();
+        return;
+      }
+
+      Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]).once('error', (error) => {
+        if (!response.destroyed) {
+          response.destroy(error);
+        }
+      }).pipe(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.recordDebugEvent(request, { kind: 'audio', statusCode: 502, bytes: 0, message: `remote_failed:${message}` });
+      endResponseSafely(response, 502, message);
+    }
+  }
+
   private serveTranscodedAudio(record: TranscodeToken, request: IncomingMessage, response: ServerResponse): void {
     this.recordDebugEvent(request, { kind: 'transcode', statusCode: 200, bytes: null, message: 'audio/mpeg' });
     if (request.method === 'HEAD') {
@@ -530,6 +615,8 @@ export class ConnectHttpServer {
         'Accept-Ranges': 'none',
         'Cache-Control': 'private, max-age=0, no-store',
         'Content-Type': 'audio/mpeg',
+        'ContentFeatures.DLNA.ORG': dlnaContentFeaturesForMime('audio/mpeg'),
+        'transferMode.dlna.org': 'Streaming',
       });
       response.end();
       return;
@@ -546,6 +633,8 @@ export class ConnectHttpServer {
       'Accept-Ranges': 'none',
       'Cache-Control': 'private, max-age=0, no-store',
       'Content-Type': 'audio/mpeg',
+      'ContentFeatures.DLNA.ORG': dlnaContentFeaturesForMime('audio/mpeg'),
+      'transferMode.dlna.org': 'Streaming',
     });
     child.once('error', (error) => {
       endResponseSafely(response, 502, error instanceof Error ? error.message : String(error));
@@ -603,6 +692,8 @@ export class ConnectHttpServer {
         'Cache-Control': 'private, max-age=86400',
         'Content-Length': String(body.byteLength),
         'Content-Type': 'image/jpeg',
+        'ContentFeatures.DLNA.ORG': jpegCoverContentFeatures,
+        'transferMode.dlna.org': 'Interactive',
       });
       response.end(request.method === 'HEAD' ? undefined : body);
       return;
@@ -615,7 +706,9 @@ export class ConnectHttpServer {
         'Cache-Control': 'private, max-age=86400',
         'Content-Length': String(fileStat.size),
         'Content-Type': record.mimeType,
+        'ContentFeatures.DLNA.ORG': record.mimeType === 'image/jpeg' ? jpegCoverContentFeatures : 'DLNA.ORG_OP=00',
         'Last-Modified': fileStat.mtime.toUTCString(),
+        'transferMode.dlna.org': 'Interactive',
       });
       if (request.method === 'HEAD') {
         response.end();
@@ -631,6 +724,7 @@ export class ConnectHttpServer {
       'Cache-Control': 'private, max-age=86400',
       'Content-Length': String(body.byteLength),
       'Content-Type': 'image/svg+xml',
+      'transferMode.dlna.org': 'Interactive',
     });
     response.end(request.method === 'HEAD' ? undefined : body);
   }

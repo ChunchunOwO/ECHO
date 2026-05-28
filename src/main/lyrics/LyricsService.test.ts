@@ -256,6 +256,54 @@ describe('LyricsService', () => {
     expect(online.getLyrics).not.toHaveBeenCalled();
   });
 
+  it('reuses remote browser cached lyrics when the snapshot lacks the remote fingerprint', async () => {
+    const { database, local, online, service } = createHarness({
+      appSettings: settings({ lyricsRomanizationEnabled: false, lyricsTranslationEnabled: false }),
+    });
+    database
+      .prepare(
+        `INSERT INTO lyrics_cache (
+          id, cache_key, track_id, provider, provider_lyrics_id, title, artist, album,
+          duration_seconds, kind, plain_lyrics, synced_lyrics, lines_json, offset_ms, score,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'remote-browser-cached-1',
+        'remote:webdav:webdav:/music/Remote Song.flac:etag-1',
+        'remote-browser:webdav:/music/Remote Song.flac',
+        'lrclib',
+        'lrclib-remote-1',
+        'Remote Song',
+        'Remote Artist',
+        'Remote Album',
+        120,
+        'synced',
+        'Remote line',
+        '[00:01.00]Remote line',
+        JSON.stringify([{ timeMs: 1000, text: 'Remote line' }]),
+        0,
+        0.99,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+
+    const lyrics = await service.getLyricsForSnapshot({
+      trackId: 'remote-browser:webdav:/music/Remote Song.flac',
+      mediaType: 'remote',
+      sourceId: 'webdav',
+      stableKey: 'remote-browser:webdav:/music/Remote Song.flac',
+      title: 'Remote Song',
+      artist: 'Remote Artist',
+      album: 'Remote Album',
+      durationSeconds: 120,
+    });
+
+    expect(lyrics?.lines[0].text).toBe('Remote line');
+    expect(local.getLyrics).not.toHaveBeenCalled();
+    expect(online.getLyrics).not.toHaveBeenCalled();
+  });
+
   it('does not request UtaTen kana while the setting is disabled', async () => {
     const utatenKanaProvider = { enrichLines: vi.fn(async (_query, lines) => lines) };
     const { database, service } = createHarness({ utatenKanaProvider });

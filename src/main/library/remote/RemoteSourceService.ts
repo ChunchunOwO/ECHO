@@ -3,7 +3,7 @@ import { assertProtectedLibraryAvailable } from '../../app/dataProtection';
 import { createDatabase } from '../../database/createDatabase';
 import type { EchoDatabase } from '../../database/createDatabase';
 import { getLibraryDatabaseManager } from '../../database/LibraryDatabaseManager';
-import type { LibraryTrack } from '../../../shared/types/library';
+import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
 import type {
   RemoteDirectoryItem,
   RemoteBackgroundJobKind,
@@ -11,6 +11,8 @@ import type {
   RemoteBackgroundJobStatus,
   RemoteDirectoryPreviewItem,
   RemoteDirectoryPreviewOptions,
+  RemoteIndexedFolderStats,
+  RemoteIndexedTracksQuery,
   RemoteLibraryTrack,
   RemoteMetadataResult,
   RemoteSourceIssueItem,
@@ -22,6 +24,7 @@ import type {
   RemoteSourceProvider,
   RemoteSourceUpdate,
   RemoteStreamUrlResult,
+  RemoteSyncOptions,
   RemoteSyncStatus,
   RemoteTrackLookupItem,
   RemoteVisibleHydrationOptions,
@@ -80,10 +83,14 @@ export class RemoteSourceService {
       (provider) => this.getAdapter(provider),
       this.coverService,
     );
-    this.syncService = new RemoteLibrarySyncService(this.store, (provider) => this.getAdapter(provider), (_sourceId, tracks) => {
-      this.backgroundQueue.enqueueTrackWrites(tracks, ['metadata', 'duration-backfill']);
-    }, (sourceId) => {
+    this.syncService = new RemoteLibrarySyncService(this.store, (provider) => this.getAdapter(provider), () => undefined, (sourceId, status, options) => {
       this.backgroundQueue.setSourceSyncActive(sourceId, false);
+      if (status.status === 'completed') {
+        const kinds: RemoteBackgroundJobKind[] = options.includeCover === false
+          ? ['metadata', 'duration-backfill']
+          : ['metadata', 'duration-backfill', 'cover'];
+        this.backgroundQueue.enqueueSource(sourceId, kinds, { priority: 3 });
+      }
     });
   }
 
@@ -131,9 +138,9 @@ export class RemoteSourceService {
     return this.getAdapter(source.provider).browse({ source, path });
   }
 
-  syncSource(sourceId: string): RemoteSyncStatus {
+  syncSource(sourceId: string, options: RemoteSyncOptions = {}): RemoteSyncStatus {
     this.backgroundQueue.setSourceSyncActive(sourceId, true);
-    return this.syncService.syncSource(sourceId);
+    return this.syncService.syncSource(sourceId, options);
   }
 
   cancelSync(sourceId: string): RemoteSyncStatus {
@@ -228,6 +235,25 @@ export class RemoteSourceService {
   lookupTracks(sourceId: string, remotePaths: string[]): RemoteTrackLookupItem[] {
     this.requireSource(sourceId);
     return this.store.lookupTracksBySourcePaths(sourceId, remotePaths);
+  }
+
+  listIndexedTracks(sourceId: string, rootPath?: string | null): LibraryTrack[] {
+    this.requireSource(sourceId);
+    return this.store.listTracksBySourceFolder(sourceId, rootPath).map((track) => this.store.toLibraryTrack(track));
+  }
+
+  listIndexedTracksPage(sourceId: string, query: RemoteIndexedTracksQuery = {}): LibraryPage<LibraryTrack> {
+    this.requireSource(sourceId);
+    const page = this.store.listTracksBySourceFolderPage(sourceId, query);
+    return {
+      ...page,
+      items: page.items.map((track) => this.store.toLibraryTrack(track)),
+    };
+  }
+
+  getIndexedFolderStats(sourceId: string, rootPath?: string | null): RemoteIndexedFolderStats {
+    this.requireSource(sourceId);
+    return this.store.getIndexedFolderStats(sourceId, rootPath);
   }
 
   async previewDirectoryItems(

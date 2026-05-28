@@ -393,6 +393,7 @@ export const defaultSettings: AppSettings = {
   lyricsCandidatePanelAutoOpenEnabled: false,
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerAutoEnableForMv: true,
   lyricsPlayerBarDrawerOpacityPercent: 78,
   lyricsPlayerBarDrawerColorMode: 'default',
   lyricsPlayerBarDrawerColor: defaultLyricsMiniPlayerColor,
@@ -1505,6 +1506,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsCandidatePanelAutoOpenEnabled: settings.lyricsCandidatePanelAutoOpenEnabled === true,
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
     lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
+    lyricsPlayerBarDrawerAutoEnableForMv: settings.lyricsPlayerBarDrawerAutoEnableForMv !== false,
     lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(lyricsPlayerBarDrawerOpacityPercent)
       ? Math.round(clamp(lyricsPlayerBarDrawerOpacityPercent, 20, 100))
       : defaultSettings.lyricsPlayerBarDrawerOpacityPercent,

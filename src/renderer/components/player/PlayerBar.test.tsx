@@ -3120,10 +3120,11 @@ describe('PlayerBar', () => {
   });
 
   it('auto-plays the next queued track when Spotify ended status uses the stable streaming key', async () => {
+    const spotifyStableKey = 'streaming:spotify:abc123';
     const spotifyTrack = makeTrack(1, {
       id: 'spotify-row-1',
-      path: 'streaming:spotify:abc123',
-      stableKey: 'streaming:spotify:abc123',
+      path: spotifyStableKey,
+      stableKey: spotifyStableKey,
       mediaType: 'streaming',
       provider: 'spotify',
       providerTrackId: 'abc123',
@@ -3147,7 +3148,7 @@ describe('PlayerBar', () => {
       playback: {
         getStatus: vi.fn().mockResolvedValue({
           state: 'playing',
-          currentTrackId: spotifyTrack.stableKey,
+          currentTrackId: spotifyStableKey,
           positionMs: 4000,
           durationMs: spotifyTrack.duration * 1000,
           filePath: spotifyTrack.path,
@@ -3162,7 +3163,7 @@ describe('PlayerBar', () => {
       audio: {
         getStatus: vi.fn().mockResolvedValue({
           ...audioStatus(spotifyTrack),
-          currentTrackId: spotifyTrack.stableKey,
+          currentTrackId: spotifyStableKey,
           currentFilePath: spotifyTrack.path,
         }),
         onStatus: vi.fn(),
@@ -3188,7 +3189,7 @@ describe('PlayerBar', () => {
       setPlaybackStatusSnapshot({
         playbackStatus: {
           state: 'ended',
-          currentTrackId: spotifyTrack.stableKey,
+          currentTrackId: spotifyStableKey,
           positionMs: spotifyTrack.duration * 1000,
           durationMs: spotifyTrack.duration * 1000,
           filePath: spotifyTrack.path,
@@ -3196,7 +3197,7 @@ describe('PlayerBar', () => {
         audioStatus: {
           ...audioStatus(spotifyTrack),
           state: 'ended',
-          currentTrackId: spotifyTrack.stableKey,
+          currentTrackId: spotifyStableKey,
           currentFilePath: spotifyTrack.path,
           positionSeconds: spotifyTrack.duration,
         },

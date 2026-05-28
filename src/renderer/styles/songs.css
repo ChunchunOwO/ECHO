@@ -723,6 +723,17 @@
   line-height: 18px;
 }
 
+.loading-pill {
+  color: var(--theme-warning-text, var(--theme-accent-text));
+  border-color: var(--theme-warning-border, var(--theme-accent-border));
+  background: var(--theme-warning-bg, var(--theme-accent-bg));
+}
+
+.track-loading-icon {
+  flex: 0 0 auto;
+  color: var(--theme-accent-text-strong);
+}
+
 .duplicate-version-badge {
   flex: 0 0 auto;
   min-height: 22px;

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { CSSProperties, FocusEvent as ReactFocusEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { Languages, Lock, Minus, Palette, Plus, RotateCcw, X } from 'lucide-react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { ConnectSessionStatus } from '../../shared/types/connect';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../shared/types/desktopLyrics';
 import type { LibraryTrack } from '../../shared/types/library';
-import type { LyricLine, LyricsKind, TrackLyrics } from '../../shared/types/lyrics';
+import type { LyricLine, LyricsKind, LyricsTrackSnapshotRequest, TrackLyrics } from '../../shared/types/lyrics';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import type { StreamingLyricsResult, StreamingProviderName } from '../../shared/types/streaming';
 import { streamingProviderNames } from '../../shared/types/streaming';
 import { shouldShowRomanizationForLyrics } from '../../shared/utils/lyricsLanguage';
 import { getActiveLyricIndex } from '../components/lyrics/LyricsView';
+import { titleFromPath } from '../components/player/playerFormat';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 import { registerAppearanceFontFile, serializeFontList } from '../preferences/appearancePreferences';
 
@@ -50,6 +51,16 @@ type PlaybackClock = {
   nativeUnderrunCallbacks?: number;
 };
 
+type ForwardedLyricsMetadata = {
+  trackId: string | null;
+  filePath: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  albumArtist: string | null;
+  durationSeconds: number | null;
+};
+
 const fallbackSettings: DesktopLyricsSettings = {
   desktopLyricsEnabled: false,
   desktopLyricsLocked: false,
@@ -74,7 +85,9 @@ const desktopLyricsClockStaleTelemetryThresholdMs = 750;
 const desktopLyricsClockUnderrunBufferThresholdMs = 40;
 const desktopLyricsStageHorizontalPaddingPx = 36;
 const desktopLyricsOverflowTolerancePx = 4;
+const desktopLyricsMenuRevealSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
 const desktopLyricsMouseInteractiveSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
+const desktopLyricsMenuHideDelayMs = 420;
 
 const readEnhancedLowLoadPlaybackActive = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.lowLoadPlaybackModeEnabled === true && settings.lowLoadPlaybackEnhancementsEnabled === true;
@@ -243,6 +256,97 @@ const finiteNonNegative = (value: number | null | undefined): number | null => {
   return Math.max(0, value);
 };
 
+const positiveFinite = (value: number | null | undefined): number | null => {
+  const normalized = finiteNonNegative(value);
+  return normalized && normalized > 0 ? normalized : null;
+};
+
+const trimmedText = (value: string | null | undefined): string | null => {
+  const text = value?.trim();
+  return text ? text : null;
+};
+
+const remoteBrowserTrackIdPattern = /^remote-browser:([^:]+):(.+)$/u;
+const remoteIndexedTrackIdPattern = /^remote:([^:]+):(.+)$/u;
+
+const isDesktopLyricsSnapshotTrackId = (trackId: string | null | undefined): boolean =>
+  Boolean(
+    trackId?.startsWith('remote-browser:') ||
+    trackId?.startsWith('dlna-receiver:') ||
+    trackId?.startsWith('airplay-receiver:'),
+  );
+
+const sourceIdFromRemoteIdentity = (trackId: string | null | undefined, filePath: string | null | undefined): string | null => {
+  const remoteBrowserMatch = remoteBrowserTrackIdPattern.exec(trackId ?? '');
+  if (remoteBrowserMatch?.[1]) {
+    return remoteBrowserMatch[1];
+  }
+
+  const remoteIndexedMatch = remoteIndexedTrackIdPattern.exec(trackId ?? '');
+  if (remoteIndexedMatch?.[1]) {
+    return remoteIndexedMatch[1];
+  }
+
+  const remotePathMatch = /^remote:\/\/([^/]+)\//u.exec(filePath ?? '');
+  return remotePathMatch?.[1] ?? null;
+};
+
+const audioStatusToLyricsMetadata = (status: AudioStatus): ForwardedLyricsMetadata => ({
+  trackId: status.currentTrackId,
+  filePath: status.currentFilePath,
+  title: trimmedText(status.currentTrackTitle),
+  artist: trimmedText(status.currentTrackArtist),
+  album: trimmedText(status.currentTrackAlbum),
+  albumArtist: trimmedText(status.currentTrackAlbumArtist),
+  durationSeconds: positiveFinite(status.durationSeconds),
+});
+
+const buildDesktopLyricsSnapshotRequest = (
+  trackId: string,
+  track: LibraryTrack | null,
+  metadata: ForwardedLyricsMetadata | null,
+): LyricsTrackSnapshotRequest | null => {
+  const sourcePath = trimmedText(track?.path) ?? metadata?.filePath ?? null;
+  const title = trimmedText(track?.title) ?? metadata?.title ?? (sourcePath ? titleFromPath(sourcePath) : null);
+  if (!title) {
+    return null;
+  }
+
+  const sourceId = trimmedText(track?.sourceId) ?? sourceIdFromRemoteIdentity(trackId, sourcePath);
+  return {
+    trackId: track?.id ?? trackId,
+    title,
+    artist:
+      trimmedText(track?.artist) ??
+      trimmedText(track?.albumArtist) ??
+      metadata?.artist ??
+      metadata?.albumArtist ??
+      'Unknown Artist',
+    album: trimmedText(track?.album) ?? metadata?.album ?? null,
+    albumArtist: trimmedText(track?.albumArtist) ?? metadata?.albumArtist ?? null,
+    durationSeconds: positiveFinite(track?.duration) ?? metadata?.durationSeconds ?? null,
+    mediaType: track?.mediaType === 'streaming' ? 'streaming' : 'remote',
+    sourceId,
+    stableKey: trimmedText(track?.stableKey) ?? trackId,
+  };
+};
+
+const shouldUseDesktopLyricsSnapshot = (
+  trackId: string,
+  track: LibraryTrack | null,
+  metadata: ForwardedLyricsMetadata | null,
+): boolean =>
+  Boolean(
+    track?.isTemporary ||
+    isDesktopLyricsSnapshotTrackId(trackId) ||
+    isDesktopLyricsSnapshotTrackId(track?.id) ||
+    (!track && (
+      isDesktopLyricsSnapshotTrackId(trackId) ||
+      trackId.startsWith('remote:') ||
+      metadata?.filePath?.startsWith('remote://')
+    )),
+  );
+
 const parseStreamingTrackId = (trackId: string | null): { provider: StreamingProviderName; providerTrackId: string } | null => {
   const match = /^streaming:([^:]+):(.+)$/u.exec(trackId ?? '');
   if (!match || !isStreamingProviderName(match[1])) {
@@ -389,11 +493,13 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const [settings, setSettings] = useState<DesktopLyricsSettings>(fallbackSettings);
   const [playbackClock, setPlaybackClock] = useState<PlaybackClock | null>(null);
   const [forwardedClock, setForwardedClock] = useState<PlaybackClock | null>(null);
+  const [forwardedLyricsMetadata, setForwardedLyricsMetadata] = useState<ForwardedLyricsMetadata | null>(null);
   const [forwardedUpdatedAtMs, setForwardedUpdatedAtMs] = useState(0);
   const [lyrics, setLyrics] = useState<DesktopLyricsStateSnapshot>(() => emptyLyrics());
   const [activeIndex, setActiveIndex] = useState(-1);
   const [viewportWidthPx, setViewportWidthPx] = useState(() => window.innerWidth);
   const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const lyricsRequestRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -418,6 +524,31 @@ export const DesktopLyricsApp = (): JSX.Element => {
   }, [forwardedClock, forwardedUpdatedAtMs, playbackClock]);
 
   const activeTrackId = activeClock?.currentTrackId ?? null;
+  const activeForwardedLyricsMetadata = useMemo(() => {
+    if (!activeClock || !forwardedLyricsMetadata) {
+      return null;
+    }
+
+    if (activeClock.currentTrackId && activeClock.currentTrackId === forwardedLyricsMetadata.trackId) {
+      return forwardedLyricsMetadata;
+    }
+
+    if (activeClock.filePath && activeClock.filePath === forwardedLyricsMetadata.filePath) {
+      return forwardedLyricsMetadata;
+    }
+
+    return null;
+  }, [
+    activeClock?.currentTrackId,
+    activeClock?.filePath,
+    forwardedLyricsMetadata?.album,
+    forwardedLyricsMetadata?.albumArtist,
+    forwardedLyricsMetadata?.artist,
+    forwardedLyricsMetadata?.durationSeconds,
+    forwardedLyricsMetadata?.filePath,
+    forwardedLyricsMetadata?.title,
+    forwardedLyricsMetadata?.trackId,
+  ]);
 
   const refreshPlaybackClock = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
@@ -524,19 +655,57 @@ export const DesktopLyricsApp = (): JSX.Element => {
       };
     }
 
+    let hideMenuTimer: number | null = null;
+    const clearHideMenuTimer = (): void => {
+      if (hideMenuTimer !== null) {
+        window.clearTimeout(hideMenuTimer);
+        hideMenuTimer = null;
+      }
+    };
+    const updateMenuVisible = (visible: boolean, delayed = false): void => {
+      if (visible) {
+        clearHideMenuTimer();
+        setMenuVisible((current) => (current ? current : true));
+        return;
+      }
+
+      if (delayed) {
+        if (hideMenuTimer === null) {
+          hideMenuTimer = window.setTimeout(() => {
+            hideMenuTimer = null;
+            setMenuVisible(false);
+          }, desktopLyricsMenuHideDelayMs);
+        }
+        return;
+      }
+
+      clearHideMenuTimer();
+      setMenuVisible((current) => (current === visible ? current : visible));
+    };
     const updatePassthrough = (event: MouseEvent): void => {
       const target = document.elementFromPoint(event.clientX, event.clientY);
-      setPassthrough(!target?.closest(desktopLyricsMouseInteractiveSelector));
+      const overMenuRevealSurface = Boolean(target?.closest(desktopLyricsMenuRevealSelector));
+      const overInteractiveSurface = Boolean(target?.closest(desktopLyricsMouseInteractiveSelector));
+      updateMenuVisible(overMenuRevealSurface, !overMenuRevealSurface);
+      setPassthrough(!overInteractiveSurface);
     };
-    const passthroughOnLeave = (): void => setPassthrough(true);
+    const passthroughOnLeave = (): void => {
+      updateMenuVisible(false);
+      setPassthrough(true);
+    };
 
     window.addEventListener('mousemove', updatePassthrough);
     window.addEventListener('mouseleave', passthroughOnLeave);
-    setPassthrough(false);
+    window.addEventListener('blur', passthroughOnLeave);
+    document.addEventListener('visibilitychange', passthroughOnLeave);
+    setPassthrough(true);
 
     return () => {
+      clearHideMenuTimer();
       window.removeEventListener('mousemove', updatePassthrough);
       window.removeEventListener('mouseleave', passthroughOnLeave);
+      window.removeEventListener('blur', passthroughOnLeave);
+      document.removeEventListener('visibilitychange', passthroughOnLeave);
       desktopLyrics.setMousePassthrough(false);
     };
   }, [settings.desktopLyricsLocked]);
@@ -557,12 +726,14 @@ export const DesktopLyricsApp = (): JSX.Element => {
     void desktopLyrics?.getLastAudioStatus?.().then((status) => {
       if (status) {
         setForwardedClock(audioStatusToClock(status, performance.now()));
+        setForwardedLyricsMetadata(audioStatusToLyricsMetadata(status));
         setForwardedUpdatedAtMs(performance.now());
       }
     }).catch(() => undefined);
 
     const unsubscribe = desktopLyrics?.onAudioStatus?.((status) => {
       setForwardedClock(audioStatusToClock(status, performance.now()));
+      setForwardedLyricsMetadata(audioStatusToLyricsMetadata(status));
       setForwardedUpdatedAtMs(performance.now());
     });
 
@@ -631,6 +802,20 @@ export const DesktopLyricsApp = (): JSX.Element => {
           return;
         }
 
+        if (
+          shouldUseDesktopLyricsSnapshot(activeTrackId, track, activeForwardedLyricsMetadata) &&
+          lyricsApi?.getForSnapshot
+        ) {
+          const snapshotRequest = buildDesktopLyricsSnapshotRequest(activeTrackId, track, activeForwardedLyricsMetadata);
+          if (snapshotRequest) {
+            const snapshotLyrics = await lyricsApi.getForSnapshot(snapshotRequest);
+            if (lyricsRequestRef.current === requestId) {
+              setLyrics(trackLyricsToState(snapshotLyrics ?? null));
+            }
+            return;
+          }
+        }
+
         const trackLyrics = await lyricsApi?.getForTrack?.(activeTrackId);
         if (lyricsRequestRef.current === requestId) {
           setLyrics(trackLyricsToState(trackLyrics ?? null));
@@ -644,7 +829,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
     setLyrics(emptyLyrics());
     void loadLyrics();
-  }, [activeTrackId]);
+  }, [activeForwardedLyricsMetadata, activeTrackId]);
 
   useEffect(() => {
     if (animationFrameRef.current !== null) {
@@ -732,6 +917,14 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const resetBounds = useCallback((): void => {
     void window.echo?.desktopLyrics?.resetBounds?.();
   }, []);
+  const handleMenuFocus = useCallback((): void => {
+    setMenuVisible(true);
+  }, []);
+  const handleMenuBlur = useCallback((event: ReactFocusEvent<HTMLDivElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setMenuVisible(false);
+    }
+  }, []);
 
   const currentLine = activeIndex >= 0 ? lyrics.lines[activeIndex] : lyrics.lines[0];
   const canShowRomanization = shouldShowRomanizationForLyrics(lyrics.lines);
@@ -795,6 +988,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
     <main
       className="desktop-lyrics-app"
       data-locked={settings.desktopLyricsLocked}
+      data-menu-visible={menuVisible}
       style={style}
     >
       <section className="desktop-lyrics-stage" aria-label={t('desktopLyrics.aria.stage')}>
@@ -806,7 +1000,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
         </div>
 
         {!settings.desktopLyricsLocked ? (
-          <div className="desktop-lyrics-menu">
+          <div className="desktop-lyrics-menu" onBlur={handleMenuBlur} onFocus={handleMenuFocus}>
             <button
               type="button"
               title={t('desktopLyrics.control.decreaseFontSize')}

@@ -7,6 +7,7 @@ import { TrackRow } from './TrackRow';
 type TrackListProps = {
   tracks: LibraryTrack[];
   currentTrackId: string | null;
+  loadingTrackId?: string | null;
   canLoadMore?: boolean;
   canLoadPrevious?: boolean;
   totalCount?: number;
@@ -43,7 +44,7 @@ type TrackListProps = {
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, isTrackDraggable, draggedTrackId = null, dropTargetTrackId = null, onTrackDragStart, onTrackDragOver, onTrackDrop, onTrackDragEnd }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, loadingTrackId = null, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, isTrackDraggable, draggedTrackId = null, dropTargetTrackId = null, onTrackDragStart, onTrackDragOver, onTrackDrop, onTrackDragEnd }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
@@ -218,6 +219,7 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
                   {track ? (
                     <TrackRow
                       isPlaying={track.id === currentTrackId}
+                      isLoading={track.id === loadingTrackId}
                       isSelected={selectedTrackIds[track.id] === true}
                       duplicateHiddenCount={duplicateHiddenCounts[track.id] ?? 0}
                       track={track}

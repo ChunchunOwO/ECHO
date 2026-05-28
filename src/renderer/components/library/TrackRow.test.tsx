@@ -45,8 +45,8 @@ describe('TrackRow', () => {
     expect(screen.getByText('24bit / 96kHz').className).toContain('tag-hires');
     expect(screen.getByText('900kbps')).toBeTruthy();
     expect(screen.getByText('2:58')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Add to queue Afraid' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'More Afraid' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Add to queue Afraid|加入队列 Afraid/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /More Afraid|更多 Afraid/ })).toBeTruthy();
   });
 
   it('does not style 24bit 48kHz files as Hi-Res', () => {
@@ -76,7 +76,15 @@ describe('TrackRow', () => {
 
     expect(screen.getByRole('listitem').getAttribute('data-playing')).toBe('true');
     expect(screen.getByText('Afraid')).toBeTruthy();
-    expect(screen.getByText('Playing')).toBeTruthy();
+    expect(screen.getByText(/Playing|播放中/)).toBeTruthy();
+  });
+
+  it('shows loading instead of playing while a remote row is preparing playback', () => {
+    render(<TrackRow isPlaying isLoading track={track({ mediaType: 'remote', sourceDisplayName: '百度网盘' })} />);
+
+    expect(screen.getByRole('listitem').getAttribute('data-loading')).toBe('true');
+    expect(screen.getByText('加载中')).toBeTruthy();
+    expect(screen.queryByText('Playing')).toBeNull();
   });
 
   it('renders coverThumb as a lazy async image and falls back after load error', () => {
@@ -111,7 +119,7 @@ describe('TrackRow', () => {
     fireEvent.doubleClick(screen.getByRole('listitem'));
     expect(onPlay).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add to queue Afraid' }));
+    fireEvent.click(screen.getByRole('button', { name: /Add to queue Afraid|加入队列 Afraid/ }));
     expect(onPlay).not.toHaveBeenCalled();
   });
 
@@ -149,7 +157,7 @@ describe('TrackRow', () => {
     const onAddToQueue = vi.fn();
     render(<TrackRow isPlaying={false} track={track()} onAddToQueue={onAddToQueue} onPlay={onPlay} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add to queue Afraid' }));
+    fireEvent.click(screen.getByRole('button', { name: /Add to queue Afraid|加入队列 Afraid/ }));
 
     expect(onAddToQueue).toHaveBeenCalledTimes(1);
     expect(onAddToQueue).toHaveBeenCalledWith(expect.objectContaining({ id: 'track-1' }));
@@ -181,7 +189,7 @@ describe('TrackRow', () => {
   it('shows streaming download progress inside the download action', () => {
     render(<TrackRow isPlaying={false} track={track()} onDownload={vi.fn()} isDownloading downloadProgress={42} />);
 
-    expect(screen.getByRole('button', { name: 'Downloading Afraid 42%' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Downloading Afraid 42%|正在下载 Afraid 42%/ })).toBeTruthy();
     expect(screen.getByText('42%')).toBeTruthy();
   });
 

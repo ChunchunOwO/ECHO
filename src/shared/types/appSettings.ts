@@ -255,6 +255,7 @@ export type AppSettings = {
   lyricsCandidatePanelAutoOpenEnabled?: boolean;
   lyricsEmptyStateHidden: boolean;
   lyricsPlayerBarDrawerEnabled?: boolean;
+  lyricsPlayerBarDrawerAutoEnableForMv?: boolean;
   lyricsPlayerBarDrawerOpacityPercent?: number;
   lyricsPlayerBarDrawerColorMode?: LyricsMiniPlayerColorMode;
   lyricsPlayerBarDrawerColor?: string;

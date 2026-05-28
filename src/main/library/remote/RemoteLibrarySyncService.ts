@@ -1,5 +1,5 @@
 import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
-import type { RemoteSyncStatus } from '../../../shared/types/remoteSources';
+import type { RemoteSyncOptions, RemoteSyncStatus } from '../../../shared/types/remoteSources';
 import type { RemoteLibraryStore } from './RemoteLibraryStore';
 import type { RemoteSourceAdapter, RemoteTrackWrite } from './remoteTypes';
 import { remoteTrackIdFor } from './remoteIdentity';
@@ -34,10 +34,10 @@ export class RemoteLibrarySyncService {
     private readonly store: RemoteLibraryStore,
     private readonly getAdapter: (provider: string) => RemoteSourceAdapter,
     private readonly onTracksIndexed: (sourceId: string, tracks: RemoteTrackWrite[]) => void = () => undefined,
-    private readonly onSyncSettled: (sourceId: string) => void = () => undefined,
+    private readonly onSyncSettled: (sourceId: string, status: RemoteSyncStatus, options: RemoteSyncOptions) => void = () => undefined,
   ) {}
 
-  syncSource(sourceId: string): RemoteSyncStatus {
+  syncSource(sourceId: string, options: RemoteSyncOptions = {}): RemoteSyncStatus {
     if (this.controllers.has(sourceId)) {
       return this.getSyncStatus(sourceId);
     }
@@ -51,7 +51,7 @@ export class RemoteLibrarySyncService {
       startedAt: nowIso(),
     });
 
-    void this.runSync(sourceId, controller).finally(() => {
+    void this.runSync(sourceId, controller, options).finally(() => {
       this.controllers.delete(sourceId);
     });
 
@@ -75,7 +75,7 @@ export class RemoteLibrarySyncService {
     return this.store.removeMissingTracks(sourceId);
   }
 
-  private async runSync(sourceId: string, controller: AbortController): Promise<void> {
+  private async runSync(sourceId: string, controller: AbortController, options: RemoteSyncOptions): Promise<void> {
     const source = this.store.getSourceWithSecret(sourceId);
     if (!source) {
       this.fail(sourceId, `Unknown remote source ${sourceId}`);
@@ -136,6 +136,10 @@ export class RemoteLibrarySyncService {
       for await (const item of adapter.scan({
         source,
         signal: controller.signal,
+        rootPath: options.rootPath ?? null,
+        onProgress: (entry) => {
+          publishProgress(false, { currentPath: entry.path });
+        },
         onError: (path, error) => {
           const message = `${path}: ${error.message}`;
           errors.push(message);
@@ -144,7 +148,7 @@ export class RemoteLibrarySyncService {
         },
       })) {
         if (controller.signal.aborted) {
-          this.cancelled(sourceId);
+          this.cancelled(sourceId, options);
           return;
         }
 
@@ -221,7 +225,8 @@ export class RemoteLibrarySyncService {
       writtenCount += await this.flush(sourceId, batch);
       await yieldToMainLoop();
       publishProgress(true, { phase: 'marking_missing' });
-      const missingCount = this.store.markMissingExcept(sourceId, seenPaths);
+      const shouldMarkMissing = options.markMissing !== false && !options.rootPath;
+      const missingCount = shouldMarkMissing ? this.store.markMissingExcept(sourceId, seenPaths) : 0;
       const finishedAt = nowIso();
       this.patchStatus(sourceId, {
         status: 'completed',
@@ -237,14 +242,14 @@ export class RemoteLibrarySyncService {
         finishedAt,
       });
       this.store.updateSourceSyncResult(sourceId, failedCount === 0, errors[0] ?? null, finishedAt);
-      this.notifySyncSettled(sourceId);
+      this.notifySyncSettled(sourceId, options);
     } catch (error) {
       if (controller.signal.aborted) {
-        this.cancelled(sourceId);
+        this.cancelled(sourceId, options);
         return;
       }
 
-      this.fail(sourceId, error instanceof Error ? error.message : String(error));
+      this.fail(sourceId, error instanceof Error ? error.message : String(error), options);
     }
   }
 
@@ -301,7 +306,7 @@ export class RemoteLibrarySyncService {
     };
   }
 
-  private fail(sourceId: string, message: string): void {
+  private fail(sourceId: string, message: string, options: RemoteSyncOptions = {}): void {
     const finishedAt = nowIso();
     this.patchStatus(sourceId, {
       status: 'failed',
@@ -312,22 +317,22 @@ export class RemoteLibrarySyncService {
       finishedAt,
     });
     this.store.updateSourceSyncResult(sourceId, false, message, finishedAt);
-    this.notifySyncSettled(sourceId);
+    this.notifySyncSettled(sourceId, options);
   }
 
-  private cancelled(sourceId: string): void {
+  private cancelled(sourceId: string, options: RemoteSyncOptions = {}): void {
     this.patchStatus(sourceId, {
       status: 'cancelled',
       phase: 'cancelled',
       currentPath: null,
       finishedAt: nowIso(),
     });
-    this.notifySyncSettled(sourceId);
+    this.notifySyncSettled(sourceId, options);
   }
 
-  private notifySyncSettled(sourceId: string): void {
+  private notifySyncSettled(sourceId: string, options: RemoteSyncOptions): void {
     try {
-      this.onSyncSettled(sourceId);
+      this.onSyncSettled(sourceId, this.getSyncStatus(sourceId), options);
     } catch {
       // Status cleanup is best-effort; sync completion itself has already been recorded.
     }

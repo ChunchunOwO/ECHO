@@ -14,6 +14,7 @@ import type {
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
 import { getAccountService } from '../../accounts/AccountService';
+import { getTidalAuthService } from '../../accounts/TidalAuthService';
 import { getAppSettings } from '../../app/appSettings';
 import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type { StreamingProvider } from '../StreamingProvider';
@@ -22,6 +23,7 @@ import { asRecord, text } from './chinaStreamingUtils';
 const provider = 'tidal' as const;
 const tidalApiBaseUrl = 'https://openapi.tidal.com/v2';
 const tidalAuthUrl = 'https://auth.tidal.com/v1/oauth2/token';
+const tidalSearchScope = 'search.read';
 const tidalSearchPageSizeMax = 20;
 const tokenRefreshSkewMs = 60_000;
 
@@ -85,6 +87,9 @@ const tidalCredentials = (): TidalCredentials | null => {
 };
 
 const hasClientCredentials = (): boolean => Boolean(tidalCredentials());
+
+const hasSearchScope = (scope: unknown): boolean =>
+  typeof scope === 'string' && scope.split(/\s+/u).includes(tidalSearchScope);
 
 const tidalAccountStatus = () => {
   try {
@@ -385,7 +390,7 @@ export class TidalStreamingProvider implements StreamingProvider {
 
   get descriptor(): Omit<StreamingProviderDescriptor, 'name'> {
     const status = tidalAccountStatus();
-    const configured = hasClientCredentials();
+    const configured = Boolean(status?.connected) || hasClientCredentials();
     return {
       displayName: 'TIDAL',
       enabled: configured,
@@ -399,10 +404,10 @@ export class TidalStreamingProvider implements StreamingProvider {
       accountDisplayName: status?.displayName ?? (configured ? 'Custom developer credentials' : null),
       accountUsername: status?.username ?? null,
       accountAvatarUrl: status?.avatarUrl ?? null,
-      status: configured ? 'ready' : 'needs_account',
+      status: configured ? (status?.connected && status.error ? 'error' : 'ready') : 'needs_account',
       statusMessage: configured
-        ? 'TIDAL catalog metadata is available. Playback stays on the official TIDAL player.'
-        : 'Fill your own TIDAL Client ID and Client Secret in Settings > Integrations to enable catalog metadata.',
+        ? 'TIDAL catalog metadata is available with OAuth. Playback stays on the official TIDAL player.'
+        : 'Sign in to TIDAL from Settings > Integrations to enable catalog metadata.',
     };
   }
 
@@ -412,45 +417,7 @@ export class TidalStreamingProvider implements StreamingProvider {
     const mediaTypes: TidalSearchMediaType[] = request.mediaTypes?.length
       ? request.mediaTypes.filter(isTidalSearchMediaType)
       : ['track'];
-    const includeNames = Array.from(new Set(mediaTypes.map((type) => `${type}s`)));
-    let data: unknown;
-    try {
-      data = await this.apiJson(
-        `/searchResults/${encodeURIComponent(request.query)}?include=${encodeURIComponent(includeNames.join(','))}&explicitFilter=include`,
-      );
-    } catch (error) {
-      if (error instanceof TidalHttpError && error.status === 404) {
-        return this.searchRelationships(request.query, mediaTypes, page, pageSize);
-      }
-      throw error;
-    }
-    const index = resourceIndex(data);
-    const tracks = mediaTypes.includes('track')
-      ? relationResourcesFromResponse(data, 'tracks').map((item) => trackFrom(item, index)).filter((item): item is StreamingTrack => Boolean(item)).slice(0, pageSize)
-      : [];
-    const albums = mediaTypes.includes('album')
-      ? relationResourcesFromResponse(data, 'albums').map((item) => albumShellFrom(item, index)).filter((item): item is StreamingAlbum => Boolean(item)).slice(0, pageSize)
-      : [];
-    const artists = mediaTypes.includes('artist')
-      ? relationResourcesFromResponse(data, 'artists').map((item) => artistFrom(item, index)).filter((item): item is StreamingArtist => Boolean(item)).slice(0, pageSize)
-      : [];
-    const playlists = mediaTypes.includes('playlist')
-      ? relationResourcesFromResponse(data, 'playlists').map((item) => playlistFrom(item, index)).filter((item): item is StreamingPlaylist => Boolean(item)).slice(0, pageSize)
-      : [];
-
-    return {
-      provider,
-      query: request.query,
-      page,
-      pageSize,
-      total: null,
-      hasMore: hasNextPage(data),
-      tracks,
-      albums,
-      artists,
-      playlists,
-      mvs: [],
-    };
+    return this.searchRelationships(request.query, mediaTypes, page, pageSize);
   }
 
   private async searchRelationships(
@@ -628,7 +595,8 @@ export class TidalStreamingProvider implements StreamingProvider {
     const response = await withTimeout(url, {
       method: 'GET',
       headers: {
-        Accept: 'application/vnd.tidal.v1+json,application/json',
+        Accept: 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
         Authorization: `Bearer ${token}`,
         'User-Agent': 'ECHO-Next/0.1',
       },
@@ -652,13 +620,30 @@ export class TidalStreamingProvider implements StreamingProvider {
   }
 
   private async getAccessToken(): Promise<{ token: string; countryCode: string }> {
+    const accountStatus = tidalAccountStatus();
+    if (accountStatus?.connected) {
+      const accountService = getAccountService();
+      const record = accountService.getTidalTokenRecord();
+      if (!hasSearchScope(record?.scope)) {
+        throw new Error('TIDAL login is missing the search.read scope. Clear TIDAL login, save scopes in TIDAL Dashboard, then sign in again.');
+      }
+
+      const authService = getTidalAuthService();
+      const token = await authService.getAccessToken();
+      const refreshedRecord = accountService.getTidalTokenRecord();
+      if (!hasSearchScope(refreshedRecord?.scope)) {
+        throw new Error('TIDAL login is missing the search.read scope. Clear TIDAL login, save scopes in TIDAL Dashboard, then sign in again.');
+      }
+
+      return {
+        token,
+        countryCode: authService.getCountryCode(),
+      };
+    }
+
     const credentials = tidalCredentials();
     if (!credentials) {
-      const accountStatus = tidalAccountStatus();
-      if (accountStatus?.connected) {
-        throw new Error('TIDAL is signed in, but catalog search requires your own TIDAL Client ID and Client Secret in Settings > Integrations.');
-      }
-      throw new Error('TIDAL catalog search requires your own TIDAL Client ID and Client Secret in Settings > Integrations.');
+      throw new Error('TIDAL catalog search requires TIDAL OAuth sign-in from Settings > Integrations.');
     }
 
     if (this.tokenCache && this.tokenCache.expiresAtMs - tokenRefreshSkewMs > Date.now()) {
@@ -676,7 +661,7 @@ export class TidalStreamingProvider implements StreamingProvider {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'ECHO-Next/0.1',
       },
-      body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+      body: new URLSearchParams({ grant_type: 'client_credentials', scope: tidalSearchScope }).toString(),
     });
 
     if (!response.ok) {
@@ -688,6 +673,9 @@ export class TidalStreamingProvider implements StreamingProvider {
     const accessToken = text(data.access_token);
     if (!accessToken) {
       throw new Error('TIDAL login did not return an access token.');
+    }
+    if (!hasSearchScope(data.scope)) {
+      throw new Error('TIDAL catalog search requires the search.read scope. Enable Search API access for this app in TIDAL Developer Dashboard, then save credentials and try again.');
     }
 
     const expiresInSeconds = number(data.expires_in) ?? 3600;

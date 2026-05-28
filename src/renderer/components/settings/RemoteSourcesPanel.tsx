@@ -1159,7 +1159,8 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         const result = await remoteApi.test(source.id);
         setMessage(result.message);
       } else if (action === 'sync') {
-        await remoteApi.sync(source.id);
+        const status = await remoteApi.sync(source.id, { includeCover: true });
+        setSyncStatuses((current) => ({ ...current, [status.sourceId]: status }));
         setMessage('已开始同步。');
       } else if (action === 'metadata') {
         await remoteApi.startBackgroundJobs(source.id, ['metadata', 'duration-backfill']);
@@ -1222,6 +1223,32 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       setBusy(null);
     }
   }, [globalJobStatus, jobStatuses, loadBrowserDirectory, refreshSources, refreshStatuses, remoteApi]);
+
+  const syncBrowserDirectory = useCallback(async (source: RemoteSource): Promise<void> => {
+    if (!remoteApi) {
+      return;
+    }
+
+    const state = browserStates[source.id] ?? emptyBrowserState();
+    const rootPath = state.path ?? rootPathForSource(source);
+    const key = `sync:${source.id}`;
+    setBusy(key);
+    setMessage(null);
+    try {
+      const status = await remoteApi.sync(source.id, {
+        rootPath,
+        markMissing: false,
+        includeCover: true,
+      });
+      setSyncStatuses((current) => ({ ...current, [status.sourceId]: status }));
+      await refreshStatuses([source.id]);
+      setMessage(`已开始同步当前目录索引：${rootPath}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '同步当前目录索引失败。');
+    } finally {
+      setBusy(null);
+    }
+  }, [browserStates, refreshStatuses, remoteApi]);
 
   const showSourceIssues = async (source: RemoteSource, kind: RemoteSourceIssueKind): Promise<void> => {
     if (!remoteApi) {
@@ -1321,6 +1348,8 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     }
 
     const sourceOverview = overviewBySourceId.get(selectedSource.id) ?? emptyOverviewItem(selectedSource);
+    const syncStatus = syncStatuses[selectedSource.id] ?? emptyStatus(selectedSource.id);
+    const syncProgress = syncProgressFor(syncStatus);
     const currentPath = displayPathForBrowser(selectedSource, selectedBrowser.path);
     const parentPath = parentBrowserPath(selectedSource, selectedBrowser.path);
     const canGoUp = currentPath !== rootPathForSource(selectedSource);
@@ -1383,7 +1412,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
               <button type="button" disabled={selectedBrowser.loading} onClick={() => void loadBrowserDirectory(selectedSource, selectedBrowser.path)}>
                 <RefreshCw size={15} />刷新目录
               </button>
-              <button type="button" disabled={busy === `sync:${selectedSource.id}`} onClick={() => void runSourceAction(selectedSource, 'sync')}>
+              <button type="button" disabled={busy === `sync:${selectedSource.id}`} onClick={() => void syncBrowserDirectory(selectedSource)}>
                 <Database size={15} />同步索引
               </button>
             </div>
@@ -1411,6 +1440,26 @@ export const RemoteSourcesPanel = (): JSX.Element => {
             <span><HardDrive size={15} />容量 {formatBytes(sourceOverview.totalSizeBytes)}</span>
             <span><Gauge size={15} />{selectedSource.syncMode === 'browse' ? '仅浏览' : '可同步索引'}</span>
           </div>
+
+          {syncStatus.status === 'running' || syncStatus.currentPath ? (
+            <div
+              className={`remote-scan-progress${syncProgress.active ? ' remote-scan-progress--active' : ''}`}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={syncProgress.total || 100}
+              aria-valuenow={syncProgress.total > 0 ? syncProgress.processed : undefined}
+              aria-label={`${selectedSource.displayName} 当前目录同步进度`}
+            >
+              <div className="remote-scan-progress-head">
+                <span>当前目录同步</span>
+                <strong>{syncProgress.label}</strong>
+              </div>
+              <div className="remote-scan-progress-track">
+                <span style={{ width: `${syncProgress.total > 0 ? syncProgress.percent : syncProgress.active ? 18 : 0}%` }} />
+              </div>
+              {syncStatus.currentPath ? <small>当前路径：{syncStatus.currentPath}</small> : null}
+            </div>
+          ) : null}
 
           {selectedBrowser.loaded ? (
             <div className="remote-browser-toolbar" aria-label="当前目录统计和筛选">

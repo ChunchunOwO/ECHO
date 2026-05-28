@@ -7,14 +7,17 @@ import type {
   RemoteBackgroundJobKind,
   RemoteDirectoryItem,
   RemoteDirectoryPreviewOptions,
+  RemoteIndexedTracksQuery,
   RemoteSourceIssueKind,
   RemoteRuntimeLimits,
   RemoteSourceInput,
   RemoteSourceProvider,
   RemoteSourceSyncMode,
   RemoteSourceUpdate,
+  RemoteSyncOptions,
   RemoteVisibleHydrationOptions,
 } from '../../shared/types/remoteSources';
+import type { LibrarySort } from '../../shared/types/library';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
 import {
   createBaiduOAuthAuthorizeUrl,
@@ -27,6 +30,25 @@ const providers = new Set<RemoteSourceProvider>(['webdav', 'baidu', 'jellyfin', 
 const syncModes = new Set<RemoteSourceSyncMode>(['browse', 'index', 'mirror']);
 const backgroundJobKinds = new Set<RemoteBackgroundJobKind>(['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill']);
 const issueKinds = new Set<RemoteSourceIssueKind>(['metadata', 'cover', 'lyrics', 'mv', 'missing']);
+const sortValues = new Set<LibrarySort>([
+  'default',
+  'createdAsc',
+  'createdDesc',
+  'titleAsc',
+  'titleDesc',
+  'durationAsc',
+  'durationDesc',
+  'fileModifiedAsc',
+  'fileModifiedDesc',
+  'qualityAsc',
+  'qualityDesc',
+  'frequent',
+  'random',
+  'title',
+  'artist',
+  'album',
+  'recent',
+]);
 
 const requireText = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -116,6 +138,35 @@ const normalizeVisibleHydrationOptions = (value: unknown): RemoteVisibleHydratio
     metadata: typeof input.metadata === 'boolean' ? input.metadata : undefined,
     cover: typeof input.cover === 'boolean' ? input.cover : undefined,
     priority: typeof input.priority === 'number' && Number.isFinite(input.priority) ? input.priority : undefined,
+    immediateCover: typeof input.immediateCover === 'boolean' ? input.immediateCover : undefined,
+  };
+};
+
+const normalizeRemoteSyncOptions = (value: unknown): RemoteSyncOptions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    rootPath: optionalText(input.rootPath),
+    markMissing: typeof input.markMissing === 'boolean' ? input.markMissing : undefined,
+    includeCover: typeof input.includeCover === 'boolean' ? input.includeCover : undefined,
+  };
+};
+
+const normalizeIndexedTracksQuery = (value: unknown): RemoteIndexedTracksQuery => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    rootPath: optionalText(input.rootPath),
+    page: typeof input.page === 'number' && Number.isFinite(input.page) ? Math.max(1, Math.floor(input.page)) : undefined,
+    pageSize: typeof input.pageSize === 'number' && Number.isFinite(input.pageSize) ? Math.max(1, Math.min(500, Math.floor(input.pageSize))) : undefined,
+    search: optionalText(input.search) ?? undefined,
+    sort: sortValues.has(input.sort as LibrarySort) ? (input.sort as LibrarySort) : undefined,
   };
 };
 
@@ -302,7 +353,9 @@ export const registerRemoteSourcesIpc = (): void => {
   ipcMain.handle(IpcChannels.RemoteSourcesBrowse, (_event, sourceId: unknown, path?: unknown) =>
     getRemoteSourceService().browse(requireText(sourceId, 'sourceId'), optionalText(path)),
   );
-  ipcMain.handle(IpcChannels.RemoteSourcesSync, (_event, sourceId: unknown) => getRemoteSourceService().syncSource(requireText(sourceId, 'sourceId')));
+  ipcMain.handle(IpcChannels.RemoteSourcesSync, (_event, sourceId: unknown, options?: unknown) =>
+    getRemoteSourceService().syncSource(requireText(sourceId, 'sourceId'), normalizeRemoteSyncOptions(options)),
+  );
   ipcMain.handle(IpcChannels.RemoteSourcesCancelSync, (_event, sourceId: unknown) => getRemoteSourceService().cancelSync(requireText(sourceId, 'sourceId')));
   ipcMain.handle(IpcChannels.RemoteSourcesGetSyncStatus, (_event, sourceId: unknown) =>
     getRemoteSourceService().getSyncStatus(requireText(sourceId, 'sourceId')),
@@ -325,6 +378,15 @@ export const registerRemoteSourcesIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.RemoteSourcesLookupTracks, (_event, sourceId: unknown, remotePaths: unknown) =>
     getRemoteSourceService().lookupTracks(requireText(sourceId, 'sourceId'), normalizeRemotePaths(remotePaths)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracks, (_event, sourceId: unknown, rootPath: unknown) =>
+    getRemoteSourceService().listIndexedTracks(requireText(sourceId, 'sourceId'), optionalText(rootPath)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesListIndexedTracksPage, (_event, sourceId: unknown, query: unknown) =>
+    getRemoteSourceService().listIndexedTracksPage(requireText(sourceId, 'sourceId'), normalizeIndexedTracksQuery(query)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesGetIndexedFolderStats, (_event, sourceId: unknown, rootPath: unknown) =>
+    getRemoteSourceService().getIndexedFolderStats(requireText(sourceId, 'sourceId'), optionalText(rootPath)),
   );
   ipcMain.handle(IpcChannels.RemoteSourcesPreviewDirectoryItems, (_event, sourceId: unknown, items: unknown, options: unknown) =>
     getRemoteSourceService().previewDirectoryItems(

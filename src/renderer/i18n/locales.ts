@@ -1142,6 +1142,8 @@ export type TranslationKey =
   | 'lyricsSettings.display.matchThreshold'
   | 'lyricsSettings.display.matchThresholdDescription'
   | 'lyricsSettings.display.miniPlayer'
+  | 'lyricsSettings.display.miniPlayerAutoMv'
+  | 'lyricsSettings.display.miniPlayerAutoMvDescription'
   | 'lyricsSettings.display.miniPlayerColor'
   | 'lyricsSettings.display.miniPlayerColorMode'
   | 'lyricsSettings.display.miniPlayerDefaultDark'
@@ -3295,6 +3297,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌词匹配度设置',
   'lyricsSettings.display.matchThresholdDescription': '在线结果达到 {threshold}% 才会自动应用',
   'lyricsSettings.display.miniPlayer': '迷你底栏',
+  'lyricsSettings.display.miniPlayerAutoMv': '播放 MV 时自动启用',
+  'lyricsSettings.display.miniPlayerAutoMvDescription': '开启后进入 MV 页面会自动使用迷你底栏；普通歌词页仍按上方开关决定。',
   'lyricsSettings.display.miniPlayerColor': '底栏颜色',
   'lyricsSettings.display.miniPlayerColorMode': '迷你底栏颜色模式',
   'lyricsSettings.display.miniPlayerDefaultDark': '默认深色',
@@ -5367,6 +5371,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌詞匹配度設定',
   'lyricsSettings.display.matchThresholdDescription': '線上結果達到 {threshold}% 才會自動套用',
   'lyricsSettings.display.miniPlayer': '迷你底欄',
+  'lyricsSettings.display.miniPlayerAutoMv': '播放 MV 時自動啟用',
+  'lyricsSettings.display.miniPlayerAutoMvDescription': '開啟後進入 MV 頁面會自動使用迷你底欄；一般歌詞頁仍依上方開關決定。',
   'lyricsSettings.display.miniPlayerColor': '底欄顏色',
   'lyricsSettings.display.miniPlayerColorMode': '迷你底欄顏色模式',
   'lyricsSettings.display.miniPlayerDefaultDark': '預設深色',
@@ -7225,6 +7231,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.matchThreshold': '歌詞一致度設定',
   'lyricsSettings.display.matchThresholdDescription': 'オンライン結果が {threshold}% 以上の場合だけ自動適用します',
   'lyricsSettings.display.miniPlayer': 'ミニ下部バー',
+  'lyricsSettings.display.miniPlayerAutoMv': 'MV 再生時に自動で有効化',
+  'lyricsSettings.display.miniPlayerAutoMvDescription': 'オンにすると MV ページではミニ下部バーを自動で使い、通常の歌詞ページでは上の設定に従います。',
   'lyricsSettings.display.miniPlayerColor': '下部バーの色',
   'lyricsSettings.display.miniPlayerColorMode': 'ミニ下部バーの色モード',
   'lyricsSettings.display.miniPlayerDefaultDark': '既定のダーク',
@@ -9148,6 +9156,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.matchThreshold': 'Lyrics match threshold',
   'lyricsSettings.display.matchThresholdDescription': 'Automatically apply online results only at {threshold}% or higher',
   'lyricsSettings.display.miniPlayer': 'Mini bottom bar',
+  'lyricsSettings.display.miniPlayerAutoMv': 'Auto-enable while playing MV',
+  'lyricsSettings.display.miniPlayerAutoMvDescription': 'Uses the mini bottom bar automatically on the MV page; normal lyrics pages still follow the switch above.',
   'lyricsSettings.display.miniPlayerColor': 'Bottom bar color',
   'lyricsSettings.display.miniPlayerColorMode': 'Mini bottom bar color mode',
   'lyricsSettings.display.miniPlayerDefaultDark': 'Default dark',

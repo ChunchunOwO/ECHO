@@ -51,6 +51,15 @@ describe('TrackList', () => {
     expect(screen.queryByText(/没有可显示的歌曲/)).toBeNull();
   });
 
+  it('marks the requested loading track without requiring it to be the current track', () => {
+    const tracks = [track(1), track(2)];
+
+    render(<TrackList currentTrackId={null} loadingTrackId="track-2" tracks={tracks} />);
+
+    expect(screen.getByText('Song 2').closest('.track-row')?.getAttribute('data-loading')).toBe('true');
+    expect(screen.getByText('加载中')).toBeTruthy();
+  });
+
   it('reports loaded track ids in the rendered virtual window', async () => {
     const onVisibleTrackIdsChange = vi.fn();
     const tracks = Array.from({ length: 5 }, (_, index) => track(index + 1));

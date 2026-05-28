@@ -278,6 +278,7 @@ const airPlayRaopLatencies = '1000:1000';
 const airPlayStartupStepTimeoutMs = 10_000;
 const shouldUseAirPlayHttpPcmBridge = (): boolean => process.env.ECHO_AIRPLAY_HTTP_PCM === '1';
 const shouldAdvertiseAirPlay2Experimental = (): boolean => process.env.ECHO_AIRPLAY2_EXPERIMENTAL !== '0';
+const highVolumeDebugActions = new Set(['pcm', 'rtp', 'rtcp']);
 const airPlay2ProbeSourceVersion = '366.0';
 const airPlay2ProbeBodyLimitBytes = 64 * 1024;
 const airPlay2SupportedPcmAudioFormats = 0x3fffc;
@@ -2125,7 +2126,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         this.addDebugEvent(
           'airplay2',
           airPlay2ProbePort
-            ? `experimental _airplay._tcp advertisement enabled on ${airPlay2ProbePort}; AirPlay 2 pairing/audio is still under investigation`
+            ? `experimental AirPlay 2 advertisement enabled on ${airPlay2ProbePort}; RAOP discovery is routed to the AirPlay 2 control server`
             : 'experimental _airplay._tcp advertisement skipped because probe server did not start',
         );
       }
@@ -4058,6 +4059,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       debugEvents: [event, ...this.status.debugEvents].slice(0, debugEventLimit),
       updatedAt: new Date(this.now()).toISOString(),
     };
+    if (!highVolumeDebugActions.has(action)) {
+      this.emit('status', this.getStatus());
+    }
   }
 
   private formatNativeLog(event: unknown): string {

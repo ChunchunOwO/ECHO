@@ -4392,6 +4392,19 @@
   user-select: text;
 }
 
+.player-track-copy .player-loading-hint {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  color: var(--theme-accent-text-strong);
+  font-size: 11px;
+  font-weight: 760;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .player-track-copy .player-marquee {
   display: block;
   max-width: 100%;
@@ -4584,6 +4597,12 @@
   color: #28615a;
   border-color: rgba(35, 138, 122, 0.14);
   background: #eefaf7;
+}
+
+.tag-loading {
+  color: #214f9a;
+  border-color: rgba(33, 79, 154, 0.16);
+  background: #eef4ff;
 }
 
 .tag-automix {
@@ -4796,6 +4815,35 @@
   height: 100%;
   border-radius: inherit;
   background: var(--theme-heading-text);
+}
+
+.progress-track[data-loading="true"] .progress-fill,
+.progress-track[data-loading="true"] .progress-thumb {
+  opacity: 0;
+}
+
+.progress-track[data-loading="true"] {
+  overflow: hidden;
+}
+
+.progress-track[data-loading="true"]::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--theme-accent-text-strong), transparent);
+  content: "";
+  animation: player-progress-loading 1.05s ease-in-out infinite;
+}
+
+@keyframes player-progress-loading {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(265%);
+  }
 }
 
 .progress-track[data-waveform="true"] .progress-fill {
@@ -13484,6 +13532,15 @@ html[data-theme="dark"] .history-play-count {
 
 .remote-scan-progress--active .remote-scan-progress-track span {
   min-width: 18px;
+}
+
+.remote-scan-progress small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .remote-source-coming-soon {

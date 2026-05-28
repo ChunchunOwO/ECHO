@@ -52,6 +52,13 @@ describe('PlayerStatusChips', () => {
     expect(screen.getByText('Hi-Res')).toBeTruthy();
   });
 
+  it('surfaces remote playback loading even when codec chips are available', () => {
+    render(<PlayerStatusChips status={null} state="loading" track={track({ mediaType: 'remote', sourceDisplayName: '百度网盘' })} />);
+
+    expect(screen.getByText('加载中')).toBeTruthy();
+    expect(screen.getByText('FLAC')).toBeTruthy();
+  });
+
   it('shows detected BPM in the player tags only when confidence is reliable', () => {
     const { rerender } = render(
       <PlayerStatusChips

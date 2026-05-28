@@ -26,6 +26,12 @@ type RunningJob = QueueJob & {
   startedAt: string;
 };
 
+type SourceContinuation = {
+  kinds: RemoteBackgroundJobKind[];
+  options: { failedOnly?: boolean; priority?: number };
+  seenTrackIds: Set<string>;
+};
+
 type QueueableTrack = Pick<
   RemoteLibraryTrack,
   | 'id'
@@ -75,7 +81,7 @@ const maxConcurrentByKind: Record<RemoteBackgroundJobKind, number> = {
 };
 const maxTotalRunningJobs = 8;
 const maxJobsStartedPerDrain = 8;
-const maxTracksPerSourceEnqueue = 5000;
+const maxTracksPerSourceEnqueue = 1000;
 const maxCoverOnlyTracksPerSourceEnqueue = 25;
 const maxLyricsOnlyTracksPerSourceEnqueue = 50;
 const sourceEnqueueChunkSize = 100;
@@ -85,6 +91,7 @@ const coverOnlyChunkYieldMs = 100;
 const lyricsOnlyChunkYieldMs = 75;
 const coverJobCooldownMs = 150;
 const lyricsJobCooldownMs = 150;
+const sourceEnqueueChunkYieldMs = 15;
 const playbackDeferredKinds = new Set<RemoteBackgroundJobKind>(['cover', 'lyrics', 'mv']);
 
 const limitKeys: Record<RemoteBackgroundJobKind, keyof RemoteRuntimeLimits> = {
@@ -126,6 +133,7 @@ export class RemoteBackgroundJobQueue {
   private readonly runtimeLimits = new Map<string, RemoteRuntimeLimits>();
   private readonly syncingSources = new Set<string>();
   private readonly sourceEnqueueingKeys = new Set<string>();
+  private readonly sourceContinuations = new Map<string, SourceContinuation>();
   private readonly coverIdsByKey = new Map<string, string | null>();
   private readonly coverPromisesByKey = new Map<string, Promise<string | null>>();
   private globalPaused = false;
@@ -143,6 +151,11 @@ export class RemoteBackgroundJobQueue {
   enqueueSource(sourceId: string, kinds: RemoteBackgroundJobKind[] = ['metadata', 'lyrics'], options: { failedOnly?: boolean; priority?: number } = {}): RemoteBackgroundJobStatus {
     const normalizedKinds = this.normalizeKinds(kinds);
     this.resume(sourceId);
+    this.sourceContinuations.set(this.sourceContinuationKey(sourceId, normalizedKinds, options), {
+      kinds: normalizedKinds,
+      options,
+      seenTrackIds: new Set(),
+    });
     this.scheduleSourceEnqueue(sourceId, normalizedKinds, options);
     return this.getStatus(sourceId);
   }
@@ -180,6 +193,11 @@ export class RemoteBackgroundJobQueue {
 
   pause(sourceId: string): RemoteBackgroundJobStatus {
     this.pausedSources.add(sourceId);
+    for (const key of Array.from(this.sourceContinuations.keys())) {
+      if (key.startsWith(`${sourceId}:`)) {
+        this.sourceContinuations.delete(key);
+      }
+    }
     this.touch();
     return this.getStatus(sourceId);
   }
@@ -287,7 +305,7 @@ export class RemoteBackgroundJobQueue {
     kinds: RemoteBackgroundJobKind[],
     options: { failedOnly?: boolean; priority?: number },
   ): void {
-    const key = `${sourceId}:${kinds.join(',')}:${options.failedOnly === true ? 'failed' : 'all'}`;
+    const key = this.sourceContinuationKey(sourceId, kinds, options);
     if (this.sourceEnqueueingKeys.has(key)) {
       return;
     }
@@ -295,13 +313,24 @@ export class RemoteBackgroundJobQueue {
     this.sourceEnqueueingKeys.add(key);
     this.touch();
     setImmediate(() => {
+      let enqueuedCount = 0;
       void this.enqueueSourceInChunks(sourceId, kinds, options)
+        .then((count) => {
+          enqueuedCount = count;
+          if (count === 0) {
+            this.sourceContinuations.delete(key);
+          }
+        })
         .catch((error) => {
           this.lastErrors.set(sourceId, error instanceof Error ? error.message : String(error));
+          this.sourceContinuations.delete(key);
           this.touch();
         })
         .finally(() => {
           this.sourceEnqueueingKeys.delete(key);
+          if (enqueuedCount > 0 && !this.hasPendingOrRunningForSource(sourceId)) {
+            this.scheduleSourceContinuation(sourceId);
+          }
           this.touch();
         });
     });
@@ -311,17 +340,23 @@ export class RemoteBackgroundJobQueue {
     sourceId: string,
     kinds: RemoteBackgroundJobKind[],
     options: { failedOnly?: boolean; priority?: number },
-  ): Promise<void> {
+  ): Promise<number> {
     const coverOnly = kinds.length === 1 && kinds[0] === 'cover';
     const lyricsOnly = kinds.length === 1 && kinds[0] === 'lyrics';
+    const continuation = this.sourceContinuations.get(this.sourceContinuationKey(sourceId, kinds, options));
     const trackIds = this.getBackgroundJobTrackIds(sourceId, kinds, {
       failedOnly: options.failedOnly,
       limit: coverOnly ? maxCoverOnlyTracksPerSourceEnqueue : lyricsOnly ? maxLyricsOnlyTracksPerSourceEnqueue : maxTracksPerSourceEnqueue,
-    });
+    }).filter((trackId) => !continuation?.seenTrackIds.has(trackId));
     const chunkSize = coverOnly ? coverOnlySourceEnqueueChunkSize : lyricsOnly ? lyricsOnlySourceEnqueueChunkSize : sourceEnqueueChunkSize;
+    let enqueuedCount = 0;
 
     for (let index = 0; index < trackIds.length; index += chunkSize) {
-      const tracks = this.getBackgroundJobTracks(trackIds.slice(index, index + chunkSize));
+      const chunkTrackIds = trackIds.slice(index, index + chunkSize);
+      for (const trackId of chunkTrackIds) {
+        continuation?.seenTrackIds.add(trackId);
+      }
+      const tracks = this.getBackgroundJobTracks(chunkTrackIds);
       const jobs: QueueJob[] = [];
 
       for (const track of tracks) {
@@ -338,9 +373,12 @@ export class RemoteBackgroundJobQueue {
       }
 
       this.enqueueMany(jobs);
+      enqueuedCount += jobs.length;
       this.schedule();
-      await this.yieldToEventLoop(coverOnly ? coverOnlyChunkYieldMs : lyricsOnly ? lyricsOnlyChunkYieldMs : 0);
+      await this.yieldToEventLoop(coverOnly ? coverOnlyChunkYieldMs : lyricsOnly ? lyricsOnlyChunkYieldMs : sourceEnqueueChunkYieldMs);
     }
+
+    return enqueuedCount;
   }
 
   private getBackgroundJobTrackIds(
@@ -357,6 +395,31 @@ export class RemoteBackgroundJobQueue {
     }
 
     return this.store.getTracksForBackgroundJobs(sourceId, kinds, options).map((track) => track.id);
+  }
+
+  private sourceContinuationKey(sourceId: string, kinds: RemoteBackgroundJobKind[], options: { failedOnly?: boolean }): string {
+    return `${sourceId}:${kinds.join(',')}:${options.failedOnly === true ? 'failed' : 'all'}`;
+  }
+
+  private hasPendingOrRunningForSource(sourceId: string): boolean {
+    const pending = this.getCounts(this.pendingBySource, sourceId);
+    const running = this.getCounts(this.runningBySource, sourceId);
+    return jobKinds.some((kind) => pending[kind] > 0 || running[kind] > 0);
+  }
+
+  private scheduleSourceContinuation(sourceId: string): void {
+    if (this.pausedSources.has(sourceId)) {
+      return;
+    }
+
+    for (const [key, continuation] of this.sourceContinuations) {
+      if (!key.startsWith(`${sourceId}:`) || this.sourceEnqueueingKeys.has(key)) {
+        continue;
+      }
+
+      this.scheduleSourceEnqueue(sourceId, continuation.kinds, continuation.options);
+      break;
+    }
   }
 
   private getBackgroundJobTracks(trackIds: string[]): RemoteLibraryTrack[] {
@@ -447,6 +510,9 @@ export class RemoteBackgroundJobQueue {
         const track = this.store.getTrack(job.trackId);
         if (!track || track.availability === 'missing') {
           this.increment(this.skippedBySource, job.sourceId, job.kind);
+          if (!this.hasPendingOrRunningForSource(job.sourceId)) {
+            this.scheduleSourceContinuation(job.sourceId);
+          }
           continue;
         }
 
@@ -463,6 +529,9 @@ export class RemoteBackgroundJobQueue {
           this.adjust(this.runningBySource, job.sourceId, job.kind, -1);
           this.touch();
           this.schedule();
+          if (!this.hasPendingOrRunningForSource(job.sourceId)) {
+            this.scheduleSourceContinuation(job.sourceId);
+          }
         });
         startedCount += 1;
       }
@@ -739,11 +808,11 @@ export class RemoteBackgroundJobQueue {
       }
       if (kind === 'cover') {
         const coverStatus = track.coverStatus ?? 'pending';
-        const coverEligible = failedOnly ? coverStatus === 'error' : coverStatus === 'pending' || coverStatus === 'error';
+        const coverEligible = failedOnly ? coverStatus === 'error' : coverStatus === 'pending';
         return !track.coverId && coverEligible && track.metadataStatus !== 'error' && this.canAttemptCover(track);
       }
       if (kind === 'lyrics') {
-        return this.hasMatchableMetadata(track) && (failedOnly ? track.lyricsStatus === 'error' : track.lyricsStatus === 'pending' || track.lyricsStatus === 'not_found' || track.lyricsStatus === 'error');
+        return this.hasMatchableMetadata(track) && (failedOnly ? track.lyricsStatus === 'error' : track.lyricsStatus === 'pending' || track.lyricsStatus === 'not_found');
       }
       if (kind === 'mv') {
         return false;
@@ -792,7 +861,7 @@ export class RemoteBackgroundJobQueue {
       return false;
     }
 
-    if (job.kind === 'cover' && this.syncingSources.has(job.sourceId)) {
+    if (this.syncingSources.has(job.sourceId) && (job.kind === 'metadata' || job.kind === 'duration-backfill' || job.kind === 'cover')) {
       return false;
     }
 

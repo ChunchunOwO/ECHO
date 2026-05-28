@@ -110,6 +110,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsMvAutoShowTrackInfoDisabled).toBe(true);
     expect(settings.lyricsEmptyStateHidden).toBe(true);
     expect(settings.lyricsPlayerBarDrawerEnabled).toBe(false);
+    expect(settings.lyricsPlayerBarDrawerAutoEnableForMv).toBe(true);
     expect(settings.lyricsPlayerBarDrawerOpacityPercent).toBe(78);
     expect(settings.lyricsPlayerBarDrawerColorMode).toBe('default');
     expect(settings.lyricsPlayerBarDrawerColor).toBe('#232120');
@@ -827,6 +828,13 @@ describe('app settings normalization', () => {
       }),
     ).toMatchObject({
       miniPlayerAutoHideMainWindow: false,
+    });
+    expect(
+      normalizeSettings({
+        lyricsPlayerBarDrawerAutoEnableForMv: false,
+      }),
+    ).toMatchObject({
+      lyricsPlayerBarDrawerAutoEnableForMv: false,
     });
     expect(
       normalizeSettings({

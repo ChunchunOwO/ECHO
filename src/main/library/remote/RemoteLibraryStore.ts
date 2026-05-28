@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { EchoDatabase } from '../../database/createDatabase';
-import type { LibraryTrack } from '../../../shared/types/library';
+import type { LibraryPage, LibrarySort, LibraryTrack } from '../../../shared/types/library';
 import type {
   RemoteBackgroundJobKind,
+  RemoteIndexedFolderStats,
+  RemoteIndexedTracksQuery,
   RemoteLibraryTrack,
   RemoteSourceIssueItem,
   RemoteSourceIssueKind,
@@ -19,6 +21,7 @@ import type {
 } from '../../../shared/types/remoteSources';
 import type { RemoteSourceSecret, RemoteTrackWrite } from './remoteTypes';
 import { RemoteSourceSecretStore } from './RemoteSourceSecretStore';
+import { normalizeRemoteDirectoryPath } from './remoteIdentity';
 import { buildTrackSearchTerms, buildTrackSearchTermsAsync } from '../SearchIndexTokens';
 
 type DbRow = Record<string, unknown>;
@@ -26,6 +29,9 @@ type DbRow = Record<string, unknown>;
 const nowIso = (): string => new Date().toISOString();
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const escapeSqlLike = (value: string): string => value.replace(/[\\%_]/gu, '\\$&');
+const remoteIndexedDefaultPageSize = 100;
+const remoteIndexedMaxPageSize = 500;
 
 const parseJsonObject = (value: unknown): Record<string, unknown> => {
   if (typeof value !== 'string') {
@@ -394,6 +400,156 @@ export class RemoteLibraryStore {
       .map((row) => this.mapTrack(row));
   }
 
+  getIndexedFolderStats(sourceId: string, rootPath?: string | null): RemoteIndexedFolderStats {
+    const normalizedRoot = normalizeRemoteDirectoryPath(rootPath ?? '/');
+    const scope = this.indexedFolderScopeSql(normalizedRoot);
+    const row = this.database
+      .prepare<unknown[], DbRow>(
+        `SELECT
+           COUNT(*) AS track_count,
+           COALESCE(SUM(COALESCE(size_bytes, 0)), 0) AS total_size_bytes,
+           COUNT(DISTINCT lower(trim(COALESCE(NULLIF(album, ''), 'Unknown Album')))) AS album_count,
+           COUNT(DISTINCT lower(trim(COALESCE(NULLIF(artist, ''), 'Unknown Artist')))) AS artist_count
+         FROM remote_tracks
+         WHERE source_id = ?
+           AND availability != 'missing'
+           ${scope.sql}`,
+      )
+      .get(sourceId, ...scope.params);
+
+    return {
+      sourceId,
+      rootPath: normalizedRoot,
+      trackCount: Number(row?.track_count ?? 0),
+      totalSizeBytes: Number(row?.total_size_bytes ?? 0),
+      albumCount: Number(row?.album_count ?? 0),
+      artistCount: Number(row?.artist_count ?? 0),
+    };
+  }
+
+  listTracksBySourceFolder(sourceId: string, rootPath?: string | null, limit = 5000): RemoteLibraryTrack[] {
+    return this.listTracksBySourceFolderPage(sourceId, {
+      rootPath,
+      page: 1,
+      pageSize: limit,
+      sort: 'album',
+    }).items;
+  }
+
+  listTracksBySourceFolderPage(sourceId: string, query: RemoteIndexedTracksQuery = {}): LibraryPage<RemoteLibraryTrack> {
+    const { page, pageSize, search, sort, rootPath } = this.normalizeIndexedTracksQuery(query);
+    const offset = (page - 1) * pageSize;
+    const scope = this.indexedFolderScopeSql(rootPath);
+    const searchFilter = this.indexedFolderSearchSql(search);
+    const whereSql = `WHERE source_id = ? AND availability != 'missing' ${scope.sql} ${searchFilter.sql}`;
+    const params = [sourceId, ...scope.params, ...searchFilter.params];
+    const total = Number(
+      this.database
+        .prepare<unknown[], DbRow>(`SELECT COUNT(*) AS total FROM remote_tracks ${whereSql}`)
+        .get(...params)?.total ?? 0,
+    );
+    const items = this.database
+      .prepare<unknown[], DbRow>(
+        `SELECT * FROM remote_tracks
+         ${whereSql}
+         ${this.remoteFolderTrackOrderSql(sort)}
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, pageSize, offset)
+      .map((row) => this.mapTrack(row));
+
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      hasMore: offset + items.length < total,
+    };
+  }
+
+  private normalizeIndexedTracksQuery(query: RemoteIndexedTracksQuery): {
+    page: number;
+    pageSize: number;
+    search: string;
+    sort: LibrarySort;
+    rootPath: string;
+  } {
+    return {
+      page: Math.max(1, Math.floor(Number(query.page ?? 1))),
+      pageSize: Math.min(remoteIndexedMaxPageSize, Math.max(1, Math.floor(Number(query.pageSize ?? remoteIndexedDefaultPageSize)))),
+      search: typeof query.search === 'string' ? query.search.trim() : '',
+      sort: query.sort ?? 'default',
+      rootPath: normalizeRemoteDirectoryPath(query.rootPath ?? '/'),
+    };
+  }
+
+  private indexedFolderScopeSql(rootPath: string): { sql: string; params: string[] } {
+    if (rootPath === '/') {
+      return { sql: '', params: [] };
+    }
+
+    return {
+      sql: "AND (remote_path = ? OR remote_path LIKE ? ESCAPE '\\')",
+      params: [rootPath, `${escapeSqlLike(rootPath)}%`],
+    };
+  }
+
+  private indexedFolderSearchSql(search: string): { sql: string; params: string[] } {
+    if (!search) {
+      return { sql: '', params: [] };
+    }
+
+    const like = `%${escapeSqlLike(search.toLocaleLowerCase())}%`;
+    return {
+      sql: `AND (
+        lower(title) LIKE ? ESCAPE '\\' OR
+        lower(artist) LIKE ? ESCAPE '\\' OR
+        lower(album) LIKE ? ESCAPE '\\' OR
+        lower(album_artist) LIKE ? ESCAPE '\\' OR
+        lower(COALESCE(genre, '')) LIKE ? ESCAPE '\\' OR
+        lower(remote_path) LIKE ? ESCAPE '\\' OR
+        lower(COALESCE(search_terms, '')) LIKE ? ESCAPE '\\'
+      )`,
+      params: [like, like, like, like, like, like, like],
+    };
+  }
+
+  private remoteFolderTrackOrderSql(sort: LibrarySort): string {
+    switch (sort) {
+      case 'artist':
+        return 'ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'album':
+        return 'ORDER BY album COLLATE NOCASE, COALESCE(disc_no, 0), COALESCE(track_no, 999999), title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'recent':
+        return 'ORDER BY updated_at DESC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'createdAsc':
+        return 'ORDER BY created_at ASC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'createdDesc':
+        return 'ORDER BY created_at DESC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'titleDesc':
+        return 'ORDER BY title COLLATE NOCASE DESC, artist COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'durationAsc':
+        return 'ORDER BY COALESCE(duration, 0) ASC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'durationDesc':
+        return 'ORDER BY COALESCE(duration, 0) DESC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'fileModifiedAsc':
+        return 'ORDER BY modified_at ASC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'fileModifiedDesc':
+        return 'ORDER BY modified_at DESC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'qualityAsc':
+        return 'ORDER BY COALESCE(bitrate, 0) ASC, COALESCE(size_bytes, 0) ASC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'qualityDesc':
+        return 'ORDER BY COALESCE(bitrate, 0) DESC, COALESCE(size_bytes, 0) DESC, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'random':
+        return 'ORDER BY RANDOM()';
+      case 'titleAsc':
+      case 'default':
+      case 'title':
+      default:
+        return 'ORDER BY title COLLATE NOCASE, artist COLLATE NOCASE, remote_path COLLATE NOCASE';
+    }
+  }
+
   getTracksForBackgroundJobs(sourceId: string, kinds: RemoteBackgroundJobKind[], options: { failedOnly?: boolean; limit?: number } = {}): RemoteLibraryTrack[] {
     return this.queryTracksForBackgroundJobs(sourceId, kinds, options, '*').map((row) => this.mapTrack(row));
   }
@@ -412,22 +568,22 @@ export class RemoteLibraryStore {
       : 5000;
 
     if (kinds.includes('metadata') || kinds.includes('duration-backfill')) {
-      statusClauses.push(options.failedOnly ? "metadata_status = 'error'" : "metadata_status IN ('pending', 'partial', 'error')");
+      statusClauses.push(options.failedOnly ? "metadata_status = 'error'" : "metadata_status IN ('pending', 'partial')");
     }
 
     if (kinds.includes('lyrics')) {
-      statusClauses.push(options.failedOnly ? "lyrics_status = 'error'" : "lyrics_status IN ('pending', 'not_found', 'error')");
+      statusClauses.push(options.failedOnly ? "lyrics_status = 'error'" : "lyrics_status IN ('pending', 'not_found')");
     }
 
     if (kinds.includes('mv')) {
-      statusClauses.push(options.failedOnly ? "mv_status = 'error'" : "mv_status IN ('pending', 'not_found', 'error')");
+      statusClauses.push(options.failedOnly ? "mv_status = 'error'" : "mv_status IN ('pending', 'not_found')");
     }
 
     if (kinds.includes('cover')) {
       statusClauses.push(
         `(
           cover_id IS NULL
-          AND cover_status IN (${options.failedOnly ? "'error'" : "'pending', 'error'"})
+          AND cover_status IN (${options.failedOnly ? "'error'" : "'pending'"})
           AND metadata_status != 'error'
           AND (
             provider NOT IN ('jellyfin', 'emby', 'subsonic')
@@ -486,21 +642,24 @@ export class RemoteLibraryStore {
 
   async prepareSearchTermsForTracks(tracks: RemoteTrackWrite[]): Promise<Map<string, string>> {
     const terms = new Map<string, string>();
-    await Promise.all(
-      tracks.map(async (track) => {
-        terms.set(
-          track.id,
-          await buildTrackSearchTermsAsync({
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            albumArtist: track.albumArtist,
-            genre: track.genre,
-            remotePath: track.remotePath,
-          }),
-        );
-      }),
-    );
+    for (let index = 0; index < tracks.length; index += 1) {
+      const track = tracks[index];
+      terms.set(
+        track.id,
+        await buildTrackSearchTermsAsync({
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumArtist: track.albumArtist,
+          genre: track.genre,
+          remotePath: track.remotePath,
+        }),
+      );
+
+      if (index > 0 && index % 12 === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    }
     return terms;
   }
 

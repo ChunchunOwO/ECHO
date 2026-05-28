@@ -138,6 +138,24 @@ const waitForSync = async (service: RemoteSourceService, sourceId: string): Prom
   throw new Error('Timed out waiting for WebDAV sync');
 };
 
+const waitForJobAttempt = async (service: RemoteSourceService, sourceId: string, kind: 'metadata' | 'cover'): Promise<void> => {
+  for (let index = 0; index < 100; index += 1) {
+    const status = service.getJobStatus(sourceId);
+    if (
+      status.pending[kind] > 0 ||
+      status.running[kind] > 0 ||
+      status.completed[kind] > 0 ||
+      status.failed[kind] > 0 ||
+      status.skipped[kind] > 0
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error(`Timed out waiting for ${kind} job`);
+};
+
 describe('RemoteSourceService WebDAV integration', () => {
   const servers: Server[] = [];
   let database: EchoDatabase | null = null;
@@ -179,11 +197,43 @@ describe('RemoteSourceService WebDAV integration', () => {
 
     service.syncSource(source.id);
     await waitForSync(service, source.id);
+    await waitForJobAttempt(service, source.id, 'metadata');
+    await waitForJobAttempt(service, source.id, 'cover');
 
     const tracks = libraryStore.getTracks({ search: 'mofa' });
     expect(tracks.total).toBe(1);
     expect(libraryStore.getTracks({ search: '魔法' }).total).toBe(1);
     expect(libraryStore.getTracks({ sourceProvider: 'remote', sourceId: source.id }).total).toBe(1);
+    expect(service.listIndexedTracks(source.id, rootPath)).toEqual([
+      expect.objectContaining({
+        id: tracks.items[0].id,
+        mediaType: 'remote',
+        remotePath: trackPath,
+      }),
+    ]);
+    expect(service.getIndexedFolderStats(source.id, rootPath)).toMatchObject({
+      sourceId: source.id,
+      rootPath,
+      trackCount: 1,
+      totalSizeBytes: audioBytes.length,
+    });
+    expect(service.listIndexedTracksPage(source.id, { rootPath, page: 1, pageSize: 1 })).toMatchObject({
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      hasMore: false,
+      items: [expect.objectContaining({ id: tracks.items[0].id, mediaType: 'remote' })],
+    });
+    const restartedService = new RemoteSourceService(database, () => undefined);
+    try {
+      expect(restartedService.listIndexedTracksPage(source.id, { rootPath, page: 1, pageSize: 1 })).toMatchObject({
+        total: 1,
+        items: [expect.objectContaining({ remotePath: trackPath })],
+      });
+      expect(restartedService.getIndexedFolderStats(source.id, rootPath)).toMatchObject({ trackCount: 1 });
+    } finally {
+      restartedService.close();
+    }
     expect(tracks.items[0]).toEqual(expect.objectContaining({
       mediaType: 'remote',
       provider: 'webdav',
@@ -203,7 +253,7 @@ describe('RemoteSourceService WebDAV integration', () => {
         sourceId: source.id,
         remotePath: trackPath,
         title: '会魔法的老人',
-        metadataStatus: 'pending',
+        metadataStatus: expect.any(String),
         availability: 'available',
       }),
     ]);
@@ -222,7 +272,7 @@ describe('RemoteSourceService WebDAV integration', () => {
     expect(service.lookupTracks(otherSource.id, [trackPath])).toEqual([]);
 
     database.prepare("UPDATE remote_tracks SET metadata_status = 'error', cover_status = 'error', lyrics_status = 'not_found' WHERE source_id = ?").run(source.id);
-    expect(service.getOverview()).toMatchObject({
+    expect(service.getOverview(source.id)).toMatchObject({
       totalSources: 1,
       enabledSources: 1,
       trackCount: 1,
@@ -273,5 +323,108 @@ describe('RemoteSourceService WebDAV integration', () => {
     service.deleteSource(source.id);
     expect(libraryStore.getTracks({ search: 'mofa' }).total).toBe(0);
     expect(await fetch(stream.url)).toMatchObject({ status: 401 });
+  });
+
+  it('can sync only the browsed WebDAV directory without marking the rest of the source missing', async () => {
+    const scopedDir = `${rootPath}Scoped/`;
+    const otherDir = `${rootPath}Other/`;
+    const scopedTrack = `${scopedDir}scoped.mp3`;
+    const otherTrack = `${otherDir}other.mp3`;
+    const state = { includeScoped: true, includeOther: true };
+    const server = createServer((request, response) => {
+      if (request.headers.authorization !== authHeader) {
+        response.writeHead(401);
+        response.end();
+        return;
+      }
+
+      if (request.method === 'PROPFIND') {
+        const path = requestPath(request);
+        response.writeHead(207, { 'Content-Type': 'application/xml' });
+        if (path === rootPath || path === rootPath.replace(/\/$/u, '')) {
+          response.end(xml([
+            xmlResponse(encodeHref(rootPath), true),
+            xmlResponse(encodeHref(scopedDir), true),
+            xmlResponse(encodeHref(otherDir), true),
+          ]));
+          return;
+        }
+        if (path === scopedDir || path === scopedDir.replace(/\/$/u, '')) {
+          response.end(xml([
+            xmlResponse(encodeHref(scopedDir), true),
+            ...(state.includeScoped ? [xmlResponse(encodeHref(scopedTrack), false)] : []),
+          ]));
+          return;
+        }
+        if (path === otherDir || path === otherDir.replace(/\/$/u, '')) {
+          response.end(xml([
+            xmlResponse(encodeHref(otherDir), true),
+            ...(state.includeOther ? [xmlResponse(encodeHref(otherTrack), false)] : []),
+          ]));
+          return;
+        }
+
+        response.writeHead(404);
+        response.end('missing');
+        return;
+      }
+
+      if ((request.method === 'GET' || request.method === 'HEAD') && [scopedTrack, otherTrack].includes(requestPath(request))) {
+        writeAudio(request, response);
+        return;
+      }
+
+      response.writeHead(404);
+      response.end();
+    });
+    servers.push(server);
+    const port = await listen(server);
+    database = createDatabase(':memory:');
+    service = new RemoteSourceService(database, () => database?.close());
+    const libraryStore = new LibraryStore(database);
+    const source = service.createSource({
+      provider: 'webdav',
+      displayName: 'Scoped AList',
+      baseUrl: `http://127.0.0.1:${port}/dav`,
+      username,
+      secret: password,
+      authType: 'basic',
+      config: { rootPath, scanConcurrency: 2, metadataConcurrency: 1 },
+      syncMode: 'index',
+    });
+
+    service.syncSource(source.id, { includeCover: false });
+    await waitForSync(service, source.id);
+    expect(libraryStore.getTracks({ sourceProvider: 'remote', sourceId: source.id }).total).toBe(2);
+    expect(service.listIndexedTracksPage(source.id, { rootPath, page: 1, pageSize: 1 })).toMatchObject({
+      page: 1,
+      pageSize: 1,
+      total: 2,
+      hasMore: true,
+    });
+
+    state.includeScoped = false;
+    service.syncSource(source.id, { rootPath: scopedDir, markMissing: false, includeCover: false });
+    await waitForSync(service, source.id);
+
+    const tracks = libraryStore.getTracks({ sourceProvider: 'remote', sourceId: source.id });
+    expect(tracks.total).toBe(2);
+    expect(service.listIndexedTracks(source.id, scopedDir)).toEqual([
+      expect.objectContaining({ remotePath: scopedTrack }),
+    ]);
+    expect(service.getIndexedFolderStats(source.id, scopedDir)).toMatchObject({
+      sourceId: source.id,
+      rootPath: scopedDir,
+      trackCount: 1,
+      totalSizeBytes: audioBytes.length,
+    });
+    expect(service.listIndexedTracksPage(source.id, { rootPath: scopedDir, page: 1, pageSize: 1 })).toMatchObject({
+      page: 1,
+      pageSize: 1,
+      total: 1,
+      hasMore: false,
+      items: [expect.objectContaining({ remotePath: scopedTrack })],
+    });
+    expect(service.getOverview(source.id)).toMatchObject({ trackCount: 2, missingTrackCount: 0 });
   });
 });

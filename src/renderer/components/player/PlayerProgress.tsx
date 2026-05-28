@@ -5,6 +5,7 @@ import { formatTime } from './playerFormat';
 type PlayerProgressProps = {
   disabled: boolean;
   durationSeconds: number;
+  isLoading?: boolean;
   positionSeconds: number;
   waveformEnabled?: boolean;
   waveformSeed?: string | null;
@@ -37,6 +38,7 @@ const createWaveformBars = (seed: string): number[] => {
 export const PlayerProgress = ({
   disabled,
   durationSeconds,
+  isLoading = false,
   positionSeconds,
   waveformEnabled = false,
   waveformSeed,
@@ -78,9 +80,14 @@ export const PlayerProgress = ({
 
   return (
     <div className="progress-row" aria-label="Playback position">
-      <span>{formatTime(boundedPositionSeconds)}</span>
-      <div className="progress-track" data-waveform={waveformEnabled ? 'true' : undefined} style={progressStyle}>
-        {waveformEnabled ? (
+      <span>{isLoading ? '加载中' : formatTime(boundedPositionSeconds)}</span>
+      <div
+        className="progress-track"
+        data-loading={isLoading ? 'true' : undefined}
+        data-waveform={waveformEnabled && !isLoading ? 'true' : undefined}
+        style={progressStyle}
+      >
+        {waveformEnabled && !isLoading ? (
           <div className="progress-waveform" aria-hidden="true">
             {waveformBars.map((height, index) => (
               <i
@@ -99,7 +106,7 @@ export const PlayerProgress = ({
         <input
           aria-label="Seek position"
           className="progress-slider"
-          disabled={disabled || durationSeconds <= 0}
+          disabled={disabled || isLoading || durationSeconds <= 0}
           max={Math.max(0, durationSeconds)}
           min={0}
           onChange={handleChange}

@@ -187,6 +187,7 @@ describe('TidalAuthService', () => {
       expect(authUrl.pathname).toBe('/authorize');
       expect(authUrl.searchParams.get('client_id')).toBe('vmtQLf79BHl9YgUT');
       expect(authUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:43992/tidal/custom-callback');
+      expect(authUrl.searchParams.get('scope')).toBe('search.read');
       expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256');
       await requestLocalCallback(
         `${authUrl.searchParams.get('redirect_uri')}?code=authorization-code&state=${authUrl.searchParams.get('state')}`,

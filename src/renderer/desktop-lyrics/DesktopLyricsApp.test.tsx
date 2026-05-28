@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectSessionStatus } from '../../shared/types/connect';
 import {
@@ -25,7 +25,9 @@ const makeDesktopLyricsSettings = (locked: boolean) => ({
   desktopLyricsBounds: null,
 });
 
-const renderDesktopLyricsApp = (locked: boolean): { setMousePassthrough: ReturnType<typeof vi.fn> } => {
+const renderDesktopLyricsApp = (
+  locked: boolean,
+): { container: HTMLElement; setMousePassthrough: ReturnType<typeof vi.fn> } => {
   const settings = makeDesktopLyricsSettings(locked);
   const setMousePassthrough = vi.fn();
 
@@ -61,15 +63,16 @@ const renderDesktopLyricsApp = (locked: boolean): { setMousePassthrough: ReturnT
     },
   } as unknown as typeof window.echo;
 
-  render(<DesktopLyricsApp />);
+  const { container } = render(<DesktopLyricsApp />);
 
-  return { setMousePassthrough };
+  return { container, setMousePassthrough };
 };
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  window.echo = undefined;
+  Reflect.deleteProperty(document, 'elementFromPoint');
+  Reflect.deleteProperty(window, 'echo');
 });
 
 describe('desktop lyrics text fitting', () => {
@@ -223,5 +226,136 @@ describe('desktop lyrics text fitting', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10 }));
 
     expect(setMousePassthrough).not.toHaveBeenCalledWith(false);
+  });
+
+  it('hides the desktop lyrics menu on mouse leave even after a control keeps focus', async () => {
+    const { container } = renderDesktopLyricsApp(false);
+
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    const firstControl = container.querySelector<HTMLButtonElement>('.desktop-lyrics-menu button');
+
+    expect(app).toBeTruthy();
+    expect(firstControl).toBeTruthy();
+
+    fireEvent.focus(firstControl!);
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+
+    window.dispatchEvent(new MouseEvent('mouseleave'));
+
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('false'));
+  });
+
+  it('does not reveal the desktop lyrics menu over transparent window space', async () => {
+    const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+
+    expect(app).toBeTruthy();
+    await waitFor(() => expect(setMousePassthrough).toHaveBeenCalledWith(true));
+    setMousePassthrough.mockClear();
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => app),
+    });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 12, clientY: 12 }));
+
+    expect(app?.getAttribute('data-menu-visible')).toBe('false');
+    expect(setMousePassthrough).not.toHaveBeenCalledWith(false);
+  });
+
+  it('reveals the desktop lyrics menu when hovering the lyrics text', async () => {
+    const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    const lines = container.querySelector<HTMLElement>('.desktop-lyrics-lines');
+
+    expect(app).toBeTruthy();
+    expect(lines).toBeTruthy();
+    await waitFor(() => expect(setMousePassthrough).toHaveBeenCalledWith(true));
+    setMousePassthrough.mockClear();
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => lines),
+    });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 40 }));
+
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+    expect(setMousePassthrough).toHaveBeenCalledWith(false);
+  });
+
+  it('loads lyrics through snapshot metadata for temporary remote tracks', async () => {
+    const settings = makeDesktopLyricsSettings(false);
+    const getForSnapshot = vi.fn().mockResolvedValue({
+      kind: 'synced',
+      provider: 'lrclib',
+      lines: [{ timeMs: 0, text: 'remote lyric' }],
+      offsetMs: 0,
+    });
+    const getForTrack = vi.fn().mockResolvedValue(null);
+    const remoteTrackId = 'remote-browser:baidu:/music/Remote Song.flac';
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(settings),
+        loadFontFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        onStatus: vi.fn(() => () => undefined),
+      },
+      desktopLyrics: {
+        getLastAudioStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: remoteTrackId,
+          currentFilePath: 'remote://baidu/music/Remote Song.flac',
+          currentTrackTitle: 'Remote Song',
+          currentTrackArtist: 'Remote Artist',
+          currentTrackAlbum: 'Remote Album',
+          currentTrackAlbumArtist: null,
+          positionSeconds: 0,
+          durationSeconds: 188,
+          playbackRate: 1,
+        }),
+        getState: vi.fn().mockResolvedValue({
+          visible: true,
+          locked: false,
+          bounds: null,
+          settings,
+        }),
+        onAudioStatus: vi.fn(() => () => undefined),
+        onStateChanged: vi.fn(() => () => undefined),
+        setMousePassthrough: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(null),
+      },
+      lyrics: {
+        getForSnapshot,
+        getForTrack,
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          currentTrackId: null,
+          filePath: null,
+          state: 'stopped',
+          positionMs: 0,
+          durationMs: 0,
+        }),
+      },
+    } as unknown as typeof window.echo;
+
+    render(<DesktopLyricsApp />);
+
+    await waitFor(() => expect(getForSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: remoteTrackId,
+      title: 'Remote Song',
+      artist: 'Remote Artist',
+      album: 'Remote Album',
+      durationSeconds: 188,
+      mediaType: 'remote',
+      sourceId: 'baidu',
+      stableKey: remoteTrackId,
+    })));
+    expect(getForTrack).not.toHaveBeenCalled();
   });
 });

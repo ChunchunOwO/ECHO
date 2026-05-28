@@ -25,6 +25,7 @@ type TrackRowProps = {
   onDownload?: (track: LibraryTrack) => void;
   onOpenArtist?: (track: LibraryTrack) => void;
   onOpenAlbum?: (track: LibraryTrack) => void;
+  isLoading?: boolean;
   isDownloading?: boolean;
   downloadProgress?: number | null;
   onShowVersions?: (track: LibraryTrack) => void;
@@ -101,7 +102,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu, isDraggable = false, isDragging = false, isDropTarget = false, onDragStart, onDragOver, onDrop, onDragEnd }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isLoading = false, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu, isDraggable = false, isDragging = false, isDropTarget = false, onDragStart, onDragOver, onDrop, onDragEnd }: TrackRowProps): JSX.Element => {
     const t = useOptionalI18n()?.t ?? translateFallback;
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
@@ -249,6 +250,7 @@ export const TrackRow = memo(
         data-dragging={isDragging ? 'true' : undefined}
         data-drop-target={isDropTarget ? 'true' : undefined}
         data-playing={isPlaying}
+        data-loading={isLoading ? 'true' : undefined}
         data-selected={isSelected ? 'true' : undefined}
         data-unavailable={isUnavailable ? 'true' : undefined}
         draggable={isDraggable}
@@ -277,10 +279,10 @@ export const TrackRow = memo(
 
         <div className="track-main">
           <div className="track-title-row">
-            {isPlaying ? <span className="playing-dot" aria-hidden="true" /> : null}
+            {isLoading ? <Loader2 className="spinning-icon track-loading-icon" size={13} aria-hidden="true" /> : isPlaying ? <span className="playing-dot" aria-hidden="true" /> : null}
             <strong className="track-title">{track.title}</strong>
             {remoteSourceLabel ? <span className="remote-track-source-badge">{remoteSourceLabel}</span> : null}
-            {isPlaying ? <span className="playing-pill">{t('library.trackRow.status.playing')}</span> : null}
+            {isLoading ? <span className="playing-pill loading-pill">加载中</span> : isPlaying ? <span className="playing-pill">{t('library.trackRow.status.playing')}</span> : null}
             {isUnavailable ? <span className="playing-pill unavailable-pill">{t('library.trackRow.status.unavailable')}</span> : null}
             {duplicateHiddenCount > 0 ? (
               <button className="duplicate-version-badge" type="button" title={t('library.trackRow.duplicateVersions.title')} onClick={handleShowVersions}>
@@ -369,6 +371,7 @@ export const TrackRow = memo(
     previous.onDownload === next.onDownload &&
     previous.onOpenArtist === next.onOpenArtist &&
     previous.onOpenAlbum === next.onOpenAlbum &&
+    previous.isLoading === next.isLoading &&
     previous.isDownloading === next.isDownloading &&
     previous.downloadProgress === next.downloadProgress &&
     previous.onShowVersions === next.onShowVersions &&

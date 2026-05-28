@@ -19,7 +19,11 @@ const jsonResponse = (value: unknown, status = 200): Response =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-const tokenResponse = (): Response => jsonResponse({ access_token: 'tidal-token', expires_in: 3600 });
+const tokenResponse = (scope = 'search.read'): Response => jsonResponse({ access_token: 'tidal-token', expires_in: 3600, scope });
+
+const relationshipResponse = (id: string, type: string): Response => jsonResponse({
+  data: [{ id, type }],
+});
 
 const coverResource = {
   id: 'cover-1',
@@ -128,14 +132,9 @@ describe('TidalStreamingProvider', () => {
     const fetchRunner = vi
       .fn()
       .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(relationshipResponse('track-1', 'tracks'))
       .mockResolvedValueOnce(jsonResponse({
-        data: {
-          id: 'Echo Unit',
-          type: 'searchResults',
-          relationships: {
-            tracks: { data: [{ id: 'track-1', type: 'tracks' }] },
-          },
-        },
+        data: [trackResource],
         included: [trackResource, albumResource, artistResource, coverResource],
       }));
     vi.stubGlobal('fetch', fetchRunner);
@@ -151,8 +150,32 @@ describe('TidalStreamingProvider', () => {
     expect(tokenRequest.headers).toMatchObject({
       Authorization: `Basic ${Buffer.from('settings-client-id:settings-client-secret', 'utf8').toString('base64')}`,
     });
+    expect(String(tokenRequest.body)).toContain('scope=search.read');
+    expect(String(fetchRunner.mock.calls[1][0])).toContain('/searchResults/Echo%20Unit/relationships/tracks');
     expect(String(fetchRunner.mock.calls[1][0])).toContain('countryCode=HK');
+    expect(fetchRunner.mock.calls[1][1]?.headers).toMatchObject({
+      Accept: 'application/vnd.api+json',
+      'Content-Type': 'application/vnd.api+json',
+    });
+    expect(String(fetchRunner.mock.calls[2][0])).toContain('/tracks?filter[id]=track-1');
     expect(result.tracks[0]?.providerTrackId).toBe('track-1');
+  });
+
+  it('reports missing TIDAL search.read scope before catalog search', async () => {
+    appSettingsMock.current = {
+      tidalClientId: 'settings-client-id',
+      tidalClientSecret: 'settings-client-secret',
+      tidalCountryCode: 'US',
+    };
+    const fetchRunner = vi.fn().mockResolvedValueOnce(tokenResponse(''));
+    vi.stubGlobal('fetch', fetchRunner);
+
+    await expect(new TidalStreamingProvider().search({
+      provider: 'tidal',
+      query: 'mi',
+      mediaTypes: ['track'],
+    })).rejects.toThrow(/search\.read scope/iu);
+    expect(fetchRunner).toHaveBeenCalledTimes(1);
   });
 
   it('maps TIDAL catalog search results as metadata-only streaming items', async () => {
@@ -162,17 +185,20 @@ describe('TidalStreamingProvider', () => {
     const fetchRunner = vi
       .fn()
       .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(relationshipResponse('track-1', 'tracks'))
       .mockResolvedValueOnce(jsonResponse({
-        data: {
-          id: 'Echo Unit',
-          type: 'searchResults',
-          relationships: {
-            tracks: { data: [{ id: 'track-1', type: 'tracks' }] },
-            albums: { data: [{ id: 'album-1', type: 'albums' }] },
-            artists: { data: [{ id: 'artist-1', type: 'artists' }] },
-          },
-        },
-        included: [trackResource, albumResource, artistResource, coverResource, profileArtResource],
+        data: [trackResource],
+        included: [albumResource, artistResource, coverResource],
+      }))
+      .mockResolvedValueOnce(relationshipResponse('album-1', 'albums'))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [albumResource],
+        included: [artistResource, coverResource],
+      }))
+      .mockResolvedValueOnce(relationshipResponse('artist-1', 'artists'))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [artistResource],
+        included: [profileArtResource],
       }));
     vi.stubGlobal('fetch', fetchRunner);
 
@@ -204,20 +230,19 @@ describe('TidalStreamingProvider', () => {
       name: 'Echo Unit',
       avatarUrl: 'https://resources.tidal.com/images/artist.jpg',
     });
-    expect(String(fetchRunner.mock.calls[1][0])).toContain('/searchResults/Echo%20Unit');
+    expect(String(fetchRunner.mock.calls[1][0])).toContain('/searchResults/Echo%20Unit/relationships/tracks');
     expect(String(fetchRunner.mock.calls[1][0])).toContain('countryCode=JP');
+    expect(String(fetchRunner.mock.calls[3][0])).toContain('/searchResults/Echo%20Unit/relationships/albums');
+    expect(String(fetchRunner.mock.calls[5][0])).toContain('/searchResults/Echo%20Unit/relationships/artists');
   });
 
-  it('falls back to TIDAL relationship search when root search returns 404', async () => {
+  it('loads TIDAL relationship search tracks with detail metadata', async () => {
     vi.stubEnv('ECHO_TIDAL_CLIENT_ID', 'client-id');
     vi.stubEnv('ECHO_TIDAL_CLIENT_SECRET', 'client-secret');
     const fetchRunner = vi
       .fn()
       .mockResolvedValueOnce(tokenResponse())
-      .mockResolvedValueOnce(jsonResponse({ error: 'not_found' }, 404))
-      .mockResolvedValueOnce(jsonResponse({
-        data: [{ id: 'track-1', type: 'tracks' }],
-      }))
+      .mockResolvedValueOnce(relationshipResponse('track-1', 'tracks'))
       .mockResolvedValueOnce(jsonResponse({
         data: [trackResource],
         included: [albumResource, artistResource, coverResource],
@@ -237,9 +262,9 @@ describe('TidalStreamingProvider', () => {
       artist: 'Echo Unit',
       album: 'Signal Bloom',
     });
-    expect(String(fetchRunner.mock.calls[2][0])).toContain('/searchResults/sing/relationships/tracks');
-    expect(String(fetchRunner.mock.calls[2][0])).toContain('explicitFilter=include');
-    expect(String(fetchRunner.mock.calls[3][0])).toContain('/tracks?filter[id]=track-1');
+    expect(String(fetchRunner.mock.calls[1][0])).toContain('/searchResults/sing/relationships/tracks');
+    expect(String(fetchRunner.mock.calls[1][0])).toContain('explicitFilter=include');
+    expect(String(fetchRunner.mock.calls[2][0])).toContain('/tracks?filter[id]=track-1');
   });
 
   it('loads album detail with unplayable track metadata', async () => {

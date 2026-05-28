@@ -151,7 +151,9 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const automixLabel = formatAutomixLabel(status);
   const sharedMixRateTooHigh = hasSharedMixRateTooHighWarning(status);
+  const isLoadingRemoteTrack = state === 'loading' && track?.mediaType === 'remote' && !isDlnaReceiverTrack(track) && !isAirPlayReceiverTrack(track);
   const chips: Chip[] = uniqueChips([
+    isLoadingRemoteTrack ? { label: '加载中', className: 'tag-loading' } : null,
     sharedMixRateTooHigh
       ? { label: 'Windows Rate High', className: 'tag-warning' }
       : status?.sampleRateMismatch

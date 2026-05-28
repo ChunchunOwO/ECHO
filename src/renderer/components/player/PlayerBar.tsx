@@ -5,6 +5,7 @@ import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '..
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverStatus, ConnectSessionStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
+import type { LibraryTrack } from '../../../shared/types/library';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { MiniPlayerState } from '../../../shared/types/miniPlayer';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
@@ -772,6 +773,11 @@ export const PlayerBar = ({
   const state = activeReceiverStatus ? receiverPlaybackState : baseState;
   const visualState = activeReceiverStatus ? receiverPlaybackState : baseVisualState;
   const isPlaying = visualState === 'playing';
+  const isRemotePlaybackLoading =
+    state === 'loading' &&
+    currentTrack?.mediaType === 'remote' &&
+    !isReceiverTrackId(currentTrack.id) &&
+    !isReceiverTrackId(trackId);
   const endedStatusTrackId =
     playbackAudioStatus?.state === 'ended'
       ? playbackAudioStatus.currentTrackId
@@ -2256,6 +2262,12 @@ export const PlayerBar = ({
           <PlayerMarqueeText kind="title" text={title} />
           <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
+          {isRemotePlaybackLoading ? (
+            <span className="player-loading-hint">
+              <Loader2 className="spinning-icon" size={13} aria-hidden="true" />
+              正在加载网盘音频
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -2281,7 +2293,8 @@ export const PlayerBar = ({
         <PlayerProgress
           disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
           durationSeconds={durationSeconds}
-          waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled}
+          isLoading={isRemotePlaybackLoading}
+          waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled && !isRemotePlaybackLoading}
           waveformSeed={trackId ?? filePath ?? title}
           positionSeconds={positionSeconds}
           onCommit={(nextPositionSeconds) => void commitSeek(nextPositionSeconds)}

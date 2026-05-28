@@ -336,6 +336,35 @@ const allCacheKeysFor = (query: LyricsQuery): string[] =>
     legacyCacheKeyFor(query, provider as LyricsSource),
   ]);
 
+const remoteBrowserTrackIdPattern = /^remote-browser:([^:]+):(.+)$/u;
+
+const escapeSqlLike = (value: string): string => value.replace(/[\\%_]/gu, '\\$&');
+
+const remoteBrowserCacheKeyPrefixFor = (query: LyricsQuery): string | null => {
+  if (query.mediaType !== 'remote' || !query.sourceId) {
+    return null;
+  }
+
+  const candidates = [query.stableKey, query.trackId].filter((value): value is string => Boolean(value));
+  for (const candidate of candidates) {
+    const trackIdMatch = candidate.match(remoteBrowserTrackIdPattern);
+    if (trackIdMatch && trackIdMatch[1] === query.sourceId) {
+      return `remote:${query.sourceId}:${query.sourceId}:${trackIdMatch[2]}:`;
+    }
+
+    const stableKeyPrefix = `${query.sourceId}:`;
+    if (candidate.startsWith(stableKeyPrefix)) {
+      const pathWithFingerprint = candidate.slice(stableKeyPrefix.length);
+      const fingerprintSeparator = pathWithFingerprint.lastIndexOf(':');
+      if (fingerprintSeparator > 0) {
+        return `remote:${query.sourceId}:${query.sourceId}:${pathWithFingerprint.slice(0, fingerprintSeparator)}:`;
+      }
+    }
+  }
+
+  return null;
+};
+
 const parseRawJson = (value: string): unknown => {
   try {
     return JSON.parse(value) as unknown;
@@ -1125,7 +1154,32 @@ export class LyricsService {
       )
       .get(...keys);
 
-    return row ? this.mapCacheRow(row) : null;
+    if (row) {
+      return this.mapCacheRow(row);
+    }
+
+    const remoteBrowserCacheKeyPrefix = remoteBrowserCacheKeyPrefixFor(query);
+    if (remoteBrowserCacheKeyPrefix) {
+      const remoteBrowserRow = this.database
+        .prepare<[string], LyricsCacheRow>(
+          `SELECT * FROM lyrics_cache
+           WHERE cache_key LIKE ? ESCAPE '\\'
+           ORDER BY CASE provider
+             WHEN 'manual' THEN 0
+             WHEN 'local' THEN 1
+             WHEN 'lrclib' THEN 2
+             ELSE 3
+           END, updated_at DESC
+           LIMIT 1`,
+        )
+        .get(`${escapeSqlLike(remoteBrowserCacheKeyPrefix)}%`);
+
+      if (remoteBrowserRow) {
+        return this.mapCacheRow(remoteBrowserRow);
+      }
+    }
+
+    return null;
   }
 
   private writeLyricsCacheWithRepair(query: LyricsQuery, lyrics: TrackLyrics): TrackLyrics {

@@ -1,5 +1,6 @@
 import type { StreamingAudioQuality, StreamingProviderName } from './streaming';
 import type { ReplayGainTrackData } from '../utils/replayGain';
+import type { LibraryPageQuery } from './library';
 
 export type RemoteSourceProvider = 'webdav' | 'baidu' | 'jellyfin' | 'emby' | 'smb' | 'sshfs' | 'subsonic';
 
@@ -14,6 +15,7 @@ export type RemoteVisibleHydrationOptions = {
   metadata?: boolean;
   cover?: boolean;
   priority?: number;
+  immediateCover?: boolean;
 };
 
 export type RemoteRuntimeLimits = {
@@ -22,6 +24,25 @@ export type RemoteRuntimeLimits = {
   coverConcurrency?: number;
   lyricsConcurrency?: number;
   mvConcurrency?: number;
+};
+
+export type RemoteSyncOptions = {
+  rootPath?: string | null;
+  markMissing?: boolean;
+  includeCover?: boolean;
+};
+
+export type RemoteIndexedTracksQuery = Pick<LibraryPageQuery, 'page' | 'pageSize' | 'search' | 'sort'> & {
+  rootPath?: string | null;
+};
+
+export type RemoteIndexedFolderStats = {
+  sourceId: string;
+  rootPath: string;
+  trackCount: number;
+  totalSizeBytes: number;
+  albumCount: number;
+  artistCount: number;
 };
 
 export type RemoteSource = {

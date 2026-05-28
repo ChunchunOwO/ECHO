@@ -1315,7 +1315,7 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索歌词文本' }), { target: { value: 'manual query' } });
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
-    fireEvent.click(screen.getByRole('button', { name: /重新匹配/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: /重新匹配/ })[0]);
 
     expect(searchListener).toHaveBeenCalledTimes(1);
     expect(searchListener.mock.calls[0][0]).toMatchObject({ detail: { query: 'manual query' } });

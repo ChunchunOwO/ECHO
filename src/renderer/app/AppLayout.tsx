@@ -78,6 +78,7 @@ type AppWallpaperSettings = Pick<
 type LyricsMiniPlayerSettings = Pick<
   AppSettings,
   | 'lyricsPlayerBarDrawerEnabled'
+  | 'lyricsPlayerBarDrawerAutoEnableForMv'
   | 'lyricsPlayerBarDrawerOpacityPercent'
   | 'lyricsPlayerBarDrawerColorMode'
   | 'lyricsPlayerBarDrawerColor'
@@ -97,6 +98,7 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
 
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
   lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerAutoEnableForMv: true,
   lyricsPlayerBarDrawerOpacityPercent: 78,
   lyricsPlayerBarDrawerColorMode: 'default',
   lyricsPlayerBarDrawerColor: '#232120',
@@ -139,6 +141,7 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
 
 const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
   lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
+  lyricsPlayerBarDrawerAutoEnableForMv: settings.lyricsPlayerBarDrawerAutoEnableForMv !== false,
   lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(settings.lyricsPlayerBarDrawerOpacityPercent)
     ? Math.max(20, Math.min(100, Math.round(Number(settings.lyricsPlayerBarDrawerOpacityPercent))))
     : defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent,
@@ -275,7 +278,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [activeRoute, mountedPersistentRouteIds, navigableRoutes]);
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
-  const shouldUseLyricsPlayerDrawer = isLyricsRoute && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true;
+  const shouldUseLyricsPlayerDrawer =
+    isLyricsRoute &&
+    (lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true ||
+      (activeLyricsViewMode === 'mv' && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerAutoEnableForMv !== false));
   const shouldRenderPlayerBar = !isStandaloneRoute || isLyricsRoute;
   const hasDesktopLyricsBridge = Boolean(window.echo?.desktopLyrics);
   const currentMiniPlayerTrack = playbackQueue.currentTrack ?? playbackQueue.lastPlayedTrack ?? null;
@@ -876,6 +882,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       if (
         patch &&
         ('lyricsPlayerBarDrawerEnabled' in patch ||
+          'lyricsPlayerBarDrawerAutoEnableForMv' in patch ||
           'lyricsPlayerBarDrawerOpacityPercent' in patch ||
           'lyricsPlayerBarDrawerColorMode' in patch ||
           'lyricsPlayerBarDrawerColor' in patch)

@@ -120,6 +120,7 @@ describe('RemoteBackgroundJobQueue', () => {
       getTrack: vi.fn(() => track),
       getSource: vi.fn(() => source),
       getSourceWithSecret: vi.fn(() => source),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
       updateTrackJobStatus: vi.fn((_trackId: string, _kind: string, status: string) => {
         updates.push(status);
         track.metadataStatus = status as RemoteLibraryTrack['metadataStatus'];
@@ -144,9 +145,56 @@ describe('RemoteBackgroundJobQueue', () => {
         codec: 'flac',
         metadataStatus: 'partial',
       }),
+      undefined,
     );
     expect(updates).toContain('searching');
     expect(queue.getStatus(source.id).pending.metadata).toBe(0);
+  });
+
+  it('continues source metadata enqueue in later batches instead of stopping after the first batch', async () => {
+    const source = makeSource();
+    const firstTrack = makeTrack();
+    const secondTrack = { ...makeTrack(), id: 'remote-track-2', stableKey: 'stable-2', remotePath: '/music/track-2.flac' };
+    const tracks = new Map([
+      [firstTrack.id, firstTrack],
+      [secondTrack.id, secondTrack],
+    ]);
+    const getTrackIdsForBackgroundJobs = vi
+      .fn()
+      .mockReturnValueOnce([firstTrack.id])
+      .mockReturnValueOnce([secondTrack.id])
+      .mockReturnValue([]);
+    const readMetadata = vi.fn().mockResolvedValue(makeMetadata());
+    const store = {
+      getTrackIdsForBackgroundJobs,
+      getTracksByIds: vi.fn((trackIds: string[]) => trackIds.map((trackId) => tracks.get(trackId)).filter(Boolean)),
+      getTrack: vi.fn((trackId: string) => tracks.get(trackId) ?? null),
+      getSource: vi.fn(() => source),
+      getSourceWithSecret: vi.fn(() => source),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
+      updateTrackJobStatus: vi.fn((trackId: string, _kind: string, status: string) => {
+        const track = tracks.get(trackId);
+        if (track) {
+          track.metadataStatus = status as RemoteLibraryTrack['metadataStatus'];
+        }
+      }),
+      updateTrackMetadata: vi.fn((trackId: string, update: Partial<RemoteLibraryTrack>) => {
+        const track = tracks.get(trackId);
+        if (track) {
+          Object.assign(track, update);
+        }
+        return track ?? null;
+      }),
+    };
+    const queue = new RemoteBackgroundJobQueue(store as never, () => ({ readMetadata } as never));
+
+    queue.enqueueSource(source.id, ['metadata']);
+
+    await waitFor(() => queue.getStatus(source.id).completed.metadata === 2);
+    await waitFor(() => getTrackIdsForBackgroundJobs.mock.calls.length >= 3);
+
+    expect(readMetadata).toHaveBeenCalledTimes(2);
+    expect(getTrackIdsForBackgroundJobs).toHaveBeenNthCalledWith(1, source.id, ['metadata'], { failedOnly: undefined, limit: 1000 });
   });
 
   it('does not duplicate a remote metadata read when metadata and duration backfill are queued together', async () => {
@@ -199,6 +247,7 @@ describe('RemoteBackgroundJobQueue', () => {
       getTrack: vi.fn(() => track),
       getSource: vi.fn(() => source),
       getSourceWithSecret: vi.fn(() => source),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
       updateTrackJobStatus: vi.fn((_trackId: string, kind: string, status: string) => {
         if (kind === 'metadata' || kind === 'duration-backfill') {
           track.metadataStatus = status as RemoteLibraryTrack['metadataStatus'];
@@ -468,6 +517,7 @@ describe('RemoteBackgroundJobQueue', () => {
       getTrack: vi.fn((trackId: string) => tracks.find((track) => track.id === trackId) ?? null),
       getSource: vi.fn((sourceId: string) => sources.find((source) => source.id === sourceId) ?? null),
       getSourceWithSecret: vi.fn((sourceId: string) => sources.find((source) => source.id === sourceId) ?? null),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
       updateTrackJobStatus: vi.fn(() => undefined),
       updateTrackMetadata: vi.fn((trackId: string, update: Partial<RemoteLibraryTrack>) => {
         const track = tracks.find((candidate) => candidate.id === trackId);
@@ -508,6 +558,7 @@ describe('RemoteBackgroundJobQueue', () => {
       getTrack: vi.fn(() => track),
       getSource: vi.fn(() => source),
       getSourceWithSecret: vi.fn(() => source),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
       updateTrackJobStatus: vi.fn((_trackId: string, kind: string, status: string) => {
         if (kind === 'metadata' || kind === 'duration-backfill') {
           track.metadataStatus = status as RemoteLibraryTrack['metadataStatus'];

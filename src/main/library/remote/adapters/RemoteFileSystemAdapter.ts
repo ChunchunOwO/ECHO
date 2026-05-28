@@ -113,8 +113,9 @@ export class RemoteFileSystemAdapter implements RemoteSourceAdapter {
 
   async *scan(input: RemoteScanInput): AsyncGenerator<RemoteScanItem> {
     const root = this.resolveRoot(input.source);
+    const scanRoot = input.rootPath ? this.resolveItemPath(input.source, input.rootPath) : root;
     const concurrency = clampInt(input.source.config.scanConcurrency, 3, 1, 6);
-    const pendingDirectories = [root];
+    const pendingDirectories = [scanRoot];
     const readyFiles: RemoteScanItem[] = [];
     const inFlight = new Set<Promise<void>>();
 

@@ -669,7 +669,7 @@ describe('AirPlayReceiverSpikeService', () => {
     await service.setEnabled(false);
   });
 
-  it('answers AirPlay 2 experimental info probes without using the RAOP audio port', async () => {
+  it('answers AirPlay 2 experimental info probes on the AirPlay control port', async () => {
     const mdnsStarts: Array<{ airPlayPort?: number | null; raopPort: number }> = [];
     const service = new AirPlayReceiverSpikeService({
       audioSession: new FakeAudioSession() as never,
@@ -695,6 +695,14 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(advertised.airPlayPort).toEqual(expect.any(Number));
     expect(advertised.airPlayPort).not.toBe(advertised.raopPort);
 
+    const emittedActions: string[] = [];
+    service.on('status', (status) => {
+      const action = status.debugEvents[0]?.action;
+      if (action) {
+        emittedActions.push(action);
+      }
+    });
+
     const response = await fetch(`http://127.0.0.1:${advertised.airPlayPort}/info`);
     const body = await response.text();
 
@@ -706,6 +714,7 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(body).toContain('<key>audioFormats</key>');
     expect(body).toContain('<integer>1572860</integer>');
     expect(body).not.toContain('<integer>67108860</integer>');
+    expect(emittedActions).toContain('info');
 
     const socket = connect(advertised.airPlayPort!, '127.0.0.1');
     try {

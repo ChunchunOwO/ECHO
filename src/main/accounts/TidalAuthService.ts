@@ -8,6 +8,7 @@ import { getAccountService, type AccountService } from './AccountService';
 
 const tidalLoginBaseUrl = 'https://login.tidal.com';
 const tidalAuthUrl = 'https://auth.tidal.com/v1/oauth2/token';
+const tidalOAuthScope = 'search.read';
 const defaultTidalRedirectCallbackPath = '/tidal/callback';
 const defaultTidalRedirectPort = Number.parseInt(process.env.ECHO_TIDAL_REDIRECT_PORT ?? '43880', 10);
 const envTidalRedirectUri = process.env.ECHO_TIDAL_REDIRECT_URI?.trim() || null;
@@ -300,7 +301,7 @@ export class TidalAuthService {
       response_type: 'code',
       client_id: authConfig.clientId,
       redirect_uri: redirectUri,
-      scope: '',
+      scope: tidalOAuthScope,
       code_challenge_method: 'S256',
       code_challenge: challenge,
       state,

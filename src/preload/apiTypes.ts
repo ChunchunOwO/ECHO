@@ -201,6 +201,8 @@ import type {
   RemoteDirectoryItem,
   RemoteDirectoryPreviewItem,
   RemoteDirectoryPreviewOptions,
+  RemoteIndexedFolderStats,
+  RemoteIndexedTracksQuery,
   RemoteBackgroundGlobalStatus,
   RemoteBackgroundJobKind,
   RemoteBackgroundJobStatus,
@@ -214,6 +216,7 @@ import type {
   RemoteSourceUpdate,
   RemoteStreamUrlResult,
   RemoteSyncStatus,
+  RemoteSyncOptions,
   RemoteVisibleHydrationOptions,
   TestRemoteSourceResult,
 } from '../shared/types/remoteSources';
@@ -510,12 +513,15 @@ export type EchoApi = {
     delete: (sourceId: string) => Promise<void>;
     test: (sourceIdOrInput: string | RemoteSourceInput) => Promise<TestRemoteSourceResult>;
     browse: (sourceId: string, path?: string | null) => Promise<RemoteDirectoryItem[]>;
-    sync: (sourceId: string) => Promise<RemoteSyncStatus>;
+    sync: (sourceId: string, options?: RemoteSyncOptions) => Promise<RemoteSyncStatus>;
     cancelSync: (sourceId: string) => Promise<RemoteSyncStatus>;
     getSyncStatus: (sourceId: string) => Promise<RemoteSyncStatus>;
     createStreamUrl: (input: { trackId?: string; sourceId?: string; remotePath?: string; stableKey?: string }) => Promise<RemoteStreamUrlResult>;
     hydrateVisibleTracks: (trackIds: string[], options?: RemoteVisibleHydrationOptions) => Promise<LibraryTrack[]>;
     lookupTracks: (sourceId: string, remotePaths: string[]) => Promise<RemoteTrackLookupItem[]>;
+    listIndexedTracks: (sourceId: string, rootPath?: string | null) => Promise<LibraryTrack[]>;
+    listIndexedTracksPage: (sourceId: string, query?: RemoteIndexedTracksQuery) => Promise<LibraryPage<LibraryTrack>>;
+    getIndexedFolderStats: (sourceId: string, rootPath?: string | null) => Promise<RemoteIndexedFolderStats>;
     previewDirectoryItems?: (sourceId: string, items: RemoteDirectoryItem[], options?: RemoteDirectoryPreviewOptions) => Promise<RemoteDirectoryPreviewItem[]>;
     startBackgroundJobs: (sourceId: string, kinds?: RemoteBackgroundJobKind[]) => Promise<RemoteBackgroundJobStatus>;
     pauseBackgroundJobs: (sourceId: string) => Promise<RemoteBackgroundJobStatus>;

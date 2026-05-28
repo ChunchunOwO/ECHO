@@ -616,6 +616,57 @@ describe('AppLayout standalone routes', () => {
     expect(screen.getByRole('contentinfo')).toBeTruthy();
   });
 
+  it('uses the lyrics mini player bar automatically on the MV page', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          lyricsPlayerBarDrawerAutoEnableForMv: true,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'mv' } }));
+    });
+
+    await waitFor(() => expect(container.querySelector('.app-shell--lyrics-player-drawer')).toBeTruthy());
+    expect(container.querySelector('.app-shell--lyrics-mini-player')).toBeTruthy();
+  });
+
+  it('keeps the normal MV player bar when MV auto mini player is disabled', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          lyricsPlayerBarDrawerAutoEnableForMv: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('app:navigate:lyrics', { detail: { mode: 'mv' } }));
+    });
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(container.querySelector('.app-shell--lyrics-player-drawer')).toBeNull();
+    expect(container.querySelector('.app-shell--lyrics-mini-player')).toBeNull();
+  });
+
   it('keeps the same player bar instance when entering the lyrics mini player', async () => {
     const unsubscribeAudioStatus = vi.fn();
     const audioOnStatus = vi.fn(() => unsubscribeAudioStatus);

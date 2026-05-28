@@ -183,8 +183,13 @@ let remoteSourcesMock: {
   list: ReturnType<typeof vi.fn>;
   browse: ReturnType<typeof vi.fn>;
   lookupTracks: ReturnType<typeof vi.fn>;
+  listIndexedTracks: ReturnType<typeof vi.fn>;
+  listIndexedTracksPage: ReturnType<typeof vi.fn>;
+  getIndexedFolderStats: ReturnType<typeof vi.fn>;
   previewDirectoryItems: ReturnType<typeof vi.fn>;
   sync: ReturnType<typeof vi.fn>;
+  getSyncStatus: ReturnType<typeof vi.fn>;
+  getJobStatus: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -208,6 +213,16 @@ beforeEach(() => {
       remoteItem(),
     ]),
     lookupTracks: vi.fn().mockResolvedValue([]),
+    listIndexedTracks: vi.fn().mockResolvedValue([]),
+    listIndexedTracksPage: vi.fn().mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0, hasMore: false }),
+    getIndexedFolderStats: vi.fn().mockResolvedValue({
+      sourceId: 'remote-1',
+      rootPath: '/Music',
+      trackCount: 0,
+      totalSizeBytes: 0,
+      albumCount: 0,
+      artistCount: 0,
+    }),
     previewDirectoryItems: vi.fn().mockResolvedValue([]),
     sync: vi.fn().mockResolvedValue({
       sourceId: 'remote-1',
@@ -223,6 +238,34 @@ beforeEach(() => {
       errors: [],
       startedAt: '2026-01-01T00:00:00.000Z',
       finishedAt: null,
+    }),
+    getSyncStatus: vi.fn().mockResolvedValue({
+      sourceId: 'remote-1',
+      status: 'idle',
+      phase: 'idle',
+      discoveredCount: 0,
+      parsedCount: 0,
+      writtenCount: 0,
+      skippedCount: 0,
+      missingCount: 0,
+      failedCount: 0,
+      currentPath: null,
+      errors: [],
+      startedAt: null,
+      finishedAt: null,
+    }),
+    getJobStatus: vi.fn().mockResolvedValue({
+      sourceId: 'remote-1',
+      pending: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      running: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      completed: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      failed: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      skipped: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      concurrency: { metadata: 0, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 0 },
+      current: [],
+      paused: false,
+      lastError: null,
+      updatedAt: null,
     }),
   };
 
@@ -393,6 +436,8 @@ describe('FoldersPage', () => {
     await waitFor(() => expect(screen.getAllByText('Baidu Music').length).toBeGreaterThan(0));
     expect(await screen.findByText('百度网盘 · 已启用 · OAuth 自动续期')).toBeTruthy();
     expect(await screen.findByText('song')).toBeTruthy();
+    expect(remoteSourcesMock.getIndexedFolderStats).toHaveBeenCalledWith('remote-1', '/Music');
+    expect(remoteSourcesMock.listIndexedTracksPage).toHaveBeenCalledWith('remote-1', expect.objectContaining({ rootPath: '/Music', page: 1, pageSize: 100 }));
     expect(remoteSourcesMock.previewDirectoryItems).toHaveBeenCalledWith('remote-1', [expect.objectContaining({ path: '/Music/song.flac' })], { includeCover: true, limit: 12 });
 
     fireEvent.click(screen.getByRole('button', { name: /Album/ }));
@@ -432,6 +477,46 @@ describe('FoldersPage', () => {
     expect(await screen.findByText('Tagged Artist')).toBeTruthy();
     expect(await screen.findByText('245')).toBeTruthy();
     expect(screen.getByAltText('Tagged Song cover').getAttribute('src')).toBe('data:image/jpeg;base64,abc');
+  });
+
+  it('shows cached indexed remote tracks for a selected folder without previewing every file again', async () => {
+    const cachedTrack = track({
+        id: 'remote-cached-1',
+        mediaType: 'remote',
+        sourceId: 'remote-1',
+        sourceDisplayName: 'Baidu Music',
+        provider: 'baidu',
+        remotePath: '/Music/Album/cached.flac',
+        title: 'Cached Song',
+        artist: 'Cached Artist',
+        album: 'Cached Album',
+        duration: 188,
+        coverThumb: 'echo-cover://remote/cached-thumb',
+      });
+    remoteSourcesMock.getIndexedFolderStats.mockResolvedValue({
+      sourceId: 'remote-1',
+      rootPath: '/Music',
+      trackCount: 1,
+      totalSizeBytes: 2048,
+      albumCount: 1,
+      artistCount: 1,
+    });
+    remoteSourcesMock.listIndexedTracksPage.mockResolvedValue({
+      items: [cachedTrack],
+      page: 1,
+      pageSize: 100,
+      total: 1,
+      hasMore: false,
+    });
+
+    renderFoldersPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '网盘' }));
+
+    expect(await screen.findByText('Cached Song')).toBeTruthy();
+    expect(await screen.findByText('Cached Artist')).toBeTruthy();
+    expect(screen.getByAltText('Cached Song cover').getAttribute('src')).toBe('echo-cover://remote/cached-thumb');
+    expect(remoteSourcesMock.previewDirectoryItems).not.toHaveBeenCalled();
   });
 
   it('opens settings from the remote empty state', async () => {

@@ -233,8 +233,11 @@ export class AirPlayMdnsAdvertiser {
     header.writeUInt16BE(0, 8);
     header.writeUInt16BE(0, 10);
 
+    const advertisedRaopPort = advertisement.airPlay2Experimental && advertisement.airPlayPort
+      ? advertisement.airPlayPort
+      : advertisement.port;
     const srvData = Buffer.concat([
-      Buffer.from([0, 0, 0, 0, (advertisement.port >> 8) & 0xff, advertisement.port & 0xff]),
+      Buffer.from([0, 0, 0, 0, (advertisedRaopPort >> 8) & 0xff, advertisedRaopPort & 0xff]),
       encodeName(hostName),
     ]);
     const airPlayPort = advertisement.airPlayPort ?? advertisement.port;

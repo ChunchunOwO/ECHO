@@ -14,6 +14,49 @@ type PacketFactory = {
   }, ttl: number) => Buffer;
 };
 
+type DnsRecord = {
+  name: string;
+  type: number;
+  data: Buffer;
+};
+
+const readDnsName = (packet: Buffer, startOffset: number): { name: string; offset: number } => {
+  const labels: string[] = [];
+  let offset = startOffset;
+  while (offset < packet.length) {
+    const length = packet[offset];
+    if (length === 0) {
+      return { name: labels.join('.'), offset: offset + 1 };
+    }
+    offset += 1;
+    labels.push(packet.toString('utf8', offset, offset + length));
+    offset += length;
+  }
+  throw new Error('unterminated DNS name');
+};
+
+const readDnsRecords = (packet: Buffer): DnsRecord[] => {
+  const records: DnsRecord[] = [];
+  const answerCount = packet.readUInt16BE(6);
+  let offset = 12;
+  for (let index = 0; index < answerCount; index += 1) {
+    const name = readDnsName(packet, offset);
+    offset = name.offset;
+    const type = packet.readUInt16BE(offset);
+    const dataLength = packet.readUInt16BE(offset + 8);
+    const dataOffset = offset + 10;
+    records.push({
+      name: name.name,
+      type,
+      data: packet.subarray(dataOffset, dataOffset + dataLength),
+    });
+    offset = dataOffset + dataLength;
+  }
+  return records;
+};
+
+const srvPort = (record: DnsRecord): number => record.data.readUInt16BE(4);
+
 describe('AirPlayMdnsAdvertiser', () => {
   const hasAirPlay2FeatureBit = (bit: number): boolean =>
     ((BigInt(airPlay2FeatureMask) >> BigInt(bit)) & 1n) === 1n;
@@ -63,6 +106,28 @@ describe('AirPlayMdnsAdvertiser', () => {
     expect(payload).toContain('srcvers=366.0');
     expect(payload).toContain('pi=60cf84cb-1ed1-4169-8270-6c6179000000');
     expect(payload).toContain('pk=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef');
+  });
+
+  it('routes AirPlay 2 RAOP discovery to the AirPlay 2 control server instead of the native RAOP port', () => {
+    const advertiser = new AirPlayMdnsAdvertiser() as unknown as PacketFactory;
+    const packet = advertiser.createPacket({
+      name: 'ECHO Next (AirPlay)',
+      address: '192.168.31.214',
+      mac: '60:CF:84:CB:1E:D1',
+      port: 6000,
+      airPlayPort: 7000,
+      airPlayPublicKey: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      model: 'ECHO-Next-AirPlay-Spike',
+      airPlay2Experimental: true,
+    }, 120);
+    const srvRecords = readDnsRecords(packet).filter((record) => record.type === 33);
+    const raopSrv = srvRecords.find((record) => record.name.endsWith('._raop._tcp.local'));
+    const airPlaySrv = srvRecords.find((record) => record.name.endsWith('._airplay._tcp.local'));
+
+    expect(raopSrv).toBeTruthy();
+    expect(airPlaySrv).toBeTruthy();
+    expect(srvPort(raopSrv!)).toBe(7000);
+    expect(srvPort(airPlaySrv!)).toBe(7000);
   });
 
   it('keeps experimental AirPlay 2 feature bits aligned with implemented receiver paths', () => {

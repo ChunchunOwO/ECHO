@@ -13,6 +13,8 @@
   <span>&nbsp;|&nbsp;</span>
   <a href="https://github.com/moekotori/echo/releases/latest">Latest Release</a>
   <span>&nbsp;|&nbsp;</span>
+  <a href="https://afdian.com/a/echonext">爱发电</a>
+  <span>&nbsp;|&nbsp;</span>
   <a href="#项目架构">项目架构</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="https://qm.qq.com/q/OdpngxJU86">QQ 群聊</a>
@@ -22,6 +24,8 @@
   <a href="#快速开始">快速开始</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="./docs/USER_GUIDE.md">用户教程</a>
+  <span>&nbsp;|&nbsp;</span>
+  <a href="./docs/USER_GUIDE.md#plugins-插件">插件教程</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="./docs/ECHO_NEXT_LINUX_BUILD.md">Linux 构建指南</a>
   <span>&nbsp;|&nbsp;</span>

@@ -142,6 +142,70 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
+  it('hydrates active playlist playback pushed from another playback window', async () => {
+    const savedQueueTrack = makeTrack(1);
+    const playlistTracks = [makeTrack(3), makeTrack(4)];
+    let handleQueueSessionChanged: ((snapshot: PersistedPlaybackSessionV1 | null) => void) | null = null;
+
+    window.echo = {
+      playback: {
+        onQueueSessionChanged: vi.fn((handler: (snapshot: PersistedPlaybackSessionV1 | null) => void) => {
+          handleQueueSessionChanged = handler;
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const QueueProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>
+          <output aria-label="playlist-active">{queue.playlistPlayback.active ? 'yes' : 'no'}</output>
+          <output aria-label="playlist-label">{queue.playlistPlayback.label ?? ''}</output>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    const savedQueue = makePersistedQueueSession([savedQueueTrack]);
+    const playlistSession = makePersistedQueueSession(playlistTracks, {
+      currentQueueId: 'queue-1',
+      currentTrackId: playlistTracks[0].id,
+      lastPlayedTrack: playlistTracks[0],
+      playlistPlayback: {
+        active: true,
+        label: 'Road Mix',
+        playlistId: 'playlist-1',
+        snapshot: {
+          items: savedQueue.items,
+          currentQueueId: savedQueue.currentQueueId,
+          currentTrackId: savedQueue.currentTrackId,
+          lastPlayedTrack: savedQueue.lastPlayedTrack,
+          history: savedQueue.history,
+          mode: savedQueue.mode,
+          resume: savedQueue.resume,
+        },
+      },
+    });
+
+    act(() => {
+      handleQueueSessionChanged?.(playlistSession);
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-3'));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-3,track-4');
+    expect(screen.getByLabelText('playlist-active').textContent).toBe('yes');
+    expect(screen.getByLabelText('playlist-label').textContent).toBe('Road Mix');
+  });
+
   it('routes manual playback to the active HQPlayer Connect output instead of local playback', async () => {
     const track = makeTrack(1);
     const playLocalFile = vi.fn();
@@ -3106,6 +3170,20 @@ describe('PlaybackQueueProvider playback modes', () => {
       mode: {
         isShuffleEnabled: true,
         repeatMode: 'all',
+      },
+    });
+    const lastSaveCall = saveQueueSession.mock.calls.at(-1) as unknown[] | undefined;
+    const broadcastSession = (lastSaveCall?.[1] as { broadcastSnapshot?: PersistedPlaybackSessionV1 } | undefined)?.broadcastSnapshot;
+    expect(broadcastSession?.items.map((item) => item.track.id)).toEqual(['track-3', 'track-4']);
+    expect(broadcastSession).toMatchObject({
+      currentTrackId: 'track-3',
+      playlistPlayback: {
+        active: true,
+        label: 'Road Mix',
+        playlistId: 'playlist-1',
+        snapshot: {
+          currentTrackId: 'track-1',
+        },
       },
     });
   });

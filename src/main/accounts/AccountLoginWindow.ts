@@ -25,11 +25,6 @@ const loginConfigs: Partial<Record<AccountProvider, LoginConfig>> = {
     domains: ['www.bilibili.com', '.bilibili.com', 'bilibili.com'],
     requiredCookieNames: ['SESSDATA', 'DedeUserID', 'bili_jct'],
   },
-  youtube: {
-    url: 'https://www.youtube.com/',
-    domains: ['www.youtube.com', '.youtube.com', 'youtube.com', '.google.com', 'google.com'],
-    requiredCookieNames: ['SID', 'SAPISID', 'LOGIN_INFO'],
-  },
   soundcloud: {
     url: 'https://soundcloud.com/',
     domains: ['soundcloud.com', '.soundcloud.com'],

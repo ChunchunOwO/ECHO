@@ -4,8 +4,10 @@ import type { DesktopLyricsStylePatch } from '../../shared/types/desktopLyrics';
 import {
   getDesktopLyricsState,
   getLastDesktopLyricsAudioStatus,
+  getLastDesktopLyricsPlaybackStatus,
   hideDesktopLyricsWindow,
   receiveDesktopLyricsRendererAudioStatus,
+  receiveDesktopLyricsRendererPlaybackStatus,
   resetDesktopLyricsBounds,
   setDesktopLyricsLocked,
   setDesktopLyricsMousePassthrough,
@@ -46,6 +48,8 @@ export const registerDesktopLyricsIpc = (): void => {
   ipcMain.handle(IpcChannels.DesktopLyricsSetStyle, (_event, patch: unknown) => setDesktopLyricsStyle(normalizeStylePatch(patch)));
   ipcMain.handle(IpcChannels.DesktopLyricsResetBounds, () => resetDesktopLyricsBounds());
   ipcMain.handle(IpcChannels.DesktopLyricsGetLastAudioStatus, () => getLastDesktopLyricsAudioStatus());
+  ipcMain.handle(IpcChannels.DesktopLyricsGetLastPlaybackStatus, () => getLastDesktopLyricsPlaybackStatus());
   ipcMain.on(IpcChannels.DesktopLyricsRendererAudioStatus, receiveDesktopLyricsRendererAudioStatus);
+  ipcMain.on(IpcChannels.DesktopLyricsRendererPlaybackStatus, receiveDesktopLyricsRendererPlaybackStatus);
   ipcMain.on(IpcChannels.DesktopLyricsSetMousePassthrough, setDesktopLyricsMousePassthrough);
 };

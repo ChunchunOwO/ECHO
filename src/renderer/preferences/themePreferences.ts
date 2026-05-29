@@ -1,4 +1,4 @@
-import type { AppThemeCustomTheme, AppThemeMode, AppThemePreset, AppThemePresetOverride, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
+import type { AppSettings, AppThemeCustomTheme, AppThemeMode, AppThemePreset, AppThemePresetOverride, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
 import { getAppBridge } from '../utils/echoBridge';
 import { applyAppearancePreferences, readAppearancePreferences } from './appearancePreferences';
 
@@ -48,6 +48,8 @@ const validThemePresets: AppThemePreset[] = [
   'frostJazz',
 ];
 const themeTransitionMs = 140;
+const defaultScheduleDarkAt = '19:00';
+const defaultScheduleLightAt = '07:00';
 const themeOverrideColorKeys: Array<keyof Pick<
   AppThemeToneOverride,
   | 'appBg'
@@ -297,6 +299,16 @@ export const defaultThemePreset: AppThemePreset = 'classic';
 
 export const normalizeThemeMode = (value: unknown): AppThemeMode =>
   validThemeModes.includes(value as AppThemeMode) ? (value as AppThemeMode) : defaultThemeMode;
+
+export const normalizeThemeScheduleTime = (value: unknown, fallback = defaultScheduleDarkAt): string => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(trimmed);
+  return match ? `${match[1]}:${match[2]}` : fallback;
+};
 
 export const normalizeThemePreset = (value: unknown): AppThemePreset =>
   validThemePresets.includes(value as AppThemePreset) ? (value as AppThemePreset) : defaultThemePreset;
@@ -852,6 +864,49 @@ export const resolveThemeMode = (mode: AppThemeMode): EffectiveTheme => {
   return 'light';
 };
 
+const timeToMinutes = (value: string): number => {
+  const [hours, minutes] = value.split(':').map((part) => Number.parseInt(part, 10));
+  return hours * 60 + minutes;
+};
+
+const isMinuteInRange = (minute: number, start: number, end: number): boolean => {
+  if (start === end) {
+    return false;
+  }
+  if (start < end) {
+    return minute >= start && minute < end;
+  }
+  return minute >= start || minute < end;
+};
+
+export const resolveThemeModeForSchedule = (
+  settings: Pick<Partial<AppSettings>, 'appearanceTheme' | 'appearanceThemeScheduleEnabled' | 'appearanceThemeScheduleDarkAt' | 'appearanceThemeScheduleLightAt'>,
+  now = new Date(),
+): AppThemeMode => {
+  const baseTheme = normalizeThemeMode(settings.appearanceTheme);
+
+  if (settings.appearanceThemeScheduleEnabled !== true) {
+    return baseTheme;
+  }
+
+  const darkAt = normalizeThemeScheduleTime(settings.appearanceThemeScheduleDarkAt, defaultScheduleDarkAt);
+  const lightAt = normalizeThemeScheduleTime(settings.appearanceThemeScheduleLightAt, defaultScheduleLightAt);
+  const currentMinute = now.getHours() * 60 + now.getMinutes();
+  return isMinuteInRange(currentMinute, timeToMinutes(darkAt), timeToMinutes(lightAt)) ? 'dark' : 'light';
+};
+
+export const applyThemeSettings = (settings: Partial<AppSettings>, options: ThemeApplyOptions = {}): EffectiveTheme =>
+  applyThemeMode(
+    resolveThemeModeForSchedule(settings),
+    settings.appearanceThemePreset ?? readThemePreset(),
+    settings.appearanceThemePresetOverrides ?? readThemePresetOverrides(),
+    {
+      ...options,
+      customThemeId: Object.prototype.hasOwnProperty.call(settings, 'appearanceThemeCustomId') ? settings.appearanceThemeCustomId ?? null : options.customThemeId,
+      customThemes: settings.appearanceCustomThemes ?? options.customThemes,
+    },
+  );
+
 const prefersReducedMotion = (): boolean => {
   try {
     return typeof window.matchMedia === 'function' && window.matchMedia(reducedMotionQuery).matches;
@@ -1000,16 +1055,68 @@ export const loadPersistedThemeMode = async (): Promise<AppThemeMode> => {
   }
 
   const settings = await appBridge.getSettings();
-  const themeMode = updateThemePreferences(
-    settings.appearanceTheme ?? defaultThemeMode,
-    settings.appearanceThemePreset ?? defaultThemePreset,
-    settings.appearanceThemePresetOverrides ?? {},
-    {
-      customThemeId: settings.appearanceThemeCustomId ?? null,
-      customThemes: settings.appearanceCustomThemes ?? [],
-    },
-  );
+  const themeMode = writeThemeMode(settings.appearanceTheme ?? defaultThemeMode);
+  writeThemePreset(settings.appearanceThemePreset ?? defaultThemePreset);
+  writeThemePresetOverrides(settings.appearanceThemePresetOverrides ?? {});
+  const customThemes = writeThemeCustomThemes(settings.appearanceCustomThemes ?? []);
+  const customThemeId = writeThemeCustomId(settings.appearanceThemeCustomId ?? null, customThemes);
+  applyThemeSettings(settings, { customThemeId, customThemes });
   return themeMode;
+};
+
+export const watchThemeSettings = (loadSettings: () => Promise<Partial<AppSettings> | null | undefined>): (() => void) => {
+  let disposed = false;
+  let latestSettings: Partial<AppSettings> | null = null;
+
+  const applyLatestSettings = (options: ThemeApplyOptions = {}): void => {
+    if (!latestSettings) {
+      return;
+    }
+    applyThemeSettings(latestSettings, options);
+  };
+
+  const refreshSettings = async (): Promise<void> => {
+    try {
+      const settings = await loadSettings();
+      if (!disposed && settings) {
+        latestSettings = settings;
+        applyLatestSettings();
+      }
+    } catch {
+      // Theme scheduling is best-effort; keep the last known theme if settings are temporarily unavailable.
+    }
+  };
+
+  const handleSettingsChanged = (event: Event): void => {
+    const patch = (event as CustomEvent<Partial<AppSettings>>).detail;
+    if (!patch || typeof patch !== 'object') {
+      return;
+    }
+    latestSettings = { ...(latestSettings ?? {}), ...patch };
+    applyLatestSettings({ animate: true });
+  };
+
+  window.addEventListener('settings:changed', handleSettingsChanged);
+  const intervalId = window.setInterval(() => {
+    if (latestSettings) {
+      applyLatestSettings();
+    } else {
+      void refreshSettings();
+    }
+  }, 30_000);
+  void refreshSettings();
+
+  let stopSystemWatcher = (): void => undefined;
+  if (typeof window.matchMedia === 'function') {
+    stopSystemWatcher = watchSystemThemeMode(() => resolveThemeModeForSchedule(latestSettings ?? { appearanceTheme: readThemeMode() }));
+  }
+
+  return () => {
+    disposed = true;
+    window.removeEventListener('settings:changed', handleSettingsChanged);
+    window.clearInterval(intervalId);
+    stopSystemWatcher();
+  };
 };
 
 export const watchSystemThemeMode = (getThemeMode: () => AppThemeMode = readThemeMode): (() => void) => {

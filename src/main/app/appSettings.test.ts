@@ -34,6 +34,9 @@ describe('app settings normalization', () => {
 
     expect(settings.coverCacheDir).toBeNull();
     expect(settings.appearanceTheme).toBe('light');
+    expect(settings.appearanceThemeScheduleEnabled).toBe(false);
+    expect(settings.appearanceThemeScheduleDarkAt).toBe('19:00');
+    expect(settings.appearanceThemeScheduleLightAt).toBe('07:00');
     expect(settings.appearanceThemePreset).toBe('classic');
     expect(settings.appearanceThemePresetOverrides).toEqual({});
     expect(settings.appearanceCustomThemes).toEqual([]);
@@ -374,6 +377,21 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceTheme: 'dark' }).appearanceTheme).toBe('dark');
     expect(normalizeSettings({ appearanceTheme: 'system' }).appearanceTheme).toBe('system');
     expect(normalizeSettings({ appearanceTheme: 'midnight' as never }).appearanceTheme).toBe('light');
+  });
+
+  it('normalizes appearance theme schedule settings', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).appearanceThemeScheduleEnabled).toBe(false);
+    expect(normalizeSettings({ appearanceThemeScheduleEnabled: true }).appearanceThemeScheduleEnabled).toBe(true);
+    expect(normalizeSettings({ appearanceThemeScheduleDarkAt: '21:30', appearanceThemeScheduleLightAt: '06:15' })).toMatchObject({
+      appearanceThemeScheduleDarkAt: '21:30',
+      appearanceThemeScheduleLightAt: '06:15',
+    });
+    expect(normalizeSettings({ appearanceThemeScheduleDarkAt: '25:99', appearanceThemeScheduleLightAt: 'morning' })).toMatchObject({
+      appearanceThemeScheduleDarkAt: '19:00',
+      appearanceThemeScheduleLightAt: '07:00',
+    });
   });
 
   it('normalizes appearance theme presets', async () => {
@@ -870,6 +888,33 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ remoteCoverLoadPerformanceMode: 'turbo' as never }).remoteCoverLoadPerformanceMode).toBe('balanced');
   });
 
+  it('normalizes remote background concurrency limits', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).remoteBackgroundConcurrency).toEqual({
+      metadata: 2,
+      cover: 2,
+      lyrics: 1,
+      mv: 1,
+      durationBackfill: 1,
+    });
+    expect(normalizeSettings({
+      remoteBackgroundConcurrency: {
+        metadata: 12,
+        cover: 99,
+        lyrics: 3,
+        mv: 0,
+        durationBackfill: 4,
+      },
+    }).remoteBackgroundConcurrency).toEqual({
+      metadata: 8,
+      cover: 48,
+      lyrics: 3,
+      mv: 1,
+      durationBackfill: 4,
+    });
+  });
+
   it('normalizes remote album merge strategy', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -1219,6 +1264,18 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).artistStreamingAlbumsEnabled).toBe(false);
     expect(normalizeSettings({ artistStreamingAlbumsEnabled: true }).artistStreamingAlbumsEnabled).toBe(true);
     expect(normalizeSettings({ artistStreamingAlbumsEnabled: 'yes' as never }).artistStreamingAlbumsEnabled).toBe(false);
+  });
+
+  it('keeps streaming download actions behind the downloads unlock', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({ streamingDownloadActionsEnabled: true }).streamingDownloadActionsEnabled).toBe(false);
+    expect(
+      normalizeSettings({
+        downloadsFeatureUnlocked: true,
+        streamingDownloadActionsEnabled: true,
+      }).streamingDownloadActionsEnabled,
+    ).toBe(true);
   });
 
   it('normalizes lyrics settings', async () => {

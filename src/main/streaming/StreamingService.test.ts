@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { StreamingAlbumDetail, StreamingPlaybackSource, StreamingPlaylistDetail, StreamingSearchResult } from '../../shared/types/streaming';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import type { StreamingAlbumDetail, StreamingPlaybackSource, StreamingPlaylistDetail, StreamingSearchResult, StreamingTrack } from '../../shared/types/streaming';
 import type { StreamingProvider } from './StreamingProvider';
 import { StreamingProviderRegistry } from './StreamingProviderRegistry';
 import { StreamingService } from './StreamingService';
+import { StreamingFavoritesStore } from './StreamingFavoritesStore';
 import { verifyDownloadAuthorizationToken } from '../downloads/DownloadAuthorization';
 
 const accountState = vi.hoisted(() => ({
@@ -71,6 +75,28 @@ const emptyQqSearchResult = (): StreamingSearchResult => ({
   artists: [],
   playlists: [],
   mvs: [],
+});
+
+const favoriteTrack = (providerTrackId: string): StreamingTrack => ({
+  id: `streaming:youtube:${providerTrackId}`,
+  provider: 'youtube',
+  providerTrackId,
+  stableKey: `streaming:youtube:${providerTrackId}`,
+  title: `Video ${providerTrackId}`,
+  artist: 'Video Artist',
+  artists: [],
+  album: 'YouTube',
+  albumId: null,
+  albumArtist: 'Video Artist',
+  duration: 120,
+  coverUrl: null,
+  coverThumb: null,
+  qualities: ['high'],
+  explicit: false,
+  playable: true,
+  unavailableReason: null,
+  lyricsStatus: 'unknown',
+  mvStatus: 'available',
 });
 
 const albumDetail = (): StreamingAlbumDetail => ({
@@ -337,6 +363,52 @@ describe('StreamingService playlist imports', () => {
       providerPlaylistId: '5MFN2Ep3ZU2FIQWIXNSLrT',
       playlistName: 'Spotify Playlist',
     });
+  });
+
+  it('imports YouTube playlist links into streaming favorites', async () => {
+    const registry = new StreamingProviderRegistry();
+    const getPlaylist = vi.fn(async (input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> => ({
+      id: `streaming:youtube:playlist:${input.providerPlaylistId}`,
+      provider: 'youtube',
+      providerPlaylistId: input.providerPlaylistId,
+      title: 'YouTube Favorites',
+      description: null,
+      creator: null,
+      coverUrl: null,
+      coverThumb: null,
+      trackCount: 2,
+      tracks: [favoriteTrack('video-1'), favoriteTrack('video-2')],
+      page: 1,
+      pageSize: 100,
+      total: 2,
+      hasMore: false,
+    }));
+    registry.register({
+      name: 'youtube',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist,
+      resolvePlayback: vi.fn(),
+    });
+    const tempRoot = mkdtempSync(join(tmpdir(), 'echo-streaming-favorites-service-'));
+    try {
+      const favoritesStore = new StreamingFavoritesStore(join(tempRoot, 'streaming-favorites.json'));
+      const service = new StreamingService(registry, fakeCacheStore(), undefined, undefined, undefined, favoritesStore);
+
+      const result = await service.importFavoritesFromUrl('https://www.youtube.com/playlist?list=PL123');
+
+      expect(getPlaylist).toHaveBeenCalledWith({ providerPlaylistId: 'PL123', page: 1, pageSize: 100 });
+      expect(result).toMatchObject({
+        provider: 'youtube',
+        providerPlaylistId: 'PL123',
+        playlistName: 'YouTube Favorites',
+        importedCount: 2,
+        addedCount: 2,
+      });
+      expect(result.snapshot.providers.youtube.map((item) => item.providerTrackId)).toEqual(['video-1', 'video-2']);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('exposes Spotify as playback-only and not downloadable in provider descriptors', () => {

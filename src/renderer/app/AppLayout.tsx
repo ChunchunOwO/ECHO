@@ -104,7 +104,7 @@ const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
   lyricsPlayerBarDrawerColor: '#232120',
 };
 
-const persistentRouteIds = new Set<AppRouteId>(['songs']);
+const persistentRouteIds = new Set<AppRouteId>(['songs', 'streaming']);
 const readSongsNavigationRemoteSourceId = (event: Event): string | null => {
   if (!(event instanceof CustomEvent) || typeof event.detail !== 'object' || event.detail === null) {
     return null;
@@ -225,6 +225,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [isLyricsQueueDrawerOpen, setIsLyricsQueueDrawerOpen] = useState(false);
   const [desktopLyricsVisible, setDesktopLyricsVisible] = useState(false);
+  const [desktopLyricsLocked, setDesktopLyricsLocked] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
@@ -833,15 +834,23 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const desktopLyrics = window.echo?.desktopLyrics;
     if (!desktopLyrics) {
       setDesktopLyricsVisible(false);
+      setDesktopLyricsLocked(false);
       return undefined;
     }
 
     void desktopLyrics.getState()
-      .then((state) => setDesktopLyricsVisible(state.visible === true))
-      .catch(() => setDesktopLyricsVisible(false));
+      .then((state) => {
+        setDesktopLyricsVisible(state.visible === true);
+        setDesktopLyricsLocked(state.locked === true);
+      })
+      .catch(() => {
+        setDesktopLyricsVisible(false);
+        setDesktopLyricsLocked(false);
+      });
 
     const unsubscribe = desktopLyrics.onStateChanged?.((state) => {
       setDesktopLyricsVisible(state.visible === true);
+      setDesktopLyricsLocked(state.locked === true);
     });
 
     return () => unsubscribe?.();
@@ -1425,6 +1434,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
   }, [desktopLyricsVisible]);
 
+  const handleUnlockDesktopLyrics = useCallback(async (): Promise<void> => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics || !desktopLyricsLocked) {
+      return;
+    }
+
+    try {
+      const state = await desktopLyrics.setLocked(false);
+      setDesktopLyricsVisible(state.visible === true);
+      setDesktopLyricsLocked(state.locked === true);
+    } catch {
+      setDesktopLyricsLocked((current) => current);
+    }
+  }, [desktopLyricsLocked]);
+
   return (
     <div
       className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''} ${
@@ -1632,11 +1656,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >
           <PlayerBar
+            desktopLyricsLocked={desktopLyricsLocked}
             desktopLyricsVisible={desktopLyricsVisible}
             hasDesktopLyricsBridge={hasDesktopLyricsBridge}
             onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
             onOpenQueue={isLyricsRoute ? handleOpenLyricsQueueDrawer : handleOpenShellQueue}
             onToggleDesktopLyrics={handleToggleDesktopLyrics}
+            onUnlockDesktopLyrics={handleUnlockDesktopLyrics}
           />
         </div>
       ) : null}

@@ -187,6 +187,8 @@ const proxyableImageHosts = new Set([
   'i1.sndcdn.com',
   'i2.sndcdn.com',
   'i3.sndcdn.com',
+  'i.ytimg.com',
+  'img.youtube.com',
   'archive.biliimg.com',
 ]);
 

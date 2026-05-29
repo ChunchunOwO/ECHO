@@ -332,7 +332,11 @@ describe('PlayerBar', () => {
         getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
       },
       app: {
-        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+        getSettings: vi.fn().mockResolvedValue({
+          smtcEnabled: true,
+          downloadsFeatureUnlocked: true,
+          streamingDownloadActionsEnabled: true,
+        }),
       },
     } as unknown as Window['echo'];
     window.addEventListener('app:navigate:lyrics', onNavigateLyrics);
@@ -2271,10 +2275,90 @@ describe('PlayerBar', () => {
     );
 
     await screen.findByText('Song 1');
-    expect(screen.getByText('流媒体')).toBeTruthy();
+    expect(screen.getByText('QQ')).toBeTruthy();
     const slider = screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement;
     expect(Number(slider.value)).toBe(0);
     await waitFor(() => expect(Number(slider.value)).toBeGreaterThan(0.1), { timeout: 1000 });
+  });
+
+  it('shows a loading animation for streaming tracks while playback is preparing', async () => {
+    const track = makeTrack(1, {
+      id: 'streaming:qqmusic:song-1',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:song-1',
+      provider: 'qqmusic',
+      providerTrackId: 'song-1',
+      codec: null,
+      sampleRate: null,
+      bitDepth: null,
+      bitrate: null,
+    });
+    const loadingAudioStatus = { ...audioStatus(track), state: 'loading' as const, positionSeconds: 0 };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'loading',
+          currentTrackId: track.id,
+          positionMs: 0,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(loadingAudioStatus),
+        onStatus: vi.fn(),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      eq: {
+        getState: vi.fn().mockResolvedValue(eqState()),
+        setEnabled: vi.fn().mockResolvedValue(eqState()),
+        setBandGain: vi.fn().mockResolvedValue(eqState()),
+        setPreamp: vi.fn().mockResolvedValue(eqState()),
+        setPreset: vi.fn().mockResolvedValue(eqState()),
+        reset: vi.fn().mockResolvedValue(eqState()),
+        listPresets: vi.fn().mockResolvedValue([]),
+        savePreset: vi.fn(),
+        deletePreset: vi.fn().mockResolvedValue([]),
+      },
+      app: {
+        getVersion: vi.fn(),
+        minimize: vi.fn(),
+        toggleMaximize: vi.fn(),
+        close: vi.fn(),
+      },
+      library: {
+        getTracks: vi.fn(),
+        getAlbums: vi.fn(),
+        getAlbumTracks: vi.fn(),
+        getSummary: vi.fn(),
+        chooseFolder: vi.fn(),
+        addFolder: vi.fn(),
+        getFolders: vi.fn(),
+        removeFolder: vi.fn(),
+        scanFolder: vi.fn(),
+        getScanStatus: vi.fn(),
+        cancelScan: vi.fn(),
+        getDiagnostics: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('正在加载流媒体');
+    expect(container.querySelector('.player-bar')?.getAttribute('data-network-loading')).toBe('true');
+    expect(container.querySelector('.progress-track')?.getAttribute('data-loading')).toBe('true');
   });
 
   it('keeps progress from jumping backward on a brief same-track stale audio status', async () => {
@@ -2871,7 +2955,11 @@ describe('PlayerBar', () => {
         onJobsUpdated: vi.fn(() => () => undefined),
       },
       app: {
-        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+        getSettings: vi.fn().mockResolvedValue({
+          smtcEnabled: true,
+          downloadsFeatureUnlocked: true,
+          streamingDownloadActionsEnabled: true,
+        }),
       },
       library: {
         getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
@@ -2885,7 +2973,7 @@ describe('PlayerBar', () => {
     );
 
     await screen.findByText('Streaming Download Track');
-    fireEvent.click(screen.getByRole('button', { name: '下载当前流媒体' }));
+    fireEvent.click(await screen.findByRole('button', { name: '下载当前流媒体' }));
 
     await waitFor(() =>
       expect(resolvePlayback).toHaveBeenCalledWith({

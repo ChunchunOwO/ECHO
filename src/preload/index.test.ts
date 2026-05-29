@@ -669,6 +669,61 @@ describe('preload SMTC API', () => {
     });
   });
 
+  it('marks system streaming audio as loading while HTMLAudio waits for data', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackResolveMediaItem) {
+        return Promise.resolve({
+          filePath: 'https://cdn.example.test/streaming.flac',
+          inputHeaders: undefined,
+          mimeType: 'audio/flac',
+          durationSeconds: 180,
+        });
+      }
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/streaming-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+    const statuses: Array<Awaited<ReturnType<EchoApi['audio']['getStatus']>>> = [];
+    exposedApi!.audio.onStatus((status) => statuses.push(status));
+
+    await exposedApi!.playback.playMediaItem({
+      item: {
+        mediaType: 'streaming',
+        trackId: 'streaming-track',
+        provider: 'netease',
+        providerTrackId: 'provider-track',
+        quality: 'high',
+        stableKey: 'netease:provider-track',
+        title: 'Streaming',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+        coverThumb: null,
+        playable: true,
+      },
+    });
+
+    fakeAudioInstances[0].emit('waiting');
+    expect(statuses.at(-1)).toMatchObject({
+      outputMode: 'system',
+      state: 'loading',
+      currentTrackId: 'streaming-track',
+    });
+
+    fakeAudioInstances[0].emit('canplay');
+    expect(statuses.at(-1)).toMatchObject({
+      outputMode: 'system',
+      state: 'playing',
+      currentTrackId: 'streaming-track',
+    });
+  });
+
   it('marks system audio as playing after the play promise resolves even without a playing event', async () => {
     vi.resetModules();
     exposedApi = null;
@@ -924,6 +979,47 @@ describe('preload SMTC API', () => {
       replayGainEnabled: true,
       replayGainMode: 'track',
       replayGainAppliedDb: -6,
+    });
+  });
+
+  it('keeps active system audio playback alive when changing volume', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string, settings?: unknown) => {
+      if (channel === IpcChannels.AudioSetOutput) {
+        const output = settings as { volume?: number };
+        return Promise.resolve({
+          outputMode: 'shared',
+          playbackRate: 1,
+          playbackSpeedMode: 'nightcore',
+          volume: output.volume ?? 1,
+          warnings: [],
+        });
+      }
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/volume-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.mp3',
+      trackId: 'track-volume',
+      probe: { durationSeconds: 10 },
+    });
+    fakeAudioInstances[0].pause.mockClear();
+    const nextStatus = await exposedApi!.audio.setOutput({ volume: 0.25 });
+
+    expect(fakeAudioInstances[0].pause).not.toHaveBeenCalled();
+    expect(fakeAudioInstances[0].volume).toBeCloseTo(0.25, 3);
+    expect(nextStatus).toMatchObject({
+      outputMode: 'system',
+      state: 'playing',
+      currentTrackId: 'track-volume',
+      volume: 0.25,
     });
   });
 

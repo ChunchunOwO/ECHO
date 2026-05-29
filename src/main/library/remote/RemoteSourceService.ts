@@ -87,6 +87,7 @@ export class RemoteSourceService {
       this.store,
       (provider) => this.getAdapter(provider),
       this.coverService,
+      getRemoteBackgroundRuntimeLimits,
     );
     this.syncService = new RemoteLibrarySyncService(this.store, (provider) => this.getAdapter(provider), () => undefined, (sourceId, status, options) => {
       this.backgroundQueue.setSourceSyncActive(sourceId, false);
@@ -504,6 +505,21 @@ const getAppSettingsSafe = (): Pick<AppSettings, 'coverCacheDir'> & Partial<AppS
   } catch {
     return { coverCacheDir: null };
   }
+};
+
+const getRemoteBackgroundRuntimeLimits = (): RemoteRuntimeLimits => {
+  const concurrency = getAppSettingsSafe().remoteBackgroundConcurrency;
+  if (!concurrency) {
+    return {};
+  }
+
+  return {
+    metadataConcurrency: concurrency.metadata,
+    coverConcurrency: concurrency.cover,
+    lyricsConcurrency: concurrency.lyrics,
+    mvConcurrency: concurrency.mv,
+    durationBackfillConcurrency: concurrency.durationBackfill,
+  };
 };
 
 let defaultRemoteSourceService: RemoteSourceService | null = null;

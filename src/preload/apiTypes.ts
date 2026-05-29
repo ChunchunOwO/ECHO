@@ -144,6 +144,7 @@ import type {
   PlaybackStartRequest,
   PlaybackStatus,
   PersistedPlaybackSessionV1,
+  PlaybackQueueSessionSaveOptions,
 } from '../shared/types/playback';
 import type {
   DiagnosticConsoleEntry,
@@ -225,6 +226,9 @@ import type {
   StreamingLyricsResult,
   StreamingAlbumDetail,
   StreamingArtistDetail,
+  StreamingFavoritesImportResult,
+  StreamingFavoriteSetResult,
+  StreamingFavoritesSnapshot,
   StreamingLikedSongsSyncResult,
   StreamingMvResult,
   StreamingPlaybackRequest,
@@ -295,9 +299,12 @@ export type EchoApi = {
     setStyle: (patch: DesktopLyricsStylePatch) => Promise<DesktopLyricsState>;
     resetBounds: () => Promise<DesktopLyricsState>;
     setMousePassthrough: (passthrough: boolean) => void;
+    publishPlaybackStatus: (status: PlaybackStatus) => void;
     getLastAudioStatus: () => Promise<AudioStatus | null>;
+    getLastPlaybackStatus: () => Promise<PlaybackStatus | null>;
     onStateChanged: (handler: (state: DesktopLyricsState) => void) => () => void;
     onAudioStatus: (handler: (status: AudioStatus) => void) => () => void;
+    onPlaybackStatus: (handler: (status: PlaybackStatus) => void) => () => void;
   };
   miniPlayer: {
     show: () => Promise<MiniPlayerState>;
@@ -490,7 +497,7 @@ export type EchoApi = {
     openLocalAudioFiles: () => Promise<string[] | null>;
     resolveLocalAudioFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
     getQueueSession: () => Promise<PersistedPlaybackSessionV1 | null>;
-    saveQueueSession: (snapshot: PersistedPlaybackSessionV1) => Promise<PersistedPlaybackSessionV1>;
+    saveQueueSession: (snapshot: PersistedPlaybackSessionV1, options?: PlaybackQueueSessionSaveOptions) => Promise<PersistedPlaybackSessionV1>;
     clearQueueSession: () => Promise<void>;
     onQueueSessionChanged?: (handler: (snapshot: PersistedPlaybackSessionV1 | null) => void) => () => void;
     onLocalAudioFilesOpened: (handler: (paths: string[]) => void) => () => void;
@@ -569,8 +576,12 @@ export type EchoApi = {
     getMv: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingMvResult>;
     getProviders: () => Promise<StreamingProviderDescriptor[]>;
     importPlaylistFromUrl: (url: string) => Promise<StreamingPlaylistImportResult>;
+    importFavoritesFromUrl: (url: string) => Promise<StreamingFavoritesImportResult>;
+    exportFavorites: () => Promise<string | null>;
     syncLikedSongs: (provider?: Extract<StreamingProviderName, 'netease' | 'qqmusic'>) => Promise<StreamingLikedSongsSyncResult>;
     setTrackLiked: (request: { provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>; providerTrackId: string; liked: boolean }) => Promise<StreamingTrackLikedResult>;
+    getFavorites: () => Promise<StreamingFavoritesSnapshot>;
+    setFavorite: (request: { track: StreamingTrack; favorite: boolean }) => Promise<StreamingFavoriteSetResult>;
     refreshNeteaseDailyRecommend: () => Promise<StreamingPlaylistImportResult>;
   };
   lyrics: {
@@ -591,6 +602,7 @@ export type EchoApi = {
     rejectCandidate: (candidateId: string) => Promise<void>;
     setOffset: (trackId: string, offsetMs: number) => Promise<TrackLyrics | null>;
     clearCache: (trackId: string) => Promise<void>;
+    onChanged?: (handler: (trackId: string) => void) => () => void;
   };
   mv: {
     getSelected: (trackId: string) => Promise<TrackVideo | null>;

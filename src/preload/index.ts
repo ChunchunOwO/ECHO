@@ -159,6 +159,15 @@ const isLocalSystemSource = (source: SystemPlaybackSource | null): boolean => {
   const rawUrl = source?.filePath?.trim() ?? '';
   return rawUrl.length > 0 && !isHttpUrl(rawUrl) && !isRendererReadyUrl(rawUrl);
 };
+const isSystemNetworkMediaPlayback = (): boolean => {
+  const mediaType = systemMediaPlaybackContext?.request.item.mediaType;
+  if (mediaType === 'remote' || mediaType === 'streaming') {
+    return true;
+  }
+
+  const rawUrl = systemAudioSource?.filePath?.trim() ?? '';
+  return rawUrl.length > 0 && isHttpUrl(rawUrl);
+};
 
 const createSystemAudioMediaErrorMessage = (element: HTMLAudioElement, fallback = 'system_audio_playback_failed'): string => {
   const code = typeof element.error?.code === 'number' ? element.error.code : null;
@@ -809,6 +818,25 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
     startSystemStatusTimer();
     emitSystemAudioStatus();
   });
+  element.addEventListener('canplay', () => {
+    if (systemAudioState === 'loading' && !element.paused && !element.ended) {
+      systemAudioState = 'playing';
+      systemAudioError = null;
+      startSystemStatusTimer();
+      emitSystemAudioStatus();
+    }
+  });
+  const markSystemAudioWaiting = (): void => {
+    if (!isSystemNetworkMediaPlayback() || element.paused || element.ended || systemAudioState === 'error' || systemAudioState === 'stopped') {
+      return;
+    }
+
+    systemAudioState = 'loading';
+    startSystemStatusTimer();
+    emitSystemAudioStatus();
+  };
+  element.addEventListener('waiting', markSystemAudioWaiting);
+  element.addEventListener('stalled', markSystemAudioWaiting);
   element.addEventListener('pause', () => {
     if (!element.paused) {
       return;
@@ -1301,7 +1329,11 @@ const echoApi: EchoApi = {
     setMousePassthrough: (passthrough) => {
       ipcRenderer.send(IpcChannels.DesktopLyricsSetMousePassthrough, passthrough);
     },
+    publishPlaybackStatus: (status) => {
+      ipcRenderer.send(IpcChannels.DesktopLyricsRendererPlaybackStatus, status);
+    },
     getLastAudioStatus: () => ipcRenderer.invoke(IpcChannels.DesktopLyricsGetLastAudioStatus),
+    getLastPlaybackStatus: () => ipcRenderer.invoke(IpcChannels.DesktopLyricsGetLastPlaybackStatus),
     onStateChanged: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, state: unknown): void => {
         handler(state as Awaited<ReturnType<EchoApi['desktopLyrics']['getState']>>);
@@ -1315,6 +1347,13 @@ const echoApi: EchoApi = {
       };
       ipcRenderer.on(IpcChannels.DesktopLyricsAudioStatus, listener);
       return () => ipcRenderer.off(IpcChannels.DesktopLyricsAudioStatus, listener);
+    },
+    onPlaybackStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as NonNullable<Awaited<ReturnType<EchoApi['desktopLyrics']['getLastPlaybackStatus']>>>);
+      };
+      ipcRenderer.on(IpcChannels.DesktopLyricsPlaybackStatus, listener);
+      return () => ipcRenderer.off(IpcChannels.DesktopLyricsPlaybackStatus, listener);
     },
   },
   miniPlayer: {
@@ -1670,7 +1709,7 @@ const echoApi: EchoApi = {
     openLocalAudioFiles: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFiles),
     resolveLocalAudioFiles: (paths) => ipcRenderer.invoke(IpcChannels.PlaybackResolveLocalAudioFiles, paths),
     getQueueSession: () => ipcRenderer.invoke(IpcChannels.PlaybackGetQueueSession),
-    saveQueueSession: (snapshot) => ipcRenderer.invoke(IpcChannels.PlaybackSaveQueueSession, snapshot),
+    saveQueueSession: (snapshot, options) => ipcRenderer.invoke(IpcChannels.PlaybackSaveQueueSession, snapshot, options),
     clearQueueSession: () => ipcRenderer.invoke(IpcChannels.PlaybackClearQueueSession),
     onQueueSessionChanged: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void => {
@@ -1778,8 +1817,12 @@ const echoApi: EchoApi = {
     getMv: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetMv, request),
     getProviders: () => ipcRenderer.invoke(IpcChannels.StreamingGetProviders),
     importPlaylistFromUrl: (url) => ipcRenderer.invoke(IpcChannels.StreamingImportPlaylistFromUrl, url),
+    importFavoritesFromUrl: (url) => ipcRenderer.invoke(IpcChannels.StreamingImportFavoritesFromUrl, url),
+    exportFavorites: () => ipcRenderer.invoke(IpcChannels.StreamingExportFavorites),
     syncLikedSongs: (provider) => ipcRenderer.invoke(IpcChannels.StreamingSyncLikedSongs, provider),
     setTrackLiked: (request) => ipcRenderer.invoke(IpcChannels.StreamingSetTrackLiked, request),
+    getFavorites: () => ipcRenderer.invoke(IpcChannels.StreamingGetFavorites),
+    setFavorite: (request) => ipcRenderer.invoke(IpcChannels.StreamingSetFavorite, request),
     refreshNeteaseDailyRecommend: () => ipcRenderer.invoke(IpcChannels.StreamingRefreshNeteaseDailyRecommend),
   },
   lyrics: {
@@ -1797,6 +1840,15 @@ const echoApi: EchoApi = {
     rejectCandidate: (candidateId) => ipcRenderer.invoke(IpcChannels.LyricsRejectCandidate, candidateId),
     setOffset: (trackId, offsetMs) => ipcRenderer.invoke(IpcChannels.LyricsSetOffset, trackId, offsetMs),
     clearCache: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsClearCache, trackId),
+    onChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+        if (payload && typeof payload === 'object' && typeof (payload as { trackId?: unknown }).trackId === 'string') {
+          handler((payload as { trackId: string }).trackId);
+        }
+      };
+      ipcRenderer.on(IpcChannels.LyricsChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.LyricsChanged, listener);
+    },
   },
   mv: {
     getSelected: (trackId) => ipcRenderer.invoke(IpcChannels.MvGetSelected, trackId),
@@ -1901,11 +1953,12 @@ const echoApi: EchoApi = {
     },
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: async (settings) => {
+      const wasSystemAudioModeActive = systemAudioModeActive;
       const nextStatus = await ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings) as AudioStatus;
       lastNativeAudioStatus = nextStatus;
       applySystemOutputSettings(settings, nextStatus);
 
-      if (isSystemOutputRequest(settings) || nextStatus.outputMode === 'system') {
+      if (wasSystemAudioModeActive || isSystemOutputRequest(settings) || nextStatus.outputMode === 'system') {
         systemAudioModeActive = true;
         return emitSystemAudioStatus();
       }

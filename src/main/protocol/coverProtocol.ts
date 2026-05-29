@@ -22,6 +22,8 @@ const allowedRemoteImageHosts = new Set([
   'i1.sndcdn.com',
   'i2.sndcdn.com',
   'i3.sndcdn.com',
+  'i.ytimg.com',
+  'img.youtube.com',
   'archive.biliimg.com',
   'p.music.126.net',
   'p1.music.126.net',

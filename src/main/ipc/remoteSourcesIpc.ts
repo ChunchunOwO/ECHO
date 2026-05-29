@@ -187,6 +187,7 @@ const normalizeRuntimeLimits = (value: unknown): RemoteRuntimeLimits => {
     'coverConcurrency',
     'lyricsConcurrency',
     'mvConcurrency',
+    'durationBackfillConcurrency',
   ];
   const output: RemoteRuntimeLimits = {};
 

@@ -13,6 +13,7 @@ import type {
   PlaybackStartRequest,
   PlaybackStatus,
   PlaybackTrackMetadataHint,
+  PlaybackQueueSessionSaveOptions,
   PersistedPlaybackSessionV1,
 } from '../../shared/types/playback';
 import type { LibraryTrack } from '../../shared/types/library';
@@ -24,7 +25,7 @@ import type { ReplayGainTrackData } from '../../shared/utils/replayGain';
 import type { AudioSessionAutomixRequest, AudioSessionGaplessRequest } from '../audio/audioTypes';
 import { getAudioSession, type AudioErrorRecoveryHandler } from '../audio/AudioSession';
 import { getPlaybackMemoryStore, type PlaybackMemory } from '../audio/PlaybackMemoryStore';
-import { getPlaybackSessionStore } from '../audio/PlaybackSessionStore';
+import { getPlaybackSessionStore, normalizePersistedPlaybackSession } from '../audio/PlaybackSessionStore';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
@@ -1288,6 +1289,10 @@ const playbackMemoryFromQueueSession = (session: PersistedPlaybackSessionV1 | nu
     item.track.path === resume.filePath,
   );
 
+  if (resumeItem?.track.mediaType === 'remote' || isRemoteStreamProxyUrl(resume.filePath)) {
+    return null;
+  }
+
   return {
     filePath: resume.filePath,
     trackId: resume.trackId,
@@ -1305,6 +1310,35 @@ const playbackMemoryFromQueueSession = (session: PersistedPlaybackSessionV1 | nu
       : undefined,
     updatedAt: resume.updatedAt,
   };
+};
+
+const isRemoteStreamProxyUrl = (filePath: string): boolean => {
+  try {
+    const url = new URL(filePath);
+    const hostname = url.hostname.toLowerCase();
+    const isLoopback = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
+    return isLoopback && url.pathname.includes('/remote-stream/');
+  } catch {
+    return false;
+  }
+};
+
+const shouldDeferQueueResumeToRenderer = (session: PersistedPlaybackSessionV1 | null): boolean => {
+  const resume = session?.resume;
+  if (!resume) {
+    return false;
+  }
+
+  if (isRemoteStreamProxyUrl(resume.filePath)) {
+    return true;
+  }
+
+  return session.items.some((item) =>
+    item.track.mediaType === 'remote' &&
+    ((resume.queueId && item.queueId === resume.queueId) ||
+      (resume.trackId && item.track.id === resume.trackId) ||
+      item.track.path === resume.filePath),
+  );
 };
 
 export const savePlaybackMemoryNow = (): void => {
@@ -1329,7 +1363,8 @@ const registerPlaybackMemoryPersistence = (): void => {
   } catch (error) {
     console.warn(`[playback] Failed to load persisted queue session: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const storedMemory = playbackMemoryFromQueueSession(storedQueueSession) ?? getPlaybackMemoryStore().load();
+  const storedQueueMemory = playbackMemoryFromQueueSession(storedQueueSession);
+  const storedMemory = storedQueueMemory ?? (shouldDeferQueueResumeToRenderer(storedQueueSession) ? null : getPlaybackMemoryStore().load());
   if (storedMemory) {
     getAudioSession().restorePlaybackMemory(storedMemory);
   }
@@ -1428,6 +1463,19 @@ const broadcastPlaybackQueueSessionChanged = (
   }
 };
 
+const normalizeQueueSessionSaveOptions = (value: unknown): PlaybackQueueSessionSaveOptions => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    broadcastSnapshot:
+      value.broadcastSnapshot === null
+        ? null
+        : normalizePersistedPlaybackSession(value.broadcastSnapshot),
+  };
+};
+
 export const registerPlaybackIpc = (): void => {
   setDataProtectionPlaybackStateProvider(() => {
     const state = getAudioSession().getStatus().state;
@@ -1439,13 +1487,14 @@ export const registerPlaybackIpc = (): void => {
   ipcMain.on(IpcChannels.PlaybackMainWindowCommandResult, receiveMainWindowPlaybackCommandResult);
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
   ipcMain.handle(IpcChannels.PlaybackGetQueueSession, (): PersistedPlaybackSessionV1 | null => getPlaybackSessionStore().load());
-  ipcMain.handle(IpcChannels.PlaybackSaveQueueSession, (event, snapshot: unknown): PersistedPlaybackSessionV1 => {
+  ipcMain.handle(IpcChannels.PlaybackSaveQueueSession, (event, snapshot: unknown, options: unknown): PersistedPlaybackSessionV1 => {
     const status = getAudioSession().getStatus();
     const saved = runPlaybackPerformanceStepSync('PlaybackSaveQueueSession', 'saveQueueSession', {
       trackId: status.currentTrackId,
       outputMode: status.outputMode,
     }, () => getPlaybackSessionStore().saveWithAudioStatus(snapshot as PersistedPlaybackSessionV1, status));
-    broadcastPlaybackQueueSessionChanged(event.sender, saved);
+    const saveOptions = normalizeQueueSessionSaveOptions(options);
+    broadcastPlaybackQueueSessionChanged(event.sender, saveOptions.broadcastSnapshot ?? saved);
     return saved;
   });
   ipcMain.handle(IpcChannels.PlaybackClearQueueSession, (event): void => {

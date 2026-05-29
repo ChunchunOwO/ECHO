@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowLeft, Check, ChevronDown, Disc3, Download, Link, ListPlus, Loader2, Play, Radio, Search, UserRound } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Disc3, Download, Heart, Link, ListPlus, Loader2, Play, Radio, Search, UserRound } from 'lucide-react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { LibraryTrack } from '../../../shared/types/library';
@@ -11,6 +11,7 @@ import type {
   StreamingAudioQuality,
   StreamingArtist,
   StreamingArtistDetail,
+  StreamingFavoritesSnapshot,
   StreamingMediaType,
   StreamingPlaylist,
   StreamingProviderDescriptor,
@@ -22,7 +23,7 @@ import { streamingStableKey } from '../../../shared/types/streaming';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { useProgressiveRenderLimit } from '../../hooks/useProgressiveRenderLimit';
 import { isPlaybackCancellationError, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { getAppBridge, getDownloadsBridge, getStreamingBridge } from '../../utils/echoBridge';
+import { getAccountsBridge, getAppBridge, getDownloadsBridge, getStreamingBridge } from '../../utils/echoBridge';
 import {
   readStreamingSearchMemory,
   updateStreamingSearchMemory,
@@ -54,13 +55,53 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
 )}`;
 
 const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8']);
-const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'soundcloud', 'tidal', 'spotify', 'bilibili'];
-const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili']);
+const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
+const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili', 'youtube']);
+const favoriteProviders = new Set<StreamingProviderName>(['bilibili', 'youtube', 'soundcloud']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
+const providerCacheTtlMs = 30_000;
 const emptyTracks: StreamingTrack[] = [];
 const emptyAlbums: StreamingAlbum[] = [];
 const emptyArtists: StreamingArtist[] = [];
 const emptyPlaylists: StreamingPlaylist[] = [];
+
+let cachedProviders: { items: StreamingProviderDescriptor[]; expiresAtMs: number } | null = null;
+
+const streamingSearchResultKey = (provider: StreamingProviderName, query: string, activeTab: StreamingMediaType): string =>
+  `${provider}:${activeTab}:${query.trim().toLocaleLowerCase()}`;
+
+const favoriteKey = (provider: StreamingProviderName, providerTrackId: string): string => `${provider}:${providerTrackId}`;
+
+const favoriteIdsFromSnapshot = (snapshot: StreamingFavoritesSnapshot | null | undefined): Record<string, boolean> => {
+  const ids: Record<string, boolean> = {};
+  if (!snapshot) {
+    return ids;
+  }
+
+  for (const items of Object.values(snapshot.providers)) {
+    for (const item of items) {
+      ids[favoriteKey(item.provider, item.providerTrackId)] = true;
+    }
+  }
+  return ids;
+};
+
+const readCachedProviders = (): StreamingProviderDescriptor[] | null => {
+  if (!cachedProviders || cachedProviders.expiresAtMs <= Date.now()) {
+    cachedProviders = null;
+    return null;
+  }
+
+  return cachedProviders.items;
+};
+
+const writeCachedProviders = (items: StreamingProviderDescriptor[]): StreamingProviderDescriptor[] => {
+  cachedProviders = { items, expiresAtMs: Date.now() + providerCacheTtlMs };
+  return items;
+};
+
+const readStreamingDownloadActionsEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.downloadsFeatureUnlocked === true && settings.streamingDownloadActionsEnabled === true;
 
 const formatDuration = (duration: number | null): string => {
   if (!duration || !Number.isFinite(duration) || duration <= 0) {
@@ -114,6 +155,8 @@ const streamingTrackWebUrl = (track: StreamingTrack): string | null => {
         : `https://soundcloud.com/search/sounds?q=${encodeURIComponent(track.title ? `${track.artist} ${track.title}` : track.providerTrackId)}`;
     case 'bilibili':
       return `https://www.bilibili.com/video/${encodeURIComponent(track.providerTrackId)}`;
+    case 'youtube':
+      return `https://www.youtube.com/watch?v=${encodeURIComponent(track.providerTrackId)}`;
     default:
       return null;
   }
@@ -228,7 +271,7 @@ const streamingTrackToLibraryTrack = (track: StreamingTrack, quality: QualityPre
 export const StreamingSearchPage = (): JSX.Element => {
   const queue = usePlaybackQueue();
   const initialMemory = readStreamingSearchMemory();
-  const [providers, setProviders] = useState<StreamingProviderDescriptor[]>([]);
+  const [providers, setProviders] = useState<StreamingProviderDescriptor[]>(() => readCachedProviders() ?? []);
   const [provider, setProvider] = useState<StreamingProviderName>(initialMemory.provider);
   const [quality, setQuality] = useState<QualityPreference>(initialMemory.quality);
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
@@ -254,6 +297,8 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [downloadingTrackKey, setDownloadingTrackKey] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
   const [downloadJobIdsByTrackKey, setDownloadJobIdsByTrackKey] = useState<Record<string, string>>({});
+  const [favoriteTrackIds, setFavoriteTrackIds] = useState<Record<string, boolean>>({});
+  const [favoriteTrackKey, setFavoriteTrackKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -262,6 +307,7 @@ export const StreamingSearchPage = (): JSX.Element => {
   const { isReturning: isArtistReturning, returnBack: returnFromArtist } = useAnimatedBackNavigation(() => setSelectedArtist(null), Boolean(selectedArtist) && !selectedAlbum);
   const requestIdRef = useRef(0);
   const playActionIdRef = useRef(0);
+  const resultRef = useRef<StreamingSearchResult | null>(initialMemory.result);
   const listRef = useRef<HTMLDivElement | null>(null);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
 
@@ -326,12 +372,17 @@ export const StreamingSearchPage = (): JSX.Element => {
   }, [activeTab]);
 
   useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
+
+  useEffect(() => {
     updateStreamingSearchMemory({
       provider,
       quality,
       activeTab,
       input,
       query,
+      resultKey: result ? streamingSearchResultKey(provider, query, activeTab) : null,
       result,
       failedCoverUrls,
     });
@@ -367,11 +418,17 @@ export const StreamingSearchPage = (): JSX.Element => {
   useEffect(() => {
     const app = getAppBridge();
     const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
-      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'streamingDownloadActionsEnabled')) {
+      if (
+        !settings ||
+        (
+          !Object.prototype.hasOwnProperty.call(settings, 'downloadsFeatureUnlocked') &&
+          !Object.prototype.hasOwnProperty.call(settings, 'streamingDownloadActionsEnabled')
+        )
+      ) {
         return;
       }
 
-      setStreamingDownloadActionsEnabled(settings.streamingDownloadActionsEnabled === true);
+      setStreamingDownloadActionsEnabled(readStreamingDownloadActionsEnabled(settings));
     };
 
     void app?.getSettings?.().then(applySettings).catch(() => undefined);
@@ -392,21 +449,44 @@ export const StreamingSearchPage = (): JSX.Element => {
   useEffect(() => {
     const streaming = getStreamingBridge();
     if (!streaming?.getProviders) {
-      return;
+      return undefined;
     }
 
-    void streaming
-      .getProviders()
-      .then((items) => {
-        setProviders(items);
-        const visibleItems = items.filter((item) => !hiddenProviderTabs.has(item.name));
-        const currentEnabled = visibleItems.some((item) => item.name === provider && item.enabled);
-        if (!currentEnabled) {
-          setProvider(providerPriority.find((name) => visibleItems.some((item) => item.name === name && item.enabled)) ?? visibleItems.find((item) => item.enabled)?.name ?? 'netease');
-        }
-      })
-      .catch(() => undefined);
-  }, [provider]);
+    let disposed = false;
+    const applyProviders = (items: StreamingProviderDescriptor[]): void => {
+      if (disposed) {
+        return;
+      }
+
+      setProviders(items);
+      const visibleItems = items.filter((item) => !hiddenProviderTabs.has(item.name));
+      setProvider((current) => {
+        const currentEnabled = visibleItems.some((item) => item.name === current && item.enabled);
+        return currentEnabled
+          ? current
+          : providerPriority.find((name) => visibleItems.some((item) => item.name === name && item.enabled)) ?? visibleItems.find((item) => item.enabled)?.name ?? 'netease';
+      });
+    };
+    const loadProviders = (forceRefresh = false): void => {
+      const cached = forceRefresh ? null : readCachedProviders();
+      if (cached) {
+        applyProviders(cached);
+        return;
+      }
+
+      void streaming
+        .getProviders()
+        .then((items) => applyProviders(writeCachedProviders(items)))
+        .catch(() => undefined);
+    };
+
+    loadProviders();
+    const unsubscribe = getAccountsBridge()?.onStatusesChanged?.(() => loadProviders(true));
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   const runSearch = useCallback(
     async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
@@ -428,7 +508,16 @@ export const StreamingSearchPage = (): JSX.Element => {
         return;
       }
 
-      setIsLoading(true);
+      const nextResultKey = streamingSearchResultKey(provider, query, activeTab);
+      const canRefreshSilently =
+        mode === 'replace' &&
+        nextPage === 1 &&
+        Boolean(resultRef.current) &&
+        readStreamingSearchMemory().resultKey === nextResultKey;
+
+      if (!canRefreshSilently) {
+        setIsLoading(true);
+      }
       setError(null);
 
       try {
@@ -458,6 +547,11 @@ export const StreamingSearchPage = (): JSX.Element => {
         );
       } catch (searchError) {
         if (requestIdRef.current === requestId) {
+          if (canRefreshSilently) {
+            setError(null);
+            return;
+          }
+
           setError(searchError instanceof Error ? searchError.message : '流媒体服务暂时不可用');
           setResult(null);
         }
@@ -473,6 +567,18 @@ export const StreamingSearchPage = (): JSX.Element => {
   useEffect(() => {
     void runSearch(1, 'replace');
   }, [runSearch]);
+
+  useEffect(() => {
+    const streaming = getStreamingBridge();
+    if (!streaming?.getFavorites) {
+      return;
+    }
+
+    void streaming
+      .getFavorites()
+      .then((snapshot) => setFavoriteTrackIds(favoriteIdsFromSnapshot(snapshot)))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     setFailedCoverUrls({});
@@ -712,6 +818,35 @@ export const StreamingSearchPage = (): JSX.Element => {
     [quality, queue, source],
   );
 
+  const handleToggleFavorite = useCallback(async (track: StreamingTrack): Promise<void> => {
+    if (!favoriteProviders.has(track.provider)) {
+      return;
+    }
+
+    const streaming = getStreamingBridge();
+    if (!streaming?.setFavorite) {
+      setActionError('Streaming favorites are unavailable.');
+      setActionMessage(null);
+      return;
+    }
+
+    const key = favoriteKey(track.provider, track.providerTrackId);
+    const nextFavorite = favoriteTrackIds[key] !== true;
+    setFavoriteTrackKey(track.stableKey);
+    try {
+      const result = await streaming.setFavorite({ track, favorite: nextFavorite });
+      setFavoriteTrackIds(favoriteIdsFromSnapshot(result.snapshot));
+      window.dispatchEvent(new CustomEvent('streaming:favorites-changed', { detail: result.snapshot }));
+      setActionError(null);
+      setActionMessage(result.favorite ? `已收藏：${track.title}` : `已取消收藏：${track.title}`);
+    } catch (favoriteError) {
+      setActionError(favoriteError instanceof Error ? favoriteError.message : String(favoriteError));
+      setActionMessage(null);
+    } finally {
+      setFavoriteTrackKey((current) => (current === track.stableKey ? null : current));
+    }
+  }, [favoriteTrackIds]);
+
   const handleDownload = useCallback(async (track: StreamingTrack): Promise<void> => {
     if (unsupportedDownloadProviders.has(track.provider)) {
       setActionError('这个平台在 ECHO Next 中仅支持流播放，不提供下载任务。');
@@ -918,6 +1053,27 @@ export const StreamingSearchPage = (): JSX.Element => {
     }
   }, [quality, queue, selectedAlbumDetail]);
 
+  const renderFavoriteButton = (track: StreamingTrack): JSX.Element | null => {
+    if (!favoriteProviders.has(track.provider)) {
+      return null;
+    }
+
+    const isFavorite = favoriteTrackIds[favoriteKey(track.provider, track.providerTrackId)] === true;
+    const isUpdating = favoriteTrackKey === track.stableKey;
+    return (
+      <button
+        type="button"
+        title={isFavorite ? '取消收藏' : '收藏'}
+        aria-label={isFavorite ? '取消收藏' : '收藏'}
+        data-active={isFavorite}
+        onClick={() => void handleToggleFavorite(track)}
+        disabled={isUpdating}
+      >
+        {isUpdating ? <Loader2 className="spinning-icon" size={16} /> : <Heart size={16} fill={isFavorite ? 'currentColor' : 'none'} />}
+      </button>
+    );
+  };
+
   const renderStreamingAlbumDetail = (): JSX.Element | null => {
     const album = selectedAlbumDetail ?? selectedAlbum;
     if (!album) {
@@ -1043,6 +1199,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                       <button type="button" title="加入队列" onClick={() => handleAddToQueue(track)} disabled={!track.playable}>
                         {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                       </button>
+                      {renderFavoriteButton(track)}
                     </div>
                   </article>
                 );
@@ -1188,6 +1345,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                       <button type="button" title="加入队列" onClick={() => handleAddToQueue(track)} disabled={!track.playable}>
                         {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                       </button>
+                      {renderFavoriteButton(track)}
                     </div>
                   </article>
                 );
@@ -1563,6 +1721,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                         <button type="button" title="加入队列" onClick={() => handleAddToQueue(track)} disabled={!track.playable}>
                           {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                         </button>
+                        {renderFavoriteButton(track)}
                         {streamingDownloadActionsEnabled && !unsupportedDownloadProviders.has(track.provider) ? (
                           <button type="button" title="下载" onClick={() => void handleDownload(track)} disabled={isDownloading}>
                             {isDownloading ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}

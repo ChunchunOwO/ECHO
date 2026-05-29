@@ -350,6 +350,59 @@ const bilibiliVideoUrlFromStreamingTarget = (target: { provider: StreamingProvid
   return videoId ? `https://www.bilibili.com/video/${encodeURIComponent(videoId)}` : null;
 };
 
+const youtubeVideoIdFromValue = (value: string | null | undefined): string | null => {
+  const raw = value?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const direct = raw.match(/^[A-Za-z0-9_-]{11}$/u)?.[0];
+  if (direct) {
+    return direct;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.hostname === 'youtu.be') {
+      return parsed.pathname.split('/').filter(Boolean)[0] ?? null;
+    }
+    if (parsed.hostname.endsWith('youtube.com')) {
+      return parsed.searchParams.get('v') ?? parsed.pathname.match(/\/(?:shorts|embed)\/([A-Za-z0-9_-]{11})/u)?.[1] ?? null;
+    }
+  } catch {
+    return raw.match(/[?&]v=([A-Za-z0-9_-]{11})/u)?.[1] ?? raw.match(/youtu\.be\/([A-Za-z0-9_-]{11})/u)?.[1] ?? null;
+  }
+
+  return null;
+};
+
+const youtubeVideoUrlFromStreamingTarget = (target: { provider: StreamingProviderName; providerTrackId: string }): string | null => {
+  if (target.provider !== 'youtube') {
+    return null;
+  }
+
+  const videoId = youtubeVideoIdFromValue(target.providerTrackId);
+  return videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : null;
+};
+
+const youtubeEmbedUrlFromVideo = (video: TrackVideo | null, autoplay: boolean): string | null => {
+  if (!video || video.provider !== 'youtube' || video.sourceType !== 'manual') {
+    return null;
+  }
+
+  const videoId = youtubeVideoIdFromValue(video.providerUrl ?? video.url ?? video.sourceId);
+  if (!videoId) {
+    return null;
+  }
+
+  const url = new URL(`https://www.youtube.com/embed/${videoId}`);
+  url.searchParams.set('autoplay', autoplay ? '1' : '0');
+  url.searchParams.set('mute', '1');
+  url.searchParams.set('controls', '1');
+  url.searchParams.set('rel', '0');
+  return url.toString();
+};
+
 const shouldUseDirectBilibiliStreamingVideo = (
   video: TrackVideo | null,
   target: { provider: StreamingProviderName; providerTrackId: string },
@@ -360,6 +413,18 @@ const shouldUseDirectBilibiliStreamingVideo = (
   }
 
   return video?.provider !== 'bilibili' || video.sourceId !== videoId;
+};
+
+const shouldUseDirectYouTubeStreamingVideo = (
+  video: TrackVideo | null,
+  target: { provider: StreamingProviderName; providerTrackId: string },
+): boolean => {
+  const videoId = youtubeVideoIdFromValue(target.providerTrackId);
+  if (!videoId) {
+    return false;
+  }
+
+  return video?.provider !== 'youtube' || video.sourceId !== videoId;
 };
 
 const isDirectBilibiliStreamingVideo = (
@@ -821,6 +886,10 @@ export const MvPanel = ({
       if (directBilibiliUrl && mvApi?.bindUrl && shouldUseDirectBilibiliStreamingVideo(video, streamingTarget)) {
         video = await mvApi.bindUrl(effectiveTrackId, directBilibiliUrl);
       }
+      const directYouTubeUrl = youtubeVideoUrlFromStreamingTarget(streamingTarget);
+      if (directYouTubeUrl && mvApi?.bindUrl && shouldUseDirectYouTubeStreamingVideo(video, streamingTarget)) {
+        video = await mvApi.bindUrl(effectiveTrackId, directYouTubeUrl);
+      }
       if (!video && mvApi?.searchNetworkCandidatesForSnapshot) {
         let streamingMvItems: StreamingMvItem[] = [];
         try {
@@ -960,13 +1029,15 @@ export const MvPanel = ({
   const selectedMvOffsetMs = clampOffset(Number(selectedVideo?.offsetMs ?? 0));
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
+  const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, isAudioPlaying);
+  const showYouTubeEmbed = Boolean(isMvEnabled && youtubeEmbedUrl && !showVideo);
   const shouldSurfaceSelectedFallback = Boolean(
-    selectedVideo && (videoError || selectedVideo.playableInApp || selectedVideo.sourceType === 'manual'),
+    selectedVideo && !showYouTubeEmbed && (videoError || selectedVideo.playableInApp || selectedVideo.sourceType === 'manual'),
   );
   const adaptiveStream = isAdaptiveStream(selectedVideo);
   const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
   const isLyricsReadabilityEnhanced = settings.lyricsReadabilityEnhanced === true || smartReadableColorsEnabled;
-  const unavailableReason = showVideo
+  const unavailableReason = showVideo || showYouTubeEmbed
     ? null
     : getUnavailableReason({
         error,
@@ -1562,6 +1633,16 @@ export const MvPanel = ({
               videoSeekingRef.current = false;
             }}
             playsInline
+          />
+        </div>
+      ) : showYouTubeEmbed ? (
+        <div className="lyrics-mv-player">
+          <iframe
+            className="lyrics-mv-video lyrics-mv-video--youtube"
+            src={youtubeEmbedUrl ?? undefined}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+            title={selectedVideo?.title ?? 'YouTube MV'}
           />
         </div>
       ) : (

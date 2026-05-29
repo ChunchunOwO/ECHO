@@ -2,11 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyThemeMode,
+  applyThemeSettings,
   readThemeMode,
   readThemeCustomId,
   readThemeCustomThemes,
   readThemePreset,
   readThemePresetOverrides,
+  resolveThemeModeForSchedule,
   updateThemeMode,
   updateThemePreset,
   updateThemePresetOverrides,
@@ -15,6 +17,7 @@ import {
 } from './themePreferences';
 
 afterEach(() => {
+  vi.useRealTimers();
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeMode;
@@ -253,6 +256,38 @@ describe('theme preferences', () => {
 
     stopWatching();
     expect(mediaQuery.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+  });
+
+  it('resolves scheduled dark mode across midnight without rewriting the saved mode', () => {
+    const settings = {
+      appearanceTheme: 'system' as const,
+      appearanceThemeScheduleEnabled: true,
+      appearanceThemeScheduleDarkAt: '20:00',
+      appearanceThemeScheduleLightAt: '07:00',
+      appearanceThemePreset: 'classic' as const,
+    };
+
+    expect(resolveThemeModeForSchedule(settings, new Date('2026-05-29T21:15:00'))).toBe('dark');
+    expect(resolveThemeModeForSchedule(settings, new Date('2026-05-29T06:59:00'))).toBe('dark');
+    expect(resolveThemeModeForSchedule(settings, new Date('2026-05-29T07:00:00'))).toBe('light');
+    expect(resolveThemeModeForSchedule(settings, new Date('2026-05-29T14:00:00'))).toBe('light');
+
+    const current = new Date();
+    const currentMinute = current.getHours() * 60 + current.getMinutes();
+    const nextMinute = (currentMinute + 1) % (24 * 60);
+    const formatMinute = (minute: number): string =>
+      `${Math.floor(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}`;
+
+    updateThemeMode('system');
+    applyThemeSettings({
+      ...settings,
+      appearanceThemeScheduleDarkAt: formatMinute(currentMinute),
+      appearanceThemeScheduleLightAt: formatMinute(nextMinute),
+    }, { animate: true });
+
+    expect(readThemeMode()).toBe('system');
+    expect(document.documentElement.dataset.themeMode).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
   it('falls back to light for invalid theme values', () => {

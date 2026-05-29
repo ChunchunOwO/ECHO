@@ -16,7 +16,7 @@ import {
   readAppearancePreferences,
   registerAppearanceFontFile,
 } from './preferences/appearancePreferences';
-import { applyThemeMode, loadPersistedThemeMode, readThemeMode, watchSystemThemeMode } from './preferences/themePreferences';
+import { applyThemeMode, loadPersistedThemeMode, readThemeMode, watchSystemThemeMode, watchThemeSettings } from './preferences/themePreferences';
 import type { AppearancePreferences, AppSettings } from '../shared/types/appSettings';
 import { PlaybackQueueProvider } from './stores/PlaybackQueueProvider';
 import { getAppBridge } from './utils/echoBridge';
@@ -107,7 +107,11 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 loadAppearanceFontFiles(appearancePreferences);
-watchSystemThemeMode(readThemeMode);
+if (appBridge) {
+  watchThemeSettings(() => appBridge.getSettings());
+} else {
+  watchSystemThemeMode(readThemeMode);
+}
 void loadPersistedThemeMode().catch(() => undefined);
 void loadPersistedAppearancePreferences()
   .then((preferences) => {

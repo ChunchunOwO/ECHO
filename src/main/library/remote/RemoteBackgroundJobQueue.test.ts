@@ -296,7 +296,7 @@ describe('RemoteBackgroundJobQueue', () => {
     expect(queue.getStatus(source.id).concurrency.mv).toBe(0);
     queue.setPlaybackActive(false);
     expect(queue.getStatus(source.id).concurrency.cover).toBe(2);
-    expect(queue.getStatus(source.id).concurrency.metadata).toBe(4);
+    expect(queue.getStatus(source.id).concurrency.metadata).toBe(8);
     queue.setPlaybackActive(true);
 
     queue.setGlobalPaused(true);
@@ -308,6 +308,114 @@ describe('RemoteBackgroundJobQueue', () => {
     queue.setGlobalPaused(false);
     await waitFor(() => queue.getStatus(source.id).completed.metadata === 1);
     expect(readMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses user-configured default background concurrency while preserving playback limits', () => {
+    const source = {
+      ...makeSource(),
+      config: {
+        metadataConcurrency: 2,
+        coverConcurrency: 2,
+        lyricsConcurrency: 1,
+        mvConcurrency: 1,
+        durationBackfillConcurrency: 1,
+      },
+    };
+    const store = {
+      getSource: vi.fn(() => source),
+    };
+    const queue = new RemoteBackgroundJobQueue(
+      store as never,
+      () => ({} as never),
+      null,
+      () => ({
+        metadataConcurrency: 6,
+        coverConcurrency: 12,
+        lyricsConcurrency: 3,
+        mvConcurrency: 2,
+        durationBackfillConcurrency: 4,
+      }),
+    );
+
+    expect(queue.getGlobalStatus().concurrency).toEqual({
+      metadata: 6,
+      cover: 12,
+      lyrics: 3,
+      mv: 2,
+      'duration-backfill': 4,
+    });
+    expect(queue.getStatus(source.id).concurrency).toMatchObject({
+      metadata: 6,
+      cover: 12,
+      lyrics: 3,
+      mv: 2,
+      'duration-backfill': 4,
+    });
+
+    queue.setPlaybackActive(true);
+    expect(queue.getStatus(source.id).concurrency).toMatchObject({
+      metadata: 1,
+      cover: 0,
+      lyrics: 0,
+      mv: 0,
+      'duration-backfill': 1,
+    });
+  });
+
+  it('runs metadata jobs with the user-configured default concurrency', async () => {
+    const source = {
+      ...makeSource(),
+      config: {
+        metadataConcurrency: 1,
+        coverConcurrency: 1,
+        lyricsConcurrency: 1,
+        mvConcurrency: 1,
+        durationBackfillConcurrency: 1,
+      },
+    };
+    const tracks = Array.from({ length: 8 }, (_value, index) => ({
+      ...makeTrack(),
+      id: `remote-track-user-concurrency-${index}`,
+      remotePath: `/music/user-concurrency-${index}.flac`,
+      stableKey: `user-concurrency-${index}`,
+    }));
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const readMetadata = vi.fn(async () => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeReads -= 1;
+      return makeMetadata();
+    });
+    const store = {
+      getTracksForBackgroundJobs: vi.fn().mockReturnValue(tracks),
+      getTrack: vi.fn((trackId: string) => tracks.find((track) => track.id === trackId) ?? null),
+      getSource: vi.fn(() => source),
+      getSourceWithSecret: vi.fn(() => source),
+      prepareMetadataUpdateSearchTerms: vi.fn().mockResolvedValue(undefined),
+      updateTrackJobStatus: vi.fn(),
+      updateTrackMetadata: vi.fn((trackId: string, update: Partial<RemoteLibraryTrack>) => {
+        const track = tracks.find((candidate) => candidate.id === trackId);
+        if (track) {
+          Object.assign(track, update);
+        }
+        return track ?? null;
+      }),
+    };
+    const queue = new RemoteBackgroundJobQueue(
+      store as never,
+      () => ({ readMetadata } as never),
+      null,
+      () => ({ metadataConcurrency: 4 }),
+    );
+
+    queue.enqueueSource(source.id, ['metadata']);
+
+    await waitFor(() => queue.getStatus(source.id).completed.metadata === tracks.length);
+
+    expect(readMetadata).toHaveBeenCalledTimes(tracks.length);
+    expect(maxActiveReads).toBe(4);
   });
 
   it('keeps cover jobs queued while playback or source sync is active', async () => {
@@ -535,7 +643,7 @@ describe('RemoteBackgroundJobQueue', () => {
     await waitFor(() => queue.getStatus('source-1').completed.metadata + queue.getStatus('source-2').completed.metadata === tracks.length);
 
     expect(readMetadata).toHaveBeenCalledTimes(tracks.length);
-    expect(maxActiveReads).toBeLessThanOrEqual(4);
+    expect(maxActiveReads).toBeLessThanOrEqual(8);
   });
 
   it('runs lyrics but not MV jobs after metadata is matchable', async () => {

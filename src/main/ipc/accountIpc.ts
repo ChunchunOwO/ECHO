@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus } from '../../shared/types/accounts';
 import { getAccountService, isAccountProvider, isYouTubeBrowser } from '../accounts/AccountService';
@@ -37,6 +37,17 @@ export const registerAccountIpc = (): void => {
     }
     if (accountProvider === 'tidal') {
       return getTidalAuthService().startLoginWindow();
+    }
+    if (accountProvider === 'youtube') {
+      const browser = getAccountService().getCredentials('youtube').browser;
+      const loginUrl = browser === 'edge' && process.platform === 'win32'
+        ? 'microsoft-edge:https://www.youtube.com/'
+        : 'https://www.youtube.com/';
+      return shell.openExternal(loginUrl).catch(() => undefined).then(() => ({
+        status: getAccountService().getStatus('youtube'),
+        saved: false,
+        message: 'Opened YouTube in the system browser. ECHO will not open an Electron login window for YouTube.',
+      }));
     }
 
     return startAccountLoginWindow(accountProvider, getAccountService());

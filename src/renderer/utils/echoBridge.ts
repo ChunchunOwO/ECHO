@@ -35,7 +35,7 @@ import {
   eqMinPreampDb,
   eqMinQ,
 } from '../../shared/types/eq';
-import type { StreamingLikedSongsSyncResult, StreamingPlaylistImportResult } from '../../shared/types/streaming';
+import type { StreamingFavoritesImportResult, StreamingLikedSongsSyncResult, StreamingPlaylistImportResult } from '../../shared/types/streaming';
 
 export const getEchoBridge = (): Window['echo'] | null => window.echo ?? null;
 
@@ -848,8 +848,34 @@ const browserStreamingBridge: StreamingBridgeApi = {
   },
   getProviders: async () => [],
   importPlaylistFromUrl: importPlaylistFromDevApi,
+  importFavoritesFromUrl: async (): Promise<StreamingFavoritesImportResult> => {
+    throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to import streaming favorites.');
+  },
+  exportFavorites: async () => null,
   syncLikedSongs: syncLikedSongsFromDevApi,
   setTrackLiked: setStreamingTrackLikedFromDevApi,
+  getFavorites: async () => ({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    providers: {
+      bilibili: [],
+      youtube: [],
+      soundcloud: [],
+    },
+  }),
+  setFavorite: async (request) => ({
+    favorite: request.favorite,
+    item: null,
+    snapshot: {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      providers: {
+        bilibili: [],
+        youtube: [],
+        soundcloud: [],
+      },
+    },
+  }),
   refreshNeteaseDailyRecommend: refreshNeteaseDailyRecommendFromDevApi,
 };
 

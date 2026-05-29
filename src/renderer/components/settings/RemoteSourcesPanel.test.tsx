@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RemoteSourcesPanel } from './RemoteSourcesPanel';
 import type {
   RemoteBackgroundGlobalStatus,
@@ -288,7 +288,7 @@ describe('RemoteSourcesPanel', () => {
       tokenSecret: '{"type":"baidu-oauth-token","accessToken":"login-access-token","refreshToken":"login-refresh-token"}',
     });
     appApiMocks.getSettings.mockResolvedValue({ remoteCoverLoadPerformanceMode: 'balanced' });
-    appApiMocks.setSettings.mockImplementation(async (patch) => ({ remoteCoverLoadPerformanceMode: patch.remoteCoverLoadPerformanceMode }));
+    appApiMocks.setSettings.mockImplementation(async (patch) => patch);
     appApiMocks.openExternalUrl.mockResolvedValue(undefined);
     playbackQueueMocks.playTrack.mockResolvedValue(undefined);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -795,6 +795,96 @@ describe('RemoteSourcesPanel', () => {
 
     await waitFor(() => expect(remoteApiMocks.updateRuntimeLimits).toHaveBeenCalledWith('source-1', { coverConcurrency: 48 }));
     await waitFor(() => expect(remoteApiMocks.startBackgroundJobs).toHaveBeenCalledWith('source-1', ['cover']));
+  });
+
+  it('saves custom remote background concurrency and applies it to current sources', async () => {
+    sources = [remoteSource()];
+    appApiMocks.getSettings.mockResolvedValue({
+      remoteCoverLoadPerformanceMode: 'balanced',
+      remoteBackgroundConcurrency: { metadata: 3, cover: 6, lyrics: 2, mv: 1, durationBackfill: 2 },
+    });
+    render(<RemoteSourcesPanel />);
+
+    const coverInput = await screen.findByLabelText('后台封面并发') as HTMLInputElement;
+    expect(coverInput.value).toBe('6');
+    remoteApiMocks.getOverview.mockClear();
+    remoteApiMocks.getJobStatus.mockClear();
+    remoteApiMocks.getSyncStatus.mockClear();
+
+    fireEvent.change(screen.getByLabelText('后台元数据并发'), { target: { value: '5' } });
+    fireEvent.change(coverInput, { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('后台歌词并发'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('后台 MV 并发'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('后台时长回填并发'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: /应用后台并发/u }));
+
+    await waitFor(() => expect(appApiMocks.setSettings).toHaveBeenCalledWith({
+      remoteBackgroundConcurrency: { metadata: 5, cover: 12, lyrics: 3, mv: 2, durationBackfill: 4 },
+    }));
+    await waitFor(() => expect(remoteApiMocks.updateRuntimeLimits).toHaveBeenCalledWith('source-1', {
+      metadataConcurrency: 5,
+      coverConcurrency: 12,
+      lyricsConcurrency: 3,
+      mvConcurrency: 2,
+      durationBackfillConcurrency: 4,
+    }));
+    await waitFor(() => {
+      expect(screen.getAllByText('并发 12').length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText('并发 5').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('并发 4').length).toBeGreaterThan(0);
+    expect(remoteApiMocks.getOverview).not.toHaveBeenCalled();
+    expect(remoteApiMocks.getJobStatus).not.toHaveBeenCalled();
+    expect(remoteApiMocks.getSyncStatus).not.toHaveBeenCalled();
+    await screen.findByText(/后台任务并发已保存/u);
+  });
+
+  it('refreshes visible cover overview while background jobs are running', async () => {
+    sources = [remoteSource({ indexedTrackCount: 8 })];
+    const coverOverview = (ok: number, pending: number): RemoteSourceOverview => {
+      const nextOverview = overviewFor(sources);
+      const cover = { ...emptyStatusCounts(), ok, pending };
+      return {
+        ...nextOverview,
+        cover,
+        sources: nextOverview.sources.map((source) => ({ ...source, cover })),
+      };
+    };
+    const initialOverview = coverOverview(2, 6);
+    const updatedOverview = coverOverview(5, 3);
+    const runningStatus = jobStatus();
+    remoteApiMocks.getOverview.mockImplementation((sourceId?: string | null) => (
+      Promise.resolve(sourceId === 'source-1' ? updatedOverview : initialOverview)
+    ));
+    remoteApiMocks.getJobStatus.mockImplementation((sourceId) => Promise.resolve({
+      ...runningStatus,
+      sourceId,
+      pending: { ...runningStatus.pending, cover: 3 },
+      running: { ...runningStatus.running, cover: 1 },
+    }));
+    const intervalCallbacks: Array<() => void> = [];
+    vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler) => {
+      if (typeof handler === 'function') {
+        intervalCallbacks.push(handler as () => void);
+      }
+      return setTimeout(() => undefined, 0) as unknown as ReturnType<typeof window.setInterval>;
+    });
+
+    render(<RemoteSourcesPanel />);
+
+    await screen.findByText(/已加载 2 \/ 8/u);
+    const progressbar = screen.getByRole('progressbar', { name: 'Mock AList 封面加载进度' });
+    expect(progressbar.querySelector('.remote-scan-progress-track span')?.getAttribute('style')).toContain('25%');
+    await waitFor(() => expect(intervalCallbacks.length).toBeGreaterThanOrEqual(2));
+    remoteApiMocks.getOverview.mockClear();
+
+    await act(async () => {
+      intervalCallbacks.forEach((callback) => callback());
+    });
+
+    await waitFor(() => expect(remoteApiMocks.getOverview).toHaveBeenCalledWith('source-1'));
+    await screen.findByText(/已加载 5 \/ 8/u);
+    expect(progressbar.querySelector('.remote-scan-progress-track span')?.getAttribute('style')).toContain('63%');
   });
 
   it('previews and applies the selected remote album merge strategy', async () => {

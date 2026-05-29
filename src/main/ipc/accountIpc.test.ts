@@ -6,10 +6,19 @@ const handleMock = vi.fn((channel: string, handler: (...args: unknown[]) => unkn
   handlers[channel] = handler;
 });
 const saveCookieMock = vi.fn();
+const startAccountLoginWindowMock = vi.hoisted(() => vi.fn(async (provider) => ({
+  status: { provider, connected: true },
+  saved: true,
+  message: 'saved',
+})));
+const openExternalMock = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('electron', () => ({
   ipcMain: {
     handle: handleMock,
+  },
+  shell: {
+    openExternal: openExternalMock,
   },
 }));
 
@@ -24,17 +33,14 @@ vi.mock('../accounts/AccountService', async (importOriginal) => {
       clearAccount: vi.fn((provider) => ({ provider, connected: false })),
       checkAccount: vi.fn(async (provider) => ({ provider, connected: false })),
       checkAllAccounts: vi.fn(async () => []),
+      getCredentials: vi.fn((provider) => ({ provider, browser: provider === 'youtube' ? 'edge' : undefined })),
       setYouTubeBrowser: vi.fn((browser) => ({ provider: 'youtube', connected: browser !== 'none' })),
     }),
   };
 });
 
 vi.mock('../accounts/AccountLoginWindow', () => ({
-  startAccountLoginWindow: vi.fn(async (provider) => ({
-    status: { provider, connected: true },
-    saved: true,
-    message: 'saved',
-  })),
+  startAccountLoginWindow: startAccountLoginWindowMock,
 }));
 
 const resetHandlers = (): void => {
@@ -48,6 +54,8 @@ describe('account IPC', () => {
     resetHandlers();
     handleMock.mockClear();
     saveCookieMock.mockReset();
+    startAccountLoginWindowMock.mockClear();
+    openExternalMock.mockClear();
     vi.resetModules();
     const module = await import('./accountIpc');
     module.registerAccountIpc();
@@ -78,5 +86,14 @@ describe('account IPC', () => {
       saved: true,
       message: 'saved',
     });
+  });
+
+  it('does not open the Electron login window for YouTube', async () => {
+    await expect(handlers[IpcChannels.AccountStartLogin]!(null, 'youtube')).resolves.toMatchObject({
+      status: { provider: 'youtube' },
+      saved: false,
+    });
+    expect(openExternalMock).toHaveBeenCalledWith('microsoft-edge:https://www.youtube.com/');
+    expect(startAccountLoginWindowMock).not.toHaveBeenCalled();
   });
 });

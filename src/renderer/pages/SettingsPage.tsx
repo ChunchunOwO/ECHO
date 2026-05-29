@@ -126,7 +126,7 @@ import {
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
 import {
-  applyThemeMode,
+  applyThemeSettings,
   defaultThemeMode,
   defaultThemePreset,
   normalizeThemeCustomId,
@@ -135,10 +135,12 @@ import {
   normalizeThemeHexColor,
   normalizeThemePreset,
   normalizeThemePresetOverrides,
+  normalizeThemeScheduleTime,
   readThemeCustomId,
   readThemeCustomThemes,
   readThemePreset,
   readThemePresetOverrides,
+  resolveThemeModeForSchedule,
   updateThemePreferences,
   updateThemePresetOverrides,
 } from '../preferences/themePreferences';
@@ -1340,6 +1342,8 @@ const themeModeOptions: Array<{ mode: AppThemeMode; labelKey: TranslationKey }> 
   { mode: 'dark', labelKey: 'settings.appearance.theme.dark' },
   { mode: 'system', labelKey: 'settings.appearance.theme.followSystem' },
 ];
+const defaultThemeScheduleDarkAt = '19:00';
+const defaultThemeScheduleLightAt = '07:00';
 
 const themePresetOptions: Array<{
   preset: AppThemePreset;
@@ -3317,9 +3321,9 @@ const AccountCookieCard = ({
         <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
           {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
         </button>
-        <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
-          <ExternalLink size={15} />
-          {busyAction === 'login' ? t('settings.integrations.accounts.loginBusy') : t('settings.integrations.accounts.loginAndSync')}
+        <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login' || busyAction === 'browser'} onClick={onOpenLogin}>
+          <Check size={15} />
+          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.checkBusy') : '保存浏览器选择'}
         </button>
         <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
           {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
@@ -3383,9 +3387,9 @@ const YouTubeAccountCard = ({
         <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
           {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
         </button>
-        <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
+        <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login' || busyAction === 'browser'} onClick={onOpenLogin}>
           <ExternalLink size={15} />
-          {busyAction === 'login' ? t('settings.integrations.accounts.loginBusy') : t('settings.integrations.accounts.loginAndSync')}
+          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.loginBusy') : '打开浏览器登录'}
         </button>
         <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
           {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
@@ -4879,7 +4883,14 @@ export const SettingsPage = (): JSX.Element => {
     const previewThemes = activeThemeCustom
       ? updateThemeCustomThemeTone(savedThemeCustomThemes, activeThemeCustom.id, themeCustomTone, themeCustomDraft)
       : savedThemeCustomThemes;
-    applyThemeMode(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, previewOverrides, {
+    applyThemeSettings({
+      ...(appSettings ?? {}),
+      appearanceTheme: appSettings?.appearanceTheme ?? defaultThemeMode,
+      appearanceThemePreset: selectedThemePreset,
+      appearanceThemePresetOverrides: previewOverrides,
+      appearanceCustomThemes: previewThemes,
+      appearanceThemeCustomId: activeThemeCustom?.id ?? null,
+    }, {
       customThemeId: activeThemeCustom?.id ?? null,
       customThemes: previewThemes,
     });
@@ -5498,6 +5509,16 @@ export const SettingsPage = (): JSX.Element => {
     handleAppearanceChange(defaultAppearancePreferences);
   };
 
+  const applyThemeSettingsPatch = (patch: Partial<AppSettings>, animate = true): void => {
+    applyThemeSettings({ ...(appSettings ?? {}), ...patch }, {
+      animate,
+      customThemeId: Object.prototype.hasOwnProperty.call(patch, 'appearanceThemeCustomId')
+        ? patch.appearanceThemeCustomId ?? null
+        : activeThemeCustom?.id ?? appSettings?.appearanceThemeCustomId ?? null,
+      customThemes: patch.appearanceCustomThemes ?? savedThemeCustomThemes,
+    });
+  };
+
   const handleThemeModeChange = (appearanceTheme: AppThemeMode): void => {
     skipNextThemePreviewRef.current = true;
     updateThemePreferences(appearanceTheme, selectedThemePreset, savedThemePresetOverrides, {
@@ -5505,8 +5526,20 @@ export const SettingsPage = (): JSX.Element => {
       customThemeId: activeThemeCustom?.id ?? null,
       customThemes: savedThemeCustomThemes,
     });
+    applyThemeSettingsPatch({ appearanceTheme });
     setAppSettings((current) => (current ? { ...current, appearanceTheme } : current));
     patchAppSettings({ appearanceTheme });
+  };
+
+  const handleThemeScheduleChange = (patch: Pick<Partial<AppSettings>, 'appearanceThemeScheduleEnabled' | 'appearanceThemeScheduleDarkAt' | 'appearanceThemeScheduleLightAt'>): void => {
+    const nextPatch: Partial<AppSettings> = {
+      appearanceThemeScheduleDarkAt: appSettings?.appearanceThemeScheduleDarkAt ?? defaultThemeScheduleDarkAt,
+      appearanceThemeScheduleLightAt: appSettings?.appearanceThemeScheduleLightAt ?? defaultThemeScheduleLightAt,
+      ...patch,
+    };
+    applyThemeSettingsPatch(nextPatch);
+    setAppSettings((current) => (current ? { ...current, ...nextPatch } : current));
+    patchAppSettings(nextPatch);
   };
 
   const handleThemePresetChange = (appearanceThemePreset: AppThemePreset): void => {
@@ -6658,6 +6691,35 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
+    if (provider === 'youtube') {
+      if (youtubeBrowser === 'none') {
+        setAccountErrors((current) => ({ ...current, youtube: '请先选择 Edge、Chrome 或 Firefox。' }));
+        return;
+      }
+
+      try {
+        setAccountBusyFor('youtube', 'login');
+        setAccountErrors((current) => ({ ...current, youtube: null }));
+        const status = await accounts.setYouTubeBrowser(youtubeBrowser);
+        const result = typeof accounts.startLogin === 'function'
+          ? await accounts.startLogin('youtube')
+          : null;
+        if (!result) {
+          await handleOpenExternalUrl('https://www.youtube.com/');
+        }
+        updateAccountStatus(result?.status ?? status);
+        setAccountMessages((current) => ({
+          ...current,
+          youtube: result?.message ?? '已打开系统浏览器。ECHO 会让 yt-dlp 读取所选浏览器 Cookie，不会打开 Electron 登录窗口。',
+        }));
+      } catch (accountError) {
+        setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
+      } finally {
+        setAccountBusyFor('youtube', null);
+      }
+      return;
+    }
+
     if (typeof accounts.startLogin !== 'function') {
       window.open(accountLoginUrls[provider], '_blank', 'noopener,noreferrer');
       setAccountErrors((current) => ({
@@ -6833,7 +6895,7 @@ export const SettingsPage = (): JSX.Element => {
   const handleDownloadFeatureRelease = (): void => {
     setDownloadUnlockInput('');
     setDownloadUnlockMessage(null);
-    patchAppSettings({ downloadsFeatureUnlocked: false });
+    patchAppSettings({ downloadsFeatureUnlocked: false, streamingDownloadActionsEnabled: false });
   };
 
   const handleDownloadUnlockKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
@@ -8524,6 +8586,18 @@ export const SettingsPage = (): JSX.Element => {
         threshold: lastFmStatus.activeTrack.thresholdSeconds,
       })
     : t('settings.integrations.lastfm.noActiveTrack');
+  const themeScheduleEnabled = appSettings?.appearanceThemeScheduleEnabled === true;
+  const themeScheduleDarkAt = normalizeThemeScheduleTime(appSettings?.appearanceThemeScheduleDarkAt, defaultThemeScheduleDarkAt);
+  const themeScheduleLightAt = normalizeThemeScheduleTime(appSettings?.appearanceThemeScheduleLightAt, defaultThemeScheduleLightAt);
+  const scheduledThemeMode = resolveThemeModeForSchedule({
+    appearanceTheme: appSettings?.appearanceTheme ?? defaultThemeMode,
+    appearanceThemeScheduleEnabled: themeScheduleEnabled,
+    appearanceThemeScheduleDarkAt: themeScheduleDarkAt,
+    appearanceThemeScheduleLightAt: themeScheduleLightAt,
+  });
+  const themeScheduleStatus = themeScheduleEnabled
+    ? `已启用：${themeScheduleDarkAt} 切到深色，${themeScheduleLightAt} 自动切回浅色。当前按本机时间使用${scheduledThemeMode === 'dark' ? '深色' : '浅色'}。`
+    : '关闭后仍使用上面的手动主题模式。';
   return (
     <div className="settings-page no-drag">
       <header className="settings-header">
@@ -10475,6 +10549,44 @@ export const SettingsPage = (): JSX.Element => {
                       {t(option.labelKey)}
                     </ChipButton>
                   ))}
+                </div>
+              </SettingRow>
+              <SettingRow
+                title="定时切换深色模式"
+                description="以用户系统时间为准，到点自动切到深色，再按设定时间切回浅色。"
+              >
+                <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-theme-schedule">
+                  <div className="settings-inline-toggle">
+                    <span>启用定时</span>
+                    <button
+                      aria-label="启用定时切换深色模式"
+                      aria-pressed={themeScheduleEnabled}
+                      className={`toggle-btn ${themeScheduleEnabled ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => handleThemeScheduleChange({ appearanceThemeScheduleEnabled: !themeScheduleEnabled })}
+                    >
+                      <span />
+                    </button>
+                  </div>
+                  <label className="settings-time-field">
+                    <span>切到深色</span>
+                    <input
+                      type="time"
+                      value={themeScheduleDarkAt}
+                      disabled={!themeScheduleEnabled}
+                      onChange={(event) => handleThemeScheduleChange({ appearanceThemeScheduleDarkAt: normalizeThemeScheduleTime(event.currentTarget.value, defaultThemeScheduleDarkAt) })}
+                    />
+                  </label>
+                  <label className="settings-time-field">
+                    <span>切回浅色</span>
+                    <input
+                      type="time"
+                      value={themeScheduleLightAt}
+                      disabled={!themeScheduleEnabled}
+                      onChange={(event) => handleThemeScheduleChange({ appearanceThemeScheduleLightAt: normalizeThemeScheduleTime(event.currentTarget.value, defaultThemeScheduleLightAt) })}
+                    />
+                  </label>
+                  <p className="settings-inline-note">{themeScheduleStatus}</p>
                 </div>
               </SettingRow>
               <SettingRow

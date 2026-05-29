@@ -5,6 +5,7 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { DesktopLyricsBounds } from '../../shared/types/appSettings';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../shared/types/desktopLyrics';
+import type { PlaybackStatus } from '../../shared/types/playback';
 import { getAppSettings, setAppSettings } from './appSettings';
 import { createMainWindowWebPreferences } from './createMainWindow';
 import { getMainWindow } from './windowManager';
@@ -25,6 +26,7 @@ const forwardedAudioStatusMaxAgeMs = 30_000;
 let desktopLyricsWindow: BrowserWindow | null = null;
 let rememberBoundsTimer: ReturnType<typeof setTimeout> | null = null;
 let lastForwardedAudioStatus: { status: AudioStatus; receivedAtMs: number } | null = null;
+let lastForwardedPlaybackStatus: { status: PlaybackStatus; receivedAtMs: number } | null = null;
 let desktopLyricsMousePassthrough = false;
 
 const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
@@ -341,6 +343,28 @@ export const receiveDesktopLyricsRendererAudioStatus = (event: IpcMainEvent, sta
   }
 };
 
+export const receiveDesktopLyricsRendererPlaybackStatus = (event: IpcMainEvent, status: unknown): void => {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    return;
+  }
+
+  if (!status || typeof status !== 'object' || Array.isArray(status)) {
+    return;
+  }
+
+  lastForwardedPlaybackStatus = {
+    status: status as PlaybackStatus,
+    receivedAtMs: Date.now(),
+  };
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.DesktopLyricsPlaybackStatus, lastForwardedPlaybackStatus.status);
+    }
+  }
+};
+
 export const getLastDesktopLyricsAudioStatus = (): AudioStatus | null => {
   if (!lastForwardedAudioStatus) {
     return null;
@@ -348,5 +372,15 @@ export const getLastDesktopLyricsAudioStatus = (): AudioStatus | null => {
 
   return Date.now() - lastForwardedAudioStatus.receivedAtMs <= forwardedAudioStatusMaxAgeMs
     ? lastForwardedAudioStatus.status
+    : null;
+};
+
+export const getLastDesktopLyricsPlaybackStatus = (): PlaybackStatus | null => {
+  if (!lastForwardedPlaybackStatus) {
+    return null;
+  }
+
+  return Date.now() - lastForwardedPlaybackStatus.receivedAtMs <= forwardedAudioStatusMaxAgeMs
+    ? lastForwardedPlaybackStatus.status
     : null;
 };

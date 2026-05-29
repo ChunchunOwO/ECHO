@@ -25,6 +25,7 @@ export type RemoteRuntimeLimits = {
   coverConcurrency?: number;
   lyricsConcurrency?: number;
   mvConcurrency?: number;
+  durationBackfillConcurrency?: number;
 };
 
 export type RemoteSyncOptions = {

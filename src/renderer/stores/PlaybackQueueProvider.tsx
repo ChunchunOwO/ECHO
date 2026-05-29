@@ -11,6 +11,8 @@ import type {
   PersistedPlaybackRepeatMode,
   PersistedPlaybackSessionResume,
   PersistedPlaybackSessionV1,
+  PersistedPlaylistPlaybackSnapshot,
+  PersistedPlaylistPlaybackState,
   PersistedQueueItem,
   PersistedQueueSource,
 } from '../../shared/types/playback';
@@ -178,6 +180,7 @@ type PlaybackQueueMemory = {
 type HydratedPlaybackSession = PlaybackQueueMemory & {
   mode: PlaybackModeMemory;
   automixEnabled: boolean;
+  playlistPlayback: PlaylistPlaybackState | null;
 };
 
 type ReplaceQueueOptions = {
@@ -348,6 +351,7 @@ const defaultHydratedPlaybackSession: HydratedPlaybackSession = {
   ...defaultPlaybackQueueMemory,
   mode: defaultPlaybackModeMemory,
   automixEnabled: false,
+  playlistPlayback: null,
 };
 
 const defaultPlaylistPlaybackState: PlaylistPlaybackState = {
@@ -581,6 +585,7 @@ const readLegacyPlaybackSession = (): HydratedPlaybackSession => ({
   ...readPlaybackQueueMemory(),
   mode: readPlaybackModeMemory(),
   automixEnabled: automixTemporarilyDisabled ? false : readAutomixEnabledMemory(),
+  playlistPlayback: null,
 });
 
 const hasLegacyPlaybackSession = (session: HydratedPlaybackSession): boolean =>
@@ -608,6 +613,61 @@ const isResumeMemory = (
     (trackId && item.track.id === trackId) ||
     item.track.path === value.filePath,
   );
+};
+
+const playlistSnapshotFromPersisted = (
+  snapshot: PersistedPlaylistPlaybackSnapshot | null | undefined,
+): PlaylistPlaybackSnapshot | null => {
+  if (!snapshot) {
+    return null;
+  }
+
+  const items = Array.isArray(snapshot.items) ? snapshot.items.filter(isQueueItemSnapshot) : [];
+  const queueIds = new Set(items.map((item) => item.queueId));
+  const currentQueueId = snapshot.currentQueueId && queueIds.has(snapshot.currentQueueId) ? snapshot.currentQueueId : null;
+  const currentTrackId =
+    typeof snapshot.currentTrackId === 'string'
+      ? snapshot.currentTrackId
+      : currentQueueId
+        ? items.find((item) => item.queueId === currentQueueId)?.track.id ?? null
+        : null;
+  const history = Array.isArray(snapshot.history)
+    ? snapshot.history.filter((item): item is QueueItem => isQueueItemSnapshot(item) && queueIds.has(item.queueId))
+    : [];
+
+  return {
+    items,
+    currentQueueId,
+    currentTrackId,
+    lastPlayedTrack: isLibraryTrackSnapshot(snapshot.lastPlayedTrack) ? snapshot.lastPlayedTrack : null,
+    history,
+    resume: isResumeMemory(snapshot.resume, items) ? snapshot.resume : null,
+    mode: {
+      isShuffleEnabled: snapshot.mode?.isShuffleEnabled === true,
+      repeatMode: isRepeatMode(snapshot.mode?.repeatMode) ? snapshot.mode.repeatMode : 'off',
+    },
+    automixEnabled: !automixTemporarilyDisabled && snapshot.mode?.automixEnabled === true,
+  };
+};
+
+const playlistPlaybackFromPersisted = (
+  playlistPlayback: PersistedPlaylistPlaybackState | null | undefined,
+): PlaylistPlaybackState | null => {
+  if (!playlistPlayback?.active) {
+    return null;
+  }
+
+  const snapshot = playlistSnapshotFromPersisted(playlistPlayback.snapshot);
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    active: true,
+    label: typeof playlistPlayback.label === 'string' ? playlistPlayback.label : null,
+    playlistId: typeof playlistPlayback.playlistId === 'string' ? playlistPlayback.playlistId : null,
+    snapshot,
+  };
 };
 
 const playbackSessionFromPersisted = (session: PersistedPlaybackSessionV1 | null): HydratedPlaybackSession => {
@@ -641,8 +701,23 @@ const playbackSessionFromPersisted = (session: PersistedPlaybackSessionV1 | null
       repeatMode: isRepeatMode(session.mode?.repeatMode) ? session.mode.repeatMode : 'off',
     },
     automixEnabled: !automixTemporarilyDisabled && session.mode?.automixEnabled === true,
+    playlistPlayback: playlistPlaybackFromPersisted(session.playlistPlayback),
   };
 };
+
+const createPersistedPlaylistSnapshot = (snapshot: PlaylistPlaybackSnapshot): PersistedPlaylistPlaybackSnapshot => ({
+  items: snapshot.items,
+  currentQueueId: snapshot.currentQueueId,
+  currentTrackId: snapshot.currentTrackId,
+  lastPlayedTrack: snapshot.lastPlayedTrack,
+  history: snapshot.history,
+  mode: {
+    isShuffleEnabled: snapshot.mode.isShuffleEnabled,
+    repeatMode: snapshot.mode.repeatMode,
+    automixEnabled: snapshot.automixEnabled,
+  },
+  resume: isResumeMemory(snapshot.resume, snapshot.items) ? snapshot.resume : null,
+});
 
 const createPersistedSessionSnapshot = (session: HydratedPlaybackSession): PersistedPlaybackSessionV1 => ({
   version: 1,
@@ -658,6 +733,14 @@ const createPersistedSessionSnapshot = (session: HydratedPlaybackSession): Persi
   },
   resume: isResumeMemory(session.resume, session.items) ? session.resume : null,
   updatedAt: new Date().toISOString(),
+  playlistPlayback: session.playlistPlayback?.active && session.playlistPlayback.snapshot
+    ? {
+        active: true,
+        label: session.playlistPlayback.label,
+        playlistId: session.playlistPlayback.playlistId,
+        snapshot: createPersistedPlaylistSnapshot(session.playlistPlayback.snapshot),
+      }
+    : null,
 });
 
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
@@ -1320,7 +1403,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       const hydratedAutomixEnabled = automixTemporarilyDisabled ? false : session.automixEnabled;
       automixEnabledRef.current = hydratedAutomixEnabled;
       setAutomixEnabledState(hydratedAutomixEnabled);
-      setPlaylistPlaybackStateInternal(defaultPlaylistPlaybackState);
+      setPlaylistPlaybackStateInternal(session.playlistPlayback ?? defaultPlaylistPlaybackState);
     },
     [setCurrentQueueId, setCurrentTrackIdInternal, setHistory, setItems, setLastPlayedTrack, setPlaylistPlaybackStateInternal, setResumeMemory],
   );
@@ -1382,6 +1465,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
           resume: playlistSnapshot.resume,
           mode: playlistSnapshot.mode,
           automixEnabled: playlistSnapshot.automixEnabled,
+          playlistPlayback: null,
         }
       : {
           version: 1,
@@ -1396,9 +1480,29 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
             repeatMode: repeatModeRef.current,
           },
           automixEnabled: automixTemporarilyDisabled ? false : automixEnabledRef.current,
+          playlistPlayback: null,
         };
 
     return createPersistedSessionSnapshot(session);
+  }, []);
+
+  const createCurrentBroadcastSession = useCallback((): PersistedPlaybackSessionV1 => {
+    const playlistState = playlistPlaybackStateRef.current;
+    return createPersistedSessionSnapshot({
+      version: 1,
+      items: itemsRef.current,
+      currentQueueId: currentQueueIdRef.current,
+      currentTrackId: currentTrackIdRef.current,
+      lastPlayedTrack: lastPlayedTrackRef.current,
+      history: historyRef.current,
+      resume: resumeMemoryRef.current,
+      mode: {
+        isShuffleEnabled: isShuffleEnabledRef.current,
+        repeatMode: repeatModeRef.current,
+      },
+      automixEnabled: automixTemporarilyDisabled ? false : automixEnabledRef.current,
+      playlistPlayback: playlistState.active && playlistState.snapshot ? playlistState : null,
+    });
   }, []);
 
   const persistPlaybackSessionNow = useCallback(async (): Promise<void> => {
@@ -1407,10 +1511,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
 
     const snapshot = createCurrentPersistedSession();
+    const broadcastSnapshot = createCurrentBroadcastSession();
     const playback = window.echo?.playback;
     if (playback?.saveQueueSession) {
       try {
-        const saved = await playback.saveQueueSession(snapshot);
+        const saved = await playback.saveQueueSession(snapshot, { broadcastSnapshot });
         const savedResume = playbackSessionFromPersisted(saved).resume;
         if (resumeMemoryRef.current && !savedResume) {
           setResumeMemory(null);
@@ -1424,7 +1529,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     writePlaybackQueueMemory(snapshot);
     writePlaybackModeMemory(snapshot.mode);
     writeAutomixEnabledMemory(snapshot.mode.automixEnabled);
-  }, [createCurrentPersistedSession, setResumeMemory]);
+  }, [createCurrentBroadcastSession, createCurrentPersistedSession, setResumeMemory]);
 
   const cancelScheduledPlaybackSessionPersistence = useCallback((): void => {
     cancelPlaybackSessionPersistRef.current?.();

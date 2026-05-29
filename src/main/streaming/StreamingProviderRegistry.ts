@@ -7,6 +7,7 @@ const providerDisplayNames: Record<StreamingProviderName, string> = {
   netease: 'NetEase Cloud Music',
   qqmusic: 'QQ Music',
   bilibili: 'Bilibili',
+  youtube: 'YouTube',
   soundcloud: 'SoundCloud',
   spotify: 'Spotify',
   tidal: 'TIDAL',

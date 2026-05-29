@@ -1,5 +1,6 @@
 import type { AppSettings, DesktopLyricsBounds } from './appSettings';
 import type { AudioStatus } from './audio';
+import type { PlaybackStatus } from './playback';
 
 export type DesktopLyricsStylePatch = Partial<Pick<
   AppSettings,
@@ -37,5 +38,10 @@ export type DesktopLyricsState = {
 
 export type DesktopLyricsForwardedAudioStatus = {
   status: AudioStatus;
+  receivedAtMs: number;
+};
+
+export type DesktopLyricsForwardedPlaybackStatus = {
+  status: PlaybackStatus;
   receivedAtMs: number;
 };

@@ -5,6 +5,7 @@ import type {
   StreamingArtistRef,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
   StreamingSearchResult,
@@ -234,6 +235,8 @@ const resolvedTrackUrl = (providerTrackId: string): string => {
   return `https://api.soundcloud.com/tracks/${encodeURIComponent(providerTrackId)}`;
 };
 
+const resolvedPlaylistUrl = (providerPlaylistId: string): string => providerPlaylistId;
+
 const streamUrlExpiresAt = (url: string): string | null => {
   try {
     const expires = integer(new URL(url).searchParams.get('expires'));
@@ -321,6 +324,48 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
     }
 
     return track;
+  }
+
+  async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
+    const cookie = requireCookie();
+    const page = Math.max(1, Math.floor(input.page ?? 1));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(input.pageSize ?? 50)));
+    const start = (page - 1) * pageSize + 1;
+    const end = page * pageSize;
+    const data = await ytDlpJson<unknown>(
+      [
+        '--flat-playlist',
+        '--playlist-start',
+        String(start),
+        '--playlist-end',
+        String(end),
+        resolvedPlaylistUrl(input.providerPlaylistId),
+      ],
+      cookie,
+    );
+    const record = asRecord(data);
+    const playlistId = text(record.id) ?? input.providerPlaylistId;
+    const tracks = entriesFromSearch(data)
+      .map(trackFromYtDlpEntry)
+      .filter((track): track is StreamingTrack => Boolean(track));
+    const total = integer(record.playlist_count) ?? integer(record.n_entries);
+
+    return {
+      id: streamingStableKey(provider, `playlist:${playlistId}`),
+      provider,
+      providerPlaylistId: playlistId,
+      title: text(record.title) ?? 'SoundCloud Playlist',
+      description: text(record.description),
+      creator: text(record.uploader),
+      coverUrl: tracks[0]?.coverUrl ?? null,
+      coverThumb: tracks[0]?.coverThumb ?? null,
+      trackCount: total,
+      tracks,
+      page,
+      pageSize,
+      total,
+      hasMore: total ? start - 1 + tracks.length < total : tracks.length === pageSize,
+    };
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {

@@ -135,6 +135,23 @@ export type PersistedPlaybackSessionResume = {
   updatedAt: string;
 };
 
+export type PersistedPlaylistPlaybackSnapshot = {
+  items: PersistedQueueItem[];
+  currentQueueId: string | null;
+  currentTrackId: string | null;
+  lastPlayedTrack: LibraryTrack | null;
+  history: PersistedQueueItem[];
+  mode: PersistedPlaybackSessionMode;
+  resume: PersistedPlaybackSessionResume | null;
+};
+
+export type PersistedPlaylistPlaybackState = {
+  active: boolean;
+  label: string | null;
+  playlistId: string | null;
+  snapshot: PersistedPlaylistPlaybackSnapshot | null;
+};
+
 export type PersistedPlaybackSessionV1 = {
   version: 1;
   items: PersistedQueueItem[];
@@ -145,4 +162,9 @@ export type PersistedPlaybackSessionV1 = {
   mode: PersistedPlaybackSessionMode;
   resume: PersistedPlaybackSessionResume | null;
   updatedAt: string;
+  playlistPlayback?: PersistedPlaylistPlaybackState | null;
+};
+
+export type PlaybackQueueSessionSaveOptions = {
+  broadcastSnapshot?: PersistedPlaybackSessionV1 | null;
 };

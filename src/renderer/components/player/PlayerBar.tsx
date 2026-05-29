@@ -32,11 +32,13 @@ import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
 
 type PlayerBarProps = {
+  desktopLyricsLocked?: boolean;
   desktopLyricsVisible?: boolean;
   hasDesktopLyricsBridge?: boolean;
   onOpenAudioSettings?: () => void;
   onOpenQueue?: () => void;
   onToggleDesktopLyrics?: () => void;
+  onUnlockDesktopLyrics?: () => void;
 };
 
 const progressRenderIntervalMs = 250;
@@ -126,6 +128,15 @@ const readLowLoadPlaybackModeEnabled = (settings: unknown): boolean => {
   }
 
   return (settings as { lowLoadPlaybackModeEnabled?: unknown }).lowLoadPlaybackModeEnabled === true;
+};
+
+const readStreamingDownloadActionsEnabled = (settings: unknown): boolean => {
+  if (!settings || typeof settings !== 'object') {
+    return false;
+  }
+
+  const values = settings as { downloadsFeatureUnlocked?: unknown; streamingDownloadActionsEnabled?: unknown };
+  return values.downloadsFeatureUnlocked === true && values.streamingDownloadActionsEnabled === true;
 };
 
 const readLowLoadPlaybackModeEnabledPatch = (patch: unknown): boolean | null => {
@@ -549,11 +560,13 @@ const PlayerMarqueeText = ({
 };
 
 export const PlayerBar = ({
+  desktopLyricsLocked = false,
   desktopLyricsVisible = false,
   hasDesktopLyricsBridge = false,
   onOpenAudioSettings,
   onOpenQueue,
   onToggleDesktopLyrics,
+  onUnlockDesktopLyrics,
 }: PlayerBarProps): JSX.Element => {
   const queue = usePlaybackQueue();
   const sharedPlaybackStatus = useSharedPlaybackStatus();
@@ -571,6 +584,7 @@ export const PlayerBar = ({
   const [smtcEnabled, setSmtcEnabled] = useState(true);
   const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
   const [lowLoadPlaybackModeEnabled, setLowLoadPlaybackModeEnabled] = useState(false);
+  const [streamingDownloadActionsEnabled, setStreamingDownloadActionsEnabled] = useState(false);
   const [playerWaveformProgressEnabled, setPlayerWaveformProgressEnabled] = useState(false);
   const [fixedVolumeEnabled, setFixedVolumeEnabled] = useState(false);
   const [dsdAutoVolumeLockEnabled, setDsdAutoVolumeLockEnabled] = useState(false);
@@ -774,10 +788,13 @@ export const PlayerBar = ({
   const visualState = activeReceiverStatus ? receiverPlaybackState : baseVisualState;
   const isPlaying = visualState === 'playing';
   const isRemotePlaybackLoading =
-    state === 'loading' &&
     currentTrack?.mediaType === 'remote' &&
     !isReceiverTrackId(currentTrack.id) &&
-    !isReceiverTrackId(trackId);
+    !isReceiverTrackId(trackId) &&
+    state === 'loading';
+  const isStreamingPlaybackLoading = currentTrack?.mediaType === 'streaming' && state === 'loading';
+  const isNetworkPlaybackLoading = isRemotePlaybackLoading || isStreamingPlaybackLoading;
+  const networkPlaybackLoadingLabel = isStreamingPlaybackLoading ? '正在加载流媒体' : '正在加载网盘音频';
   const endedStatusTrackId =
     playbackAudioStatus?.state === 'ended'
       ? playbackAudioStatus.currentTrackId
@@ -832,7 +849,8 @@ export const PlayerBar = ({
     streamingTrackMediaType === 'streaming' && isStreamingProviderName(streamingTrackProvider) ? streamingTrackProvider : null;
   const isCurrentStreamingTrack = Boolean(currentStreamingDownloadProvider && streamingTrackProviderTrackId);
   const canDownloadCurrentStreamingTrack = Boolean(
-    currentStreamingDownloadProvider &&
+    streamingDownloadActionsEnabled &&
+      currentStreamingDownloadProvider &&
       streamingTrackProviderTrackId &&
       !unsupportedPlayerDownloadProviders.has(currentStreamingDownloadProvider),
   );
@@ -1199,6 +1217,7 @@ export const PlayerBar = ({
           filePath: track.stableKey ?? track.path,
         };
         setPlaybackStatusSnapshot({ playbackStatus: status, audioStatus: null, error: null });
+        window.echo?.desktopLyrics?.publishPlaybackStatus?.(status);
       } catch {
         // Spotify progress polling is best-effort; transport actions surface actionable errors.
       }
@@ -1227,6 +1246,7 @@ export const PlayerBar = ({
       if (typeof getSettings !== 'function') {
         setAudioAnalysisEnabled(true);
         setLowLoadPlaybackModeEnabled(false);
+        setStreamingDownloadActionsEnabled(false);
         setPlayerWaveformProgressEnabled(false);
         setFixedVolumeEnabled(false);
         setDsdAutoVolumeLockEnabled(false);
@@ -1239,6 +1259,7 @@ export const PlayerBar = ({
           if (!cancelled) {
             setAudioAnalysisEnabled(readAudioAnalysisEnabled(settings));
             setLowLoadPlaybackModeEnabled(readLowLoadPlaybackModeEnabled(settings));
+            setStreamingDownloadActionsEnabled(readStreamingDownloadActionsEnabled(settings));
             setPlayerWaveformProgressEnabled(readPlayerWaveformProgressEnabled(settings));
             setFixedVolumeEnabled(readFixedVolumeEnabled(settings));
             setDsdAutoVolumeLockEnabled(readDsdAutoVolumeLockEnabled(settings));
@@ -1249,6 +1270,7 @@ export const PlayerBar = ({
           if (!cancelled) {
             setAudioAnalysisEnabled(true);
             setLowLoadPlaybackModeEnabled(false);
+            setStreamingDownloadActionsEnabled(false);
             setPlayerWaveformProgressEnabled(false);
             setFixedVolumeEnabled(false);
             setDsdAutoVolumeLockEnabled(false);
@@ -2216,7 +2238,9 @@ export const PlayerBar = ({
     <footer
       className="player-bar"
       data-low-load-playback={lowLoadPlaybackModeEnabled ? 'true' : undefined}
+      data-network-loading={isNetworkPlaybackLoading ? 'true' : undefined}
       data-playback-state={visualState}
+      aria-busy={isNetworkPlaybackLoading}
       aria-label="播放控制"
     >
       {streamingDownloadNotice ? (
@@ -2246,6 +2270,7 @@ export const PlayerBar = ({
           type="button"
           aria-label="打开歌词"
           title="打开歌词"
+          data-loading={isNetworkPlaybackLoading ? 'true' : undefined}
           onClick={handleOpenLyrics}
         >
           {artworkUrl ? (
@@ -2262,10 +2287,10 @@ export const PlayerBar = ({
           <PlayerMarqueeText kind="title" text={title} />
           <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
-          {isRemotePlaybackLoading ? (
-            <span className="player-loading-hint">
+          {isNetworkPlaybackLoading ? (
+            <span className="player-loading-hint" role="status" aria-live="polite">
               <Loader2 className="spinning-icon" size={13} aria-hidden="true" />
-              正在加载网盘音频
+              {networkPlaybackLoadingLabel}
             </span>
           ) : null}
         </div>
@@ -2293,8 +2318,8 @@ export const PlayerBar = ({
         <PlayerProgress
           disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
           durationSeconds={durationSeconds}
-          isLoading={isRemotePlaybackLoading}
-          waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled && !isRemotePlaybackLoading}
+          isLoading={isNetworkPlaybackLoading}
+          waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled && !isNetworkPlaybackLoading}
           waveformSeed={trackId ?? filePath ?? title}
           positionSeconds={positionSeconds}
           onCommit={(nextPositionSeconds) => void commitSeek(nextPositionSeconds)}
@@ -2308,9 +2333,17 @@ export const PlayerBar = ({
             className={`icon-button ${desktopLyricsVisible ? 'is-soft-active' : ''}`}
             type="button"
             aria-label={desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
-            title={desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
+            title={desktopLyricsLocked ? '右键解除桌面歌词锁定' : desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
             aria-pressed={desktopLyricsVisible}
             onClick={() => onToggleDesktopLyrics?.()}
+            onContextMenu={(event) => {
+              if (!desktopLyricsLocked) {
+                return;
+              }
+
+              event.preventDefault();
+              onUnlockDesktopLyrics?.();
+            }}
           >
             <Captions size={17} />
           </button>
@@ -2345,7 +2378,7 @@ export const PlayerBar = ({
             onStatusChange={setAudioStatus}
           />
         ) : null}
-        {isCurrentStreamingTrack ? (
+        {isCurrentStreamingTrack && streamingDownloadActionsEnabled ? (
           <button
             className="icon-button"
             type="button"
@@ -2369,16 +2402,18 @@ export const PlayerBar = ({
             )}
           </button>
         ) : null}
-        <button
-          className="icon-button"
-          type="button"
-          aria-label="导出当前文件"
-          title={audioExportButtonTitle}
-          disabled={!canExportCurrentAudio || isAudioExporting}
-          onClick={() => void handleExportCurrentAudio()}
-        >
-          {isAudioExporting ? <Loader2 className="spinning-icon" size={17} /> : <FileDown size={17} />}
-        </button>
+        {!isCurrentStreamingTrack ? (
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="导出当前文件"
+            title={audioExportButtonTitle}
+            disabled={!canExportCurrentAudio || isAudioExporting}
+            onClick={() => void handleExportCurrentAudio()}
+          >
+            {isAudioExporting ? <Loader2 className="spinning-icon" size={17} /> : <FileDown size={17} />}
+          </button>
+        ) : null}
       </div>
     </footer>
   );

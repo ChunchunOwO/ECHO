@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, Heart, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
-import type { StreamingAudioQuality, StreamingProviderName } from '../../shared/types/streaming';
+import type { StreamingAudioQuality, StreamingFavoriteProviderName, StreamingFavoritesSnapshot, StreamingFavoriteTrack, StreamingProviderName } from '../../shared/types/streaming';
 import { TrackList } from '../components/library/TrackList';
 import { TrackContextMenu, type TrackMenuAction } from '../components/library/TrackContextMenu';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
@@ -32,11 +32,32 @@ const streamingQualityOptions: Array<{ value: StreamingAudioQuality; label: stri
   { value: 'high', label: 'High' },
   { value: 'standard', label: 'Standard' },
 ];
+const streamingFavoriteProviders: Array<{ value: StreamingFavoriteProviderName; label: string }> = [
+  { value: 'bilibili', label: 'Bilibili' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'soundcloud', label: 'SoundCloud' },
+];
+const emptyStreamingFavoritesSnapshot = (): StreamingFavoritesSnapshot => ({
+  version: 1,
+  updatedAt: new Date().toISOString(),
+  providers: {
+    bilibili: [],
+    youtube: [],
+    soundcloud: [],
+  },
+});
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const playlistItemDragMime = 'application/x-echo-playlist-item-id';
 const runningDownloadStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const failedDownloadStatuses = new Set<DownloadJobStatus>(['failed', 'cancelled']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
+const playlistSourceProviderLabels: Record<Exclude<LibraryPlaylist['sourceProvider'], 'local'>, string> = {
+  netease: '网易云',
+  qqmusic: 'QQ',
+  spotify: 'Spotify',
+  remote: '远程',
+  m3u8: 'M3U8',
+};
 const spotifyPlaylistOwnerImportMessage =
   'Spotify 限制了非创建者/协作者歌单的曲目读取。请在系统浏览器打开这个歌单，在 Spotify 里复制到你的账号后，再粘贴新歌单链接导入。';
 
@@ -136,6 +157,9 @@ const isSpotifyPlaylistOwnerImportError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   return /Spotify only allows this playlist's owner or collaborators to read its track list/iu.test(message);
 };
+
+const playlistSourceProviderLabel = (playlist: LibraryPlaylist): string | null =>
+  playlist.sourceProvider === 'local' ? null : (playlistSourceProviderLabels[playlist.sourceProvider] ?? '网络');
 
 const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
   if (!playlist.sourcePlaylistId) {
@@ -266,9 +290,43 @@ const itemToTrack = (item: LibraryPlaylistItem, streamingQuality?: StreamingAudi
   };
 };
 
+const favoriteToTrack = (item: StreamingFavoriteTrack, streamingQuality: StreamingAudioQuality): LibraryTrack => ({
+  id: item.stableKey,
+  mediaType: 'streaming',
+  path: item.stableKey,
+  provider: item.provider,
+  providerTrackId: item.providerTrackId,
+  streamingQuality,
+  stableKey: item.stableKey,
+  title: item.title,
+  artist: item.artist,
+  album: item.album,
+  albumArtist: item.albumArtist ?? item.artist,
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: item.duration ?? 0,
+  codec: null,
+  sampleRate: null,
+  bitDepth: null,
+  bitrate: null,
+  coverId: null,
+  coverThumb: item.coverThumb ?? item.coverUrl,
+  fieldSources: {
+    title: item.provider,
+    artist: item.provider,
+    album: item.provider,
+  },
+  unavailable: !item.playable,
+});
+
 export const PlaylistsPage = (): JSX.Element => {
+  const [playlistPanelView, setPlaylistPanelView] = useState<'local' | 'streamingFavorites'>('local');
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [streamingFavorites, setStreamingFavorites] = useState<StreamingFavoritesSnapshot>(() => emptyStreamingFavoritesSnapshot());
+  const [selectedFavoriteProvider, setSelectedFavoriteProvider] = useState<StreamingFavoriteProviderName>('youtube');
   const [itemsPage, setItemsPage] = useState<LibraryPage<LibraryPlaylistItem>>(emptyItemsPage());
   const [isLoading, setIsLoading] = useState(false);
   const [playlistUrl, setPlaylistUrl] = useState('');
@@ -277,6 +335,9 @@ export const PlaylistsPage = (): JSX.Element => {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showNewPlaylistForm, setShowNewPlaylistForm] = useState(false);
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
+  const [favoriteImportUrl, setFavoriteImportUrl] = useState('');
+  const [isImportingFavorites, setIsImportingFavorites] = useState(false);
+  const [isExportingFavorites, setIsExportingFavorites] = useState(false);
   const [isImportingPlaylistFile, setIsImportingPlaylistFile] = useState(false);
   const [isAddingLocalFiles, setIsAddingLocalFiles] = useState(false);
   const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
@@ -326,8 +387,20 @@ export const PlaylistsPage = (): JSX.Element => {
     () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
     [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
   );
-  const playableTracks = useMemo(() => displayTracks.filter((track) => !track.unavailable), [displayTracks]);
-  const likedTrackIds = useLikedTrackIds(playableTracks.map((track) => track.id));
+  const favoriteItems = streamingFavorites.providers[selectedFavoriteProvider] ?? [];
+  const favoriteDisplayTracks = useMemo(
+    () => favoriteItems.map((item) => favoriteToTrack(item, streamingQuality)),
+    [favoriteItems, streamingQuality],
+  );
+  const activeDisplayTracks = playlistPanelView === 'streamingFavorites' ? favoriteDisplayTracks : displayTracks;
+  const playableTracks = useMemo(() => activeDisplayTracks.filter((track) => !track.unavailable), [activeDisplayTracks]);
+  const localPlayableTracks = useMemo(() => displayTracks.filter((track) => !track.unavailable), [displayTracks]);
+  const favoriteLikedTrackIds = useMemo(
+    () => Object.fromEntries(favoriteDisplayTracks.map((track) => [track.id, true])),
+    [favoriteDisplayTracks],
+  );
+  const likedTrackIds = useLikedTrackIds(playlistPanelView === 'streamingFavorites' ? [] : localPlayableTracks.map((track) => track.id));
+  const visibleLikedTrackIds = playlistPanelView === 'streamingFavorites' ? favoriteLikedTrackIds : likedTrackIds;
   const downloadingTrackIds = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const track of displayTracks) {
@@ -383,8 +456,13 @@ export const PlaylistsPage = (): JSX.Element => {
     };
   }, [downloadJobs, playlistDownloadSession, selectedPlaylist?.id]);
   const queueSource = useMemo(
-    () => ({ type: 'manual' as const, label: selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist' }),
-    [selectedPlaylist],
+    () => ({
+      type: 'manual' as const,
+      label: playlistPanelView === 'streamingFavorites'
+        ? `Streaming Favorites: ${streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider}`
+        : selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist',
+    }),
+    [playlistPanelView, selectedFavoriteProvider, selectedPlaylist],
   );
 
   const handleStreamingQualityChange = useCallback(
@@ -395,7 +473,7 @@ export const PlaylistsPage = (): JSX.Element => {
       if (
         !currentTrack ||
         currentTrack.mediaType !== 'streaming' ||
-        currentTrack.provider !== selectedPlaylist?.sourceProvider ||
+        currentTrack.provider !== (playlistPanelView === 'streamingFavorites' ? selectedFavoriteProvider : selectedPlaylist?.sourceProvider) ||
         currentTrack.streamingQuality === nextQuality
       ) {
         return;
@@ -435,7 +513,7 @@ export const PlaylistsPage = (): JSX.Element => {
         setStatusMessage(null);
       });
     },
-    [currentTrack, playTrack, queueSource, selectedPlaylist?.sourceProvider],
+    [currentTrack, playTrack, playlistPanelView, queueSource, selectedFavoriteProvider, selectedPlaylist?.sourceProvider],
   );
 
   const loadPlaylists = useCallback(async (): Promise<void> => {
@@ -536,6 +614,27 @@ export const PlaylistsPage = (): JSX.Element => {
     window.addEventListener('library:playlists-changed', handleChanged);
     return () => window.removeEventListener('library:playlists-changed', handleChanged);
   }, [loadPlaylists]);
+
+  useEffect(() => {
+    const streaming = getStreamingBridge();
+    const refreshFavorites = (): void => {
+      void streaming?.getFavorites?.()
+        .then((snapshot) => setStreamingFavorites(snapshot))
+        .catch(() => undefined);
+    };
+    const handleFavoritesChanged = (event: Event): void => {
+      if (event instanceof CustomEvent && event.detail) {
+        setStreamingFavorites(event.detail as StreamingFavoritesSnapshot);
+        return;
+      }
+
+      refreshFavorites();
+    };
+
+    refreshFavorites();
+    window.addEventListener('streaming:favorites-changed', handleFavoritesChanged);
+    return () => window.removeEventListener('streaming:favorites-changed', handleFavoritesChanged);
+  }, []);
 
   useEffect(() => {
     if (selectedPlaylist) {
@@ -830,24 +929,24 @@ export const PlaylistsPage = (): JSX.Element => {
   };
 
   const handlePlayAll = async (): Promise<void> => {
-    if (isSelectedPlaylistPlaybackActive) {
+    if (playlistPanelView === 'local' && isSelectedPlaylistPlaybackActive) {
       await exitPlaylistSequence();
       setStatusMessage('已退出歌单播放，恢复原队列');
       return;
     }
 
     if (playableTracks.length === 0) {
-      setError('这个歌单没有可播放的歌曲。');
+      setError(playlistPanelView === 'streamingFavorites' ? '这个收藏列表没有可播放的歌曲。' : '这个歌单没有可播放的歌曲。');
       return;
     }
 
     try {
       await playPlaylistSequence(playableTracks, {
-        label: selectedPlaylist?.name,
-        playlistId: selectedPlaylist?.id,
+        label: queueSource.label,
+        playlistId: playlistPanelView === 'local' ? selectedPlaylist?.id : undefined,
         source: queueSource,
       });
-      setStatusMessage(`正在按歌单顺序播放：${selectedPlaylist?.name ?? '当前歌单'}`);
+      setStatusMessage(playlistPanelView === 'streamingFavorites' ? `正在播放收藏：${queueSource.label}` : `正在按歌单顺序播放：${selectedPlaylist?.name ?? '当前歌单'}`);
     } catch (playError) {
       setError(playError instanceof Error ? playError.message : String(playError));
     }
@@ -1109,6 +1208,54 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   };
 
+  const handleImportStreamingFavorites = async (): Promise<void> => {
+    const streaming = window.echo?.streaming;
+    const url = favoriteImportUrl.trim();
+    if (!streaming?.importFavoritesFromUrl || !url) {
+      return;
+    }
+
+    setIsImportingFavorites(true);
+    setError(null);
+    setStatusMessage('正在导入流媒体收藏...');
+    try {
+      const result = await streaming.importFavoritesFromUrl(url);
+      setFavoriteImportUrl('');
+      setStreamingFavorites(result.snapshot);
+      setSelectedFavoriteProvider(result.provider);
+      setStatusMessage(`已导入收藏：${result.playlistName}，新增 ${result.addedCount} / 读取 ${result.importedCount} 首`);
+      window.dispatchEvent(new CustomEvent('streaming:favorites-changed', { detail: result.snapshot }));
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+      setStatusMessage(null);
+    } finally {
+      setIsImportingFavorites(false);
+    }
+  };
+
+  const handleExportStreamingFavorites = async (): Promise<void> => {
+    const streaming = window.echo?.streaming;
+    if (!streaming?.exportFavorites) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to export streaming favorites.');
+      setStatusMessage(null);
+      return;
+    }
+
+    setIsExportingFavorites(true);
+    setError(null);
+    try {
+      const exportedPath = await streaming.exportFavorites();
+      if (exportedPath) {
+        setStatusMessage(`已导出流媒体收藏：${exportedPath}`);
+      }
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+      setStatusMessage(null);
+    } finally {
+      setIsExportingFavorites(false);
+    }
+  };
+
   const handleOpenSpotifyPlaylistForCopy = async (): Promise<void> => {
     const url = spotifyPlaylistHelpUrl ?? playlistUrl.trim();
     if (!url) {
@@ -1349,6 +1496,23 @@ export const PlaylistsPage = (): JSX.Element => {
   }, []);
 
   const handleTrackPlay = async (track: LibraryTrack): Promise<void> => {
+    if (playlistPanelView === 'streamingFavorites') {
+      if (track.unavailable) {
+        return;
+      }
+
+      try {
+        await playPlaylistSequence(playableTracks, {
+          label: queueSource.label,
+          source: queueSource,
+          startTrackId: track.id,
+        });
+      } catch (playError) {
+        setError(playError instanceof Error ? playError.message : String(playError));
+      }
+      return;
+    }
+
     const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
     const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
     if (!playableTrack || playableTrack.unavailable) {
@@ -1368,6 +1532,13 @@ export const PlaylistsPage = (): JSX.Element => {
   };
 
   const handleAddTrackToQueue = (track: LibraryTrack): void => {
+    if (playlistPanelView === 'streamingFavorites') {
+      if (!track.unavailable) {
+        appendToQueue(track, queueSource);
+      }
+      return;
+    }
+
     const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
     const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
     if (playableTrack && !playableTrack.unavailable) {
@@ -1376,16 +1547,57 @@ export const PlaylistsPage = (): JSX.Element => {
   };
 
   const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
-    if (isSelectedPlaylistRemote) {
+    if (playlistPanelView === 'streamingFavorites' || isSelectedPlaylistRemote) {
       return;
     }
 
     if (!track.unavailable) {
       setTrackMenu({ track, position });
     }
-  }, [isSelectedPlaylistRemote]);
+  }, [isSelectedPlaylistRemote, playlistPanelView]);
 
   const handleToggleLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    if (playlistPanelView === 'streamingFavorites') {
+      const favorite = favoriteItems.find((item) => item.stableKey === track.stableKey || item.providerTrackId === track.providerTrackId);
+      const streaming = window.echo?.streaming;
+      if (!favorite || !streaming?.setFavorite) {
+        return;
+      }
+
+      try {
+        const result = await streaming.setFavorite({
+          track: {
+            id: favorite.id,
+            provider: favorite.provider,
+            providerTrackId: favorite.providerTrackId,
+            stableKey: favorite.stableKey,
+            title: favorite.title,
+            artist: favorite.artist,
+            artists: [],
+            album: favorite.album,
+            albumId: null,
+            albumArtist: favorite.albumArtist,
+            duration: favorite.duration,
+            coverUrl: favorite.coverUrl,
+            coverThumb: favorite.coverThumb,
+            qualities: favorite.qualities,
+            explicit: false,
+            playable: favorite.playable,
+            unavailableReason: favorite.unavailableReason,
+            lyricsStatus: favorite.lyricsStatus,
+            mvStatus: favorite.mvStatus,
+          },
+          favorite: false,
+        });
+        setStreamingFavorites(result.snapshot);
+        window.dispatchEvent(new CustomEvent('streaming:favorites-changed', { detail: result.snapshot }));
+        setStatusMessage(`已取消收藏：${favorite.title}`);
+      } catch (favoriteError) {
+        setError(favoriteError instanceof Error ? favoriteError.message : String(favoriteError));
+      }
+      return;
+    }
+
     const library = window.echo?.library;
     if (!library || track.unavailable) {
       return;
@@ -1412,7 +1624,7 @@ export const PlaylistsPage = (): JSX.Element => {
     } catch (likeError) {
       setError(likeError instanceof Error ? likeError.message : String(likeError));
     }
-  }, [likedTrackIds]);
+  }, [favoriteItems, likedTrackIds, playlistPanelView]);
 
   const handleTrackMenuAction = useCallback(
     async (action: TrackMenuAction, track: LibraryTrack, playlistTarget?: LibraryPlaylist): Promise<void> => {
@@ -1594,85 +1806,226 @@ export const PlaylistsPage = (): JSX.Element => {
           </form>
         ) : null}
 
-        <button
-          className="playlist-daily-recommend"
-          type="button"
-          disabled={isRefreshingStreamingPlaylist}
-          onClick={() => void handleRefreshNeteaseDailyRecommend()}
-        >
-          {isRefreshingStreamingPlaylist ? <Loader2 className="spinning-icon" size={16} /> : <CalendarDays size={16} />}
-          <span>
-            <strong>每日推荐</strong>
-            <small>网易云账号推荐</small>
-          </span>
-        </button>
+        <div className="playlist-view-switch" role="tablist" aria-label="播放列表视图">
+          <button type="button" role="tab" aria-selected={playlistPanelView === 'local'} data-active={playlistPanelView === 'local'} onClick={() => setPlaylistPanelView('local')}>
+            本地歌单
+          </button>
+          <button type="button" role="tab" aria-selected={playlistPanelView === 'streamingFavorites'} data-active={playlistPanelView === 'streamingFavorites'} onClick={() => setPlaylistPanelView('streamingFavorites')}>
+            流媒体收藏
+          </button>
+        </div>
 
-        <div className="playlist-list">
-          {playlists.map((playlist) => (
+        {playlistPanelView === 'local' ? (
+          <>
             <button
-              className="playlist-list-item"
-              data-active={playlist.id === selectedPlaylist?.id ? 'true' : undefined}
-              key={playlist.id}
+              className="playlist-daily-recommend"
               type="button"
-              onClick={() => setSelectedPlaylistId(playlist.id)}
+              disabled={isRefreshingStreamingPlaylist}
+              onClick={() => void handleRefreshNeteaseDailyRecommend()}
             >
+              {isRefreshingStreamingPlaylist ? <Loader2 className="spinning-icon" size={16} /> : <CalendarDays size={16} />}
               <span>
-                <strong>
-                  <span>{playlist.name}</span>
-                  {playlist.sourceProvider !== 'local' ? <em>网络歌单</em> : null}
-                </strong>
-                <small>{playlist.itemCount} tracks</small>
+                <strong>每日推荐</strong>
+                <small>网易云账号推荐</small>
               </span>
             </button>
-          ))}
-          {playlists.length === 0 ? <p className="playlist-empty">还没有本地歌单。</p> : null}
-        </div>
 
-        <form
-          className="streaming-section playlist-import-box"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleImportStreamingPlaylist();
-          }}
-        >
-          <h2>添加流媒体歌单</h2>
-          <label>
-            <Link size={14} />
-            <input
-              value={playlistUrl}
-              onChange={(event) => {
-                setPlaylistUrl(event.target.value);
-                setSpotifyPlaylistHelpUrl(null);
+            <div className="playlist-list">
+              {playlists.map((playlist) => {
+                const sourceLabel = playlistSourceProviderLabel(playlist);
+
+                return (
+                  <button
+                    className="playlist-list-item"
+                    data-active={playlist.id === selectedPlaylist?.id ? 'true' : undefined}
+                    key={playlist.id}
+                    type="button"
+                    onClick={() => setSelectedPlaylistId(playlist.id)}
+                  >
+                    <span>
+                      <strong>
+                        <span>{playlist.name}</span>
+                        {sourceLabel ? <em>{sourceLabel}</em> : null}
+                      </strong>
+                      <small>{playlist.itemCount} tracks</small>
+                    </span>
+                  </button>
+                );
+              })}
+              {playlists.length === 0 ? <p className="playlist-empty">还没有本地歌单。</p> : null}
+            </div>
+
+            <form
+              className="streaming-section playlist-import-box"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleImportStreamingPlaylist();
               }}
-              placeholder="粘贴网易云 / QQ 音乐 / Spotify 歌单链接"
-              disabled={isImportingPlaylist}
-            />
-          </label>
-          <button className="secondary-action" type="submit" disabled={!playlistUrl.trim() || isImportingPlaylist}>
-            {isImportingPlaylist ? <Loader2 className="spinning-icon" size={15} /> : <Plus size={15} />}
-            <span>{isImportingPlaylist ? '添加中' : '添加歌单'}</span>
-          </button>
-        </form>
+            >
+              <h2>添加流媒体歌单</h2>
+              <label>
+                <Link size={14} />
+                <input
+                  value={playlistUrl}
+                  onChange={(event) => {
+                    setPlaylistUrl(event.target.value);
+                    setSpotifyPlaylistHelpUrl(null);
+                  }}
+                  placeholder="粘贴网易云 / QQ 音乐 / Spotify 歌单链接"
+                  disabled={isImportingPlaylist}
+                />
+              </label>
+              <button className="secondary-action" type="submit" disabled={!playlistUrl.trim() || isImportingPlaylist}>
+                {isImportingPlaylist ? <Loader2 className="spinning-icon" size={15} /> : <Plus size={15} />}
+                <span>{isImportingPlaylist ? '添加中' : '添加歌单'}</span>
+              </button>
+            </form>
 
-        <div className="streaming-section">
-          <h2>流媒体歌单</h2>
-          <div>
-            <span><WifiOff size={14} /> 网易云音乐</span>
-            <em>未连接</em>
-          </div>
-          <div>
-            <span><WifiOff size={14} /> QQ 音乐</span>
-            <em>未连接</em>
-          </div>
-          <div>
-            <span><WifiOff size={14} /> Spotify</span>
-            <em>需登录</em>
-          </div>
-        </div>
+            <div className="streaming-section">
+              <h2>流媒体歌单</h2>
+              <div>
+                <span><WifiOff size={14} /> 网易云音乐</span>
+                <em>未连接</em>
+              </div>
+              <div>
+                <span><WifiOff size={14} /> QQ 音乐</span>
+                <em>未连接</em>
+              </div>
+              <div>
+                <span><WifiOff size={14} /> Spotify</span>
+                <em>需登录</em>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <form
+              className="streaming-section playlist-import-box"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleImportStreamingFavorites();
+              }}
+            >
+              <h2>导入收藏</h2>
+              <label>
+                <Link size={14} />
+                <input
+                  value={favoriteImportUrl}
+                  onChange={(event) => setFavoriteImportUrl(event.target.value)}
+                  placeholder="粘贴 Bilibili 收藏 / YouTube 播放列表 / SoundCloud sets"
+                  disabled={isImportingFavorites}
+                />
+              </label>
+              <button className="secondary-action" type="submit" disabled={!favoriteImportUrl.trim() || isImportingFavorites}>
+                {isImportingFavorites ? <Loader2 className="spinning-icon" size={15} /> : <Upload size={15} />}
+                <span>{isImportingFavorites ? '导入中' : '导入收藏'}</span>
+              </button>
+            </form>
+
+            <div className="playlist-list playlist-list--favorites">
+              {streamingFavoriteProviders.map((providerItem) => {
+                const count = streamingFavorites.providers[providerItem.value]?.length ?? 0;
+                return (
+                  <button
+                    className="playlist-list-item"
+                    data-active={providerItem.value === selectedFavoriteProvider ? 'true' : undefined}
+                    key={providerItem.value}
+                    type="button"
+                    onClick={() => setSelectedFavoriteProvider(providerItem.value)}
+                  >
+                    <Heart size={15} />
+                    <span>
+                      <strong>
+                        <span>{providerItem.label}</span>
+                      </strong>
+                      <small>{count} favorites</small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </aside>
 
       <section className="playlist-detail">
-        {selectedPlaylist ? (
+        {playlistPanelView === 'streamingFavorites' ? (
+          <>
+            <header className="playlist-detail-header">
+              <div className="playlist-cover" data-empty={favoriteDisplayTracks.length === 0}>
+                {favoriteDisplayTracks[0]?.coverThumb ? <img alt="" src={favoriteDisplayTracks[0].coverThumb} /> : <Heart size={34} />}
+              </div>
+              <div className="playlist-detail-copy">
+                <h2>{streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider} 收藏</h2>
+                <p>保存到本地 streaming-favorites.json，包含可迁移的视频/音频页面链接。</p>
+                <small>{favoriteItems.length} tracks · {new Date(streamingFavorites.updatedAt).toLocaleString()}</small>
+              </div>
+              <div className="playlist-actions">
+                <div className="playlist-quality-control" ref={qualityMenuRef} title="Streaming quality">
+                  <SlidersHorizontal size={15} />
+                  <span>音质</span>
+                  <button
+                    type="button"
+                    aria-label="Streaming quality"
+                    aria-haspopup="listbox"
+                    aria-expanded={qualityMenuOpen}
+                    onClick={() => setQualityMenuOpen((open) => !open)}
+                  >
+                    <strong>{currentStreamingQuality.label}</strong>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                  {qualityMenuOpen ? (
+                    <div className="playlist-quality-menu" role="listbox" aria-label="Streaming quality">
+                      {streamingQualityOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="option"
+                          aria-selected={option.value === streamingQuality}
+                          onClick={() => handleStreamingQualityChange(option.value)}
+                        >
+                          <span>{option.label}</span>
+                          {option.value === streamingQuality ? <Check size={14} /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <button className="primary-action" type="button" disabled={playableTracks.length === 0} onClick={() => void handlePlayAll()}>
+                  <Play size={16} />
+                  <span>播放收藏</span>
+                </button>
+                <button className="secondary-action" type="button" disabled={playableTracks.length === 0} onClick={handleAddAllToQueue}>
+                  <ListPlus size={16} />
+                  <span>添加到队列</span>
+                </button>
+                <button className="secondary-action" type="button" disabled={isExportingFavorites} onClick={() => void handleExportStreamingFavorites()}>
+                  {isExportingFavorites ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
+                  <span>{isExportingFavorites ? '导出中' : '导出收藏'}</span>
+                </button>
+              </div>
+            </header>
+
+            <TrackList
+              tracks={favoriteDisplayTracks}
+              currentTrackId={currentTrackId}
+              canLoadMore={false}
+              onEndReached={() => undefined}
+              onAddToQueue={handleAddTrackToQueue}
+              likedTrackIds={visibleLikedTrackIds}
+              onToggleLiked={(track) => void handleToggleLiked(track)}
+              onOpenTrackMenu={() => undefined}
+              isTrackDraggable={() => false}
+              draggedTrackId={null}
+              dropTargetTrackId={null}
+              onTrackDragStart={(event) => event.preventDefault()}
+              onTrackDragOver={() => undefined}
+              onTrackDrop={(event) => event.preventDefault()}
+              onTrackDragEnd={() => undefined}
+              onPlay={handleTrackPlay}
+            />
+          </>
+        ) : selectedPlaylist ? (
           <>
             <header className="playlist-detail-header">
               <div className="playlist-cover" data-empty={!selectedPlaylist.coverThumb}>
@@ -1912,7 +2265,7 @@ export const PlaylistsPage = (): JSX.Element => {
               onDownload={canDownloadSelectedPlaylist ? handleDownloadTrack : undefined}
               downloadingTrackIds={downloadingTrackIds}
               downloadProgressByTrackId={downloadProgressByTrackId}
-              likedTrackIds={likedTrackIds}
+              likedTrackIds={visibleLikedTrackIds}
               onToggleLiked={(track) => void handleToggleLiked(track)}
               onOpenTrackMenu={handleOpenTrackMenu}
               isTrackDraggable={isTrackReorderable}
@@ -1960,7 +2313,7 @@ export const PlaylistsPage = (): JSX.Element => {
           </div>
         ) : null}
 
-        {trackMenu && !isSelectedPlaylistRemote ? (
+        {trackMenu && playlistPanelView === 'local' && !isSelectedPlaylistRemote ? (
           <TrackContextMenu
             track={trackMenu.track}
             position={trackMenu.position}

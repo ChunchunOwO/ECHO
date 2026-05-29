@@ -876,6 +876,72 @@ describe('MvPanel', () => {
     expect(video.currentTime).toBeCloseTo(37, 1);
   });
 
+  it('binds YouTube streaming tracks directly and embeds the YouTube video for MV display', async () => {
+    const boundVideo = makeVideo({
+      id: 'youtube:abc123DEF45',
+      trackId: 'streaming:youtube:abc123DEF45',
+      provider: 'youtube',
+      sourceType: 'manual',
+      sourceId: 'abc123DEF45',
+      providerUrl: 'https://www.youtube.com/watch?v=abc123DEF45',
+      mediaUrl: null,
+      playableInApp: false,
+    });
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      streaming: {
+        getMv: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(null),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: boundVideo, variants: [] }),
+        setQuality: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        bindUrl: vi.fn().mockResolvedValue(boundVideo),
+        selectVideo: vi.fn(),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId={null}
+        streamingTarget={{ provider: 'youtube', providerTrackId: 'abc123DEF45' }}
+        title="YouTube Source"
+        artist="Source Channel"
+        coverUrl="echo-cover://thumb/youtube"
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.mv.bindUrl).toHaveBeenCalledWith(
+        'streaming:youtube:abc123DEF45',
+        'https://www.youtube.com/watch?v=abc123DEF45',
+      ),
+    );
+    expect(window.echo.streaming.getMv).not.toHaveBeenCalled();
+    expect(window.echo.mv.searchNetworkCandidatesForSnapshot).not.toHaveBeenCalled();
+    const frame = await waitFor(() => {
+      const element = container.querySelector('iframe.lyrics-mv-video--youtube') as HTMLIFrameElement | null;
+      expect(element?.getAttribute('src')).toContain('https://www.youtube.com/embed/abc123DEF45');
+      return element!;
+    });
+    expect(frame.getAttribute('src')).toContain('mute=1');
+    expect(frame.getAttribute('src')).toContain('autoplay=1');
+  });
+
   it('applies immersive MV visual tuning variables', async () => {
     const { container } = renderPanel(makeVideo(), true, {
       ...defaultMvSettings,

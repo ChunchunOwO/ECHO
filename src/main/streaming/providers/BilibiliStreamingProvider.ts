@@ -10,6 +10,7 @@ import type {
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
   StreamingSearchResult,
@@ -48,6 +49,34 @@ type BilibiliSearchResponse = {
   data?: {
     numResults?: number;
     result?: BilibiliSearchEntry[];
+  };
+};
+
+type BilibiliFavoriteMedia = {
+  bvid?: string;
+  id?: number | string;
+  title?: string;
+  intro?: string;
+  cover?: string;
+  duration?: number | string;
+  upper?: {
+    mid?: number | string;
+    name?: string;
+  };
+};
+
+type BilibiliFavoriteListResponse = {
+  code?: number;
+  data?: {
+    info?: {
+      title?: string;
+      media_count?: number;
+      upper?: {
+        name?: string;
+      };
+    };
+    medias?: BilibiliFavoriteMedia[];
+    has_more?: boolean;
   };
 };
 
@@ -368,6 +397,54 @@ const trackFromViewData = (value: unknown, fallbackProviderTrackId: string): Str
     lyricsStatus: 'missing',
     mvStatus: 'available',
   };
+};
+
+const trackFromFavoriteMedia = (value: BilibiliFavoriteMedia): StreamingTrack | null => {
+  const bvid = bvidFromValue(value.bvid) ?? bvidFromValue(value.id);
+  const title = cleanHtml(value.title);
+  if (!bvid || !title) {
+    return null;
+  }
+
+  const upper = asRecord(value.upper);
+  const artistName = cleanHtml(upper.name) ?? 'Bilibili';
+  const artist = artistRef(artistName);
+  const cover = normalizeBilibiliImageUrl(value.cover);
+  return {
+    id: streamingStableKey(provider, bvid),
+    provider,
+    providerTrackId: bvid,
+    stableKey: streamingStableKey(provider, bvid),
+    title,
+    artist: artist.name,
+    artists: [artist],
+    album: 'Bilibili',
+    albumId: null,
+    albumArtist: artist.name,
+    duration: parseDuration(value.duration),
+    coverUrl: cover,
+    coverThumb: cover,
+    qualities: ['standard', 'high'],
+    explicit: false,
+    playable: true,
+    unavailableReason: null,
+    lyricsStatus: 'missing',
+    mvStatus: 'available',
+  };
+};
+
+const bilibiliFavoriteIdFromValue = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (/^\d+$/u.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.searchParams.get('fid') ?? parsed.searchParams.get('media_id') ?? parsed.searchParams.get('mediaId');
+  } catch {
+    return trimmed.match(/(?:fid|media_id|mediaId)=(\d+)/u)?.[1] ?? null;
+  }
 };
 
 const resolvedTrackUrl = (providerTrackId: string): string => {
@@ -702,6 +779,58 @@ export class BilibiliStreamingProvider implements StreamingProvider {
     } catch {
       return { tracks: [], total: null, hasMore: false };
     }
+  }
+
+  async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
+    const mediaId = bilibiliFavoriteIdFromValue(input.providerPlaylistId);
+    if (!mediaId) {
+      throw new Error('Bilibili favorite URL is missing fid.');
+    }
+
+    const page = Math.max(1, Math.floor(input.page ?? 1));
+    const pageSize = Math.min(50, Math.max(1, Math.floor(input.pageSize ?? 20)));
+    const url = new URL('https://api.bilibili.com/x/v3/fav/resource/list');
+    url.searchParams.set('media_id', mediaId);
+    url.searchParams.set('pn', String(page));
+    url.searchParams.set('ps', String(pageSize));
+    url.searchParams.set('keyword', '');
+    url.searchParams.set('order', 'mtime');
+    url.searchParams.set('type', '0');
+    url.searchParams.set('tid', '0');
+    url.searchParams.set('platform', 'web');
+
+    const response = await fetchWithNetworkProxy(url.toString(), {
+      headers: bilibiliHeaders({ Referer: input.providerPlaylistId.startsWith('http') ? input.providerPlaylistId : bilibiliReferer }),
+    });
+    if (!response.ok) {
+      throw new Error(`Bilibili favorite import failed: HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as BilibiliFavoriteListResponse;
+    if (payload.code !== 0) {
+      throw new Error('Bilibili favorite import failed.');
+    }
+
+    const info = payload.data?.info;
+    const medias = Array.isArray(payload.data?.medias) ? payload.data.medias : [];
+    const tracks = medias.map(trackFromFavoriteMedia).filter((track): track is StreamingTrack => Boolean(track));
+    const total = integer(info?.media_count);
+    return {
+      id: streamingStableKey(provider, `playlist:${mediaId}`),
+      provider,
+      providerPlaylistId: mediaId,
+      title: cleanHtml(info?.title) ?? 'Bilibili Favorites',
+      description: null,
+      creator: cleanHtml(info?.upper?.name),
+      coverUrl: tracks[0]?.coverUrl ?? null,
+      coverThumb: tracks[0]?.coverThumb ?? null,
+      trackCount: total,
+      tracks,
+      page,
+      pageSize,
+      total,
+      hasMore: payload.data?.has_more === true || (total ? page * pageSize < total : tracks.length === pageSize),
+    };
   }
 
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {

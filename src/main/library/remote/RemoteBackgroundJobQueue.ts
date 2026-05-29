@@ -75,11 +75,11 @@ const defaultConcurrency: Record<RemoteBackgroundJobKind, number> = {
   'duration-backfill': 1,
 };
 const maxConcurrentByKind: Record<RemoteBackgroundJobKind, number> = {
-  metadata: 4,
+  metadata: 8,
   cover: 48,
-  lyrics: 2,
-  mv: 2,
-  'duration-backfill': 2,
+  lyrics: 4,
+  mv: 4,
+  'duration-backfill': 4,
 };
 const maxTotalRunningJobs = 64;
 const maxJobsStartedPerDrain = 64;
@@ -101,7 +101,7 @@ const limitKeys: Record<RemoteBackgroundJobKind, keyof RemoteRuntimeLimits> = {
   cover: 'coverConcurrency',
   lyrics: 'lyricsConcurrency',
   mv: 'mvConcurrency',
-  'duration-backfill': 'metadataConcurrency',
+  'duration-backfill': 'durationBackfillConcurrency',
 };
 
 const zeroCounts = (): Record<RemoteBackgroundJobKind, number> => ({
@@ -157,6 +157,7 @@ export class RemoteBackgroundJobQueue {
     private readonly store: RemoteLibraryStore,
     private readonly getAdapter: (provider: string) => RemoteSourceAdapter,
     private readonly coverService: CoverService | null = null,
+    private readonly getDefaultRuntimeLimits: () => RemoteRuntimeLimits = () => ({}),
   ) {}
 
   enqueueSource(sourceId: string, kinds: RemoteBackgroundJobKind[] = ['metadata', 'lyrics'], options: { failedOnly?: boolean; priority?: number } = {}): RemoteBackgroundJobStatus {
@@ -959,18 +960,22 @@ export class RemoteBackgroundJobQueue {
     const concurrency = { ...defaultConcurrency };
     const sourceConfig = sourceId ? this.store.getSource(sourceId)?.config : null;
     const runtimeLimits = sourceId ? this.runtimeLimits.get(sourceId) : null;
+    const defaultRuntimeLimits = this.readDefaultRuntimeLimits();
 
     for (const kind of jobKinds) {
       const configKey = limitKeys[kind];
       const configured =
-        kind === 'cover' && sourceConfig?.coverConcurrency === undefined
+        kind === 'duration-backfill' && sourceConfig?.durationBackfillConcurrency === undefined
           ? sourceConfig?.metadataConcurrency
           : sourceConfig?.[configKey];
+      const defaultConfigured =
+        kind === 'duration-backfill' && defaultRuntimeLimits.durationBackfillConcurrency === undefined
+          ? defaultRuntimeLimits.metadataConcurrency
+          : kind === 'cover' && defaultRuntimeLimits.coverConcurrency === undefined
+            ? undefined
+            : defaultRuntimeLimits[configKey];
       const runtime = runtimeLimits?.[configKey];
-      const max = kind === 'cover' && runtime === undefined && sourceConfig?.coverConcurrency === undefined
-        ? defaultConcurrency.cover
-        : maxConcurrentByKind[kind];
-      concurrency[kind] = this.clampLimit(runtime ?? configured, concurrency[kind], 1, max);
+      concurrency[kind] = this.clampLimit(runtime ?? defaultConfigured ?? configured, concurrency[kind], 1, maxConcurrentByKind[kind]);
     }
 
     if (sourceId && this.syncingSources.has(sourceId)) {
@@ -995,7 +1000,18 @@ export class RemoteBackgroundJobQueue {
       coverConcurrency: limits.coverConcurrency === undefined ? undefined : this.clampLimit(limits.coverConcurrency, defaultConcurrency.cover, 1, maxConcurrentByKind.cover),
       lyricsConcurrency: limits.lyricsConcurrency === undefined ? undefined : this.clampLimit(limits.lyricsConcurrency, defaultConcurrency.lyrics, 1, maxConcurrentByKind.lyrics),
       mvConcurrency: limits.mvConcurrency === undefined ? undefined : this.clampLimit(limits.mvConcurrency, defaultConcurrency.mv, 1, maxConcurrentByKind.mv),
+      durationBackfillConcurrency: limits.durationBackfillConcurrency === undefined
+        ? undefined
+        : this.clampLimit(limits.durationBackfillConcurrency, defaultConcurrency['duration-backfill'], 1, maxConcurrentByKind['duration-backfill']),
     };
+  }
+
+  private readDefaultRuntimeLimits(): RemoteRuntimeLimits {
+    try {
+      return this.normalizeRuntimeLimits(this.getDefaultRuntimeLimits());
+    } catch {
+      return {};
+    }
   }
 
   private hasStartablePendingJob(): boolean {

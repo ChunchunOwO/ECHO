@@ -293,7 +293,7 @@ describe('StreamingSearchPage download visibility', () => {
 
     window.echo = {
       app: {
-        getSettings: vi.fn().mockResolvedValue({ streamingDownloadActionsEnabled: true } as AppSettings),
+        getSettings: vi.fn().mockResolvedValue({ downloadsFeatureUnlocked: true, streamingDownloadActionsEnabled: true } as AppSettings),
       },
       streaming: {
         getProviders: vi.fn().mockResolvedValue([provider]),

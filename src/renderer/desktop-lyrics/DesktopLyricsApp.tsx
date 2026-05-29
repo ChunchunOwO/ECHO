@@ -496,6 +496,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const [forwardedLyricsMetadata, setForwardedLyricsMetadata] = useState<ForwardedLyricsMetadata | null>(null);
   const [forwardedUpdatedAtMs, setForwardedUpdatedAtMs] = useState(0);
   const [lyrics, setLyrics] = useState<DesktopLyricsStateSnapshot>(() => emptyLyrics());
+  const [lyricsRefreshToken, setLyricsRefreshToken] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [viewportWidthPx, setViewportWidthPx] = useState(() => window.innerWidth);
   const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
@@ -741,6 +742,23 @@ export const DesktopLyricsApp = (): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    void desktopLyrics?.getLastPlaybackStatus?.().then((status) => {
+      if (status) {
+        setForwardedClock(playbackStatusToClock(status, performance.now()));
+        setForwardedUpdatedAtMs(performance.now());
+      }
+    }).catch(() => undefined);
+
+    const unsubscribe = desktopLyrics?.onPlaybackStatus?.((status) => {
+      setForwardedClock(playbackStatusToClock(status, performance.now()));
+      setForwardedUpdatedAtMs(performance.now());
+    });
+
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
     void refreshPlaybackClock();
     const intervalMs = enhancedLowLoadPlaybackActive ? enhancedLowLoadClockPollIntervalMs : desktopLyricsClockPollIntervalMs;
     const timer = window.setInterval(() => {
@@ -763,6 +781,19 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
     return () => unsubscribe?.();
   }, [refreshPlaybackClock]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.lyrics?.onChanged?.((trackId) => {
+      if (
+        trackId === activeTrackId ||
+        (activeForwardedLyricsMetadata?.trackId && trackId === activeForwardedLyricsMetadata.trackId)
+      ) {
+        setLyricsRefreshToken((token) => (token + 1) % 1000000);
+      }
+    });
+
+    return () => unsubscribe?.();
+  }, [activeForwardedLyricsMetadata?.trackId, activeTrackId]);
 
   useEffect(() => {
     const requestId = lyricsRequestRef.current + 1;
@@ -791,7 +822,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
       const streamingTarget = isStreamingTrack(track)
         ? { provider: track.provider, providerTrackId: track.providerTrackId }
-        : parseStreamingTrackId(activeTrackId);
+        : parseStreamingTrackId(activeTrackId) ?? parseStreamingTrackId(activeClock?.filePath ?? null);
 
       try {
         if (streamingTarget && streamingApi?.getLyrics) {
@@ -829,7 +860,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
     setLyrics(emptyLyrics());
     void loadLyrics();
-  }, [activeForwardedLyricsMetadata, activeTrackId]);
+  }, [activeClock?.filePath, activeForwardedLyricsMetadata, activeTrackId, lyricsRefreshToken]);
 
   useEffect(() => {
     if (animationFrameRef.current !== null) {

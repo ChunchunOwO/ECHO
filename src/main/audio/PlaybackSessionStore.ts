@@ -7,6 +7,8 @@ import type {
   PersistedPlaybackRepeatMode,
   PersistedPlaybackSessionResume,
   PersistedPlaybackSessionV1,
+  PersistedPlaylistPlaybackSnapshot,
+  PersistedPlaylistPlaybackState,
   PersistedQueueItem,
   PersistedQueueSource,
 } from '../../shared/types/playback';
@@ -125,6 +127,50 @@ const normalizeResume = (
   };
 };
 
+const normalizePlaylistSnapshot = (
+  value: unknown,
+  fallbackUpdatedAt: string,
+): PersistedPlaylistPlaybackSnapshot | null => {
+  const session = normalizePersistedPlaybackSession(
+    isRecord(value) ? { ...value, version: 1, updatedAt: fallbackUpdatedAt } : value,
+    fallbackUpdatedAt,
+  );
+  if (!session) {
+    return null;
+  }
+
+  return {
+    items: session.items,
+    currentQueueId: session.currentQueueId,
+    currentTrackId: session.currentTrackId,
+    lastPlayedTrack: session.lastPlayedTrack,
+    history: session.history,
+    mode: session.mode,
+    resume: session.resume,
+  };
+};
+
+const normalizePlaylistPlayback = (
+  value: unknown,
+  fallbackUpdatedAt: string,
+): PersistedPlaylistPlaybackState | null => {
+  if (!isRecord(value) || value.active !== true) {
+    return null;
+  }
+
+  const snapshot = normalizePlaylistSnapshot(value.snapshot, fallbackUpdatedAt);
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    active: true,
+    label: typeof value.label === 'string' ? value.label : null,
+    playlistId: typeof value.playlistId === 'string' ? value.playlistId : null,
+    snapshot,
+  };
+};
+
 export const normalizePersistedPlaybackSession = (
   value: unknown,
   fallbackUpdatedAt = new Date().toISOString(),
@@ -164,6 +210,7 @@ export const normalizePersistedPlaybackSession = (
     },
     resume: normalizeResume(value.resume, items, updatedAt),
     updatedAt,
+    playlistPlayback: normalizePlaylistPlayback(value.playlistPlayback, updatedAt),
   };
 };
 

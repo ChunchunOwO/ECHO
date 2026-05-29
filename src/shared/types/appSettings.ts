@@ -153,11 +153,22 @@ export type RememberedWindowSize = {
 
 export type RemoteAlbumMergeStrategy = 'conservative' | 'standard';
 
+export type RemoteBackgroundConcurrencySettings = {
+  metadata: number;
+  cover: number;
+  lyrics: number;
+  mv: number;
+  durationBackfill: number;
+};
+
 export type AppSettings = {
   appMemoryVersion?: number;
   onboardingCompleted?: boolean;
   locale?: AppLocale;
   appearanceTheme: AppThemeMode;
+  appearanceThemeScheduleEnabled?: boolean;
+  appearanceThemeScheduleDarkAt?: string;
+  appearanceThemeScheduleLightAt?: string;
   appearanceThemePreset?: AppThemePreset;
   appearanceThemePresetOverrides?: AppThemePresetOverrides;
   appearanceCustomThemes?: AppThemeCustomTheme[];
@@ -350,6 +361,7 @@ export type AppSettings = {
   scanPerformanceMode: ScanPerformanceMode;
   remoteCoverLoadPerformanceMode?: RemoteCoverLoadPerformanceMode;
   remoteAlbumMergeStrategy?: RemoteAlbumMergeStrategy;
+  remoteBackgroundConcurrency?: RemoteBackgroundConcurrencySettings;
   duplicateTracksEnabled: boolean;
   duplicateTracksMode: DuplicateTrackMode;
   duplicateTracksAutoRebuildAfterScan: boolean;

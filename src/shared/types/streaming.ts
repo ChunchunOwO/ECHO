@@ -1,4 +1,5 @@
-export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'soundcloud' | 'spotify' | 'tidal' | 'm3u8';
+export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'tidal' | 'm3u8';
+export type StreamingFavoriteProviderName = Extract<StreamingProviderName, 'bilibili' | 'youtube' | 'soundcloud'>;
 
 export type StreamingMediaType = 'track' | 'album' | 'artist' | 'playlist' | 'mv';
 
@@ -12,6 +13,7 @@ export const streamingProviderNames: StreamingProviderName[] = [
   'netease',
   'qqmusic',
   'bilibili',
+  'youtube',
   'soundcloud',
   'spotify',
   'tidal',
@@ -214,6 +216,15 @@ export type StreamingPlaylistImportResult = {
   providerPlaylistId: string;
 };
 
+export type StreamingFavoritesImportResult = {
+  provider: StreamingFavoriteProviderName;
+  providerPlaylistId: string;
+  playlistName: string;
+  importedCount: number;
+  addedCount: number;
+  snapshot: StreamingFavoritesSnapshot;
+};
+
 export type StreamingLikedSongsSyncProviderResult = {
   provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
   success: boolean;
@@ -233,4 +244,43 @@ export type StreamingLikedSongsSyncResult = {
 
 export type StreamingTrackLikedResult = {
   liked: boolean;
+};
+
+export type StreamingFavoriteTrack = {
+  id: string;
+  provider: StreamingFavoriteProviderName;
+  providerTrackId: string;
+  stableKey: string;
+  title: string;
+  artist: string;
+  album: string;
+  albumArtist: string | null;
+  duration: number | null;
+  coverUrl: string | null;
+  coverThumb: string | null;
+  qualities: StreamingAudioQuality[];
+  playable: boolean;
+  unavailableReason: string | null;
+  lyricsStatus: StreamingLyricsStatus;
+  mvStatus: StreamingMvStatus;
+  webUrl: string;
+  addedAt: string;
+  updatedAt: string;
+};
+
+export type StreamingFavoritesSnapshot = {
+  version: 1;
+  updatedAt: string;
+  providers: Record<StreamingFavoriteProviderName, StreamingFavoriteTrack[]>;
+};
+
+export type StreamingFavoriteSetRequest = {
+  track: StreamingTrack;
+  favorite: boolean;
+};
+
+export type StreamingFavoriteSetResult = {
+  favorite: boolean;
+  item: StreamingFavoriteTrack | null;
+  snapshot: StreamingFavoritesSnapshot;
 };

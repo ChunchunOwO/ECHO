@@ -24,6 +24,7 @@ import type {
   DesktopLyricsBounds,
   RememberedWindowSize,
   RemoteAlbumMergeStrategy,
+  RemoteBackgroundConcurrencySettings,
   RemoteCoverLoadPerformanceMode,
   ReplayGainMode,
 } from '../../shared/types/appSettings';
@@ -70,11 +71,20 @@ export const defaultTidalClientId = 'vmtQLf79BHl9YgUT';
 const appMemoryVersion = 6;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
+const defaultAppearanceThemeScheduleDarkAt = '19:00';
+const defaultAppearanceThemeScheduleLightAt = '07:00';
 const audioTransportFadeCurves: AudioTransportFadeCurve[] = ['linear', 'smooth', 'equalPower'];
 const defaultAudioTransportFadeDurationMs = 80;
 const defaultAudioTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
 const remoteCoverLoadPerformanceModes: RemoteCoverLoadPerformanceMode[] = ['low', 'balanced', 'aggressive', 'lan'];
 const remoteAlbumMergeStrategies: RemoteAlbumMergeStrategy[] = ['conservative', 'standard'];
+const defaultRemoteBackgroundConcurrency: RemoteBackgroundConcurrencySettings = {
+  metadata: 2,
+  cover: 2,
+  lyrics: 1,
+  mv: 1,
+  durationBackfill: 1,
+};
 const appThemePresets: AppThemePreset[] = [
   'classic',
   'echoTwilight',
@@ -297,6 +307,9 @@ export const defaultSettings: AppSettings = {
   onboardingCompleted: false,
   locale: 'zh-CN',
   appearanceTheme: 'light',
+  appearanceThemeScheduleEnabled: false,
+  appearanceThemeScheduleDarkAt: defaultAppearanceThemeScheduleDarkAt,
+  appearanceThemeScheduleLightAt: defaultAppearanceThemeScheduleLightAt,
   appearanceThemePreset: 'classic',
   appearanceThemePresetOverrides: {},
   appearanceCustomThemes: [],
@@ -489,6 +502,7 @@ export const defaultSettings: AppSettings = {
   scanPerformanceMode: 'balanced',
   remoteCoverLoadPerformanceMode: 'balanced',
   remoteAlbumMergeStrategy: 'conservative',
+  remoteBackgroundConcurrency: { ...defaultRemoteBackgroundConcurrency },
   duplicateTracksEnabled: true,
   duplicateTracksMode: 'strict',
   duplicateTracksAutoRebuildAfterScan: false,
@@ -626,6 +640,28 @@ const normalizeNullablePort = (value: unknown): number | null => {
 const normalizeHqPlayerBackend = (value: unknown): HqPlayerDefaultPlaybackBackend =>
   value === 'echoNative' || value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
 
+const normalizeRemoteBackgroundConcurrency = (value: unknown): RemoteBackgroundConcurrencySettings => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...defaultRemoteBackgroundConcurrency };
+  }
+
+  const input = value as Partial<Record<keyof RemoteBackgroundConcurrencySettings, unknown>>;
+  const normalizeLimit = (key: keyof RemoteBackgroundConcurrencySettings, min: number, max: number): number => {
+    const numeric = Number(input[key]);
+    return Number.isFinite(numeric)
+      ? Math.round(clamp(numeric, min, max))
+      : defaultRemoteBackgroundConcurrency[key];
+  };
+
+  return {
+    metadata: normalizeLimit('metadata', 1, 8),
+    cover: normalizeLimit('cover', 1, 48),
+    lyrics: normalizeLimit('lyrics', 1, 4),
+    mv: normalizeLimit('mv', 1, 4),
+    durationBackfill: normalizeLimit('durationBackfill', 1, 4),
+  };
+};
+
 export const normalizeHqPlayerSettings = (value: unknown): HqPlayerSettings => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { ...defaultHqPlayerSettings };
@@ -651,6 +687,16 @@ const normalizeLocale = (value: unknown): AppLocale =>
 
 const normalizeAppearanceTheme = (value: unknown): AppThemeMode =>
   appThemeModes.includes(value as AppThemeMode) ? (value as AppThemeMode) : defaultSettings.appearanceTheme;
+
+const normalizeThemeScheduleTime = (value: unknown, fallback: string): string => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(trimmed);
+  return match ? `${match[1]}:${match[2]}` : fallback;
+};
 
 const normalizeAppearanceThemePreset = (value: unknown): AppThemePreset =>
   appThemePresets.includes(value as AppThemePreset) ? (value as AppThemePreset) : defaultSettings.appearanceThemePreset ?? 'classic';
@@ -1386,12 +1432,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const appearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
   const activeAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === appearanceThemeCustomId);
   const appearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
+  const downloadsFeatureUnlocked = settings.downloadsFeatureUnlocked === true;
 
   return {
     appMemoryVersion,
     onboardingCompleted: settings.onboardingCompleted !== false,
     locale: normalizeLocale(settings.locale),
     appearanceTheme: normalizeAppearanceTheme(settings.appearanceTheme),
+    appearanceThemeScheduleEnabled: settings.appearanceThemeScheduleEnabled === true,
+    appearanceThemeScheduleDarkAt: normalizeThemeScheduleTime(settings.appearanceThemeScheduleDarkAt, defaultAppearanceThemeScheduleDarkAt),
+    appearanceThemeScheduleLightAt: normalizeThemeScheduleTime(settings.appearanceThemeScheduleLightAt, defaultAppearanceThemeScheduleLightAt),
     appearanceThemePreset,
     appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
     appearanceCustomThemes,
@@ -1437,8 +1487,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     tidalClientSecret: normalizeTidalClientSecret(settings.tidalClientSecret),
     tidalRedirectUri: normalizeSpotifyRedirectUri(settings.tidalRedirectUri),
     tidalCountryCode: normalizeTidalCountryCode(settings.tidalCountryCode) ?? defaultSettings.tidalCountryCode,
-    downloadsFeatureUnlocked: settings.downloadsFeatureUnlocked === true,
-    streamingDownloadActionsEnabled: settings.streamingDownloadActionsEnabled === true,
+    downloadsFeatureUnlocked,
+    streamingDownloadActionsEnabled: downloadsFeatureUnlocked && settings.streamingDownloadActionsEnabled === true,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
     hqPlayer: normalizeHqPlayerSettings(settings.hqPlayer),
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
@@ -1662,6 +1712,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     scanPerformanceMode,
     remoteCoverLoadPerformanceMode,
     remoteAlbumMergeStrategy,
+    remoteBackgroundConcurrency: normalizeRemoteBackgroundConcurrency(settings.remoteBackgroundConcurrency),
     duplicateTracksEnabled: settings.duplicateTracksEnabled !== false,
     duplicateTracksMode,
     duplicateTracksAutoRebuildAfterScan: settings.duplicateTracksAutoRebuildAfterScan === true,

@@ -6,6 +6,10 @@ import { BPM_CONFIDENCE_THRESHOLD } from '../../shared/constants/audioAnalysis';
 import type { BpmAnalysisResult } from '../../shared/types/library';
 import type {
   StreamingLyricsResult,
+  StreamingFavoritesImportResult,
+  StreamingFavoriteProviderName,
+  StreamingFavoriteSetResult,
+  StreamingFavoritesSnapshot,
   StreamingLikedSongsSyncProviderResult,
   StreamingLikedSongsSyncResult,
   StreamingAlbumDetail,
@@ -26,6 +30,7 @@ import { backupPlaylistIfEnabled } from '../library/PlaylistBackup';
 import { StreamingCacheStore } from './StreamingCacheStore';
 import { StreamingMemoryCache } from './StreamingMemoryCache';
 import { StreamingPlaybackResolver } from './StreamingPlaybackResolver';
+import { StreamingFavoritesStore } from './StreamingFavoritesStore';
 import type { StreamingProvider } from './StreamingProvider';
 import { StreamingProviderRegistry } from './StreamingProviderRegistry';
 import { StreamingRateLimiter } from './StreamingRateLimiter';
@@ -36,6 +41,7 @@ import { MockStreamingProvider } from './providers/MockStreamingProvider';
 import { NeteaseStreamingProvider } from './providers/NeteaseStreamingProvider';
 import { QQMusicStreamingProvider } from './providers/QQMusicStreamingProvider';
 import { BilibiliStreamingProvider } from './providers/BilibiliStreamingProvider';
+import { YouTubeStreamingProvider } from './providers/YouTubeStreamingProvider';
 import { SoundCloudStreamingProvider } from './providers/SoundCloudStreamingProvider';
 import { SpotifyStreamingProvider } from './providers/SpotifyStreamingProvider';
 import { TidalStreamingProvider } from './providers/TidalStreamingProvider';
@@ -56,8 +62,10 @@ const searchCacheVersion = 'v10';
 const playbackCacheVersion = 'v2';
 const lyricsCacheVersion = 'v4';
 const playlistImportPageSize = 500;
+const favoritesImportPageSize = 100;
 const likedSongsSyncPageSize = 100;
 const maxPlaylistImportTracks = 20_000;
+const maxFavoritesImportTracks = 5_000;
 const likedSongsSyncProviders = ['netease', 'qqmusic'] as const;
 const qqShareLinkUserAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36';
@@ -73,6 +81,11 @@ type StreamingPlaybackActivityProvider = () => boolean | Promise<boolean>;
 
 type StreamingPlaylistUrlTarget = {
   provider: Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'spotify'>;
+  providerPlaylistId: string;
+};
+
+type StreamingFavoritePlaylistUrlTarget = {
+  provider: StreamingFavoriteProviderName;
   providerPlaylistId: string;
 };
 
@@ -241,6 +254,81 @@ const playlistIdFromParsedUrl = (url: URL, depth = 0): StreamingPlaylistUrlTarge
   return null;
 };
 
+const favoritePlaylistIdFromParsedUrl = (url: URL, depth = 0): StreamingFavoritePlaylistUrlTarget | null => {
+  const host = url.hostname.toLocaleLowerCase();
+  const hashUrl = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+  const combinedPath = `${url.pathname}${hashUrl}`;
+  const findParam = (...names: string[]): string | null => {
+    for (const name of names) {
+      const value = url.searchParams.get(name);
+      if (value?.trim()) {
+        return value.trim();
+      }
+    }
+
+    if (hashUrl) {
+      const queryIndex = hashUrl.indexOf('?');
+      const hashSearch = new URLSearchParams(queryIndex >= 0 ? hashUrl.slice(queryIndex + 1) : hashUrl);
+      for (const name of names) {
+        const value = hashSearch.get(name);
+        if (value?.trim()) {
+          return value.trim();
+        }
+      }
+    }
+
+    return null;
+  };
+  const findNestedUrl = (): URL | null => {
+    if (depth >= 2) {
+      return null;
+    }
+
+    for (const name of ['url', 'u', 'target', 'redirect', 'redirect_url', 'jump', 'jumpurl', 'link', 'shareUrl']) {
+      const value = findParam(name);
+      if (!value || !/^https?:\/\//iu.test(value)) {
+        continue;
+      }
+
+      try {
+        return new URL(value);
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  };
+
+  if (host.includes('bilibili.com')) {
+    const id = findParam('fid', 'media_id', 'mediaId') ?? combinedPath.match(/favlist\/(\d+)/iu)?.[1] ?? null;
+    if (id) {
+      return { provider: 'bilibili', providerPlaylistId: id };
+    }
+  }
+
+  if (host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be') {
+    const id = findParam('list') ?? combinedPath.match(/playlist\/([A-Za-z0-9_-]+)/iu)?.[1] ?? null;
+    if (id) {
+      return { provider: 'youtube', providerPlaylistId: id };
+    }
+  }
+
+  if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) {
+    const path = url.pathname.toLocaleLowerCase();
+    if (path.includes('/sets/') || path.includes('/discover/sets/')) {
+      return { provider: 'soundcloud', providerPlaylistId: url.toString() };
+    }
+  }
+
+  const nestedUrl = findNestedUrl();
+  if (nestedUrl) {
+    return favoritePlaylistIdFromParsedUrl(nestedUrl, depth + 1);
+  }
+
+  return null;
+};
+
 const shouldResolveQqShareLink = (url: URL): boolean => {
   const host = url.hostname.toLocaleLowerCase();
   return (host.includes('y.qq.com') || host.includes('qq.com')) && Boolean(url.searchParams.get('__'));
@@ -303,6 +391,16 @@ const resolvePlaylistIdFromUrl = async (rawUrl: string): Promise<StreamingPlayli
   throw new Error('Only NetEase Cloud Music, QQ Music, and Spotify playlist links are supported.');
 };
 
+const resolveFavoritePlaylistIdFromUrl = (rawUrl: string): StreamingFavoritePlaylistUrlTarget => {
+  const parsedUrl = parsePlaylistUrl(rawUrl);
+  const target = favoritePlaylistIdFromParsedUrl(parsedUrl);
+  if (target) {
+    return target;
+  }
+
+  throw new Error('Only Bilibili favorites, YouTube playlists, and SoundCloud sets are supported for streaming favorites.');
+};
+
 const cleanError = (error: unknown, fallback: string): Error => {
   if (error instanceof Error && error.message.trim()) {
     return new Error(error.message);
@@ -350,6 +448,7 @@ export class StreamingService {
     private readonly memoryCache = new StreamingMemoryCache(),
     private readonly rateLimiter = new StreamingRateLimiter({ maxConcurrent: 2, minIntervalMs: 150 }),
     private readonly playbackActivityProvider = defaultPlaybackActivityProvider,
+    private readonly favoritesStore = new StreamingFavoritesStore(),
   ) {
     this.playbackResolver = new StreamingPlaybackResolver(registry);
   }
@@ -403,6 +502,67 @@ export class StreamingService {
 
   getProviders(): StreamingProviderDescriptor[] {
     return this.registry.list();
+  }
+
+  getFavorites(): StreamingFavoritesSnapshot {
+    return this.favoritesStore.getSnapshot();
+  }
+
+  setFavorite(track: StreamingTrack, favorite: boolean): StreamingFavoriteSetResult {
+    return this.favoritesStore.setFavorite(this.normalizeTrack(track.provider, track), favorite);
+  }
+
+  async importFavoritesFromUrl(url: string): Promise<StreamingFavoritesImportResult> {
+    const target = resolveFavoritePlaylistIdFromUrl(url);
+    const provider = this.registry.get(target.provider);
+    if (!provider.getPlaylist) {
+      throw new Error('This streaming provider does not support favorites import.');
+    }
+
+    let page = 1;
+    let importedCount = 0;
+    let addedCount = 0;
+    let playlistName = 'Streaming Favorites';
+    let snapshot = this.favoritesStore.getSnapshot();
+
+    while (importedCount < maxFavoritesImportTracks) {
+      const detail = await this.callProviderWithTimeout(
+        provider,
+        () =>
+          provider.getPlaylist!({
+            providerPlaylistId: target.providerPlaylistId,
+            page,
+            pageSize: favoritesImportPageSize,
+          }),
+        'Streaming favorites import',
+        playbackProviderTimeoutMs,
+      );
+      const normalizedTracks = detail.tracks.map((track) => this.normalizeTrack(detail.provider, track));
+      const result = this.favoritesStore.importTracks(normalizedTracks);
+      playlistName = detail.title;
+      importedCount += result.importedCount;
+      addedCount += result.addedCount;
+      snapshot = result.snapshot;
+
+      if (!detail.hasMore || normalizedTracks.length === 0) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return {
+      provider: target.provider,
+      providerPlaylistId: target.providerPlaylistId,
+      playlistName,
+      importedCount,
+      addedCount,
+      snapshot,
+    };
+  }
+
+  getFavoritesExportContent(): string {
+    return this.favoritesStore.getExportContent();
   }
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
@@ -938,6 +1098,7 @@ export const createStreamingService = (database: EchoDatabase): StreamingService
   registry.register(new NeteaseStreamingProvider());
   registry.register(new QQMusicStreamingProvider());
   registry.register(new BilibiliStreamingProvider());
+  registry.register(new YouTubeStreamingProvider());
   registry.register(new SoundCloudStreamingProvider());
   registry.register(new SpotifyStreamingProvider());
   registry.register(new TidalStreamingProvider());

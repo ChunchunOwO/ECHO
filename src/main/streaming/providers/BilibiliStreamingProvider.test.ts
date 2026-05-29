@@ -96,6 +96,54 @@ describe('BilibiliStreamingProvider', () => {
     expect(result.mvs).toEqual([]);
   });
 
+  it('imports Bilibili favorite list pages from fid links', async () => {
+    const fetchRunner = vi.fn().mockResolvedValue(
+      jsonResponse({
+        code: 0,
+        data: {
+          info: {
+            title: 'Bili Favorites',
+            media_count: 1,
+            upper: { name: 'Moe' },
+          },
+          has_more: false,
+          medias: [
+            {
+              bvid: 'BV1FAV',
+              title: 'Favorite Video',
+              cover: '//i0.hdslb.com/bfs/archive/fav.jpg',
+              duration: 98,
+              upper: { name: 'Favorite UP' },
+            },
+          ],
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const result = await new BilibiliStreamingProvider().getPlaylist({
+      providerPlaylistId: 'https://space.bilibili.com/25265128/favlist?fid=2433003328&ftype=create',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('media_id=2433003328');
+    expect(result).toMatchObject({
+      provider: 'bilibili',
+      providerPlaylistId: '2433003328',
+      title: 'Bili Favorites',
+      creator: 'Moe',
+      total: 1,
+      hasMore: false,
+    });
+    expect(result.tracks[0]).toMatchObject({
+      providerTrackId: 'BV1FAV',
+      title: 'Favorite Video',
+      artist: 'Favorite UP',
+      coverThumb: remoteImageUrl('https://i0.hdslb.com/bfs/archive/fav.jpg'),
+    });
+  });
+
   it('falls back to yt-dlp bilisearch when the Bilibili API returns 412', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('blocked', { status: 412 })));
     let capturedArgs: string[] = [];

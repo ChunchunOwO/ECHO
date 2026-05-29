@@ -267,6 +267,36 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(hide).toHaveBeenCalledTimes(1));
   });
 
+  it('unlocks desktop lyrics from the lower-right icon context menu', async () => {
+    const setLocked = vi.fn().mockResolvedValue({ visible: true, locked: false });
+
+    window.echo = {
+      desktopLyrics: {
+        getState: vi.fn().mockResolvedValue({ visible: true, locked: true }),
+        show: vi.fn(),
+        hide: vi.fn(),
+        setLocked,
+        onStateChanged: vi.fn(() => undefined),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const toggle = await screen.findByRole('button', { name: /隐藏桌面歌词|Hide desktop lyrics/i });
+
+    fireEvent.contextMenu(toggle);
+
+    await waitFor(() => expect(setLocked).toHaveBeenCalledWith(false));
+
+    fireEvent.contextMenu(toggle);
+
+    expect(setLocked).toHaveBeenCalledTimes(1);
+  });
+
   it('opens a markdown crash report from the abnormal-exit notice', async () => {
     const openCrashReport = vi.fn().mockResolvedValue('D:\\ECHO\\crash-report.md');
 

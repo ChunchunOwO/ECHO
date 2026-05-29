@@ -13,6 +13,7 @@ export type StreamingSearchMemory = {
   activeTab: StreamingMediaType;
   input: string;
   query: string;
+  resultKey: string | null;
   result: StreamingSearchResult | null;
   failedCoverUrls: Record<string, string>;
   scrollTop: number;
@@ -24,6 +25,7 @@ const initialStreamingSearchMemory: StreamingSearchMemory = {
   activeTab: 'track',
   input: '',
   query: '',
+  resultKey: null,
   result: null,
   failedCoverUrls: {},
   scrollTop: 0,

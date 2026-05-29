@@ -25,8 +25,10 @@ vi.mock('electron', () => ({
 vi.mock('../app/desktopLyricsWindow', () => ({
   getDesktopLyricsState: vi.fn(),
   getLastDesktopLyricsAudioStatus: vi.fn(),
+  getLastDesktopLyricsPlaybackStatus: vi.fn(),
   hideDesktopLyricsWindow: vi.fn(),
   receiveDesktopLyricsRendererAudioStatus: vi.fn(),
+  receiveDesktopLyricsRendererPlaybackStatus: vi.fn(),
   resetDesktopLyricsBounds: vi.fn(),
   setDesktopLyricsLocked: vi.fn(),
   setDesktopLyricsMousePassthrough: setDesktopLyricsMousePassthroughMock,

@@ -222,6 +222,128 @@ describe('playback media prepare IPC', () => {
     }));
   });
 
+  it('does not restore expired remote proxy URLs from persisted queue sessions', async () => {
+    const restorePlaybackMemory = vi.fn();
+    const legacyMemoryLoad = vi.fn(() => ({
+      filePath: 'http://127.0.0.1:19000/remote-stream/legacy-token',
+      trackId: 'remote-track',
+      positionSeconds: 42,
+      durationSeconds: 180,
+      updatedAt: '2026-05-29T00:00:00.000Z',
+    }));
+    const remoteTrack = {
+      id: 'remote-track',
+      mediaType: 'remote',
+      path: 'remote://source-1/subsonic:song:song-1',
+      sourceId: 'source-1',
+      provider: 'subsonic',
+      remotePath: 'subsonic:song:song-1',
+      stableKey: 'song-1',
+      title: 'Remote Song',
+      artist: 'Remote Artist',
+      album: 'Remote Album',
+      albumArtist: 'Remote Artist',
+      trackNo: null,
+      discNo: null,
+      year: null,
+      genre: null,
+      duration: 180,
+      codec: 'mp3',
+      sampleRate: 44100,
+      bitDepth: null,
+      bitrate: 320000,
+      coverId: null,
+      coverThumb: null,
+      fieldSources: {},
+    };
+    const persistedSession = {
+      version: 1,
+      items: [{
+        queueId: 'queue-1',
+        track: remoteTrack,
+        source: { type: 'manual', label: 'Manual' },
+        addedAt: '2026-05-29T00:00:00.000Z',
+      }],
+      currentQueueId: 'queue-1',
+      currentTrackId: 'remote-track',
+      lastPlayedTrack: remoteTrack,
+      history: [],
+      mode: {
+        isShuffleEnabled: false,
+        repeatMode: 'off',
+        automixEnabled: false,
+      },
+      resume: {
+        queueId: 'queue-1',
+        trackId: 'remote-track',
+        filePath: 'http://127.0.0.1:19000/remote-stream/expired-token',
+        positionMs: 42_000,
+        durationMs: 180_000,
+        state: 'paused',
+        updatedAt: '2026-05-29T00:00:00.000Z',
+      },
+      updatedAt: '2026-05-29T00:00:00.000Z',
+    };
+
+    vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        on: vi.fn(),
+        handle: vi.fn(),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => ({
+          state: 'idle',
+          currentTrackId: null,
+          positionSeconds: 0,
+          durationSeconds: 0,
+          currentFilePath: null,
+        }),
+        on: vi.fn(),
+        restorePlaybackMemory,
+        setAudioErrorRecoveryHandler: vi.fn(),
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: legacyMemoryLoad,
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../audio/PlaybackSessionStore', () => ({
+      getPlaybackSessionStore: () => ({
+        load: vi.fn(() => persistedSession),
+        saveResumeFromAudioStatus: vi.fn(),
+      }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive: vi.fn(),
+        refreshTrackMetadata: vi.fn(),
+        createStreamUrl: vi.fn(),
+        backfillDuration: vi.fn(),
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback: vi.fn(),
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    expect(restorePlaybackMemory).not.toHaveBeenCalled();
+    expect(legacyMemoryLoad).not.toHaveBeenCalled();
+  });
+
   it('force-refreshes streaming playback resolution and returns MIME type', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const invalidatePlayback = vi.fn();

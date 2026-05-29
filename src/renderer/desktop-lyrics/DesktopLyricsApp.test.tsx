@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectSessionStatus } from '../../shared/types/connect';
 import {
@@ -357,5 +357,150 @@ describe('desktop lyrics text fitting', () => {
       stableKey: remoteTrackId,
     })));
     expect(getForTrack).not.toHaveBeenCalled();
+  });
+
+  it('reloads desktop lyrics when the current track lyrics change', async () => {
+    const settings = makeDesktopLyricsSettings(false);
+    let onChangedHandler: ((trackId: string) => void) | null = null;
+    const getForTrack = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        kind: 'synced',
+        provider: 'lrclib',
+        lines: [{ timeMs: 0, text: 'applied lyric' }],
+        offsetMs: 0,
+      });
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(settings),
+        loadFontFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        onStatus: vi.fn(() => () => undefined),
+      },
+      desktopLyrics: {
+        getLastAudioStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: 'track-1',
+          currentFilePath: 'D:\\Music\\Song.flac',
+          currentTrackTitle: 'Song',
+          currentTrackArtist: 'Artist',
+          currentTrackAlbum: null,
+          currentTrackAlbumArtist: null,
+          positionSeconds: 0,
+          durationSeconds: 188,
+          playbackRate: 1,
+        }),
+        getState: vi.fn().mockResolvedValue({
+          visible: true,
+          locked: false,
+          bounds: null,
+          settings,
+        }),
+        onAudioStatus: vi.fn(() => () => undefined),
+        onStateChanged: vi.fn(() => () => undefined),
+        setMousePassthrough: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(null),
+      },
+      lyrics: {
+        getForTrack,
+        onChanged: vi.fn((handler) => {
+          onChangedHandler = handler;
+          return () => undefined;
+        }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          currentTrackId: null,
+          filePath: null,
+          state: 'stopped',
+          positionMs: 0,
+          durationMs: 0,
+        }),
+      },
+    } as unknown as typeof window.echo;
+
+    const { container } = render(<DesktopLyricsApp />);
+
+    await waitFor(() => expect(getForTrack).toHaveBeenCalledTimes(1));
+    expect(container.textContent).toContain('暂无歌词');
+
+    act(() => {
+      onChangedHandler?.('track-1');
+    });
+
+    await waitFor(() => expect(getForTrack).toHaveBeenCalledTimes(2));
+    expect(container.textContent).toContain('applied lyric');
+  });
+
+  it('loads Spotify desktop lyrics from forwarded playback status', async () => {
+    const settings = makeDesktopLyricsSettings(false);
+    const getLyrics = vi.fn().mockResolvedValue({
+      provider: 'spotify',
+      providerTrackId: 'abc123',
+      status: 'available',
+      plainLyrics: null,
+      syncedLyrics: null,
+      lines: [{ timeMs: 0, text: 'spotify lyric' }],
+      sourceLabel: 'Spotify lyrics',
+    });
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(settings),
+        loadFontFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        onStatus: vi.fn(() => () => undefined),
+      },
+      desktopLyrics: {
+        getLastAudioStatus: vi.fn().mockResolvedValue(null),
+        getLastPlaybackStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: 'spotify-row-1',
+          positionMs: 0,
+          durationMs: 180000,
+          filePath: 'streaming:spotify:abc123',
+        }),
+        getState: vi.fn().mockResolvedValue({
+          visible: true,
+          locked: false,
+          bounds: null,
+          settings,
+        }),
+        onAudioStatus: vi.fn(() => () => undefined),
+        onPlaybackStatus: vi.fn(() => () => undefined),
+        onStateChanged: vi.fn(() => () => undefined),
+        setMousePassthrough: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(null),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          currentTrackId: null,
+          filePath: null,
+          state: 'stopped',
+          positionMs: 0,
+          durationMs: 0,
+        }),
+      },
+      streaming: {
+        getLyrics,
+      },
+    } as unknown as typeof window.echo;
+
+    render(<DesktopLyricsApp />);
+
+    await waitFor(() => expect(getLyrics).toHaveBeenCalledWith({
+      provider: 'spotify',
+      providerTrackId: 'abc123',
+    }));
   });
 });

@@ -53,6 +53,17 @@ const codecClassName = (codec: string): string => {
 };
 
 const sourceCodecLabels = new Set(['AIRPLAY', 'DLNA']);
+const streamingProviderLabels: Record<string, string> = {
+  netease: '网易云',
+  qqmusic: 'QQ',
+  spotify: 'Spotify',
+  tidal: 'TIDAL',
+  bilibili: 'Bilibili',
+  youtube: 'YouTube',
+  soundcloud: 'SoundCloud',
+  m3u8: 'M3U8',
+  mock: 'Mock',
+};
 
 const normalizeDisplayCodec = (codec: string | null): string | null => {
   if (!codec) {
@@ -61,6 +72,15 @@ const normalizeDisplayCodec = (codec: string | null): string | null => {
 
   const normalized = codec.trim().toUpperCase();
   return normalized && !sourceCodecLabels.has(normalized) ? normalized : null;
+};
+
+const streamingSourceLabel = (track: LibraryTrack | null): string | null => {
+  if (track?.mediaType !== 'streaming') {
+    return null;
+  }
+
+  const provider = track.provider?.trim();
+  return provider ? (streamingProviderLabels[provider] ?? provider) : '在线';
 };
 
 const uniqueChips = (chips: Chip[]): Chip[] => {
@@ -152,6 +172,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const automixLabel = formatAutomixLabel(status);
   const sharedMixRateTooHigh = hasSharedMixRateTooHighWarning(status);
   const isLoadingRemoteTrack = state === 'loading' && track?.mediaType === 'remote' && !isDlnaReceiverTrack(track) && !isAirPlayReceiverTrack(track);
+  const streamingLabel = streamingSourceLabel(track);
   const chips: Chip[] = uniqueChips([
     isLoadingRemoteTrack ? { label: '加载中', className: 'tag-loading' } : null,
     sharedMixRateTooHigh
@@ -162,7 +183,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
     automixLabel ? { label: automixLabel, className: 'tag-automix' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
-    track?.mediaType === 'streaming' ? { label: t('playerStatus.streaming'), className: 'tag-streaming' } : null,
+    streamingLabel ? { label: streamingLabel, className: 'tag-streaming' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitDepth, codec, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,

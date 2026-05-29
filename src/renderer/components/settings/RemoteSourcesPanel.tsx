@@ -12,9 +12,11 @@ import {
   HardDrive,
   KeyRound,
   ListPlus,
+  Minus,
   Music2,
   PauseCircle,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -36,13 +38,19 @@ import type {
   RemoteSource,
   RemoteSourceInput,
   RemoteSourceProvider,
+  RemoteRuntimeLimits,
   RemoteSourceSyncMode,
   RemoteSyncStatus,
   RemoteTrackLookupItem,
   RemoteTrackStatus,
   TestRemoteSourceResult,
 } from '../../../shared/types/remoteSources';
-import type { AppSettings, RemoteAlbumMergeStrategy, RemoteCoverLoadPerformanceMode } from '../../../shared/types/appSettings';
+import type {
+  AppSettings,
+  RemoteAlbumMergeStrategy,
+  RemoteBackgroundConcurrencySettings,
+  RemoteCoverLoadPerformanceMode,
+} from '../../../shared/types/appSettings';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getAppBridge, getRemoteSourcesBridge } from '../../utils/echoBridge';
@@ -89,6 +97,77 @@ const remoteCoverBackgroundLimits: Record<RemoteCoverLoadPerformanceMode, Pick<R
   balanced: { cover: 2 },
   aggressive: { cover: 6 },
   lan: { cover: 48 },
+};
+
+const defaultRemoteBackgroundConcurrency: RemoteBackgroundConcurrencySettings = {
+  metadata: 2,
+  cover: 2,
+  lyrics: 1,
+  mv: 1,
+  durationBackfill: 1,
+};
+
+const remoteBackgroundConcurrencyFields: Array<{
+  key: keyof RemoteBackgroundConcurrencySettings;
+  label: string;
+  ariaLabel: string;
+  min: number;
+  max: number;
+}> = [
+  { key: 'metadata', label: '元数据', ariaLabel: '后台元数据并发', min: 1, max: 8 },
+  { key: 'cover', label: '封面', ariaLabel: '后台封面并发', min: 1, max: 48 },
+  { key: 'lyrics', label: '歌词', ariaLabel: '后台歌词并发', min: 1, max: 4 },
+  { key: 'mv', label: 'MV', ariaLabel: '后台 MV 并发', min: 1, max: 4 },
+  { key: 'durationBackfill', label: '时长回填', ariaLabel: '后台时长回填并发', min: 1, max: 4 },
+];
+
+const normalizeRemoteBackgroundConcurrency = (value: unknown): RemoteBackgroundConcurrencySettings => {
+  const input = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Partial<Record<keyof RemoteBackgroundConcurrencySettings, unknown>>
+    : {};
+  const normalizeValue = (key: keyof RemoteBackgroundConcurrencySettings, min: number, max: number): number => {
+    const numeric = Number(input[key]);
+    return Number.isFinite(numeric)
+      ? Math.max(min, Math.min(max, Math.round(numeric)))
+      : defaultRemoteBackgroundConcurrency[key];
+  };
+
+  return Object.fromEntries(remoteBackgroundConcurrencyFields.map((field) => [
+    field.key,
+    normalizeValue(field.key, field.min, field.max),
+  ])) as unknown as RemoteBackgroundConcurrencySettings;
+};
+
+const remoteBackgroundConcurrencyToRuntimeLimits = (concurrency: RemoteBackgroundConcurrencySettings): RemoteRuntimeLimits => ({
+  metadataConcurrency: concurrency.metadata,
+  coverConcurrency: concurrency.cover,
+  lyricsConcurrency: concurrency.lyrics,
+  mvConcurrency: concurrency.mv,
+  durationBackfillConcurrency: concurrency.durationBackfill,
+});
+
+const remoteBackgroundConcurrencyToJobConcurrency = (
+  concurrency: RemoteBackgroundConcurrencySettings,
+  playbackActive: boolean,
+): RemoteBackgroundGlobalStatus['concurrency'] => {
+  const normalized = normalizeRemoteBackgroundConcurrency(concurrency);
+  if (playbackActive) {
+    return {
+      metadata: Math.min(normalized.metadata, 1),
+      cover: 0,
+      lyrics: 0,
+      mv: 0,
+      'duration-backfill': Math.min(normalized.durationBackfill, 1),
+    };
+  }
+
+  return {
+    metadata: normalized.metadata,
+    cover: normalized.cover,
+    lyrics: normalized.lyrics,
+    mv: normalized.mv,
+    'duration-backfill': normalized.durationBackfill,
+  };
 };
 
 const remoteAlbumMergeOptions: Array<{ value: RemoteAlbumMergeStrategy; label: string; description: string }> = [
@@ -361,14 +440,9 @@ const recommendationText = (source: RemoteSourceOverviewItem): string | null => 
   return null;
 };
 
-const removeOverviewSource = (overview: RemoteSourceOverview, sourceId: string): RemoteSourceOverview => {
-  const nextSources = overview.sources.filter((source) => source.sourceId !== sourceId);
-  if (nextSources.length === overview.sources.length) {
-    return overview;
-  }
-
+const overviewFromSources = (sources: RemoteSourceOverviewItem[]): RemoteSourceOverview => {
   const sumStatusCounts = (key: 'metadata' | 'cover' | 'lyrics' | 'mv'): RemoteSourceOverviewItem['metadata'] =>
-    nextSources.reduce((counts, source) => ({
+    sources.reduce((counts, source) => ({
       pending: counts.pending + source[key].pending,
       searching: counts.searching + source[key].searching,
       partial: counts.partial + source[key].partial,
@@ -379,21 +453,38 @@ const removeOverviewSource = (overview: RemoteSourceOverview, sourceId: string):
 
   return {
     ...emptyOverview(),
-    sources: nextSources,
-    totalSources: nextSources.length,
-    enabledSources: nextSources.filter((source) => source.status === 'enabled').length,
-    disabledSources: nextSources.filter((source) => source.status === 'disabled').length,
-    errorSources: nextSources.filter((source) => source.status === 'error').length,
-    trackCount: nextSources.reduce((total, source) => total + source.trackCount, 0),
-    albumCount: nextSources.reduce((total, source) => total + source.albumCount, 0),
-    artistCount: nextSources.reduce((total, source) => total + source.artistCount, 0),
-    totalSizeBytes: nextSources.reduce((total, source) => total + source.totalSizeBytes, 0),
-    missingTrackCount: nextSources.reduce((total, source) => total + source.missingTrackCount, 0),
+    sources,
+    totalSources: sources.length,
+    enabledSources: sources.filter((source) => source.status === 'enabled').length,
+    disabledSources: sources.filter((source) => source.status === 'disabled').length,
+    errorSources: sources.filter((source) => source.status === 'error').length,
+    trackCount: sources.reduce((total, source) => total + source.trackCount, 0),
+    albumCount: sources.reduce((total, source) => total + source.albumCount, 0),
+    artistCount: sources.reduce((total, source) => total + source.artistCount, 0),
+    totalSizeBytes: sources.reduce((total, source) => total + source.totalSizeBytes, 0),
+    missingTrackCount: sources.reduce((total, source) => total + source.missingTrackCount, 0),
     metadata: sumStatusCounts('metadata'),
     cover: sumStatusCounts('cover'),
     lyrics: sumStatusCounts('lyrics'),
     mv: sumStatusCounts('mv'),
   };
+};
+
+const removeOverviewSource = (overview: RemoteSourceOverview, sourceId: string): RemoteSourceOverview => {
+  const nextSources = overview.sources.filter((source) => source.sourceId !== sourceId);
+  return nextSources.length === overview.sources.length ? overview : overviewFromSources(nextSources);
+};
+
+const mergeOverviewSources = (overview: RemoteSourceOverview, sources: RemoteSourceOverviewItem[]): RemoteSourceOverview => {
+  if (sources.length === 0) {
+    return overview;
+  }
+
+  const byId = new Map(overview.sources.map((source) => [source.sourceId, source]));
+  for (const source of sources) {
+    byId.set(source.sourceId, source);
+  }
+  return overviewFromSources(Array.from(byId.values()));
 };
 
 const readConfigNumber = (source: RemoteSource, key: string, fallback: number): number => {
@@ -689,6 +780,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     scanConcurrency: 3,
     metadataConcurrency: 2,
     coverConcurrency: 2,
+    durationBackfillConcurrency: 1,
     apiVersion: '1.16.1',
     authMode: 'token',
     baiduClientId: '',
@@ -701,6 +793,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [remoteCoverLoadPerformanceMode, setRemoteCoverLoadPerformanceMode] = useState<RemoteCoverLoadPerformanceMode>('balanced');
+  const [remoteBackgroundConcurrency, setRemoteBackgroundConcurrency] = useState<RemoteBackgroundConcurrencySettings>(() => ({ ...defaultRemoteBackgroundConcurrency }));
   const [remoteAlbumMergeStrategy, setRemoteAlbumMergeStrategy] = useState<RemoteAlbumMergeStrategy>('conservative');
   const [pendingRemoteAlbumMergeStrategy, setPendingRemoteAlbumMergeStrategy] = useState<RemoteAlbumMergeStrategy>('conservative');
   const [remoteAlbumGroupingPreview, setRemoteAlbumGroupingPreview] = useState<RemoteAlbumGroupingPreview | null>(null);
@@ -710,6 +803,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const [baiduAuthFeedback, setBaiduAuthFeedback] = useState<string | null>(null);
   const [baiduAuthUrl, setBaiduAuthUrl] = useState<string | null>(null);
   const [showBaiduDeveloperFields, setShowBaiduDeveloperFields] = useState(false);
+  const [remoteBackgroundConcurrencySaving, setRemoteBackgroundConcurrencySaving] = useState(false);
   const [testResult, setTestResult] = useState<TestRemoteSourceResult | null>(null);
   const terminalSyncEventsRef = useRef<Record<string, string>>({});
 
@@ -744,6 +838,17 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const overviewIssueCount = useMemo(() => overview.sources.reduce((total, source) => total + sourceIssueTotal(source), 0), [overview.sources]);
   const runningSyncCount = useMemo(() => Object.values(syncStatuses).filter((status) => status.status === 'running').length, [syncStatuses]);
   const queuedJobCount = useMemo(() => Object.values(jobStatuses).reduce((total, status) => total + sumKinds(status.pending) + sumKinds(status.running), 0), [jobStatuses]);
+  const activeVisibleSourceIds = useMemo(
+    () => visibleSourceIds.filter((sourceId) => {
+      const syncStatus = syncStatuses[sourceId];
+      const jobStatus = jobStatuses[sourceId];
+      return syncStatus?.status === 'running'
+        || (jobStatus ? sumKinds(jobStatus.pending) + sumKinds(jobStatus.running) > 0 : false);
+    }),
+    [jobStatuses, syncStatuses, visibleSourceIds],
+  );
+  const activeVisibleSourceIdKey = activeVisibleSourceIds.join('\u0000');
+  const hasVisibleActiveRemoteWork = activeVisibleSourceIds.length > 0;
   const commandStatusLabel = globalJobStatus.paused
     ? '后台已暂停'
     : playbackLoadReduced
@@ -760,6 +865,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         .then((settings) => {
           if (!disposed) {
             setRemoteCoverLoadPerformanceMode(normalizeRemoteCoverLoadPerformanceMode(settings?.remoteCoverLoadPerformanceMode));
+            setRemoteBackgroundConcurrency(normalizeRemoteBackgroundConcurrency(settings?.remoteBackgroundConcurrency));
             const nextRemoteAlbumMergeStrategy = normalizeRemoteAlbumMergeStrategy(settings?.remoteAlbumMergeStrategy);
             setRemoteAlbumMergeStrategy(nextRemoteAlbumMergeStrategy);
             setPendingRemoteAlbumMergeStrategy(nextRemoteAlbumMergeStrategy);
@@ -772,7 +878,9 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       const detail = event instanceof CustomEvent ? (event.detail as Partial<AppSettings> | null | undefined) : null;
       if (detail && 'remoteCoverLoadPerformanceMode' in detail) {
         setRemoteCoverLoadPerformanceMode(normalizeRemoteCoverLoadPerformanceMode(detail.remoteCoverLoadPerformanceMode));
-        return;
+      }
+      if (detail && 'remoteBackgroundConcurrency' in detail) {
+        setRemoteBackgroundConcurrency(normalizeRemoteBackgroundConcurrency(detail.remoteBackgroundConcurrency));
       }
       if (detail && 'remoteAlbumMergeStrategy' in detail) {
         const nextRemoteAlbumMergeStrategy = normalizeRemoteAlbumMergeStrategy(detail.remoteAlbumMergeStrategy);
@@ -780,7 +888,9 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         setPendingRemoteAlbumMergeStrategy(nextRemoteAlbumMergeStrategy);
         return;
       }
-      loadSettings();
+      if (!detail) {
+        loadSettings();
+      }
     };
 
     loadSettings();
@@ -902,6 +1012,76 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     }
   }, [remoteApi]);
 
+  const refreshVisibleOverview = useCallback(async (sourceIds: string[]): Promise<void> => {
+    if (!remoteApi) {
+      return;
+    }
+
+    const uniqueIds = Array.from(new Set(sourceIds.filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      return;
+    }
+
+    const sourceOverviews = await Promise.all(uniqueIds.map((sourceId) => remoteApi.getOverview(sourceId).catch(() => null)));
+    const updatedSources = sourceOverviews.flatMap((sourceOverview) => sourceOverview?.sources ?? []);
+    if (updatedSources.length > 0) {
+      setOverview((current) => mergeOverviewSources(current, updatedSources));
+    }
+  }, [remoteApi]);
+
+  const updateRemoteBackgroundConcurrencyDraft = useCallback(
+    (key: keyof RemoteBackgroundConcurrencySettings, value: number): void => {
+      setRemoteBackgroundConcurrency((current) => normalizeRemoteBackgroundConcurrency({ ...current, [key]: value }));
+      setMessage(null);
+    },
+    [],
+  );
+
+  const stepRemoteBackgroundConcurrencyDraft = useCallback(
+    (key: keyof RemoteBackgroundConcurrencySettings, delta: number): void => {
+      const field = remoteBackgroundConcurrencyFields.find((item) => item.key === key);
+      if (!field) {
+        return;
+      }
+      setRemoteBackgroundConcurrency((current) => normalizeRemoteBackgroundConcurrency({
+        ...current,
+        [key]: Math.max(field.min, Math.min(field.max, current[key] + delta)),
+      }));
+      setMessage(null);
+    },
+    [],
+  );
+
+  const saveRemoteBackgroundConcurrency = useCallback(async (): Promise<void> => {
+    const nextConcurrency = normalizeRemoteBackgroundConcurrency(remoteBackgroundConcurrency);
+    setRemoteBackgroundConcurrency(nextConcurrency);
+    setRemoteBackgroundConcurrencySaving(true);
+    try {
+      const settings = await appApi?.setSettings?.({ remoteBackgroundConcurrency: nextConcurrency });
+      const savedConcurrency = normalizeRemoteBackgroundConcurrency(settings?.remoteBackgroundConcurrency ?? nextConcurrency);
+      const runtimeLimits = remoteBackgroundConcurrencyToRuntimeLimits(savedConcurrency);
+
+      setRemoteBackgroundConcurrency(savedConcurrency);
+      setGlobalJobStatus((current) => ({
+        ...current,
+        concurrency: remoteBackgroundConcurrencyToJobConcurrency(savedConcurrency, current.playbackActive),
+      }));
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: { remoteBackgroundConcurrency: savedConcurrency } }));
+      if (remoteApi && sources.length > 0) {
+        const statuses = await Promise.all(sources.map((source) => remoteApi.updateRuntimeLimits(source.id, runtimeLimits)));
+        setJobStatuses((current) => ({
+          ...current,
+          ...Object.fromEntries(statuses.map((status) => [status.sourceId, status])),
+        }));
+      }
+      setMessage('后台任务并发已保存；播放中仍会自动降载，空闲后按新并发继续。');
+    } catch (settingsError) {
+      setMessage(settingsError instanceof Error ? settingsError.message : '保存后台任务并发失败。');
+    } finally {
+      setRemoteBackgroundConcurrencySaving(false);
+    }
+  }, [appApi, remoteApi, remoteBackgroundConcurrency, sources]);
+
   const refreshSources = useCallback(async (): Promise<void> => {
     if (!remoteApi) {
       return;
@@ -936,20 +1116,27 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   }, [selectedSourceId, visibleSources]);
 
   useEffect(() => {
-    const hasRunningSync = visibleSourceIds.some((sourceId) => syncStatuses[sourceId]?.status === 'running');
-    const hasRunningJobs = visibleSourceIds.some((sourceId) => {
-      const status = jobStatuses[sourceId];
-      return status ? sumKinds(status.pending) + sumKinds(status.running) > 0 : false;
-    });
-    if ((!hasRunningSync && !hasRunningJobs) || !remoteApi) {
+    if (!hasVisibleActiveRemoteWork || !remoteApi) {
       return undefined;
     }
 
     const timer = window.setInterval(() => {
-      void refreshStatuses(visibleSourceIds, false, true);
+      void refreshStatuses(visibleSourceIds);
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [jobStatuses, refreshStatuses, remoteApi, syncStatuses, visibleSourceIds]);
+  }, [hasVisibleActiveRemoteWork, refreshStatuses, remoteApi, visibleSourceIds]);
+
+  useEffect(() => {
+    if (!hasVisibleActiveRemoteWork || !remoteApi) {
+      return undefined;
+    }
+
+    const sourceIds = activeVisibleSourceIdKey.split('\u0000').filter(Boolean);
+    const timer = window.setInterval(() => {
+      void refreshVisibleOverview(sourceIds);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeVisibleSourceIdKey, hasVisibleActiveRemoteWork, refreshVisibleOverview, remoteApi]);
 
   useEffect(() => {
     let shouldRefreshSources = false;
@@ -1083,6 +1270,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         scanConcurrency: form.scanConcurrency,
         metadataConcurrency: form.metadataConcurrency,
         coverConcurrency: form.coverConcurrency,
+        durationBackfillConcurrency: form.durationBackfillConcurrency,
       };
 
       if (provider === 'webdav' || provider === 'baidu' || provider === 'smb' || provider === 'sshfs') {
@@ -1986,6 +2174,10 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         封面并发
         <input type="number" min={1} max={8} value={form.coverConcurrency} onChange={(event) => updateForm({ coverConcurrency: Number(event.target.value) })} />
       </label>
+      <label>
+        时长回填并发
+        <input type="number" min={1} max={4} value={form.durationBackfillConcurrency} onChange={(event) => updateForm({ durationBackfillConcurrency: Number(event.target.value) })} />
+      </label>
       <div className="remote-source-actions">
         <button type="button" disabled={busy === 'test'} onClick={() => void runFormAction('test')}>
           <Wifi size={15} />测试连接
@@ -2244,7 +2436,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
                 <span><em>上次同步</em><strong>{formatDate(source.lastSyncAt)}</strong></span>
                 <span><em>同步模式</em><strong>{syncModeLabels[source.syncMode]}</strong></span>
                 <span><em>问题项</em><strong>{formatCount(sourceIssueTotal(sourceOverview))}</strong></span>
-                <span><em>后台并发</em><strong>scan {readConfigNumber(source, 'scanConcurrency', 3)} / metadata {readConfigNumber(source, 'metadataConcurrency', 2)} / cover {readConfigNumber(source, 'coverConcurrency', readConfigNumber(source, 'metadataConcurrency', 2))}</strong></span>
+                <span><em>后台并发</em><strong>scan {readConfigNumber(source, 'scanConcurrency', 3)} / metadata {jobStatus.concurrency.metadata} / cover {jobStatus.concurrency.cover}</strong></span>
               </div>
               {source.lastError ? <p className="settings-inline-note">错误：{source.lastError}</p> : null}
               <div className="remote-sync-status">
@@ -2403,7 +2595,44 @@ export const RemoteSourcesPanel = (): JSX.Element => {
           <span><Gauge size={15} />队列 {formatCount(queuedJobCount)}</span>
           <span><ShieldCheck size={15} />{playbackLoadReduced ? '播放保护中' : '常规限速'}</span>
         </div>
-        <div className="remote-job-grid">
+        <div className="remote-background-concurrency-controls" aria-label="后台任务并发设置">
+          {remoteBackgroundConcurrencyFields.map((field) => (
+            <div className="remote-background-concurrency-item" key={field.key}>
+              <span>{field.label}</span>
+              <strong>并发 {remoteBackgroundConcurrency[field.key]}</strong>
+              <div className="remote-background-stepper">
+                <button
+                  type="button"
+                  aria-label={`${field.label}并发减一`}
+                  disabled={remoteBackgroundConcurrency[field.key] <= field.min}
+                  onClick={() => stepRemoteBackgroundConcurrencyDraft(field.key, -1)}
+                >
+                  <Minus size={14} />
+                </button>
+                <input
+                  type="number"
+                  min={field.min}
+                  max={field.max}
+                  value={remoteBackgroundConcurrency[field.key]}
+                  aria-label={field.ariaLabel}
+                  onChange={(event) => updateRemoteBackgroundConcurrencyDraft(field.key, Number(event.target.value))}
+                />
+                <button
+                  type="button"
+                  aria-label={`${field.label}并发加一`}
+                  disabled={remoteBackgroundConcurrency[field.key] >= field.max}
+                  onClick={() => stepRemoteBackgroundConcurrencyDraft(field.key, 1)}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button className="remote-background-apply" type="button" disabled={remoteBackgroundConcurrencySaving} onClick={() => void saveRemoteBackgroundConcurrency()}>
+            <Save size={15} />{remoteBackgroundConcurrencySaving ? '应用中' : '应用后台并发'}
+          </button>
+        </div>
+        <div className="remote-job-grid remote-background-effective-grid">
           {jobKinds.map((kind) => (
             <span key={kind}>
               <em>{jobLabels[kind]}</em>

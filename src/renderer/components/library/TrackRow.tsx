@@ -110,7 +110,9 @@ export const TrackRow = memo(
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
     const shouldShowCover = Boolean(track.coverThumb && track.coverThumb !== failedCoverUrl);
     const coverLoading = track.coverThumb?.startsWith('echo-image://subsonic-cover/') ? 'eager' : 'lazy';
+    const canAdd = Boolean(onAddToPlaylist || onAddToQueue);
     const canDownload = Boolean(onDownload) && track.provider !== 'spotify';
+    const hasRowActions = canAdd || canDownload || Boolean(onOpenMenu);
     const downloadPercent =
       typeof downloadProgress === 'number' && Number.isFinite(downloadProgress)
         ? Math.max(0, Math.min(100, Math.round(downloadProgress)))
@@ -320,43 +322,49 @@ export const TrackRow = memo(
 
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
-        <div className="track-actions" aria-label={t('library.trackRow.actions', { title: track.title })} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
-          <button
-            className="row-action"
-            type="button"
-            aria-label={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylistLabel' : 'library.trackRow.action.addToQueueLabel', { title: track.title })}
-            title={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylist' : 'library.trackRow.action.addToQueue')}
-            disabled={isUnavailable}
-            onClick={onAddToPlaylist ? handleAddToPlaylist : handleAddToQueue}
-          >
-            <ListPlus size={16} />
-          </button>
-          {canDownload ? (
-            <button
-              className="row-action"
-              type="button"
-              aria-label={
-                isDownloading && downloadPercent !== null
-                  ? t('library.trackRow.action.downloadingLabel', { title: track.title, percent: downloadPercent })
-                  : t('library.trackRow.action.downloadLabel', { title: track.title })
-              }
-              title={isDownloading && downloadPercent !== null ? t('library.trackRow.action.downloading', { percent: downloadPercent }) : t('library.trackRow.action.download')}
-              disabled={isUnavailable || isDownloading}
-              onClick={handleDownload}
-            >
-              {isDownloading && downloadPercent !== null ? (
-                <span className="row-action-progress" aria-hidden="true">{downloadPercent}%</span>
-              ) : isDownloading ? (
-                <Loader2 className="spinning-icon" size={16} />
-              ) : (
-                <Download size={16} />
-              )}
-            </button>
-          ) : null}
-          <button className="row-action" type="button" aria-label={t('library.trackRow.action.moreLabel', { title: track.title })} title={t('library.trackRow.action.more')} onClick={handleMoreClick}>
-            <MoreHorizontal size={16} />
-          </button>
-        </div>
+        {hasRowActions ? (
+          <div className="track-actions" aria-label={t('library.trackRow.actions', { title: track.title })} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
+            {canAdd ? (
+              <button
+                className="row-action"
+                type="button"
+                aria-label={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylistLabel' : 'library.trackRow.action.addToQueueLabel', { title: track.title })}
+                title={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylist' : 'library.trackRow.action.addToQueue')}
+                disabled={isUnavailable}
+                onClick={onAddToPlaylist ? handleAddToPlaylist : handleAddToQueue}
+              >
+                <ListPlus size={16} />
+              </button>
+            ) : null}
+            {canDownload ? (
+              <button
+                className="row-action"
+                type="button"
+                aria-label={
+                  isDownloading && downloadPercent !== null
+                    ? t('library.trackRow.action.downloadingLabel', { title: track.title, percent: downloadPercent })
+                    : t('library.trackRow.action.downloadLabel', { title: track.title })
+                }
+                title={isDownloading && downloadPercent !== null ? t('library.trackRow.action.downloading', { percent: downloadPercent }) : t('library.trackRow.action.download')}
+                disabled={isUnavailable || isDownloading}
+                onClick={handleDownload}
+              >
+                {isDownloading && downloadPercent !== null ? (
+                  <span className="row-action-progress" aria-hidden="true">{downloadPercent}%</span>
+                ) : isDownloading ? (
+                  <Loader2 className="spinning-icon" size={16} />
+                ) : (
+                  <Download size={16} />
+                )}
+              </button>
+            ) : null}
+            {onOpenMenu ? (
+              <button className="row-action" type="button" aria-label={t('library.trackRow.action.moreLabel', { title: track.title })} title={t('library.trackRow.action.more')} onClick={handleMoreClick}>
+                <MoreHorizontal size={16} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   },

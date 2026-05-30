@@ -35,7 +35,7 @@ afterEach(() => {
 
 describe('TrackRow', () => {
   it('renders the polished row with cover, copy, hifi tags, duration, and actions', () => {
-    render(<TrackRow isPlaying={false} track={track()} />);
+    render(<TrackRow isPlaying={false} track={track()} onAddToQueue={vi.fn()} onOpenMenu={vi.fn()} />);
 
     expect(screen.getByText('Afraid')).toBeTruthy();
     expect(screen.getByText('2hollis / Nate Sib')).toBeTruthy();
@@ -47,6 +47,14 @@ describe('TrackRow', () => {
     expect(screen.getByText('2:58')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Add to queue Afraid|加入队列 Afraid/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /More Afraid|更多 Afraid/ })).toBeTruthy();
+  });
+
+  it('hides row actions when no action handlers are provided', () => {
+    render(<TrackRow isPlaying={false} track={track()} />);
+
+    expect(screen.queryByRole('button', { name: /Add to queue Afraid|加入队列 Afraid/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Download Afraid|下载 Afraid/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /More Afraid|更多 Afraid/ })).toBeNull();
   });
 
   it('does not style 24bit 48kHz files as Hi-Res', () => {
@@ -135,7 +143,7 @@ describe('TrackRow', () => {
 
   it('calls onPlay once from row click without action button bubbling', () => {
     const onPlay = vi.fn();
-    render(<TrackRow isPlaying={false} track={track()} onPlay={onPlay} />);
+    render(<TrackRow isPlaying={false} track={track()} onAddToQueue={vi.fn()} onPlay={onPlay} />);
 
     fireEvent.click(screen.getByRole('listitem'));
     expect(onPlay).toHaveBeenCalledTimes(1);

@@ -4735,6 +4735,97 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 18.25 });
   });
 
+  it('does not flash loading when resuming a paused HTTP stream from a prewarmed output host', async () => {
+    const streamUrl = 'https://cdn.example.test/song.flac';
+    const decoder = new class extends FakeDecoder {
+      private resumeReady: (() => void) | null = null;
+
+      override decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
+        this.decodeRequests.push(request);
+        const stream = new PassThrough();
+        const stop = vi.fn(() => {
+          stream.destroy();
+        });
+
+        if (this.decodeRequests.length === 1) {
+          queueMicrotask(() => {
+            if (!stream.destroyed) {
+              stream.write(pcmBuffer([0, 0]));
+            }
+          });
+          return { stream, stop, ready: Promise.resolve(), done: new Promise(() => undefined) };
+        }
+
+        return {
+          stream,
+          stop,
+          ready: new Promise<void>((resolve) => {
+            this.resumeReady = () => {
+              stream.write(pcmBuffer([0, 0]));
+              resolve();
+              this.resumeReady = null;
+            };
+          }),
+          done: new Promise(() => undefined),
+        };
+      }
+
+      releaseResumeReady(): void {
+        if (!this.resumeReady) {
+          throw new Error('resume decoder ready was not pending');
+        }
+        this.resumeReady();
+      }
+
+      hasResumeReady(): boolean {
+        return this.resumeReady !== null;
+      }
+    }(new Map([[streamUrl, probe(streamUrl, 44100)]]));
+    const bridges: FakeBridge[] = [];
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new FakeBridge(44100);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+    });
+
+    const initialPlay = session.playLocalFile({
+      filePath: streamUrl,
+      trackId: 'streaming:netease:track',
+      output: { outputMode: 'shared' },
+      probe: { durationSeconds: 120, fileSampleRate: 44100, channels: 2, codec: 'FLAC' },
+    });
+    expect(session.getStatus().state).toBe('loading');
+    await initialPlay;
+
+    bridges[0].positionSeconds = 18.25;
+    await session.pause();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const resumeStates: string[] = [];
+    session.on('status', (status) => {
+      resumeStates.push(status.state);
+    });
+
+    const resumed = session.play();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(session.getStatus()).toMatchObject({ state: 'paused', positionSeconds: 18.25 });
+    expect(resumeStates).not.toContain('loading');
+
+    await expect.poll(() => decoder.hasResumeReady()).toBe(true);
+    decoder.releaseResumeReady();
+    await expect(resumed).resolves.toMatchObject({ state: 'playing', currentTrackId: 'streaming:netease:track' });
+    expect(resumeStates).not.toContain('loading');
+    expect(resumeStates.at(-1)).toBe('playing');
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({ filePath: streamUrl, startSeconds: 18.25 });
+  });
+
   it('fades native output back in when resuming from a prewarmed pause', async () => {
     const fadeWait = vi.fn(async () => undefined);
     audioCoreAppSettingsMock.current = {

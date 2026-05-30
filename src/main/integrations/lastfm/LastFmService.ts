@@ -51,6 +51,9 @@ type LastFmServiceClient = Pick<
 const requestBackoffMs = 30_000;
 const nowPlayingDuplicateMs = 30_000;
 const terminalStates = new Set<AudioStatus['state']>(['idle', 'stopped', 'ended', 'error']);
+const isStreamingValue = (value: unknown): boolean => typeof value === 'string' && value.startsWith('streaming:');
+const isStreamingStatus = (status: AudioStatus): boolean =>
+  isStreamingValue(status.currentTrackId) || isStreamingValue(status.currentFilePath);
 
 const defaultLogger = (): LastFmLogger => ({
   info: (message: string, payload?: unknown): void => {
@@ -415,10 +418,18 @@ export class LastFmService {
   }
 
   private identityFromStatus(status: AudioStatus): string {
+    if (isStreamingStatus(status)) {
+      return '';
+    }
+
     return buildLastFmTrackIdentity(this.trackFromStatus(status), status);
   }
 
   private payloadFromStatus(status: AudioStatus): LastFmTrackPayload | null {
+    if (isStreamingStatus(status)) {
+      return null;
+    }
+
     return buildLastFmTrackPayload(this.trackFromStatus(status), status);
   }
 

@@ -20,6 +20,7 @@ import type {
   DownloadToolsStatus,
 } from '../../shared/types/downloads';
 import type { AccountCredentials, AccountProvider } from '../../shared/types/accounts';
+import type { AppSettings } from '../../shared/types/appSettings';
 import { streamingProviderNames, type StreamingProviderName } from '../../shared/types/streaming';
 import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
 import { getAccountService } from '../accounts/AccountService';
@@ -29,6 +30,7 @@ import { getNcmConverter } from '../library/NcmConverter';
 import { importOsuArchiveAsMp3Queued } from '../library/OsuArchiveImport';
 import { writeEmbeddedCoverArt, writeEmbeddedTrackTags } from '../library/TagWriter';
 import { getMvService } from '../mv/MvService';
+import { getAppSettings } from '../app/appSettings';
 import {
   isProtectedMusicDownloadProvider,
   protectedMusicDownloadBlockedMessage,
@@ -219,6 +221,7 @@ type DownloadServiceDependencies = {
   saveSettings?: (settings: DownloadSettings) => void;
   loadJobs?: () => PersistedDownloadState | null;
   saveJobs?: (state: PersistedDownloadState) => void;
+  loadAppSettings?: () => Pick<AppSettings, 'downloadsFeatureUnlocked'> | null;
   getAccountCredentials?: (provider: AccountProvider) => AccountCredentials;
   writeEmbeddedCoverArt?: typeof writeEmbeddedCoverArt;
   writeEmbeddedTrackTags?: typeof writeEmbeddedTrackTags;
@@ -654,7 +657,7 @@ export class DownloadService extends EventEmitter {
     const protectedMusicProvider = protectedMusicProviderFromDownloadRequest(sourceUrl, webpageUrl, streamingProvider);
     if (
       protectedMusicProvider &&
-      !verifyDownloadAuthorizationToken(downloadAuthorizationToken, {
+      !this.isProtectedMusicDownloadAuthorized(downloadAuthorizationToken, {
         provider: protectedMusicProvider,
         providerTrackId: streamingProviderTrackId,
         url: sourceUrl,
@@ -1323,13 +1326,40 @@ export class DownloadService extends EventEmitter {
     }
 
     if (
-      !verifyDownloadAuthorizationToken(options?.downloadAuthorizationToken, {
+      !this.isProtectedMusicDownloadAuthorized(options?.downloadAuthorizationToken, {
         provider: protectedMusicProvider,
         providerTrackId: options?.streamingProviderTrackId,
         url: job.sourceUrl,
       })
     ) {
       throw new Error(protectedMusicDownloadBlockedMessage);
+    }
+  }
+
+  private isProtectedMusicDownloadAuthorized(
+    token: string | null | undefined,
+    input: {
+      provider: ProtectedMusicDownloadProvider;
+      providerTrackId: string | null | undefined;
+      url: string;
+    },
+  ): boolean {
+    if (verifyDownloadAuthorizationToken(token, input)) {
+      return true;
+    }
+
+    return this.canBypassProtectedMusicAuthorizationForDevelopment();
+  }
+
+  private canBypassProtectedMusicAuthorizationForDevelopment(): boolean {
+    if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+      return false;
+    }
+
+    try {
+      return (this.dependencies.loadAppSettings?.() ?? getAppSettings()).downloadsFeatureUnlocked === true;
+    } catch {
+      return false;
     }
   }
 

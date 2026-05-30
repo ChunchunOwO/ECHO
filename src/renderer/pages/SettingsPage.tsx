@@ -4373,16 +4373,16 @@ export const SettingsPage = (): JSX.Element => {
         id: 'row-low-load-playback',
         sectionKey: 'playback',
         targetId: 'settings-row-low-load-playback',
-        title: '低负载播放模式',
-        description: '打开后播放期间禁用实时频谱、频繁播放页刷新、ReplayGain/BPM 重分析、逐字歌词高频刷新、自动歌词深搜、封面/艺人图抓取和 MV 预加载。',
+        title: t('audioDrawer.option.lowLoadPlaybackMode'),
+        description: t('audioDrawer.option.lowLoadPlaybackModeDescription'),
         terms: ['低负载播放模式', '低负载', '卡死', '鼠标卡死', 'CPU', 'IO', 'FFT', 'ReplayGain', 'BPM', '歌词深搜', '封面', '艺人图', 'MV', 'low load', 'performance', 'mouse freeze'],
       },
       {
         id: 'row-low-load-playback-enhancements',
         sectionKey: 'playback',
         targetId: 'settings-row-low-load-playback-enhancements',
-        title: '低负载增强保护',
-        description: '默认关闭。仅在低负载播放模式开启时生效，会进一步降低轮询、桌面歌词、诊断和后台库任务负载。',
+        title: t('audioDrawer.option.lowLoadPlaybackEnhancements'),
+        description: t('audioDrawer.option.lowLoadPlaybackEnhancementsDescription'),
         terms: ['低负载增强保护', '增强低负载', '增强保护', '播放轮询', '桌面歌词', '诊断降频', '后台库任务', 'low load enhanced', 'enhanced low load'],
       },
       {
@@ -4552,13 +4552,21 @@ export const SettingsPage = (): JSX.Element => {
       },
     ];
 
-    const entries = [...rowEntries, ...sectionEntries].filter(
-      (entry) => mysteriousKeyVisible || entry.targetId !== 'settings-row-mysterious-key',
-    );
+    const entries = [...rowEntries, ...sectionEntries].filter((entry) => {
+      if (!mysteriousKeyVisible && entry.targetId === 'settings-row-mysterious-key') {
+        return false;
+      }
+
+      if (appSettings?.downloadsFeatureUnlocked !== true && entry.targetId === 'settings-row-streaming-download-actions') {
+        return false;
+      }
+
+      return true;
+    });
     return windowsIntegrationAvailable
       ? entries
       : entries.filter((entry) => entry.targetId !== 'settings-row-smtc' && entry.targetId !== 'settings-row-taskbar-playback');
-  }, [mysteriousKeyVisible, t, windowsIntegrationAvailable]);
+  }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, t, windowsIntegrationAvailable]);
 
   const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
 
@@ -9651,6 +9659,38 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
+                id="settings-row-low-load-playback"
+                highlighted={highlightedSettingId === 'settings-row-low-load-playback'}
+                title={t('audioDrawer.option.lowLoadPlaybackMode')}
+                description={t('audioDrawer.option.lowLoadPlaybackModeDescription')}
+              >
+                <ToggleButton
+                  active={appSettings?.lowLoadPlaybackModeEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      lowLoadPlaybackModeEnabled: appSettings?.lowLoadPlaybackModeEnabled !== true,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-low-load-playback-enhancements"
+                highlighted={highlightedSettingId === 'settings-row-low-load-playback-enhancements'}
+                title={t('audioDrawer.option.lowLoadPlaybackEnhancements')}
+                description={t('audioDrawer.option.lowLoadPlaybackEnhancementsDescription')}
+              >
+                <ToggleButton
+                  active={appSettings?.lowLoadPlaybackEnhancementsEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      lowLoadPlaybackEnhancementsEnabled: appSettings?.lowLoadPlaybackEnhancementsEnabled !== true,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title={t('settings.playback.advancedPanel.title')}
                 description={t('settings.playback.advancedPanel.description')}
@@ -9670,38 +9710,6 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               {playbackAdvancedPanelExpanded ? (
                 <>
-              <SettingRow
-                id="settings-row-low-load-playback"
-                highlighted={highlightedSettingId === 'settings-row-low-load-playback'}
-                title="低负载播放模式"
-                description="打开后播放期间禁用实时频谱、频繁播放页刷新、ReplayGain/BPM 重分析、逐字歌词高频刷新、自动歌词深搜、封面/艺人图抓取和 MV 预加载。"
-              >
-                <ToggleButton
-                  active={appSettings?.lowLoadPlaybackModeEnabled === true}
-                  disabled={!appSettings}
-                  onClick={() =>
-                    patchAppSettings({
-                      lowLoadPlaybackModeEnabled: appSettings?.lowLoadPlaybackModeEnabled !== true,
-                    })
-                  }
-                />
-              </SettingRow>
-              <SettingRow
-                id="settings-row-low-load-playback-enhancements"
-                highlighted={highlightedSettingId === 'settings-row-low-load-playback-enhancements'}
-                title="低负载增强保护"
-                description="默认关闭。仅在低负载播放模式开启时生效，会进一步降低轮询、桌面歌词、诊断和后台库任务负载。"
-              >
-                <ToggleButton
-                  active={appSettings?.lowLoadPlaybackEnhancementsEnabled === true}
-                  disabled={!appSettings}
-                  onClick={() =>
-                    patchAppSettings({
-                      lowLoadPlaybackEnhancementsEnabled: appSettings?.lowLoadPlaybackEnhancementsEnabled !== true,
-                    })
-                  }
-                />
-              </SettingRow>
               <SettingRow title={t('settings.playback.troubleshooting.title')} description={t('settings.playback.troubleshooting.description')}>
                 <div className="settings-chip-row">
                   <button

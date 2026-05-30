@@ -286,6 +286,30 @@ describe('LastFmService', () => {
     expect(disconnected.client.updateNowPlaying).not.toHaveBeenCalled();
   });
 
+  it('skips Last.fm updates for streaming playback', async () => {
+    const { client, service, advance } = createHarness();
+
+    service.updateFromAudioStatus(
+      makeStatus({
+        currentFilePath: 'streaming:netease:3381920779',
+        currentTrackId: 'streaming:netease:3381920779',
+      }),
+    );
+    advance(60_000);
+    service.updateFromAudioStatus(
+      makeStatus({
+        currentFilePath: 'https://example.test/audio.flac',
+        currentTrackId: 'streaming:netease:3381920779',
+        positionSeconds: 60,
+      }),
+    );
+    await flushPromises();
+
+    expect(service.getStatus().activeTrack).toBeNull();
+    expect(client.updateNowPlaying).not.toHaveBeenCalled();
+    expect(client.scrobble).not.toHaveBeenCalled();
+  });
+
   it('marks invalid session as disconnected without throwing', async () => {
     const harness = createHarness();
     const { client, service, advance } = harness;

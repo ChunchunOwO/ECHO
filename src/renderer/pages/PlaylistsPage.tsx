@@ -51,7 +51,9 @@ const emptyStreamingFavoritesSnapshot = (): StreamingFavoritesSnapshot => ({
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const playlistItemDragMime = 'application/x-echo-playlist-item-id';
 const playlistListDragMime = 'application/x-echo-playlist-id';
+const favoriteListDragMime = 'application/x-echo-favorite-list-id';
 const playlistListOrderMemoryKey = 'echo-next.playlist-list-order.v1';
+const favoriteListOrderMemoryKey = 'echo-next.streaming-favorite-list-order.v1';
 const runningDownloadStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const failedDownloadStatuses = new Set<DownloadJobStatus>(['failed', 'cancelled']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
@@ -84,6 +86,10 @@ type PlaylistDownloadMemory = {
   session: PlaylistDownloadSession | null;
   downloadJobIdsByTrackId: Record<string, string>;
 };
+
+type StreamingFavoriteListEntry =
+  | { type: 'provider'; id: string; provider: StreamingFavoriteProviderName; label: string; count: number }
+  | { type: 'collection'; id: string; collection: StreamingFavoriteCollection; providerLabel: string; count: number };
 
 const yieldToUi = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
 const playlistDownloadMemoryKey = 'echo-next.playlist-download-session.v1';
@@ -229,6 +235,73 @@ const movePlaylistId = (items: LibraryPlaylist[], sourceId: string, targetId: st
 
   nextItems.splice(Math.max(0, Math.min(toIndex, nextItems.length)), 0, movedItem);
   return nextItems.map((playlist) => playlist.id);
+};
+
+const readFavoriteListOrderMemory = (): string[] => {
+  try {
+    const raw = window.localStorage.getItem(favoriteListOrderMemoryKey);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as { orderedIds?: unknown } | unknown[];
+    return Array.isArray(parsed) ? uniquePlaylistIds(parsed) : uniquePlaylistIds(parsed.orderedIds);
+  } catch {
+    return [];
+  }
+};
+
+const writeFavoriteListOrderMemory = (orderedIds: string[]): void => {
+  try {
+    window.localStorage.setItem(
+      favoriteListOrderMemoryKey,
+      JSON.stringify({
+        version: 1,
+        orderedIds: uniquePlaylistIds(orderedIds),
+      }),
+    );
+  } catch {
+    // Favorite list order memory is only a sidebar preference.
+  }
+};
+
+const orderFavoriteListEntries = (items: StreamingFavoriteListEntry[], orderedIds: string[]): StreamingFavoriteListEntry[] => {
+  if (items.length <= 1 || orderedIds.length === 0) {
+    return items;
+  }
+
+  const orderById = new Map(orderedIds.map((id, index) => [id, index] as const));
+  return [...items].sort((left, right) => {
+    const leftOrder = orderById.get(left.id);
+    const rightOrder = orderById.get(right.id);
+    if (leftOrder === undefined && rightOrder === undefined) {
+      return 0;
+    }
+    if (leftOrder === undefined) {
+      return 1;
+    }
+    if (rightOrder === undefined) {
+      return -1;
+    }
+    return leftOrder - rightOrder;
+  });
+};
+
+const moveFavoriteListEntryId = (items: StreamingFavoriteListEntry[], sourceId: string, targetId: string): string[] | null => {
+  const fromIndex = items.findIndex((item) => item.id === sourceId);
+  const toIndex = items.findIndex((item) => item.id === targetId);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+    return null;
+  }
+
+  const nextItems = [...items];
+  const [movedItem] = nextItems.splice(fromIndex, 1);
+  if (!movedItem) {
+    return null;
+  }
+
+  nextItems.splice(Math.max(0, Math.min(toIndex, nextItems.length)), 0, movedItem);
+  return nextItems.map((item) => item.id);
 };
 
 const isLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
@@ -433,6 +506,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [playlistOrderIds, setPlaylistOrderIds] = useState<string[]>(() => readPlaylistListOrderMemory());
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [streamingFavorites, setStreamingFavorites] = useState<StreamingFavoritesSnapshot>(() => emptyStreamingFavoritesSnapshot());
+  const [favoriteListOrderIds, setFavoriteListOrderIds] = useState<string[]>(() => readFavoriteListOrderMemory());
   const [selectedFavoriteListId, setSelectedFavoriteListId] = useState<string>(defaultFavoriteSelectionId);
   const [itemsPage, setItemsPage] = useState<LibraryPage<LibraryPlaylistItem>>(emptyItemsPage());
   const [isLoading, setIsLoading] = useState(false);
@@ -464,6 +538,8 @@ export const PlaylistsPage = (): JSX.Element => {
   const [trackMenu, setTrackMenu] = useState<{ track: LibraryTrack; position: { x: number; y: number } } | null>(null);
   const [draggedPlaylistId, setDraggedPlaylistId] = useState<string | null>(null);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState<string | null>(null);
+  const [draggedFavoriteListId, setDraggedFavoriteListId] = useState<string | null>(null);
+  const [dropTargetFavoriteListId, setDropTargetFavoriteListId] = useState<string | null>(null);
   const [draggedPlaylistItemId, setDraggedPlaylistItemId] = useState<string | null>(null);
   const [dropTargetPlaylistItemId, setDropTargetPlaylistItemId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
@@ -474,11 +550,33 @@ export const PlaylistsPage = (): JSX.Element => {
   const playlistMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrack, currentTrackId, playlistPlayback, playPlaylistSequence, exitPlaylistSequence, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
   const orderedPlaylists = useMemo(() => orderPlaylists(playlists, playlistOrderIds), [playlistOrderIds, playlists]);
+  const favoriteListEntries = useMemo<StreamingFavoriteListEntry[]>(() => {
+    const providerEntries = streamingFavoriteProviders.map((providerItem) => ({
+      type: 'provider' as const,
+      id: favoriteProviderSelectionId(providerItem.value),
+      provider: providerItem.value,
+      label: providerItem.label,
+      count: streamingFavorites.providers[providerItem.value]?.length ?? 0,
+    }));
+    const collectionEntries = (streamingFavorites.collections ?? []).map((collection) => ({
+      type: 'collection' as const,
+      id: favoriteCollectionSelectionId(collection.id),
+      collection,
+      providerLabel: streamingFavoriteProviders.find((item) => item.value === collection.provider)?.label ?? collection.provider,
+      count: collection.tracks.length,
+    }));
+    return [...providerEntries, ...collectionEntries];
+  }, [streamingFavorites]);
+  const orderedFavoriteListEntries = useMemo(
+    () => orderFavoriteListEntries(favoriteListEntries, favoriteListOrderIds),
+    [favoriteListEntries, favoriteListOrderIds],
+  );
   const selectedPlaylist = useMemo(
     () => orderedPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? orderedPlaylists[0] ?? null,
     [orderedPlaylists, selectedPlaylistId],
   );
   const canReorderPlaylistList = playlistPanelView === 'local' && orderedPlaylists.length > 1;
+  const canReorderFavoriteList = playlistPanelView === 'streamingFavorites' && orderedFavoriteListEntries.length > 1;
   const isSelectedPlaylistNeteaseDailyRecommend =
     selectedPlaylist?.sourceProvider === 'netease' && selectedPlaylist.sourcePlaylistId === neteaseDailyRecommendSourcePlaylistId;
   const isSelectedPlaylistProtected = selectedPlaylist?.kind === 'system';
@@ -1668,6 +1766,67 @@ export const PlaylistsPage = (): JSX.Element => {
     setDropTargetPlaylistId(null);
   }, []);
 
+  const handleFavoriteListDragStart = useCallback(
+    (event: DragEvent<HTMLButtonElement>, entry: StreamingFavoriteListEntry): void => {
+      if (!canReorderFavoriteList) {
+        event.preventDefault();
+        return;
+      }
+
+      setDraggedFavoriteListId(entry.id);
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(favoriteListDragMime, entry.id);
+      event.dataTransfer.setData('text/plain', entry.id);
+    },
+    [canReorderFavoriteList],
+  );
+
+  const handleFavoriteListDragOver = useCallback(
+    (event: DragEvent<HTMLButtonElement>, entry: StreamingFavoriteListEntry): void => {
+      if (!canReorderFavoriteList || !draggedFavoriteListId || draggedFavoriteListId === entry.id) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setDropTargetFavoriteListId((current) => (current === entry.id ? current : entry.id));
+    },
+    [canReorderFavoriteList, draggedFavoriteListId],
+  );
+
+  const handleFavoriteListDrop = useCallback(
+    (event: DragEvent<HTMLButtonElement>, targetEntry: StreamingFavoriteListEntry): void => {
+      event.preventDefault();
+      const sourceEntryId =
+        draggedFavoriteListId ||
+        event.dataTransfer.getData(favoriteListDragMime) ||
+        event.dataTransfer.getData('text/plain');
+
+      setDraggedFavoriteListId(null);
+      setDropTargetFavoriteListId(null);
+
+      if (!canReorderFavoriteList || !sourceEntryId || sourceEntryId === targetEntry.id) {
+        return;
+      }
+
+      const nextOrderIds = moveFavoriteListEntryId(orderedFavoriteListEntries, sourceEntryId, targetEntry.id);
+      if (!nextOrderIds) {
+        return;
+      }
+
+      setFavoriteListOrderIds(nextOrderIds);
+      writeFavoriteListOrderMemory(nextOrderIds);
+      setError(null);
+      setStatusMessage('流媒体收藏顺序已保存');
+    },
+    [canReorderFavoriteList, draggedFavoriteListId, orderedFavoriteListEntries],
+  );
+
+  const handleFavoriteListDragEnd = useCallback((): void => {
+    setDraggedFavoriteListId(null);
+    setDropTargetFavoriteListId(null);
+  }, []);
+
   const isTrackReorderable = useCallback(
     (track: LibraryTrack): boolean => canReorderSelectedPlaylist && Boolean(track.playlistItemId),
     [canReorderSelectedPlaylist],
@@ -1801,31 +1960,6 @@ export const PlaylistsPage = (): JSX.Element => {
       setError(playError instanceof Error ? playError.message : String(playError));
     }
   };
-
-  const handleAddTrackToQueue = (track: LibraryTrack): void => {
-    if (playlistPanelView === 'streamingFavorites') {
-      if (!track.unavailable) {
-        appendToQueue(track, queueSource);
-      }
-      return;
-    }
-
-    const item = itemsPage.items.find((candidate) => candidate.id === track.playlistItemId);
-    const playableTrack = item ? itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined) : null;
-    if (playableTrack && !playableTrack.unavailable) {
-      appendToQueue(playableTrack, queueSource);
-    }
-  };
-
-  const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
-    if (playlistPanelView === 'streamingFavorites' || isSelectedPlaylistRemote) {
-      return;
-    }
-
-    if (!track.unavailable) {
-      setTrackMenu({ track, position });
-    }
-  }, [isSelectedPlaylistRemote, playlistPanelView]);
 
   const handleToggleLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
     if (playlistPanelView === 'streamingFavorites') {
@@ -2203,45 +2337,30 @@ export const PlaylistsPage = (): JSX.Element => {
             </form>
 
             <div className="playlist-list playlist-list--favorites">
-              {streamingFavoriteProviders.map((providerItem) => {
-                const count = streamingFavorites.providers[providerItem.value]?.length ?? 0;
-                const selectionId = favoriteProviderSelectionId(providerItem.value);
+              {orderedFavoriteListEntries.map((entry) => {
                 return (
                   <button
                     className="playlist-list-item"
-                    data-active={selectionId === selectedFavoriteListId ? 'true' : undefined}
-                    key={providerItem.value}
+                    data-active={entry.id === selectedFavoriteListId ? 'true' : undefined}
+                    data-dragging={draggedFavoriteListId === entry.id ? 'true' : undefined}
+                    data-drop-target={dropTargetFavoriteListId === entry.id ? 'true' : undefined}
+                    data-reorderable={canReorderFavoriteList ? 'true' : undefined}
+                    draggable={canReorderFavoriteList}
+                    key={entry.id}
                     type="button"
-                    onClick={() => setSelectedFavoriteListId(selectionId)}
+                    onDragEnd={handleFavoriteListDragEnd}
+                    onDragOver={(event) => handleFavoriteListDragOver(event, entry)}
+                    onDragStart={(event) => handleFavoriteListDragStart(event, entry)}
+                    onDrop={(event) => handleFavoriteListDrop(event, entry)}
+                    onClick={() => setSelectedFavoriteListId(entry.id)}
                   >
-                    <Heart size={15} />
+                    <GripVertical className="playlist-list-drag-handle" size={15} aria-hidden="true" />
                     <span>
                       <strong>
-                        <span>{providerItem.label}</span>
+                        <span>{entry.type === 'provider' ? entry.label : entry.collection.name}</span>
+                        {entry.type === 'collection' ? <em>{entry.providerLabel}</em> : null}
                       </strong>
-                      <small>{count} favorites</small>
-                    </span>
-                  </button>
-                );
-              })}
-              {(streamingFavorites.collections ?? []).map((collection: StreamingFavoriteCollection) => {
-                const providerLabel = streamingFavoriteProviders.find((item) => item.value === collection.provider)?.label ?? collection.provider;
-                const selectionId = favoriteCollectionSelectionId(collection.id);
-                return (
-                  <button
-                    className="playlist-list-item"
-                    data-active={selectionId === selectedFavoriteListId ? 'true' : undefined}
-                    key={collection.id}
-                    type="button"
-                    onClick={() => setSelectedFavoriteListId(selectionId)}
-                  >
-                    <Heart size={15} />
-                    <span>
-                      <strong>
-                        <span>{collection.name}</span>
-                        <em>{providerLabel}</em>
-                      </strong>
-                      <small>{collection.tracks.length} favorites</small>
+                      <small>{entry.count} favorites</small>
                     </span>
                   </button>
                 );
@@ -2332,10 +2451,8 @@ export const PlaylistsPage = (): JSX.Element => {
               currentTrackId={currentTrackId}
               canLoadMore={false}
               onEndReached={() => undefined}
-              onAddToQueue={handleAddTrackToQueue}
               likedTrackIds={visibleLikedTrackIds}
               onToggleLiked={(track) => void handleToggleLiked(track)}
-              onOpenTrackMenu={() => undefined}
               isTrackDraggable={() => false}
               draggedTrackId={null}
               dropTargetTrackId={null}
@@ -2582,13 +2699,11 @@ export const PlaylistsPage = (): JSX.Element => {
               currentTrackId={currentTrackId}
               canLoadMore={itemsPage.hasMore && !isLoading}
               onEndReached={handleLoadMore}
-              onAddToQueue={handleAddTrackToQueue}
               onDownload={canDownloadSelectedPlaylist ? handleDownloadTrack : undefined}
               downloadingTrackIds={downloadingTrackIds}
               downloadProgressByTrackId={downloadProgressByTrackId}
               likedTrackIds={visibleLikedTrackIds}
               onToggleLiked={(track) => void handleToggleLiked(track)}
-              onOpenTrackMenu={handleOpenTrackMenu}
               isTrackDraggable={isTrackReorderable}
               draggedTrackId={draggedPlaylistItemId}
               dropTargetTrackId={dropTargetPlaylistItemId}

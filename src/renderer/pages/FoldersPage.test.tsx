@@ -168,6 +168,18 @@ const renderFoldersPage = () =>
     </I18nProvider>,
   );
 
+const dragDataTransfer = () => {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: '',
+    effectAllowed: '',
+    getData: vi.fn((type: string) => data.get(type) ?? ''),
+    setData: vi.fn((type: string, value: string) => {
+      data.set(type, value);
+    }),
+  };
+};
+
 let libraryMock: {
   getFolderOverviews: ReturnType<typeof vi.fn>;
   getFolderChildren: ReturnType<typeof vi.fn>;
@@ -280,6 +292,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   resetLibraryScanSessionForTests();
 });
@@ -325,6 +338,33 @@ describe('FoldersPage', () => {
         }),
       ),
     );
+  });
+
+  it('remembers local root folder order after dragging folders', async () => {
+    libraryMock.getFolderOverviews.mockResolvedValue([
+      overview({ id: 'folder-1', name: 'Music A', path: 'D:\\Music A' }),
+      overview({ id: 'folder-2', name: 'Music B', path: 'D:\\Music B' }),
+      overview({ id: 'folder-3', name: 'Music C', path: 'D:\\Music C' }),
+    ]);
+
+    const firstRender = renderFoldersPage();
+    const getFolderNames = (): string[] =>
+      Array.from(document.querySelectorAll('.folder-root-button strong')).map((element) => element.textContent ?? '');
+
+    await waitFor(() => expect(getFolderNames()).toEqual(['Music A', 'Music B', 'Music C']));
+
+    const dataTransfer = dragDataTransfer();
+    fireEvent.dragStart(screen.getByRole('button', { name: /Music A/i }), { dataTransfer });
+    fireEvent.dragOver(screen.getByRole('button', { name: /Music B/i }), { dataTransfer });
+    fireEvent.drop(screen.getByRole('button', { name: /Music B/i }), { dataTransfer });
+
+    await waitFor(() => expect(getFolderNames()).toEqual(['Music B', 'Music A', 'Music C']));
+    expect(window.localStorage.getItem('echo-next.folder-root-order.v1')).toContain('folder-2');
+
+    firstRender.unmount();
+    renderFoldersPage();
+
+    await waitFor(() => expect(getFolderNames()).toEqual(['Music B', 'Music A', 'Music C']));
   });
 
   it('marks a single folder cover so it can fill the cover tile', async () => {

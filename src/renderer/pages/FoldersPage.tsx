@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, DragEvent } from 'react';
 import {
   ChevronRight,
   Folder,
   FolderOpen,
   FolderPlus,
+  GripVertical,
   ListPlus,
   Play,
   RefreshCw,
@@ -88,6 +89,94 @@ const bulkPageSize = 500;
 const maxBulkTracks = 1000;
 const terminalStatuses = new Set<LibraryScanStatus['status']>(['completed', 'failed', 'cancelled']);
 const runningStatuses = new Set<LibraryScanStatus['status']>(['queued', 'running']);
+const folderRootDragMime = 'application/x-echo-folder-root-id';
+const folderRootOrderMemoryKey = 'echo-next.folder-root-order.v1';
+
+const uniqueFolderRootIds = (ids: unknown): string[] => {
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of ids) {
+    if (typeof id !== 'string' || !id || seen.has(id)) {
+      continue;
+    }
+
+    seen.add(id);
+    result.push(id);
+  }
+
+  return result;
+};
+
+const readFolderRootOrderMemory = (): string[] => {
+  try {
+    const raw = window.localStorage.getItem(folderRootOrderMemoryKey);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as { orderedIds?: unknown } | unknown[];
+    return Array.isArray(parsed) ? uniqueFolderRootIds(parsed) : uniqueFolderRootIds(parsed.orderedIds);
+  } catch {
+    return [];
+  }
+};
+
+const writeFolderRootOrderMemory = (orderedIds: string[]): void => {
+  try {
+    window.localStorage.setItem(
+      folderRootOrderMemoryKey,
+      JSON.stringify({
+        version: 1,
+        orderedIds: uniqueFolderRootIds(orderedIds),
+      }),
+    );
+  } catch {
+    // Folder order memory is a sidebar preference; folder data stays in the library database.
+  }
+};
+
+const orderFolderOverviews = (items: LibraryFolderOverview[], orderedIds: string[]): LibraryFolderOverview[] => {
+  if (items.length <= 1 || orderedIds.length === 0) {
+    return items;
+  }
+
+  const orderById = new Map(orderedIds.map((id, index) => [id, index] as const));
+  return [...items].sort((left, right) => {
+    const leftOrder = orderById.get(left.id);
+    const rightOrder = orderById.get(right.id);
+    if (leftOrder === undefined && rightOrder === undefined) {
+      return 0;
+    }
+    if (leftOrder === undefined) {
+      return 1;
+    }
+    if (rightOrder === undefined) {
+      return -1;
+    }
+    return leftOrder - rightOrder;
+  });
+};
+
+const moveFolderRootId = (items: LibraryFolderOverview[], sourceId: string, targetId: string): string[] | null => {
+  const fromIndex = items.findIndex((item) => item.id === sourceId);
+  const toIndex = items.findIndex((item) => item.id === targetId);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+    return null;
+  }
+
+  const nextItems = [...items];
+  const [movedItem] = nextItems.splice(fromIndex, 1);
+  if (!movedItem) {
+    return null;
+  }
+
+  nextItems.splice(Math.max(0, Math.min(toIndex, nextItems.length)), 0, movedItem);
+  return nextItems.map((item) => item.id);
+};
 
 const remoteProviderLabels = {
   webdav: 'WebDAV / AList',
@@ -438,6 +527,7 @@ export const FoldersPage = (): JSX.Element => {
   const remoteApi = getRemoteSourcesBridge();
   const [mode, setMode] = useState<FolderMode>('local');
   const [overviews, setOverviews] = useState<LibraryFolderOverview[]>([]);
+  const [folderRootOrderIds, setFolderRootOrderIds] = useState<string[]>(() => readFolderRootOrderMemory());
   const [childrenByParent, setChildrenByParent] = useState<Record<string, LibraryFolderNode[]>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
@@ -465,6 +555,8 @@ export const FoldersPage = (): JSX.Element => {
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [draggedFolderRootId, setDraggedFolderRootId] = useState<string | null>(null);
+  const [dropTargetFolderRootId, setDropTargetFolderRootId] = useState<string | null>(null);
   const [remoteSources, setRemoteSources] = useState<RemoteSource[]>([]);
   const [selectedRemote, setSelectedRemote] = useState<RemoteFolderTarget | null>(null);
   const [remoteItems, setRemoteItems] = useState<RemoteDirectoryItem[]>([]);
@@ -496,10 +588,12 @@ export const FoldersPage = (): JSX.Element => {
   const remoteVisibleHydrationInFlightRef = useRef<Set<string>>(new Set());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const { currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
+  const orderedOverviews = useMemo(() => orderFolderOverviews(overviews, folderRootOrderIds), [folderRootOrderIds, overviews]);
+  const canReorderFolderRoots = mode === 'local' && orderedOverviews.length > 1;
 
   const selectedOverview = useMemo(
-    () => (selected ? overviews.find((overview) => overview.id === selected.folderId) ?? null : null),
-    [overviews, selected],
+    () => (selected ? orderedOverviews.find((overview) => overview.id === selected.folderId) ?? null : null),
+    [orderedOverviews, selected],
   );
   const selectedScan = selected ? scanStatuses[selected.folderId] ?? selectedOverview?.recentScan ?? null : null;
   const isSelectedScanning = selectedScan ? runningStatuses.has(selectedScan.status) : false;
@@ -612,7 +706,8 @@ export const FoldersPage = (): JSX.Element => {
           return current.path === root.path ? overviewToTarget(root) : current;
         }
 
-        return nextOverviews[0] ? overviewToTarget(nextOverviews[0]) : null;
+        const orderedNextOverviews = orderFolderOverviews(nextOverviews, readFolderRootOrderMemory());
+        return orderedNextOverviews[0] ? overviewToTarget(orderedNextOverviews[0]) : null;
       });
     } catch (refreshError) {
       setError(formatFolderError(refreshError, t));
@@ -1658,6 +1753,67 @@ export const FoldersPage = (): JSX.Element => {
     }, 280);
   }, []);
 
+  const handleFolderRootDragStart = useCallback(
+    (event: DragEvent<HTMLButtonElement>, overview: LibraryFolderOverview): void => {
+      if (!canReorderFolderRoots) {
+        event.preventDefault();
+        return;
+      }
+
+      setDraggedFolderRootId(overview.id);
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(folderRootDragMime, overview.id);
+      event.dataTransfer.setData('text/plain', overview.id);
+    },
+    [canReorderFolderRoots],
+  );
+
+  const handleFolderRootDragOver = useCallback(
+    (event: DragEvent<HTMLButtonElement>, overview: LibraryFolderOverview): void => {
+      if (!canReorderFolderRoots || !draggedFolderRootId || draggedFolderRootId === overview.id) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setDropTargetFolderRootId((current) => (current === overview.id ? current : overview.id));
+    },
+    [canReorderFolderRoots, draggedFolderRootId],
+  );
+
+  const handleFolderRootDrop = useCallback(
+    (event: DragEvent<HTMLButtonElement>, targetOverview: LibraryFolderOverview): void => {
+      event.preventDefault();
+      const sourceFolderId =
+        draggedFolderRootId ||
+        event.dataTransfer.getData(folderRootDragMime) ||
+        event.dataTransfer.getData('text/plain');
+
+      setDraggedFolderRootId(null);
+      setDropTargetFolderRootId(null);
+
+      if (!canReorderFolderRoots || !sourceFolderId || sourceFolderId === targetOverview.id) {
+        return;
+      }
+
+      const nextOrderIds = moveFolderRootId(orderedOverviews, sourceFolderId, targetOverview.id);
+      if (!nextOrderIds) {
+        return;
+      }
+
+      setFolderRootOrderIds(nextOrderIds);
+      writeFolderRootOrderMemory(nextOrderIds);
+      setError(null);
+      setMessage('文件夹顺序已保存');
+    },
+    [canReorderFolderRoots, draggedFolderRootId, orderedOverviews],
+  );
+
+  const handleFolderRootDragEnd = useCallback((): void => {
+    setDraggedFolderRootId(null);
+    setDropTargetFolderRootId(null);
+  }, []);
+
   const handleSaveTags = useCallback(
     async (
       track: LibraryTrack,
@@ -1889,7 +2045,7 @@ export const FoldersPage = (): JSX.Element => {
           ) : overviews.length === 0 ? (
             <p className="folders-empty">{t('folders.empty.roots')}</p>
           ) : (
-            overviews.map((overview) => {
+            orderedOverviews.map((overview) => {
               const rootKey = targetKey(overview.id, overview.path);
               const isSelected = selected?.folderId === overview.id && selected.path === overview.path;
               const scan = scanStatuses[overview.id] ?? overview.recentScan;
@@ -1898,7 +2054,15 @@ export const FoldersPage = (): JSX.Element => {
                   <button
                     className="folder-root-button"
                     data-active={isSelected}
+                    data-dragging={draggedFolderRootId === overview.id ? 'true' : undefined}
+                    data-drop-target={dropTargetFolderRootId === overview.id ? 'true' : undefined}
+                    data-reorderable={canReorderFolderRoots ? 'true' : undefined}
+                    draggable={canReorderFolderRoots}
                     type="button"
+                    onDragEnd={handleFolderRootDragEnd}
+                    onDragOver={(event) => handleFolderRootDragOver(event, overview)}
+                    onDragStart={(event) => handleFolderRootDragStart(event, overview)}
+                    onDrop={(event) => handleFolderRootDrop(event, overview)}
                     onClick={() => setSelected(overviewToTarget(overview))}
                     onDoubleClick={() => {
                       if (overview.childFolderCount > 0) {
@@ -1906,6 +2070,7 @@ export const FoldersPage = (): JSX.Element => {
                       }
                     }}
                   >
+                    <GripVertical className="folder-root-drag-handle" size={15} aria-hidden="true" />
                     <span
                       className="folder-expand-hit"
                       data-hidden={overview.childFolderCount === 0}

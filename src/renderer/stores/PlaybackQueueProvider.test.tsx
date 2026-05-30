@@ -2039,6 +2039,80 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(prepareLocalFile).not.toHaveBeenCalled();
   });
 
+  it('skips remote prewarm while enhanced low-load protection is active', async () => {
+    vi.useFakeTimers();
+    const first = makeTrack(1);
+    const second: LibraryTrack = {
+      ...makeTrack(2),
+      id: 'remote:source-1:stable-key',
+      mediaType: 'remote',
+      sourceId: 'source-1',
+      remotePath: '/music/remote.flac',
+      stableKey: 'stable-key',
+    };
+    const getSettings = vi.fn().mockResolvedValue({
+      lowLoadPlaybackModeEnabled: true,
+      lowLoadPlaybackEnhancementsEnabled: true,
+    });
+    const prepareMediaItem = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      playback: {
+        playLocalFile,
+        prepareMediaItem,
+      },
+    } as unknown as Window['echo'];
+
+    const PlayButton = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            queue.replaceQueue([first, second]);
+            void queue.playTrack(first);
+          }}
+        >
+          play
+        </button>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <PlayButton />
+      </PlaybackQueueProvider>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getSettings).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'play' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: first.id }));
+
+    act(() => {
+      vi.advanceTimersByTime(deferredPlaybackTaskWaitMs);
+    });
+
+    expect(prepareMediaItem).not.toHaveBeenCalled();
+  });
+
   it('defers automatic network MV search when playback starts', async () => {
     const track = makeTrack(1);
     const getSettings = vi.fn().mockResolvedValue({ autoSearch: true });
@@ -2093,6 +2167,76 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() =>
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'mv:candidatesChanged' })),
     );
+  });
+
+  it('delays MV refresh and skips network candidate search under enhanced low-load protection', async () => {
+    vi.useFakeTimers();
+    const track = makeTrack(1);
+    const appGetSettings = vi.fn().mockResolvedValue({
+      lowLoadPlaybackModeEnabled: true,
+      lowLoadPlaybackEnhancementsEnabled: true,
+    });
+    const getMvSettings = vi.fn().mockResolvedValue({ autoSearch: true });
+    const searchNetworkCandidates = vi.fn().mockResolvedValue([]);
+    const getSelected = vi.fn().mockResolvedValue(null);
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    const playLocalFile = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: track.id,
+      positionMs: 0,
+      durationMs: track.duration * 1000,
+      filePath: track.path,
+    });
+
+    window.echo = {
+      app: {
+        getSettings: appGetSettings,
+      },
+      playback: {
+        playLocalFile,
+      },
+      mv: {
+        getSettings: getMvSettings,
+        searchNetworkCandidates,
+        getSelected,
+      },
+    } as unknown as Window['echo'];
+
+    const PlayButton = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      return <button type="button" onClick={() => void queue.playTrack(track)}>play</button>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <PlayButton />
+      </PlaybackQueueProvider>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(appGetSettings).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'play' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: track.id }));
+
+    act(() => {
+      vi.advanceTimersByTime(1_500);
+    });
+    expect(getSelected).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(8_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getSelected).toHaveBeenCalledWith(track.id);
+    expect(searchNetworkCandidates).not.toHaveBeenCalled();
+    expect(dispatchSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mv:candidatesChanged' }));
   });
 
   it('plays remote tracks through media-item IPC and records only stable identity', async () => {

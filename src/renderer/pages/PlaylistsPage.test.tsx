@@ -607,28 +607,102 @@ describe('PlaylistsPage actions menu', () => {
     } as unknown as Window['echo'];
 
     const firstRender = renderPlaylistsPage();
-    const sidebar = await screen.findByLabelText('Playlists');
+    await screen.findAllByText('Road Mix');
+    const sidebar = document.querySelector('.playlist-sidebar') as HTMLElement;
     const getPlaylistNames = (): string[] =>
       Array.from(sidebar.querySelectorAll('.playlist-list-item strong span')).map((element) => element.textContent ?? '');
+    const getPlaylistButton = (name: string): HTMLElement =>
+      Array.from(sidebar.querySelectorAll('.playlist-list-item')).find((element) => element.querySelector('strong span')?.textContent === name) as HTMLElement;
 
     await waitFor(() => expect(getPlaylistNames()).toEqual(['Road Mix', 'Night Mix', 'Morning Mix']));
 
     const dataTransfer = dragDataTransfer();
-    fireEvent.dragStart(within(sidebar).getByRole('button', { name: /Road Mix/u }), { dataTransfer });
-    fireEvent.dragOver(within(sidebar).getByRole('button', { name: /Night Mix/u }), { dataTransfer });
-    fireEvent.drop(within(sidebar).getByRole('button', { name: /Night Mix/u }), { dataTransfer });
+    fireEvent.dragStart(getPlaylistButton('Road Mix'), { dataTransfer });
+    fireEvent.dragOver(getPlaylistButton('Night Mix'), { dataTransfer });
+    fireEvent.drop(getPlaylistButton('Night Mix'), { dataTransfer });
 
     await waitFor(() => expect(getPlaylistNames()).toEqual(['Night Mix', 'Road Mix', 'Morning Mix']));
     expect(window.localStorage.getItem('echo-next.playlist-list-order.v1')).toContain('playlist-2');
 
     firstRender.unmount();
     renderPlaylistsPage();
-    const restoredSidebar = await screen.findByLabelText('Playlists');
+    await screen.findAllByText('Road Mix');
+    const restoredSidebar = document.querySelector('.playlist-sidebar') as HTMLElement;
     await waitFor(() =>
       expect(Array.from(restoredSidebar.querySelectorAll('.playlist-list-item strong span')).map((element) => element.textContent ?? '')).toEqual([
         'Night Mix',
         'Road Mix',
         'Morning Mix',
+      ]),
+    );
+  });
+
+  it('remembers streaming favorite sidebar order after dragging favorite lists', async () => {
+    const favorites = streamingFavoritesSnapshot({
+      providers: {
+        bilibili: [streamingFavoriteTrack({ provider: 'bilibili', providerTrackId: 'bv-1', stableKey: 'streaming:bilibili:bv-1' })],
+        youtube: [],
+        soundcloud: [],
+      },
+      collections: [
+        {
+          id: 'streaming-favorites:youtube:PL123',
+          provider: 'youtube',
+          providerPlaylistId: 'PL123',
+          name: 'YouTube Picks',
+          sourceName: 'YouTube Picks',
+          tracks: [streamingFavoriteTrack()],
+          createdAt: '2026-05-29T00:00:00.000Z',
+          updatedAt: '2026-05-29T00:00:00.000Z',
+        },
+      ],
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ itemCount: 0 })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      streaming: {
+        getFavorites: vi.fn().mockResolvedValue(favorites),
+      },
+    } as unknown as Window['echo'];
+
+    const firstRender = renderPlaylistsPage();
+    fireEvent.click((await screen.findAllByRole('tab'))[1]);
+
+    await screen.findByText('Bilibili');
+    const sidebar = document.querySelector('.playlist-sidebar') as HTMLElement;
+    const getFavoriteNames = (): string[] =>
+      Array.from(sidebar.querySelectorAll('.playlist-list--favorites .playlist-list-item strong span')).map((element) => element.textContent ?? '');
+    const getFavoriteButton = (name: string): HTMLElement =>
+      Array.from(sidebar.querySelectorAll('.playlist-list--favorites .playlist-list-item')).find((element) => element.querySelector('strong span')?.textContent === name) as HTMLElement;
+
+    await waitFor(() => expect(getFavoriteNames()).toEqual(['Bilibili', 'YouTube', 'SoundCloud', 'YouTube Picks']));
+
+    const dataTransfer = dragDataTransfer();
+    fireEvent.dragStart(getFavoriteButton('Bilibili'), { dataTransfer });
+    fireEvent.dragOver(getFavoriteButton('YouTube'), { dataTransfer });
+    fireEvent.drop(getFavoriteButton('YouTube'), { dataTransfer });
+
+    await waitFor(() => expect(getFavoriteNames()).toEqual(['YouTube', 'Bilibili', 'SoundCloud', 'YouTube Picks']));
+    expect(window.localStorage.getItem('echo-next.streaming-favorite-list-order.v1')).toContain('provider:youtube');
+
+    firstRender.unmount();
+    renderPlaylistsPage();
+    fireEvent.click((await screen.findAllByRole('tab'))[1]);
+
+    await screen.findByText('Bilibili');
+    const restoredSidebar = document.querySelector('.playlist-sidebar') as HTMLElement;
+    await waitFor(() =>
+      expect(Array.from(restoredSidebar.querySelectorAll('.playlist-list--favorites .playlist-list-item strong span')).map((element) => element.textContent ?? '')).toEqual([
+        'YouTube',
+        'Bilibili',
+        'SoundCloud',
+        'YouTube Picks',
       ]),
     );
   });

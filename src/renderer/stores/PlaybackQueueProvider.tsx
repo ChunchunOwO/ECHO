@@ -34,6 +34,7 @@ const activePlaybackStates = new Set<AudioStatus['state']>(['loading', 'playing'
 const automixLateArmWindowSeconds = 60;
 const automixShortTrackArmRatio = 0.35;
 const automixBpmAnalysisStatusPollMs = 1500;
+const enhancedLowLoadMvSearchDelayMs = 8_000;
 const gaplessLosslessCodecs = new Set(['flac', 'wav', 'wave', 'alac', 'aiff', 'aif', 'pcm']);
 const gaplessLosslessExtensions = new Set(['flac', 'wav', 'wave', 'aiff', 'aif']);
 const dsdCodecs = new Set(['dsd', 'dsf', 'dff', 'sacd']);
@@ -1289,6 +1290,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const hqPlayerTakeoverEnabledRef = useRef(hqPlayerTakeoverEnabled);
   const gaplessPlaybackEnabledRef = useRef(gaplessPlaybackEnabled);
   const audioAnalysisEnabledRef = useRef<boolean | null>(null);
+  const lowLoadPlaybackModeEnabledRef = useRef(false);
+  const lowLoadPlaybackEnhancementsEnabledRef = useRef(false);
+  const enhancedLowLoadPlaybackActiveRef = useRef(false);
   const isShuffleEnabledRef = useRef(isShuffleEnabled);
   const playlistPlaybackStateRef = useRef(playlistPlaybackState);
   const playbackHistorySessionRef = useRef<PlaybackHistorySession | null>(null);
@@ -1570,13 +1574,31 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       audioAnalysisEnabledRef.current = settings.audioAnalysisEnabled !== false;
       if (!audioAnalysisEnabledRef.current) {
         pendingAutomixBpmAnalysisTrackRef.current = null;
-        return;
+      } else {
+        const pendingTrack = pendingAutomixBpmAnalysisTrackRef.current;
+        pendingAutomixBpmAnalysisTrackRef.current = null;
+        if (pendingTrack) {
+          scheduleAutomixBpmAnalysisRef.current(pendingTrack);
+        }
       }
+    }
 
-      const pendingTrack = pendingAutomixBpmAnalysisTrackRef.current;
-      pendingAutomixBpmAnalysisTrackRef.current = null;
-      if (pendingTrack) {
-        scheduleAutomixBpmAnalysisRef.current(pendingTrack);
+    if ('lowLoadPlaybackModeEnabled' in settings) {
+      lowLoadPlaybackModeEnabledRef.current = settings.lowLoadPlaybackModeEnabled === true;
+    }
+
+    if ('lowLoadPlaybackEnhancementsEnabled' in settings) {
+      lowLoadPlaybackEnhancementsEnabledRef.current = settings.lowLoadPlaybackEnhancementsEnabled === true;
+    }
+
+    if ('lowLoadPlaybackModeEnabled' in settings || 'lowLoadPlaybackEnhancementsEnabled' in settings) {
+      enhancedLowLoadPlaybackActiveRef.current =
+        lowLoadPlaybackModeEnabledRef.current && lowLoadPlaybackEnhancementsEnabledRef.current;
+      if (enhancedLowLoadPlaybackActiveRef.current) {
+        cancelLocalPrepareRef.current?.();
+        cancelLocalPrepareRef.current = null;
+        cancelAutoSearchMvRef.current?.();
+        cancelAutoSearchMvRef.current = null;
       }
     }
   }, []);
@@ -1596,7 +1618,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         event instanceof CustomEvent &&
         event.detail &&
         typeof event.detail === 'object' &&
-        ('gaplessPlaybackEnabled' in event.detail || 'audioAnalysisEnabled' in event.detail)
+        (
+          'gaplessPlaybackEnabled' in event.detail ||
+          'audioAnalysisEnabled' in event.detail ||
+          'lowLoadPlaybackModeEnabled' in event.detail ||
+          'lowLoadPlaybackEnhancementsEnabled' in event.detail
+        )
       ) {
         applyPlaybackSettings(event.detail as Partial<AppSettings>);
         return;
@@ -2435,16 +2462,19 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     }
 
     cancelAutoSearchMvRef.current?.();
+    const enhancedLowLoadActive = enhancedLowLoadPlaybackActiveRef.current;
     cancelAutoSearchMvRef.current = deferQueueBackgroundTask(() => {
       cancelAutoSearchMvRef.current = null;
       void runQueuePlaybackStep('playLocalTrack', 'autoSearchMv', trackId, async () => {
         const settings = await mvApi.getSettings?.();
-        const candidates = settings?.enabled !== false && settings?.autoSearch && mvApi.searchNetworkCandidates ? await mvApi.searchNetworkCandidates(trackId) : [];
-        window.dispatchEvent(new CustomEvent('mv:candidatesChanged', { detail: { trackId, candidates } }));
+        if (!enhancedLowLoadActive) {
+          const candidates = settings?.enabled !== false && settings?.autoSearch && mvApi.searchNetworkCandidates ? await mvApi.searchNetworkCandidates(trackId) : [];
+          window.dispatchEvent(new CustomEvent('mv:candidatesChanged', { detail: { trackId, candidates } }));
+        }
         await mvApi.getSelected(trackId);
         window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId } }));
       }).catch(() => undefined);
-    }, { delayMs: postSwitchBackgroundDelayMs });
+    }, { delayMs: enhancedLowLoadActive ? enhancedLowLoadMvSearchDelayMs : postSwitchBackgroundDelayMs });
   }, []);
 
   const refreshAutomixBpmAnalysisTrack = useCallback(async (trackId: string): Promise<void> => {
@@ -2588,6 +2618,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     };
 
     if (next.track.mediaType === 'remote' || next.track.mediaType === 'streaming') {
+      if (enhancedLowLoadPlaybackActiveRef.current) {
+        return;
+      }
+
       if (playback.prepareMediaItem) {
         cancelLocalPrepareRef.current = deferQueueBackgroundTask(() => {
           cancelLocalPrepareRef.current = null;

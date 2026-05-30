@@ -2502,13 +2502,6 @@ export class AudioSession extends EventEmitter {
         this.attachBridgeEvents(bridge, token);
         await this.syncEqStateForPlayback();
         this.assertCurrentRun(token);
-        if (isHttpPlaybackUrl(this.currentFilePath)) {
-          this.state = 'loading';
-          this.hostStatus = 'ready';
-          this.clock.reset(startSeconds, currentPlan.actualDeviceSampleRate ?? currentPlan.requestedOutputSampleRate);
-          this.emitStatus();
-        }
-
         const sessionId = bridge.beginSession?.({
           startSeconds,
           playbackRate: this.currentOutputSettings.playbackRate ?? 1,

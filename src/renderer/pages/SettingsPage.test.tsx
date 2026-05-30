@@ -1752,6 +1752,20 @@ describe('SettingsPage', () => {
     expect(screen.getByText('下载路径已更新。')).toBeTruthy();
   });
 
+  it('hides streaming download actions in Settings until downloads are unlocked', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, downloadsFeatureUnlocked: false, streamingDownloadActionsEnabled: false });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.library\\.label');
+
+    expect(screen.queryByRole('heading', { name: /流媒体下载按钮/ })).toBeNull();
+  });
+
   it('toggles streaming download actions from Settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue({ ...settings, downloadsFeatureUnlocked: true, streamingDownloadActionsEnabled: false });

@@ -443,6 +443,7 @@ class FakeBridge extends EventEmitter {
   readonly setVolume = vi.fn((volume: number) => {
     this.volume = Math.max(0, Math.min(1, volume));
   });
+  readonly setPaused = vi.fn();
   startOptions: NativeOutputStartOptions | null = null;
   positionSeconds = 0;
   volume = 1;
@@ -802,6 +803,79 @@ describe('AudioSession stability cleanup', () => {
     expect(eqBridge.listenerCount('state')).toBe(before + 1);
     session.dispose();
     expect(eqBridge.listenerCount('state')).toBe(before);
+  });
+
+  it('does not log decoder stop timeout when forced cleanup lets the decoder exit', async () => {
+    vi.useFakeTimers();
+    const logs: string[] = [];
+    const session = createAudioSessionForTest({
+      decoder: new FakeDecoder(new Map()),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: (message) => logs.push(message),
+      disableWatchdogTimer: true,
+    });
+    const stream = new PassThrough();
+    let resolveDone = (): void => undefined;
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+    const stop = vi.fn(() => {
+      queueMicrotask(resolveDone);
+    });
+    const waitForDecoderRunExit = (
+      session as unknown as { waitForDecoderRunExit(run: DecoderRun): Promise<void> }
+    ).waitForDecoderRunExit.bind(session);
+
+    const waitPromise = waitForDecoderRunExit({
+      stream,
+      stop,
+      done,
+      waitForExitOnStop: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    await waitPromise;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(logs).not.toContain('[AudioSession] decoder process still did not exit after forced cleanup; continuing');
+    session.dispose();
+  });
+
+  it('logs once when decoder still has not exited after forced cleanup', async () => {
+    vi.useFakeTimers();
+    const logs: string[] = [];
+    const session = createAudioSessionForTest({
+      decoder: new FakeDecoder(new Map()),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: (message) => logs.push(message),
+      disableWatchdogTimer: true,
+    });
+    const stream = new PassThrough();
+    const destroy = vi.spyOn(stream, 'destroy');
+    const stop = vi.fn();
+    const waitForDecoderRunExit = (
+      session as unknown as { waitForDecoderRunExit(run: DecoderRun): Promise<void> }
+    ).waitForDecoderRunExit.bind(session);
+
+    const waitPromise = waitForDecoderRunExit({
+      stream,
+      stop,
+      done: new Promise<void>(() => undefined),
+      waitForExitOnStop: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(250);
+    await waitPromise;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(logs.filter((message) => message.includes('decoder process still did not exit after forced cleanup'))).toHaveLength(1);
+    session.dispose();
   });
 
   it('replaces bridge listeners during seek instead of stacking duplicates', async () => {
@@ -1979,8 +2053,8 @@ describe('Audio Core sample-rate regression guard', () => {
       sharedMixSampleRate: 48000,
       bufferSizeFrames: 8192,
       fifoCapacityMs: 3000,
-      startupPrebufferMs: 900,
-      startupPrebufferTimeoutMs: 5000,
+      startupPrebufferMs: 250,
+      startupPrebufferTimeoutMs: 1500,
     });
     expect(status.currentFilePath).toBe(streamUrl);
     expect(status.currentTrackId).toBe('remote:source-1:track-1');
@@ -2018,8 +2092,8 @@ describe('Audio Core sample-rate regression guard', () => {
       expect(bridges[0].startOptions).toMatchObject({
         bufferSizeFrames: 8192,
         fifoCapacityMs: 3000,
-        startupPrebufferMs: 900,
-        startupPrebufferTimeoutMs: 5000,
+        startupPrebufferMs: 250,
+        startupPrebufferTimeoutMs: 1500,
       });
 
       decoder.releaseReady();
@@ -3013,6 +3087,23 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(decoder.decodeRequests).toHaveLength(0);
     expect(status.useJuceDecodeRequested).toBe(true);
     expect(status.activeDecodeBackendImpl).toBe('juce-windows-media-mp3');
+  });
+
+  it('keeps ASIO output on FFmpeg decode even when resident JUCE decode is enabled', async () => {
+    const juceDecoder = new FakeJuceDecoder();
+    const { decoder, session } = createSessionHarness([probe('asio-pilot.flac', 48000)], [48000], [], {
+      juceDecoder,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'asio-pilot.flac',
+      output: { outputMode: 'asio', useJuceDecode: true },
+    });
+
+    expect(juceDecoder.decodeRequests).toHaveLength(0);
+    expect(decoder.decodeRequests).toHaveLength(1);
+    expect(status.useJuceDecodeRequested).toBe(true);
+    expect(status.activeDecodeBackendImpl).toBe('ffmpeg');
   });
 
   it('falls back to FFmpeg when opt-in JUCE FLAC decode fails before PCM starts', async () => {
@@ -4735,11 +4826,9 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 18.25 });
   });
 
-  it('does not flash loading when resuming a paused HTTP stream from a prewarmed output host', async () => {
+  it('soft pauses HTTP streams so resume does not reopen the network decoder', async () => {
     const streamUrl = 'https://cdn.example.test/song.flac';
     const decoder = new class extends FakeDecoder {
-      private resumeReady: (() => void) | null = null;
-
       override decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
         this.decodeRequests.push(request);
         const stream = new PassThrough();
@@ -4747,38 +4836,12 @@ describe('Audio Core sample-rate regression guard', () => {
           stream.destroy();
         });
 
-        if (this.decodeRequests.length === 1) {
-          queueMicrotask(() => {
-            if (!stream.destroyed) {
-              stream.write(pcmBuffer([0, 0]));
-            }
-          });
-          return { stream, stop, ready: Promise.resolve(), done: new Promise(() => undefined) };
-        }
-
-        return {
-          stream,
-          stop,
-          ready: new Promise<void>((resolve) => {
-            this.resumeReady = () => {
-              stream.write(pcmBuffer([0, 0]));
-              resolve();
-              this.resumeReady = null;
-            };
-          }),
-          done: new Promise(() => undefined),
-        };
-      }
-
-      releaseResumeReady(): void {
-        if (!this.resumeReady) {
-          throw new Error('resume decoder ready was not pending');
-        }
-        this.resumeReady();
-      }
-
-      hasResumeReady(): boolean {
-        return this.resumeReady !== null;
+        queueMicrotask(() => {
+          if (!stream.destroyed) {
+            stream.write(pcmBuffer([0, 0]));
+          }
+        });
+        return { stream, stop, ready: Promise.resolve(), done: new Promise(() => undefined) };
       }
     }(new Map([[streamUrl, probe(streamUrl, 44100)]]));
     const bridges: FakeBridge[] = [];
@@ -4803,27 +4866,27 @@ describe('Audio Core sample-rate regression guard', () => {
     await initialPlay;
 
     bridges[0].positionSeconds = 18.25;
-    await session.pause();
-    await Promise.resolve();
-    await Promise.resolve();
+    const paused = await session.pause();
+    expect(paused).toMatchObject({ state: 'paused', positionSeconds: 18.25 });
+    expect(bridges[0].setPaused).toHaveBeenCalledWith(true);
+    expect(bridges[0].setVolume).toHaveBeenCalledWith(0);
+    expect(bridges[0].sessionEnds).toBe(0);
+    expect(bridges[0].stop).not.toHaveBeenCalled();
+    expect(decoder.decodeRequests).toHaveLength(1);
 
     const resumeStates: string[] = [];
     session.on('status', (status) => {
       resumeStates.push(status.state);
     });
 
-    const resumed = session.play();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(session.getStatus()).toMatchObject({ state: 'paused', positionSeconds: 18.25 });
-    expect(resumeStates).not.toContain('loading');
-
-    await expect.poll(() => decoder.hasResumeReady()).toBe(true);
-    decoder.releaseResumeReady();
-    await expect(resumed).resolves.toMatchObject({ state: 'playing', currentTrackId: 'streaming:netease:track' });
+    await expect(session.play()).resolves.toMatchObject({ state: 'playing', currentTrackId: 'streaming:netease:track' });
     expect(resumeStates).not.toContain('loading');
     expect(resumeStates.at(-1)).toBe('playing');
-    expect(decoder.decodeRequests.at(-1)).toMatchObject({ filePath: streamUrl, startSeconds: 18.25 });
+    expect(bridges).toHaveLength(1);
+    expect(decoder.decodeRequests).toHaveLength(1);
+    expect(bridges[0].positionSeconds).toBe(18.25);
+    expect(bridges[0].setPaused).toHaveBeenLastCalledWith(false);
+    expect(bridges[0].setVolume).toHaveBeenLastCalledWith(1);
   });
 
   it('fades native output back in when resuming from a prewarmed pause', async () => {
@@ -5897,7 +5960,7 @@ describe('AudioSession playback watchdog', () => {
       positionFrames: 48512,
       bufferedFrames: 0,
       underrunCallbacks: 3,
-      underrunFrames: 512,
+      underrunFrames: 4800,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 

@@ -182,11 +182,15 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings | undefine
     output.sharedBackend = normalizeAudioSharedBackendForPlatform(input.sharedBackend as AudioSharedBackend, process.platform);
   }
 
-  if (typeof input.deviceIndex === 'number' && Number.isInteger(input.deviceIndex)) {
+  if (Object.prototype.hasOwnProperty.call(input, 'deviceIndex') && input.deviceIndex == null) {
+    output.deviceIndex = undefined;
+  } else if (typeof input.deviceIndex === 'number' && Number.isInteger(input.deviceIndex)) {
     output.deviceIndex = input.deviceIndex;
   }
 
-  if (typeof input.deviceName === 'string' && input.deviceName.trim()) {
+  if (Object.prototype.hasOwnProperty.call(input, 'deviceName') && input.deviceName == null) {
+    output.deviceName = undefined;
+  } else if (typeof input.deviceName === 'string' && input.deviceName.trim()) {
     output.deviceName = input.deviceName;
   }
 
@@ -1132,6 +1136,25 @@ const enqueuePlaybackStatusCommand = async (fn: () => Promise<PlaybackStatus> | 
   }
 };
 
+const runImmediatePlaybackStatusCommand = async (fn: () => Promise<PlaybackStatus> | PlaybackStatus): Promise<PlaybackStatus> => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(fn),
+      new Promise<PlaybackStatus>((resolve) => {
+        timeout = setTimeout(() => {
+          console.warn('[playback] immediate audio command timed out; returning current playback status');
+          resolve(toPlaybackStatus());
+        }, 15_000);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
 const reportPlaybackAudioError = (error: unknown, phase: string, details?: unknown): void => {
   const normalized = error instanceof Error ? error : new Error(String(error));
   const status = getAudioSession().getStatus();
@@ -1277,6 +1300,14 @@ let playbackMemoryRegistered = false;
 let lastPlaybackMemorySaveAt = 0;
 const playbackMemorySaveIntervalMs = 5000;
 
+const playbackMetadataFromTrack = (track: LibraryTrack): PlaybackTrackMetadataHint => ({
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  albumArtist: track.albumArtist,
+  coverUrl: track.coverThumb,
+});
+
 const playbackMemoryFromQueueSession = (session: PersistedPlaybackSessionV1 | null): PlaybackMemory | null => {
   const resume = session?.resume;
   if (!resume) {
@@ -1308,6 +1339,7 @@ const playbackMemoryFromQueueSession = (session: PersistedPlaybackSessionV1 | nu
           bitrate: resumeItem.track.bitrate,
         }
       : undefined,
+    metadata: resumeItem ? playbackMetadataFromTrack(resumeItem.track) : undefined,
     updatedAt: resume.updatedAt,
   };
 };
@@ -1701,8 +1733,9 @@ export const registerPlaybackIpc = (): void => {
       }
     }
   });
-  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackPlay, async (): Promise<PlaybackStatus> => runImmediatePlaybackStatusCommand(async () => {
     noteDataProtectionPlaybackActivity(true);
+    beginPlaybackStartRun();
     try {
       const airPlayReceiver = getActiveAirPlayReceiverService();
       if (airPlayReceiver) {
@@ -1727,8 +1760,9 @@ export const registerPlaybackIpc = (): void => {
       throw error;
     }
   }));
-  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => runImmediatePlaybackStatusCommand(async () => {
     noteDataProtectionPlaybackActivity(false);
+    beginPlaybackStartRun();
     const airPlayReceiver = getActiveAirPlayReceiverService();
     if (airPlayReceiver) {
       const status = await airPlayReceiver.pausePlayback();
@@ -1744,7 +1778,7 @@ export const registerPlaybackIpc = (): void => {
     void syncSmtcStatus();
     return toPlaybackStatus();
   }));
-  ipcMain.handle(IpcChannels.PlaybackStop, async (): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
+  ipcMain.handle(IpcChannels.PlaybackStop, async (): Promise<PlaybackStatus> => runImmediatePlaybackStatusCommand(async () => {
     noteDataProtectionPlaybackActivity(false);
     clearActiveMediaPlayback();
     beginPlaybackStartRun();

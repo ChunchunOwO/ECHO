@@ -144,6 +144,34 @@ describe('echo-wallpaper protocol', () => {
     expect(await response.text()).toBe('video-wallpaper');
   });
 
+  it('serves app video wallpaper byte ranges for stable looping playback', async () => {
+    const wallpaperPath = join(wallpaperDirectory, 'motion.mp4');
+    writeFileSync(wallpaperPath, 'video-wallpaper');
+    getAppSettingsMock.mockReturnValue({ appCustomWallpaperPath: wallpaperPath });
+
+    const response = await getWallpaperHandler()(new Request('echo-wallpaper://app/custom', { headers: { Range: 'bytes=0-4' } }));
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(response.headers.get('Content-Range')).toBe('bytes 0-4/15');
+    expect(response.headers.get('Content-Length')).toBe('5');
+    expect(response.headers.get('Content-Type')).toBe('video/mp4');
+    expect(await response.text()).toBe('video');
+  });
+
+  it('rejects invalid app video wallpaper byte ranges', async () => {
+    const wallpaperPath = join(wallpaperDirectory, 'motion.mp4');
+    writeFileSync(wallpaperPath, 'video-wallpaper');
+    getAppSettingsMock.mockReturnValue({ appCustomWallpaperPath: wallpaperPath });
+
+    const response = await getWallpaperHandler()(new Request('echo-wallpaper://app/custom', { headers: { Range: 'bytes=99-120' } }));
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(response.headers.get('Content-Range')).toBe('bytes */15');
+    expect(await response.text()).toBe('');
+  });
+
   it('does not serve wallpaper paths outside the app wallpaper directory', async () => {
     const outsideRoot = makeTempRoot();
     const wallpaperPath = join(outsideRoot, 'outside.png');

@@ -14,6 +14,8 @@ export const globalShortcutActions = [
   'openAudioSettings',
   'openMvSettings',
   'openLyricsSettings',
+  'locateCurrentTrack',
+  'toggleDesktopLyrics',
   'toggleDesktopLyricsLock',
 ] as const;
 
@@ -60,6 +62,8 @@ export const recommendedGlobalShortcuts: GlobalShortcutSettings = {
   openAudioSettings: { enabled: false, accelerator: null },
   openMvSettings: { enabled: false, accelerator: null },
   openLyricsSettings: { enabled: false, accelerator: null },
+  locateCurrentTrack: { enabled: false, accelerator: null },
+  toggleDesktopLyrics: { enabled: false, accelerator: null },
   toggleDesktopLyricsLock: { enabled: false, accelerator: null },
 };
 
@@ -79,6 +83,8 @@ export const recommendedLocalShortcuts: LocalShortcutSettings = {
   openAudioSettings: { enabled: false, accelerator: null },
   openMvSettings: { enabled: false, accelerator: null },
   openLyricsSettings: { enabled: false, accelerator: null },
+  locateCurrentTrack: { enabled: false, accelerator: null },
+  toggleDesktopLyrics: { enabled: false, accelerator: null },
   toggleDesktopLyricsLock: { enabled: false, accelerator: null },
 };
 
@@ -126,16 +132,26 @@ const keyAliases = new Map<string, string>([
   ['plus', 'Plus'],
   ['+', 'Plus'],
   ['add', 'Plus'],
-  ['numpadadd', 'Plus'],
+  ['numadd', 'numadd'],
+  ['numpadadd', 'numadd'],
   ['subtract', '-'],
-  ['numpadsubtract', '-'],
+  ['numsub', 'numsub'],
+  ['numpadsubtract', 'numsub'],
   ['multiply', '*'],
-  ['numpadmultiply', '*'],
+  ['nummult', 'nummult'],
+  ['numpadmultiply', 'nummult'],
   ['divide', '/'],
-  ['numpaddivide', '/'],
+  ['numdiv', 'numdiv'],
+  ['numpaddivide', 'numdiv'],
   ['decimal', '.'],
-  ['numpaddecimal', '.'],
+  ['numdec', 'numdec'],
+  ['numpaddecimal', 'numdec'],
 ]);
+
+for (let index = 0; index <= 9; index += 1) {
+  keyAliases.set(`num${index}`, `num${index}`);
+  keyAliases.set(`numpad${index}`, `num${index}`);
+}
 
 const normalizeKeyToken = (token: string): string | null => {
   const trimmed = token.trim();

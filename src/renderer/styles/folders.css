@@ -751,3 +751,37 @@ html[data-theme="dark"] .folder-scan-card[data-running='true'] {
     width: 100%;
   }
 }
+
+@media (orientation: portrait) and (min-width: 821px) and (max-width: 1400px) {
+  .folders-workbench {
+    height: auto;
+  }
+
+  .folders-workbench,
+  .folders-actions-panel,
+  .folder-detail-header,
+  .folder-track-toolbar,
+  .folder-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .folders-main {
+    grid-template-rows: auto auto auto auto auto;
+  }
+
+  .folders-sidebar {
+    max-height: 280px;
+    padding-right: 0;
+    padding-bottom: 14px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(33, 49, 70, 0.08);
+  }
+
+  .folder-detail-actions {
+    justify-content: flex-start;
+  }
+
+  .folder-sort-control {
+    width: 100%;
+  }
+}

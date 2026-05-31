@@ -1299,7 +1299,7 @@ export const ConnectPage = (): JSX.Element => {
                         {device.unsupportedReason ? <small>{device.unsupportedReason}</small> : null}
                       </div>
                       <div className="connect-device-meta">
-                        <span data-state={device.state}>{isActive ? stateLabel[status.state] : deviceStateLabel[device.state]}</span>
+                        <span data-state={device.state}>{t(isActive ? stateLabel[status.state] : deviceStateLabel[device.state])}</span>
                         <small>{visual.label}</small>
                       </div>
                       <button

@@ -256,10 +256,85 @@ const QueueProbe = (): JSX.Element => {
   return <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>;
 };
 
+const originalClipboard = window.navigator.clipboard;
+
+const installClipboardWriteMock = () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+  return writeText;
+};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true,
+    value: originalClipboard,
+  });
   vi.restoreAllMocks();
+});
+
+describe('PlaylistsPage share actions', () => {
+  it('copies the external link for an imported streaming playlist', async () => {
+    const writeText = installClipboardWriteMock();
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ sourceProvider: 'qqmusic', sourcePlaylistId: '123456', itemCount: 0 })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '分享' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://y.qq.com/n/ryqq/playlist/123456'));
+    expect(await screen.findByText('歌单链接已复制')).toBeTruthy();
+  });
+
+  it('copies the source link for an imported streaming favorite collection', async () => {
+    const writeText = installClipboardWriteMock();
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([]),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      streaming: {
+        getFavorites: vi.fn().mockResolvedValue(streamingFavoritesSnapshot({
+          collections: [
+            {
+              id: 'collection-1',
+              provider: 'youtube',
+              providerPlaylistId: 'PL123',
+              name: 'Imported Mix',
+              sourceName: 'Imported Mix',
+              tracks: [],
+              createdAt: '2026-05-29T00:00:00.000Z',
+              updatedAt: '2026-05-29T00:00:00.000Z',
+            },
+          ],
+        })),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    fireEvent.click(screen.getAllByRole('tab')[1]);
+    fireEvent.click(await screen.findByRole('button', { name: /Imported Mix/u }));
+    fireEvent.click(await screen.findByRole('button', { name: '分享' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://www.youtube.com/playlist?list=PL123'));
+  });
 });
 
 describe('PlaylistsPage actions menu', () => {

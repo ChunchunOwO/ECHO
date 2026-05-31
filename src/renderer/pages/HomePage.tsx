@@ -32,7 +32,7 @@ import type {
 import { translateCurrentLocale, useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
-import { openAlbumDetail, openAlbumDetailForTrack } from '../utils/albumNavigation';
+import { openAlbumDetail, openAlbumDetailForTrack, resolveAlbumDetailNavigationTarget } from '../utils/albumNavigation';
 import { openArtistDetailByName } from '../utils/artistNavigation';
 import type { AppRouteId } from '../app/routes';
 
@@ -177,9 +177,10 @@ const sanitizeHomeHeroUserName = (value: string | null | undefined): string | nu
 };
 
 const personalizeHomeHeroTitle = async (title: string): Promise<string> => {
+  const systemUserName = window.echo?.app?.getSystemUserName;
   const [ipAddress, userName] = await Promise.all([
     homeHeroIpTitlePattern.test(title) ? detectBrowserIPv4Address() : Promise.resolve(null),
-    homeHeroUserTitlePattern.test(title) ? window.echo.app.getSystemUserName().then(sanitizeHomeHeroUserName).catch(() => null) : Promise.resolve(null),
+    homeHeroUserTitlePattern.test(title) && systemUserName ? systemUserName().then(sanitizeHomeHeroUserName).catch(() => null) : Promise.resolve(null),
   ]);
 
   let nextTitle = title;
@@ -516,6 +517,16 @@ const mergeCachedHomePageData = (patch: Partial<HomePageData>): HomePageData =>
 const hasCachedPlaybackPulseData = (data: HomePageData | null): boolean =>
   Boolean(data && (data.historySummary || data.stats || data.recentHistory.length > 0 || data.recentPlayedAlbums.length > 0));
 
+const hasCachedLibraryPulseData = (data: HomePageData | null): boolean =>
+  Boolean(data && (
+    data.summary.songCount > 0 ||
+    data.summary.albumCount > 0 ||
+    data.summary.artistCount > 0 ||
+    data.recentTracks.length > 0 ||
+    data.recentAddedAlbums.length > 0 ||
+    data.recommendedAlbums.length > 0
+  ));
+
 let cachedHomePageData: HomePageData | null = readStoredHomePageData();
 let cachedRecentPanelMode: RecentPanelMode = 'added';
 let cachedHomeWaveformVisualizerEnabled: boolean | null = null;
@@ -667,6 +678,78 @@ const statsAlbumToLibraryAlbum = (album: PlaybackStatsAlbum): LibraryAlbum | nul
   };
 };
 
+const normalizeFavoriteAlbumText = (value: string | null | undefined): string =>
+  (value ?? '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+
+const isFavoriteAlbumCandidate = (candidate: LibraryAlbum, album: PlaybackStatsAlbum): boolean => {
+  const sameTitle = normalizeFavoriteAlbumText(candidate.title) === normalizeFavoriteAlbumText(album.title);
+  const sameArtist = normalizeFavoriteAlbumText(candidate.albumArtist) === normalizeFavoriteAlbumText(album.albumArtist);
+  const sameYear = candidate.year === album.year || !candidate.year || !album.year;
+
+  return sameTitle && sameArtist && sameYear;
+};
+
+const findFavoriteLibraryAlbum = async (album: PlaybackStatsAlbum): Promise<LibraryAlbum | null> => {
+  const library = window.echo?.library;
+
+  if (!library?.getAlbums) {
+    throw new Error('Desktop library bridge unavailable. Open ECHO Next in Electron to locate this album.');
+  }
+
+  const search = album.title.trim() || album.albumArtist.trim();
+  if (!search) {
+    return null;
+  }
+
+  const result = await library.getAlbums({ page: 1, pageSize: 50, search });
+  return result.items.find((candidate) => isFavoriteAlbumCandidate(candidate, album)) ?? null;
+};
+
+const favoriteStatsAlbumWithTarget = (album: PlaybackStatsAlbum, target: LibraryAlbum): PlaybackStatsAlbum => ({
+  ...album,
+  albumId: target.id,
+  albumKey: target.albumKey,
+  mediaType: target.mediaType === 'remote' ? 'remote' : 'local',
+  title: target.title,
+  albumArtist: target.albumArtist,
+  year: target.year,
+  trackCount: target.trackCount,
+  duration: target.duration,
+  coverId: target.coverId,
+  coverThumb: target.coverThumb ?? album.coverThumb,
+});
+
+const hasReadableFavoriteAlbumTracks = async (album: PlaybackStatsAlbum, target: LibraryAlbum): Promise<boolean> => {
+  const library = window.echo?.library;
+  const expectedTrackCount = Math.max(album.trackCount, target.trackCount);
+  if (!library?.getAlbumTracks || expectedTrackCount <= 0) {
+    return true;
+  }
+
+  try {
+    const result = await library.getAlbumTracks(target.id, { page: 1, pageSize: 1 });
+    return result.total > 0 || result.items.length > 0;
+  } catch {
+    return true;
+  }
+};
+
+const resolveFavoriteAlbumTarget = async (album: PlaybackStatsAlbum): Promise<LibraryAlbum | null> => {
+  const libraryAlbum = statsAlbumToLibraryAlbum(album);
+  if (libraryAlbum) {
+    const resolvedAlbum = await resolveAlbumDetailNavigationTarget(libraryAlbum);
+    if (await hasReadableFavoriteAlbumTracks(album, resolvedAlbum)) {
+      return resolvedAlbum;
+    }
+
+    const fallbackAlbum = await findFavoriteLibraryAlbum(album);
+    return fallbackAlbum && await hasReadableFavoriteAlbumTracks(album, fallbackAlbum) ? fallbackAlbum : null;
+  }
+
+  const resolvedAlbum = await findFavoriteLibraryAlbum(album);
+  return resolvedAlbum && await hasReadableFavoriteAlbumTracks(album, resolvedAlbum) ? resolvedAlbum : null;
+};
+
 const FavoriteAlbumGrid = ({
   albums,
   onOpenAlbum,
@@ -694,12 +777,9 @@ const FavoriteAlbumGrid = ({
   return (
     <div className="home-favorite-album-grid" aria-label={t('home.favoriteAlbums.aria')}>
       {visibleAlbums.map((album, index) => {
-        const canOpen = statsAlbumToLibraryAlbum(album) !== null;
-
         return (
           <button
             className="home-favorite-album-card"
-            disabled={!canOpen}
             key={album.id}
             type="button"
             onClick={() => onOpenAlbum(album)}
@@ -1481,6 +1561,7 @@ export const HomePage = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingRandomQueue, setIsGeneratingRandomQueue] = useState(false);
   const [isRefreshingRecommendations, setIsRefreshingRecommendations] = useState(false);
+  const [isRefreshingFavoriteAlbums, setIsRefreshingFavoriteAlbums] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentPanelMode, setRecentPanelMode] = useState<RecentPanelMode>(cachedRecentPanelMode);
   const [recentShelfPage, setRecentShelfPage] = useState(0);
@@ -1597,13 +1678,53 @@ export const HomePage = (): JSX.Element => {
   }, []);
 
   const openFavoriteAlbum = useCallback((album: PlaybackStatsAlbum): void => {
-    const libraryAlbum = statsAlbumToLibraryAlbum(album);
-    if (libraryAlbum) {
-      void openAlbumDetail(libraryAlbum, { returnTo: 'home' }).catch((navigationError) => {
+    void (async () => {
+      setError(null);
+      const libraryAlbum = await resolveFavoriteAlbumTarget(album);
+      if (!libraryAlbum) {
+        setError(t('home.error.albumNotFound', { album: album.title || t('queue.unknownAlbum') }));
+        return;
+      }
+
+      await openAlbumDetail(libraryAlbum, { returnTo: 'home' });
+    })().catch((navigationError) => {
         setError(navigationError instanceof Error ? navigationError.message : String(navigationError));
-      });
+    });
+  }, [t]);
+
+  const refreshFavoriteAlbums = useCallback((): void => {
+    const topAlbums = stats?.topAlbums ?? [];
+    if (topAlbums.length === 0 || isRefreshingFavoriteAlbums) {
+      return;
     }
-  }, []);
+
+    void (async () => {
+      setError(null);
+      setIsRefreshingFavoriteAlbums(true);
+      const refreshedAlbums: PlaybackStatsAlbum[] = [];
+
+      for (const album of topAlbums) {
+        const target = await resolveFavoriteAlbumTarget(album);
+        if (target) {
+          refreshedAlbums.push(favoriteStatsAlbumWithTarget(album, target));
+        }
+      }
+
+      setStats((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const nextStats = { ...current, topAlbums: refreshedAlbums };
+        mergeCachedHomePageData({ stats: nextStats });
+        return nextStats;
+      });
+    })().catch((refreshError) => {
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    }).finally(() => {
+      setIsRefreshingFavoriteAlbums(false);
+    });
+  }, [isRefreshingFavoriteAlbums, stats?.topAlbums]);
 
   const changeRecentPanelMode = useCallback((mode: RecentPanelMode): void => {
     cachedRecentPanelMode = mode;
@@ -1849,6 +1970,11 @@ export const HomePage = (): JSX.Element => {
     }
   }, [t]);
 
+  const refreshHome = useCallback(async (): Promise<void> => {
+    setRecentShelfPage(0);
+    await loadHome();
+  }, [loadHome]);
+
   useEffect(() => {
     if (cachedHomePageData === null) {
       const cancelHomeLoad = scheduleHomeStartupWork(() => void loadHome());
@@ -1860,12 +1986,18 @@ export const HomePage = (): JSX.Element => {
       };
     }
 
-    if (!hasCachedPlaybackPulseData(cachedHomePageData)) {
-      return scheduleHomeStartupWork(() => void loadPlaybackPulse(), homeInitialPlaybackPulseDelayMs);
+    const scheduledRefreshes: Array<() => void> = [];
+    if (!hasCachedLibraryPulseData(cachedHomePageData)) {
+      scheduledRefreshes.push(scheduleHomeStartupWork(() => void loadLibraryPulse()));
+    } else if (!hasCachedPlaybackPulseData(cachedHomePageData)) {
+      scheduledRefreshes.push(scheduleHomeStartupWork(() => void loadPlaybackPulse(), homeInitialPlaybackPulseDelayMs));
+    }
+    if (scheduledRefreshes.length > 0) {
+      return () => scheduledRefreshes.forEach((cancelRefresh) => cancelRefresh());
     }
 
     return undefined;
-  }, [loadHome, loadPlaybackPulse]);
+  }, [loadHome, loadLibraryPulse, loadPlaybackPulse]);
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
@@ -1994,6 +2126,10 @@ export const HomePage = (): JSX.Element => {
             <button className="home-secondary-action" type="button" onClick={() => navigateHomeRoute('queue')}>
               <ListMusic size={17} />
               {t('home.hero.action.viewQueue')}
+            </button>
+            <button className="home-secondary-action" type="button" disabled={isLoading} onClick={() => void refreshHome()}>
+              <RefreshCw size={17} />
+              {isLoading ? t('home.recommend.refreshing') : t('home.recommend.refresh')}
             </button>
             <button className="home-secondary-action" type="button" disabled={summary.songCount <= 0 || isGeneratingRandomQueue} onClick={() => void generateRandomQueue()}>
               <Shuffle size={17} />
@@ -2156,7 +2292,15 @@ export const HomePage = (): JSX.Element => {
         </div>
 
         <div className="home-panel home-favorite-album-panel" data-empty={(stats?.topAlbums?.length ?? 0) === 0}>
-          <SectionHeader title={t('home.favoriteAlbums.title')} />
+          <SectionHeader
+            title={t('home.favoriteAlbums.title')}
+            action={
+              <button type="button" disabled={isRefreshingFavoriteAlbums || (stats?.topAlbums?.length ?? 0) === 0} onClick={refreshFavoriteAlbums}>
+                <RefreshCw size={15} />
+                {isRefreshingFavoriteAlbums ? t('home.recommend.refreshing') : t('home.recommend.refresh')}
+              </button>
+            }
+          />
           <FavoriteAlbumGrid albums={stats?.topAlbums ?? []} onOpenAlbum={openFavoriteAlbum} />
         </div>
       </section>

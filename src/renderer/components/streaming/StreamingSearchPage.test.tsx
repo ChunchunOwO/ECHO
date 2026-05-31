@@ -10,6 +10,7 @@ import type {
   StreamingSearchResult,
   StreamingTrack,
 } from '../../../shared/types/streaming';
+import { I18nProvider } from '../../i18n/I18nProvider';
 import { PlaybackQueueProvider } from '../../stores/PlaybackQueueProvider';
 import { StreamingSearchPage } from './StreamingSearchPage';
 import { updateStreamingSearchMemory } from './streamingSearchMemory';
@@ -145,6 +146,16 @@ const resetStreamingMemory = (): void => {
   });
 };
 
+const renderStreamingSearchPage = (): void => {
+  render(
+    <I18nProvider>
+      <PlaybackQueueProvider>
+        <StreamingSearchPage />
+      </PlaybackQueueProvider>
+    </I18nProvider>,
+  );
+};
+
 afterEach(() => {
   cleanup();
   resetStreamingMemory();
@@ -181,11 +192,7 @@ describe('StreamingSearchPage artist detail', () => {
       },
     } as unknown as Window['echo'];
 
-    render(
-      <PlaybackQueueProvider>
-        <StreamingSearchPage />
-      </PlaybackQueueProvider>,
-    );
+    renderStreamingSearchPage();
 
     fireEvent.click(await screen.findByRole('button', { name: /周杰伦/ }));
 
@@ -237,17 +244,67 @@ describe('StreamingSearchPage artist detail', () => {
       },
     } as unknown as Window['echo'];
 
-    render(
-      <PlaybackQueueProvider>
-        <StreamingSearchPage />
-      </PlaybackQueueProvider>,
-    );
+    renderStreamingSearchPage();
 
     fireEvent.click(await screen.findByRole('button', { name: /002DYpxl3hW3EP/ }));
 
     expect(await screen.findByRole('heading', { name: 'Justin Bieber' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: '002DYpxl3hW3EP' })).toBeNull();
     expect(await screen.findByText('My Worlds - The Collection')).toBeTruthy();
+  });
+
+  it('reopens artist detail without keeping the return animation state', async () => {
+    const artistDetail: StreamingArtistDetail = {
+      ...artist,
+      topTracks: [],
+      albums: [],
+    };
+
+    updateStreamingSearchMemory({
+      provider: 'netease',
+      quality: 'max',
+      activeTab: 'artist',
+      input: artist.name,
+      query: artist.name,
+      result: searchResult,
+      failedCoverUrls: {},
+      scrollTop: 0,
+    });
+
+    window.echo = {
+      streaming: {
+        getProviders: vi.fn().mockResolvedValue([provider]),
+        search: vi.fn().mockResolvedValue(searchResult),
+        getArtist: vi.fn().mockResolvedValue(artistDetail),
+      },
+    } as unknown as Window['echo'];
+
+    renderStreamingSearchPage();
+
+    const clickResultArtist = async (): Promise<void> => {
+      const artistLabels = await screen.findAllByText(artist.name);
+      const artistCard = artistLabels
+        .map((element) => element.closest('[role="button"]'))
+        .find((element): element is HTMLElement => element instanceof HTMLElement);
+      if (!artistCard) {
+        throw new Error('Expected artist result card to be rendered');
+      }
+      fireEvent.click(artistCard);
+    };
+
+    await clickResultArtist();
+    expect(await screen.findByRole('heading', { name: artist.name })).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Streaming' }));
+    await waitFor(() => expect(document.querySelector('.streaming-artist-page')).toBeNull());
+
+    await clickResultArtist();
+    const detailPage = await waitFor(() => {
+      const element = document.querySelector('.streaming-artist-page');
+      expect(element).toBeTruthy();
+      return element as HTMLElement;
+    });
+    expect(detailPage.classList.contains('is-returning')).toBe(false);
   });
 });
 
@@ -290,11 +347,7 @@ describe('StreamingSearchPage download visibility', () => {
       },
     } as unknown as Window['echo'];
 
-    render(
-      <PlaybackQueueProvider>
-        <StreamingSearchPage />
-      </PlaybackQueueProvider>,
-    );
+    renderStreamingSearchPage();
 
     await waitFor(() => expect(document.querySelector('.streaming-row')).toBeTruthy());
     await new Promise((resolve) => window.setTimeout(resolve, 350));
@@ -314,11 +367,7 @@ describe('StreamingSearchPage download visibility', () => {
       },
     } as unknown as Window['echo'];
 
-    render(
-      <PlaybackQueueProvider>
-        <StreamingSearchPage />
-      </PlaybackQueueProvider>,
-    );
+    renderStreamingSearchPage();
 
     expect(await screen.findByText('晴天')).toBeTruthy();
     await waitFor(() => expect(window.echo?.app?.getSettings).toHaveBeenCalled());
@@ -338,11 +387,7 @@ describe('StreamingSearchPage download visibility', () => {
       },
     } as unknown as Window['echo'];
 
-    render(
-      <PlaybackQueueProvider>
-        <StreamingSearchPage />
-      </PlaybackQueueProvider>,
-    );
+    renderStreamingSearchPage();
 
     expect(await screen.findByText('晴天')).toBeTruthy();
     expect(await screen.findByTitle('下载')).toBeTruthy();

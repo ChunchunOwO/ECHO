@@ -350,6 +350,7 @@ export const defaultSettings: AppSettings = {
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
+  sidebarAutoHideEnabled: false,
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
   hiddenAudioDeviceKeys: [],
@@ -379,7 +380,7 @@ export const defaultSettings: AppSettings = {
   dataProtectionDisabled: false,
   autoUpdateEnabled: true,
   autoAccountCheckOnStartup: true,
-  suppressAccountExpiryNotices: false,
+  suppressAccountExpiryNotices: true,
   spotifyAutoLaunchOfficialPlayer: true,
   spotifyClientId: null,
   spotifyRedirectUri: null,
@@ -1273,7 +1274,8 @@ const normalizeNetworkProxyUrl = (value: unknown): string | null => {
   }
 
   try {
-    const url = new URL(trimmed);
+    const candidate = /^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+    const url = new URL(candidate);
     if (
       url.protocol !== 'http:' &&
       url.protocol !== 'https:' &&
@@ -1491,6 +1493,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     sidebarRouteOrder: normalizeSidebarRouteOrder(settings.sidebarRouteOrder),
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),
+    sidebarAutoHideEnabled: settings.sidebarAutoHideEnabled === true,
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: migrateRememberedAudioOutput(
       normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -1523,7 +1526,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     dataProtectionDisabled: settings.dataProtectionDisabled === true,
     autoUpdateEnabled: settings.autoUpdateEnabled !== false,
     autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
-    suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices === true,
+    suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices !== false,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
     spotifyClientId: normalizeSpotifyClientId(settings.spotifyClientId),
     spotifyRedirectUri: normalizeSpotifyRedirectUri(settings.spotifyRedirectUri),

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import type { AudioStatus } from './audioTypes';
-import type { PlaybackProbeHint } from '../../shared/types/playback';
+import type { PlaybackProbeHint, PlaybackTrackMetadataHint } from '../../shared/types/playback';
 
 export type PlaybackMemory = {
   filePath: string;
@@ -10,10 +10,27 @@ export type PlaybackMemory = {
   positionSeconds: number;
   durationSeconds: number;
   probe?: PlaybackProbeHint;
+  metadata?: PlaybackTrackMetadataHint;
   updatedAt: string;
 };
 
 const getMemoryPath = (): string => join(app.getPath('userData'), 'echo-playback-memory.json');
+
+const isHttpUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const shouldSkipVolatileStreamMemory = (
+  filePath: string,
+  trackId: string | null,
+  metadata?: PlaybackTrackMetadataHint,
+): boolean =>
+  isHttpUrl(filePath) && (!trackId || !metadata?.title?.trim());
 
 const finiteNonNegative = (value: unknown): number | null => {
   const numberValue = Number(value);
@@ -55,6 +72,41 @@ const normalizeProbe = (value: unknown): PlaybackProbeHint | undefined => {
   return Object.keys(probe).length > 0 ? probe : undefined;
 };
 
+const optionalText = (value: unknown): string | null => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed ? trimmed : null;
+};
+
+const normalizeMetadata = (value: unknown): PlaybackTrackMetadataHint | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const metadata: PlaybackTrackMetadataHint = {};
+  const title = optionalText(input.title);
+  const artist = optionalText(input.artist);
+  const album = optionalText(input.album);
+  const albumArtist = optionalText(input.albumArtist);
+  const coverUrl = optionalText(input.coverUrl);
+  if (title) metadata.title = title;
+  if (artist) metadata.artist = artist;
+  if (album) metadata.album = album;
+  if (albumArtist) metadata.albumArtist = albumArtist;
+  if (coverUrl) metadata.coverUrl = coverUrl;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+};
+
+const metadataFromStatus = (status: AudioStatus): PlaybackTrackMetadataHint | undefined => {
+  const metadata: PlaybackTrackMetadataHint = {};
+  if (status.currentTrackTitle?.trim()) metadata.title = status.currentTrackTitle.trim();
+  if (status.currentTrackArtist?.trim()) metadata.artist = status.currentTrackArtist.trim();
+  if (status.currentTrackAlbum?.trim()) metadata.album = status.currentTrackAlbum.trim();
+  if (status.currentTrackAlbumArtist?.trim()) metadata.albumArtist = status.currentTrackAlbumArtist.trim();
+  if (status.currentTrackCoverUrl?.trim()) metadata.coverUrl = status.currentTrackCoverUrl.trim();
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+};
+
 const normalizeMemory = (value: unknown): PlaybackMemory | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -69,12 +121,19 @@ const normalizeMemory = (value: unknown): PlaybackMemory | null => {
     return null;
   }
 
+  const trackId = typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : null;
+  const metadata = normalizeMetadata(input.metadata);
+  if (shouldSkipVolatileStreamMemory(filePath, trackId, metadata)) {
+    return null;
+  }
+
   return {
     filePath,
-    trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : null,
+    trackId,
     positionSeconds,
     durationSeconds: durationSeconds ?? 0,
     probe: normalizeProbe(input.probe),
+    metadata,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString(),
   };
 };
@@ -95,7 +154,13 @@ export class PlaybackMemoryStore {
   }
 
   save(status: AudioStatus): void {
-    if (!status.currentFilePath || status.state === 'stopped' || status.state === 'idle') {
+    const metadata = metadataFromStatus(status);
+    if (
+      !status.currentFilePath ||
+      status.state === 'stopped' ||
+      status.state === 'idle' ||
+      shouldSkipVolatileStreamMemory(status.currentFilePath, status.currentTrackId, metadata)
+    ) {
       this.clear();
       return;
     }
@@ -113,6 +178,7 @@ export class PlaybackMemoryStore {
         bitDepth: status.bitDepth,
         bitrate: status.bitrate,
       },
+      metadata,
       updatedAt: new Date().toISOString(),
     };
     const memoryPath = getMemoryPath();

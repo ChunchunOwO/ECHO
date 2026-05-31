@@ -1,19 +1,22 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
   LibraryPage,
   PlaybackHistoryEntry,
   PlaybackHistorySummary,
   PlaybackStatsDashboard,
 } from '../../shared/types/library';
+import { I18nProvider } from '../i18n/I18nProvider';
 import { HistoryPage, resetHistoryPageCacheForTest } from './HistoryPage';
 
+const playbackQueueMock = vi.hoisted(() => ({
+  appendToQueue: vi.fn(),
+  playTrack: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock('../stores/PlaybackQueueProvider', () => ({
-  usePlaybackQueue: () => ({
-    appendToQueue: vi.fn(),
-    playTrack: vi.fn(),
-  }),
+  usePlaybackQueue: () => playbackQueueMock,
 }));
 
 vi.mock('../utils/albumNavigation', () => ({
@@ -52,12 +55,15 @@ const historyEntry = (id: string, overrides: Partial<PlaybackHistoryEntry> = {})
   ...overrides,
 });
 
-const historyPage = (items: PlaybackHistoryEntry[]): LibraryPage<PlaybackHistoryEntry> => ({
-  hasMore: false,
+const historyPage = (
+  items: PlaybackHistoryEntry[],
+  overrides: Partial<LibraryPage<PlaybackHistoryEntry>> = {},
+): LibraryPage<PlaybackHistoryEntry> => ({
+  hasMore: overrides.hasMore ?? false,
   items,
-  page: 1,
-  pageSize: 50,
-  total: items.length,
+  page: overrides.page ?? 1,
+  pageSize: overrides.pageSize ?? 10,
+  total: overrides.total ?? items.length,
 });
 
 const historySummary = (overrides: Partial<PlaybackHistorySummary> = {}): PlaybackHistorySummary => ({
@@ -72,17 +78,37 @@ const historySummary = (overrides: Partial<PlaybackHistorySummary> = {}): Playba
 });
 
 const stats = (): PlaybackStatsDashboard => ({
-  dailyActivity: [],
-  formatBreakdown: [],
+  dailyActivity: [
+    {
+      date: '2026-05-25',
+      playCount: 3,
+      playedSeconds: 540,
+    },
+  ],
+  formatBreakdown: [{ id: 'flac', label: 'FLAC', playCount: 2, playedSeconds: 360 }],
   generatedAt: '2026-05-25T09:00:00.000Z',
-  qualityBreakdown: [],
+  qualityBreakdown: [{ id: 'lossless', label: 'Lossless', playCount: 2, playedSeconds: 360 }],
   topAlbums: [],
-  topArtists: [],
-  topTracks: [],
+  topArtists: [{ artist: 'History Artist', completedCount: 2, playCount: 3, playedSeconds: 540 }],
+  topTracks: [
+    {
+      album: 'History Album',
+      artist: 'History Artist',
+      completedCount: 2,
+      coverThumb: null,
+      durationSeconds: 180,
+      id: 'top-track',
+      lastPlayedAt: '2026-05-25T09:00:00.000Z',
+      playCount: 3,
+      playedSeconds: 540,
+      title: 'Top History Song',
+      trackId: 'top-track',
+    },
+  ],
   totals: {
-    completedCount: 1,
-    playCount: 1,
-    playedSeconds: 180,
+    completedCount: 2,
+    playCount: 3,
+    playedSeconds: 540,
     uniqueArtists: 1,
     uniqueTracks: 1,
   },
@@ -95,6 +121,12 @@ const installLibraryMock = (overrides: Partial<NonNullable<typeof window.echo>['
     getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('fresh')])),
     getPlaybackHistorySummary: vi.fn().mockResolvedValue(historySummary()),
     getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats()),
+    refreshInvalidPlaybackHistory: vi.fn().mockResolvedValue({
+      removedCount: 0,
+      removedEntriesCount: 0,
+      removedStatsCount: 0,
+      scannedCount: 0,
+    }),
     ...overrides,
   };
 
@@ -106,10 +138,23 @@ const installLibraryMock = (overrides: Partial<NonNullable<typeof window.echo>['
   return library;
 };
 
+const renderHistoryPage = () => {
+  window.localStorage.setItem('echo-next.locale', 'en-US');
+  return render(
+    <I18nProvider>
+      <HistoryPage />
+    </I18nProvider>,
+  );
+};
+
 afterEach(() => {
   cleanup();
   resetHistoryPageCacheForTest();
+  window.localStorage.removeItem('echo-next.locale');
   vi.restoreAllMocks();
+  playbackQueueMock.appendToQueue.mockReset();
+  playbackQueueMock.playTrack.mockReset();
+  playbackQueueMock.playTrack.mockResolvedValue({});
   Object.defineProperty(window, 'echo', {
     configurable: true,
     value: undefined,
@@ -139,19 +184,17 @@ describe('HistoryPage', () => {
       getPlaybackHistory: vi.fn(() => new Promise<LibraryPage<PlaybackHistoryEntry>>(() => undefined)),
     });
 
-    render(<HistoryPage />);
+    renderHistoryPage();
 
     expect(screen.getByText('Cached History Track')).toBeTruthy();
   });
 
-  it('persists the first history page before stats dashboard refresh finishes', async () => {
-    const pendingStats = new Promise<PlaybackStatsDashboard>(() => undefined);
+  it('persists the first history page after refresh', async () => {
     installLibraryMock({
       getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('cached-before-stats')])),
-      getPlaybackStatsDashboard: vi.fn(() => pendingStats),
     });
 
-    render(<HistoryPage />);
+    renderHistoryPage();
 
     await screen.findByText('History cached-before-stats');
     await waitFor(() => {
@@ -160,5 +203,90 @@ describe('HistoryPage', () => {
       };
       expect(cached.data?.items?.[0]?.title).toBe('History cached-before-stats');
     });
+  });
+
+  it('restores the stats dashboard after the first history page renders', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('pretty')])),
+    });
+
+    renderHistoryPage();
+
+    await screen.findByText('History pretty');
+    await waitFor(() => expect(library.getPlaybackStatsDashboard).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('播放统计仪表盘')).toBeTruthy();
+    expect(screen.getByText('Top History Song')).toBeTruthy();
+  });
+
+  it('refreshes invalid history entries without clearing the whole history', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn()
+        .mockResolvedValueOnce(historyPage([historyEntry('missing')]))
+        .mockResolvedValue(historyPage([])),
+      refreshInvalidPlaybackHistory: vi.fn().mockResolvedValue({
+        removedCount: 1,
+        removedEntriesCount: 2,
+        removedStatsCount: 1,
+        scannedCount: 1,
+      }),
+    });
+
+    renderHistoryPage();
+
+    await screen.findByText('History missing');
+    fireEvent.click(screen.getByRole('button', { name: /Refresh invalid songs/i }));
+
+    await waitFor(() => expect(library.refreshInvalidPlaybackHistory).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(library.getPlaybackHistory).toHaveBeenCalledTimes(2));
+    expect(library.clearPlaybackHistory).not.toHaveBeenCalled();
+    expect(await screen.findByText('Removed 1 invalid history songs.')).toBeTruthy();
+  });
+
+  it('loads more history manually without playback controls', async () => {
+    const entries = Array.from({ length: 12 }, (_, index) =>
+      historyEntry(`rank-${index}`, {
+        playCount: 20 - index,
+        startedAt: `2026-05-25T09:${String(index).padStart(2, '0')}:00.000Z`,
+      }),
+    );
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn()
+        .mockResolvedValueOnce(historyPage(entries.slice(0, 10), { hasMore: true, page: 1, total: 12 }))
+        .mockResolvedValueOnce(historyPage(entries.slice(10), { hasMore: false, page: 2, total: 12 })),
+    });
+
+    renderHistoryPage();
+
+    await screen.findByText('History rank-0');
+    expect(screen.queryByText('History rank-10')).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(10);
+    expect(screen.queryByRole('button', { name: /Play History/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Add to queue/i })).toBeNull();
+    expect(playbackQueueMock.playTrack).not.toHaveBeenCalled();
+    expect(playbackQueueMock.appendToQueue).not.toHaveBeenCalled();
+    expect(library.getPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 10, sort: 'plays' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Load more/i }));
+
+    await screen.findByText('History rank-11');
+    expect(screen.getAllByRole('listitem')).toHaveLength(12);
+    expect(library.getPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 10, sort: 'plays' }));
+  });
+
+  it('removes a single history entry without touching playback', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('delete-me'), historyEntry('keep')])),
+    });
+
+    renderHistoryPage();
+
+    await screen.findByText('History delete-me');
+    fireEvent.click(screen.getByRole('button', { name: '从历史移除 History delete-me' }));
+
+    await waitFor(() => expect(library.deletePlaybackHistoryEntry).toHaveBeenCalledWith('delete-me'));
+    expect(screen.queryByText('History delete-me')).toBeNull();
+    expect(screen.getByText('History keep')).toBeTruthy();
+    expect(playbackQueueMock.playTrack).not.toHaveBeenCalled();
+    expect(playbackQueueMock.appendToQueue).not.toHaveBeenCalled();
   });
 });

@@ -28,6 +28,8 @@ const neteaseReferer = 'https://music.163.com/';
 const loadFromCjs = createRequire(import.meta.url);
 const neteaseSongDetailBatchSize = 100;
 const neteaseCloudSearchFrequentOperationCooldownMs = 30 * 1000;
+const neteasePlaybackApiTimeoutMs = 2_500;
+const neteasePlaybackJsonTimeoutMs = 4_500;
 let neteaseCloudSearchCooldownUntil = 0;
 
 const neteaseHeaders = (cookie?: string): Record<string, string> => ({
@@ -45,6 +47,8 @@ type NeteaseApi = {
   artist_top_song?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   artists?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   cloudsearch?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  dj_detail?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  dj_program?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   likelist?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   login_status?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   playlist_track_all?: (request: Record<string, unknown>) => Promise<{ body?: { songs?: unknown[] } }>;
@@ -122,6 +126,22 @@ export const setNeteaseApiForTests = (api: NeteaseApi | null | undefined): void 
   neteaseCloudSearchCooldownUntil = 0;
 };
 
+const withPlaybackApiTimeout = async <T>(work: Promise<T>): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('netease_playback_url_timeout')), neteasePlaybackApiTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
 const isNeteaseFrequentOperationError = (value: unknown): boolean => {
   const record = asRecord(value);
   const body = asRecord(record.body);
@@ -192,11 +212,11 @@ const resolveWithNcmApi = async (
 
   if (ncm.song_url_v1) {
     try {
-      const response = await ncm.song_url_v1({
+      const response = await withPlaybackApiTimeout(ncm.song_url_v1({
         id,
         level: candidate.level,
         ...(cookie ? { cookie } : {}),
-      });
+      }));
       const entry = asRecord(Array.isArray(response.body?.data) ? response.body?.data[0] : null);
       const url = text(entry.url);
       if (url) {
@@ -217,11 +237,11 @@ const resolveWithNcmApi = async (
   }
 
   try {
-    const response = await ncm.song_url({
+    const response = await withPlaybackApiTimeout(ncm.song_url({
       id,
       br: candidate.bitrate,
       ...(cookie ? { cookie } : {}),
-    });
+    }));
     const entry = asRecord(Array.isArray(response.body?.data) ? response.body?.data[0] : null);
     const url = text(entry.url);
     if (!url) {
@@ -370,6 +390,65 @@ const mapPlaylist = (playlistValue: unknown): StreamingPlaylist => {
     coverUrl: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl ?? playlist.coverUrl, 600),
     coverThumb: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl ?? playlist.coverUrl, 160),
     trackCount: integer(playlist.trackCount ?? playlist.bookCount ?? playlist.size),
+  };
+};
+
+const neteaseDjRadioPlaylistPrefix = 'djradio:';
+
+const neteaseDjRadioProviderPlaylistId = (radioId: string): string => `${neteaseDjRadioPlaylistPrefix}${radioId}`;
+
+const neteaseDjRadioId = (providerPlaylistId: string): string | null =>
+  providerPlaylistId.startsWith(neteaseDjRadioPlaylistPrefix) ? providerPlaylistId.slice(neteaseDjRadioPlaylistPrefix.length).trim() || null : null;
+
+const djProgramArtistFallback = (program: Record<string, unknown>, radio: Record<string, unknown>): unknown[] => {
+  const dj = asRecord(program.dj ?? radio.dj);
+  const name = text(dj.nickname) ?? text(dj.userName) ?? text(dj.name) ?? text(radio.name);
+  if (!name) {
+    return [];
+  }
+
+  return [
+    {
+      id: dj.userId ?? dj.id ?? name,
+      name,
+    },
+  ];
+};
+
+const mapDjProgramTrack = (programValue: unknown, radioValue: unknown): StreamingTrack | null => {
+  const program = asRecord(programValue);
+  const radio = asRecord(radioValue);
+  const mainSong = asRecord(program.mainSong);
+  const providerTrackId = neteaseIdText(mainSong.id ?? program.mainTrackId);
+  if (!providerTrackId) {
+    return null;
+  }
+
+  const album = asRecord(mainSong.album ?? mainSong.al);
+  const radioId = neteaseIdText(radio.id);
+  const coverSource = program.coverUrl ?? program.blurCoverUrl ?? album.picUrl ?? album.blurPicUrl ?? album.pic ?? radio.picUrl ?? radio.intervenePicUrl;
+  const fallbackArtists = djProgramArtistFallback(program, radio);
+  const song = {
+    ...mainSong,
+    id: providerTrackId,
+    name: text(program.name) ?? text(mainSong.name) ?? `NetEase Podcast ${providerTrackId}`,
+    duration: mainSong.duration ?? mainSong.dt ?? program.duration,
+    dt: mainSong.dt ?? mainSong.duration ?? program.duration,
+    artists: Array.isArray(mainSong.artists) && mainSong.artists.length > 0 ? mainSong.artists : fallbackArtists,
+    ar: Array.isArray(mainSong.ar) && mainSong.ar.length > 0 ? mainSong.ar : fallbackArtists,
+    album: {
+      ...album,
+      id: radioId ? neteaseDjRadioProviderPlaylistId(radioId) : album.id ?? 0,
+      name: text(radio.name) ?? text(album.name) ?? 'NetEase Podcast',
+      picUrl: album.picUrl ?? radio.picUrl ?? radio.intervenePicUrl,
+      blurPicUrl: album.blurPicUrl ?? radio.picUrl ?? radio.intervenePicUrl,
+      pic: album.pic ?? radio.picId,
+    },
+  };
+
+  return {
+    ...mapSong(song, text(coverSource)),
+    lyricsStatus: program.existLyric === true ? 'available' : 'unknown',
   };
 };
 
@@ -802,6 +881,11 @@ export class NeteaseStreamingProvider implements StreamingProvider {
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
     const page = Math.max(1, Math.floor(input.page ?? 1));
     const pageSize = Math.min(500, Math.max(1, Math.floor(input.pageSize ?? 100)));
+    const djRadioId = neteaseDjRadioId(input.providerPlaylistId);
+    if (djRadioId) {
+      return this.getDjRadioPlaylist(djRadioId, page, pageSize);
+    }
+
     const params = new URLSearchParams({ id: input.providerPlaylistId });
     const data = asRecord(
       await jsonFetch(`https://music.163.com/api/v6/playlist/detail?${params.toString()}`, {
@@ -841,6 +925,105 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       total,
       hasMore: offset + consumedCount < total,
     };
+  }
+
+  private async getDjRadioPlaylist(radioId: string, page: number, pageSize: number): Promise<StreamingPlaylistDetail> {
+    const cookie = accountCookie();
+    const offset = (page - 1) * pageSize;
+    const [detailData, programData] = await Promise.all([
+      this.fetchDjRadioDetail(radioId, cookie).catch(() => ({})),
+      this.fetchDjRadioProgramPage(radioId, offset, pageSize, cookie),
+    ]);
+    const programRecord = asRecord(programData);
+    const programDataRecord = asRecord(programRecord.data);
+    const programs = (
+      Array.isArray(programRecord.programs)
+        ? programRecord.programs
+        : Array.isArray(programDataRecord.programs)
+          ? programDataRecord.programs
+          : Array.isArray(programDataRecord.list)
+            ? programDataRecord.list
+            : Array.isArray(programRecord.list)
+              ? programRecord.list
+              : []
+    ) as unknown[];
+    const detailRecord = asRecord(detailData);
+    const radioFromDetail = asRecord(detailRecord.data ?? detailRecord.djRadio ?? detailRecord.radio ?? detailRecord);
+    const radioFromProgram = asRecord(asRecord(programs[0]).radio);
+    const hasDetailRadio = Boolean(text(radioFromDetail.name) || radioFromDetail.id);
+    const baseRadio = hasDetailRadio ? radioFromDetail : radioFromProgram;
+    const radio: Record<string, unknown> = { ...baseRadio, id: neteaseIdText(baseRadio.id) ?? radioId };
+    const total = integer(programRecord.count ?? programRecord.total ?? programDataRecord.count ?? programDataRecord.total ?? radio.programCount) ?? programs.length;
+    const explicitMore = typeof programRecord.more === 'boolean' ? programRecord.more : typeof programDataRecord.more === 'boolean' ? programDataRecord.more : null;
+    const tracks = programs.map((program) => mapDjProgramTrack(program, radio)).filter((track): track is StreamingTrack => Boolean(track));
+
+    return {
+      id: streamingStableKey(provider, `playlist:${neteaseDjRadioProviderPlaylistId(radioId)}`),
+      provider,
+      providerPlaylistId: neteaseDjRadioProviderPlaylistId(radioId),
+      title: text(radio.name) ?? 'NetEase Podcast',
+      description: text(radio.desc) ?? text(radio.description),
+      creator: text(asRecord(radio.dj).nickname) ?? text(asRecord(radio.dj).userName) ?? text(asRecord(radio.dj).name),
+      coverUrl: neteaseImageUrl(radio.picUrl ?? radio.intervenePicUrl ?? radio.coverUrl, 600),
+      coverThumb: neteaseImageUrl(radio.picUrl ?? radio.intervenePicUrl ?? radio.coverUrl, 160),
+      trackCount: total,
+      tracks,
+      page,
+      pageSize,
+      total,
+      hasMore: explicitMore ?? (total ? offset + programs.length < total : programs.length === pageSize),
+    };
+  }
+
+  private async fetchDjRadioDetail(radioId: string, cookie: string | undefined): Promise<Record<string, unknown>> {
+    const ncm = getNcmApi();
+    if (ncm?.dj_detail) {
+      try {
+        return asRecord((await ncm.dj_detail({ rid: radioId, ...(cookie ? { cookie } : {}) })).body);
+      } catch {
+        // Fall through to the public endpoint below.
+      }
+    }
+
+    const params = new URLSearchParams({ id: radioId });
+    return asRecord(
+      await jsonFetch(`https://music.163.com/api/djradio/v2/get?${params.toString()}`, {
+        headers: neteaseHeaders(cookie),
+        timeoutMs: 12_000,
+      }),
+    );
+  }
+
+  private async fetchDjRadioProgramPage(radioId: string, offset: number, limit: number, cookie: string | undefined): Promise<Record<string, unknown>> {
+    const ncm = getNcmApi();
+    if (ncm?.dj_program) {
+      try {
+        return asRecord(
+          (await ncm.dj_program({
+            rid: radioId,
+            limit,
+            offset,
+            asc: 'false',
+            ...(cookie ? { cookie } : {}),
+          })).body,
+        );
+      } catch {
+        // Fall through to the public endpoint below.
+      }
+    }
+
+    const params = new URLSearchParams({
+      radioId,
+      limit: String(limit),
+      offset: String(offset),
+      asc: 'false',
+    });
+    return asRecord(
+      await jsonFetch(`https://music.163.com/api/dj/program/byradio?${params.toString()}`, {
+        headers: neteaseHeaders(cookie),
+        timeoutMs: 12_000,
+      }),
+    );
   }
 
   async getLikedSongsPlaylist(input: { page?: number; pageSize?: number } = {}): Promise<StreamingPlaylistDetail> {
@@ -1261,9 +1444,11 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       const data = asRecord(
         await jsonFetch(`https://music.163.com/api/song/enhance/player/url/v1?${params.toString()}`, {
           headers: neteaseHeaders(cookie),
+          timeoutMs: neteasePlaybackJsonTimeoutMs,
         }).catch(() =>
           jsonFetch(`https://music.163.com/api/song/enhance/player/url?${params.toString()}`, {
             headers: neteaseHeaders(cookie),
+            timeoutMs: neteasePlaybackJsonTimeoutMs,
           }),
         ),
       );
@@ -1290,4 +1475,3 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     throw new Error(message ?? `这首歌暂时不可播放，已尝试 ${attemptedLevels.join(' / ')} 音质${code ? `（网易返回 ${code}）` : ''}`);
   }
 }
-

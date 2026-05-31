@@ -383,6 +383,7 @@ const installAppSettingsMock = (
 afterEach(() => {
   cleanup();
   resetHomePageCacheForTest();
+  window.localStorage.removeItem('echo-next.locale');
   vi.restoreAllMocks();
   queueState.value.currentTrack = null;
   queueState.value.lastPlayedTrack = null;
@@ -573,6 +574,82 @@ describe('HomePage', () => {
     expect(library.getAlbumForTrack).not.toHaveBeenCalled();
   });
 
+  it('repairs an empty cached home snapshot after the library becomes available', async () => {
+    const emptyLibrary = installLibraryMock({
+      getSummary: vi.fn().mockResolvedValue(summary({ songCount: 0, albumCount: 0, artistCount: 0, folderCount: 0, totalDuration: 0 })),
+      getTracks: vi.fn().mockResolvedValue(page([])),
+      getAlbums: vi.fn().mockResolvedValue(page([])),
+      getPlaybackHistory: vi.fn().mockResolvedValue(page([])),
+      getPlaybackHistorySummary: vi.fn().mockResolvedValue(historySummary({ todayCount: 0, totalCount: 0, rangeCount: 0 })),
+      getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats({ topAlbums: [], topArtists: [] })),
+    });
+
+    render(<HomePage />);
+
+    await waitFor(() => expect(emptyLibrary.getSummary).toHaveBeenCalled());
+    await waitFor(() => expect(window.localStorage.getItem('echo-next.home-page-cache.v1')).toBeTruthy());
+    cleanup();
+
+    const library = installLibraryMock();
+    render(<HomePage />);
+
+    expect(screen.queryByRole('button', { name: /Daily Album One/ })).toBeNull();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Daily Album One/ }).length).toBeGreaterThan(0));
+    expect(library.getSummary).toHaveBeenCalled();
+    expect(library.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 8, sort: 'recent' });
+    expect(library.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 8, sort: 'recent' });
+    expect(library.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 7, sort: 'default' });
+  });
+
+  it('manually refreshes the lightweight home library snapshot from an empty page', async () => {
+    const getSummary = vi.fn().mockResolvedValue(summary({ songCount: 0, albumCount: 0, artistCount: 0, folderCount: 0, totalDuration: 0 }));
+    const getTracks = vi.fn().mockResolvedValue(page([]));
+    const getAlbums = vi.fn().mockResolvedValue(page([]));
+    const getPlaybackHistory = vi.fn().mockResolvedValue(page([]));
+    const getPlaybackHistorySummary = vi.fn().mockResolvedValue(historySummary({ todayCount: 0, totalCount: 0, rangeCount: 0 }));
+    const getPlaybackStatsDashboard = vi.fn().mockResolvedValue(stats({ topAlbums: [], topArtists: [] }));
+    const library = installLibraryMock({
+      getSummary,
+      getTracks,
+      getAlbums,
+      getPlaybackHistory,
+      getPlaybackHistorySummary,
+      getPlaybackStatsDashboard,
+    });
+
+    render(<HomePage />);
+
+    await waitFor(() => expect(library.getSummary).toHaveBeenCalled());
+    const playbackHistoryCallsBeforeRefresh = getPlaybackHistory.mock.calls.length;
+    const playbackHistorySummaryCallsBeforeRefresh = getPlaybackHistorySummary.mock.calls.length;
+    const playbackStatsDashboardCallsBeforeRefresh = getPlaybackStatsDashboard.mock.calls.length;
+    getSummary.mockClear();
+    getTracks.mockClear();
+    getAlbums.mockClear();
+    getSummary.mockResolvedValue(summary());
+    getTracks.mockResolvedValue(page([
+      track('recent-1', { title: 'Breeze', artist: 'Moe', coverId: 'recent-cover', coverThumb: 'echo-cover://thumb/recent-cover' }),
+    ]));
+    getAlbums.mockImplementation(async (query?: { sort?: string }) =>
+      query?.sort === 'recent'
+        ? page([album('manual-added', { title: 'Manual Added Album', coverId: 'manual-added-cover' })])
+        : page([album('manual-recommendation', { title: 'Manual Recommendation', coverId: 'manual-recommendation-cover' })]),
+    );
+
+    const refreshButton = document.querySelectorAll<HTMLButtonElement>('.home-hero-actions .home-secondary-action')[1];
+    fireEvent.click(refreshButton);
+
+    expect(await screen.findByRole('button', { name: /Manual Added Album/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Manual Recommendation/ })).toBeTruthy();
+    expect(getSummary).toHaveBeenCalledTimes(1);
+    expect(getTracks).toHaveBeenLastCalledWith({ page: 1, pageSize: 8, sort: 'recent' });
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 8, sort: 'recent' });
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 7, sort: 'default' });
+    expect(getPlaybackHistory).toHaveBeenCalledTimes(playbackHistoryCallsBeforeRefresh);
+    expect(getPlaybackHistorySummary).toHaveBeenCalledTimes(playbackHistorySummaryCallsBeforeRefresh);
+    expect(getPlaybackStatsDashboard).toHaveBeenCalledTimes(playbackStatsDashboardCallsBeforeRefresh);
+  });
+
   it('keeps the selected recent activity tab when returning to home', async () => {
     installLibraryMock();
 
@@ -721,6 +798,239 @@ describe('HomePage', () => {
     } finally {
       window.removeEventListener(albumDetailNavigationEvent, navigateAlbum);
     }
+  });
+
+  it('recovers a favorite album id when the stats album has no readable tracks', async () => {
+    const staleAlbum = album('favorite-album-1', {
+      albumKey: 'favorite:1',
+      title: 'Favorite Album One',
+      albumArtist: 'Moe',
+      coverId: 'favorite-cover-1',
+      coverThumb: 'echo-cover://album/favorite-cover-1',
+      trackCount: 8,
+    });
+    const freshAlbum = album('fresh-favorite-album-1', {
+      albumKey: 'fresh-favorite:1',
+      title: 'Favorite Album One',
+      albumArtist: 'Moe',
+      coverId: 'favorite-cover-1',
+      coverThumb: 'echo-cover://album/favorite-cover-1',
+      trackCount: 8,
+    });
+    const getAlbums = vi.fn(async (query?: { search?: string; sort?: string }) => {
+      if (query?.search === 'Favorite Album One') {
+        return page([staleAlbum, freshAlbum]);
+      }
+
+      return page([album('daily-recommendation', { title: 'Daily Recommendation', coverId: 'daily-recommendation-cover' })]);
+    });
+    const getAlbumTracks = vi.fn(async (albumId: string) =>
+      albumId === 'fresh-favorite-album-1'
+        ? page([track('fresh-favorite-track')])
+        : page([]),
+    );
+    const library = installLibraryMock({
+      getAlbum: vi.fn().mockResolvedValue({ ...staleAlbum, coverLarge: null }),
+      getAlbumTracks,
+      getAlbums,
+    });
+    const navigateAlbum = vi.fn<(event: Event) => void>();
+    window.addEventListener(albumDetailNavigationEvent, navigateAlbum);
+
+    try {
+      render(<HomePage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /Favorite Album One/ }));
+
+      await waitFor(() =>
+        expect((navigateAlbum.mock.calls[0]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
+          expect.objectContaining({ album: expect.objectContaining({ id: 'fresh-favorite-album-1' }), returnTo: 'home' }),
+        ),
+      );
+      expect(library.getAlbum).toHaveBeenCalledWith('favorite-album-1');
+      expect(getAlbumTracks).toHaveBeenCalledWith('favorite-album-1', { page: 1, pageSize: 1 });
+      expect(getAlbumTracks).toHaveBeenCalledWith('fresh-favorite-album-1', { page: 1, pageSize: 1 });
+      expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Favorite Album One' });
+    } finally {
+      window.removeEventListener(albumDetailNavigationEvent, navigateAlbum);
+    }
+  });
+
+  it('opens a favorite album without a stats album id by resolving it from the current album wall', async () => {
+    const resolvedAlbum = album('resolved-favorite-album', {
+      title: 'Resolved Favorite',
+      albumArtist: 'Roselia',
+      year: 2026,
+      coverId: 'resolved-favorite-cover',
+      coverThumb: 'echo-cover://album/resolved-favorite-cover',
+    });
+    const getAlbums = vi.fn(async (query?: { search?: string; sort?: string }) => {
+      if (query?.search === 'Resolved Favorite') {
+        return page([resolvedAlbum]);
+      }
+
+      return page([]);
+    });
+    installLibraryMock({
+      getAlbums,
+      getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats({
+        topAlbums: [{
+          id: 'stats-resolved-favorite',
+          albumId: null,
+          mediaType: 'local',
+          albumKey: null,
+          title: 'Resolved Favorite',
+          albumArtist: 'Roselia',
+          year: 2026,
+          trackCount: 9,
+          duration: 1800,
+          coverId: 'stats-resolved-favorite-cover',
+          coverThumb: 'echo-cover://album/stats-resolved-favorite-cover',
+          playCount: 12,
+          completedCount: 10,
+          playedSeconds: 1200,
+          lastPlayedAt: '2026-05-25T09:00:00.000Z',
+        }],
+      })),
+    });
+    const navigateAlbum = vi.fn<(event: Event) => void>();
+    window.addEventListener(albumDetailNavigationEvent, navigateAlbum);
+
+    try {
+      render(<HomePage />);
+
+      const button = await screen.findByRole('button', { name: /Resolved Favorite/ });
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(button);
+
+      await waitFor(() =>
+        expect((navigateAlbum.mock.calls[0]?.[0] as CustomEvent<unknown> | undefined)?.detail).toEqual(
+          expect.objectContaining({ album: expect.objectContaining({ id: 'resolved-favorite-album' }), returnTo: 'home' }),
+        ),
+      );
+      expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Resolved Favorite' });
+    } finally {
+      window.removeEventListener(albumDetailNavigationEvent, navigateAlbum);
+    }
+  });
+
+  it('keeps a favorite album without a stats album id clickable and reports not found when no current album matches', async () => {
+    const getAlbums = vi.fn(async () => page([]));
+    installLibraryMock({
+      getAlbums,
+      getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats({
+        topAlbums: [{
+          id: 'stats-missing-favorite',
+          albumId: null,
+          mediaType: 'local',
+          albumKey: null,
+          title: 'Missing Favorite',
+          albumArtist: 'Roselia',
+          year: 2026,
+          trackCount: 9,
+          duration: 1800,
+          coverId: null,
+          coverThumb: null,
+          playCount: 12,
+          completedCount: 10,
+          playedSeconds: 1200,
+          lastPlayedAt: '2026-05-25T09:00:00.000Z',
+        }],
+      })),
+    });
+
+    render(<HomePage />);
+
+    const button = await screen.findByRole('button', { name: /Missing Favorite/ });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+
+    expect((await screen.findByRole('alert')).textContent).toBe('未找到专辑：Missing Favorite');
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Missing Favorite' });
+  });
+
+  it('refreshes favorite albums by dropping entries that no longer resolve without reloading playback stats', async () => {
+    const resolvedAlbum = album('resolved-refresh-favorite', {
+      title: 'Refresh Keep',
+      albumArtist: 'Roselia',
+      coverId: 'refresh-keep-cover',
+      coverThumb: 'echo-cover://album/refresh-keep-cover',
+    });
+    const getAlbums = vi.fn(async (query?: { search?: string; sort?: string }) => {
+      if (query?.search === 'Refresh Keep') {
+        return page([resolvedAlbum]);
+      }
+      if (query?.search === 'Refresh Missing') {
+        return page([]);
+      }
+
+      return page([]);
+    });
+    const getPlaybackHistory = vi.fn().mockResolvedValue(page([]));
+    const getPlaybackHistorySummary = vi.fn().mockResolvedValue(historySummary({ todayCount: 0, totalCount: 0, rangeCount: 0 }));
+    const getPlaybackStatsDashboard = vi.fn().mockResolvedValue(stats({
+      topAlbums: [
+        {
+          id: 'stats-refresh-keep',
+          albumId: null,
+          mediaType: 'local',
+          albumKey: null,
+          title: 'Refresh Keep',
+          albumArtist: 'Roselia',
+          year: null,
+          trackCount: 9,
+          duration: 1800,
+          coverId: null,
+          coverThumb: null,
+          playCount: 12,
+          completedCount: 10,
+          playedSeconds: 1200,
+          lastPlayedAt: '2026-05-25T09:00:00.000Z',
+        },
+        {
+          id: 'stats-refresh-missing',
+          albumId: null,
+          mediaType: 'local',
+          albumKey: null,
+          title: 'Refresh Missing',
+          albumArtist: 'Roselia',
+          year: null,
+          trackCount: 9,
+          duration: 1800,
+          coverId: null,
+          coverThumb: null,
+          playCount: 10,
+          completedCount: 8,
+          playedSeconds: 1000,
+          lastPlayedAt: '2026-05-25T08:00:00.000Z',
+        },
+      ],
+    }));
+    installLibraryMock({
+      getAlbums,
+      getPlaybackHistory,
+      getPlaybackHistorySummary,
+      getPlaybackStatsDashboard,
+    });
+
+    render(<HomePage />);
+
+    const panel = await screen.findByLabelText('你喜欢的专辑');
+    expect(await within(panel).findByRole('button', { name: /Refresh Keep/ })).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: /Refresh Missing/ })).toBeTruthy();
+    getPlaybackHistory.mockClear();
+    getPlaybackHistorySummary.mockClear();
+    getPlaybackStatsDashboard.mockClear();
+
+    fireEvent.click(within(panel.closest('.home-favorite-album-panel') as HTMLElement).getByRole('button', { name: '刷新' }));
+
+    await waitFor(() => expect(within(panel).queryByRole('button', { name: /Refresh Missing/ })).toBeNull());
+    expect(within(panel).getByRole('button', { name: /Refresh Keep/ })).toBeTruthy();
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Refresh Keep' });
+    expect(getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Refresh Missing' });
+    expect(getPlaybackHistory).not.toHaveBeenCalled();
+    expect(getPlaybackHistorySummary).not.toHaveBeenCalled();
+    expect(getPlaybackStatsDashboard).not.toHaveBeenCalled();
   });
 
   it('opens hero artist and album links with home return targets', async () => {

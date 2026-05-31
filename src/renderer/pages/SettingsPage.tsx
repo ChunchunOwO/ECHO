@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   Captions,
   Check,
   Clapperboard,
@@ -16,6 +14,7 @@ import {
   FolderOpen,
   Github,
   Globe2,
+  GripVertical,
   Headphones,
   History,
   Info,
@@ -244,6 +243,8 @@ const globalShortcutActionMeta: Array<{
   { action: 'openAudioSettings', titleKey: 'settings.shortcuts.action.openAudioSettings.title', descriptionKey: 'settings.shortcuts.action.openAudioSettings.description' },
   { action: 'openMvSettings', titleKey: 'settings.shortcuts.action.openMvSettings.title', descriptionKey: 'settings.shortcuts.action.openMvSettings.description' },
   { action: 'openLyricsSettings', titleKey: 'settings.shortcuts.action.openLyricsSettings.title', descriptionKey: 'settings.shortcuts.action.openLyricsSettings.description' },
+  { action: 'locateCurrentTrack', titleKey: 'settings.shortcuts.action.locateCurrentTrack.title', descriptionKey: 'settings.shortcuts.action.locateCurrentTrack.description' },
+  { action: 'toggleDesktopLyrics', titleKey: 'settings.shortcuts.action.toggleDesktopLyrics.title', descriptionKey: 'settings.shortcuts.action.toggleDesktopLyrics.description' },
   { action: 'toggleDesktopLyricsLock', titleKey: 'settings.shortcuts.action.toggleDesktopLyricsLock.title', descriptionKey: 'settings.shortcuts.action.toggleDesktopLyricsLock.description' },
 ];
 
@@ -267,15 +268,15 @@ const shortcutKeyAliases = new Map<string, string>([
   ['Escape', 'Esc'],
   ['+', 'Plus'],
   ['Add', 'Plus'],
-  ['NumpadAdd', 'Plus'],
+  ['NumpadAdd', 'numadd'],
   ['Subtract', '-'],
-  ['NumpadSubtract', '-'],
+  ['NumpadSubtract', 'numsub'],
   ['Multiply', '*'],
-  ['NumpadMultiply', '*'],
+  ['NumpadMultiply', 'nummult'],
   ['Divide', '/'],
-  ['NumpadDivide', '/'],
+  ['NumpadDivide', 'numdiv'],
   ['Decimal', '.'],
-  ['NumpadDecimal', '.'],
+  ['NumpadDecimal', 'numdec'],
   ['MediaPlayPause', 'MediaPlayPause'],
   ['MediaNextTrack', 'MediaNextTrack'],
   ['MediaPreviousTrack', 'MediaPreviousTrack'],
@@ -298,7 +299,7 @@ const normalizeShortcutEventKey = (event: KeyboardEvent): string | null => {
   }
 
   if (/^Numpad[0-9]$/u.test(code)) {
-    return code.slice(6);
+    return `num${code.slice(6)}`;
   }
 
   const aliased = shortcutKeyAliases.get(event.key);
@@ -916,8 +917,17 @@ const lockedVisibleSidebarRouteIdSet = new Set<SidebarRouteId>(lockedVisibleSide
 
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
 const pendingRouteStorageKey = 'echo-next.pending-route';
+const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const pluginsDocumentationUrl = 'https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md';
 const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
+
+const isSettingsEscapeBackEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
+};
 
 const readInitialSettingsSection = (): SettingsNavKey => {
   if (typeof window === 'undefined') {
@@ -3890,6 +3900,7 @@ export const SettingsPage = (): JSX.Element => {
   const [dataBackupStatus, setDataBackupStatus] = useState<DataBackupStatus | null>(null);
   const [dataBackupBusy, setDataBackupBusy] = useState<'choose' | 'run' | 'import' | 'open' | null>(null);
   const [dataBackupMessage, setDataBackupMessage] = useState<string | null>(null);
+  const [draggingSidebarRouteId, setDraggingSidebarRouteId] = useState<SidebarRouteId | null>(null);
   const [pluginSettingsMessage, setPluginSettingsMessage] = useState<string | null>(null);
   const [recordingShortcutTarget, setRecordingShortcutTarget] = useState<RecordingShortcutTarget | null>(null);
   const [shortcutMessages, setShortcutMessages] = useState<Partial<Record<ShortcutMessageKey, string | null>>>({});
@@ -4004,6 +4015,24 @@ export const SettingsPage = (): JSX.Element => {
         title: t('settings.general.firstRunWizard.title'),
         description: t('settings.general.firstRunWizard.description'),
         terms: [t('settings.general.firstRunWizard.title'), t('settings.general.firstRunWizard.description'), '首次启动指引', '新手指引', '新手引导', '向导', '引导', '標準輸出', '標準出力', '标准输出', '系统音频', 'システムオーディオ', 'guide', 'onboarding', 'first run', 'welcome', 'system audio'],
+      },
+      {
+        id: 'row-sidebar-auto-hide',
+        sectionKey: 'general',
+        targetId: 'settings-row-sidebar-auto-hide',
+        title: t('settings.general.sidebarAutoHide.title'),
+        description: t('settings.general.sidebarAutoHide.description'),
+        terms: [
+          t('settings.general.sidebarAutoHide.title'),
+          t('settings.general.sidebarAutoHide.description'),
+          '隐藏侧栏',
+          '自动隐藏侧栏',
+          '侧栏抽屉',
+          'sidebar',
+          'hide sidebar',
+          'auto hide sidebar',
+          'sidebar drawer',
+        ],
       },
       {
         id: 'row-fast-startup',
@@ -5527,19 +5556,11 @@ export const SettingsPage = (): JSX.Element => {
     ],
   );
 
-  const jumpToSettingsSection = (key: SettingsNavKey, options: { clearSearch?: boolean; targetId?: string } = {}): void => {
-    setActiveSection(key);
-    if (isIntegrationCredentialSettingId(options.targetId)) {
-      setCredentialPanelExpanded(true);
-    }
-    if (options.clearSearch) {
-      setSettingsQuery('');
-    }
-    setHighlightedSettingId(options.targetId ?? null);
+  const scrollSettingsSectionIntoView = useCallback((key: SettingsNavKey, targetId?: string): void => {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        if (options.targetId) {
-          document.getElementById(options.targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (targetId) {
+          document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
         }
 
@@ -5557,7 +5578,42 @@ export const SettingsPage = (): JSX.Element => {
         }
       });
     });
-  };
+  }, []);
+
+  const jumpToSettingsSection = useCallback((key: SettingsNavKey, options: { clearSearch?: boolean; targetId?: string } = {}): void => {
+    setActiveSection(key);
+    if (isIntegrationCredentialSettingId(options.targetId)) {
+      setCredentialPanelExpanded(true);
+    }
+    if (options.clearSearch) {
+      setSettingsQuery('');
+    }
+    setHighlightedSettingId(options.targetId ?? null);
+    scrollSettingsSectionIntoView(key, options.targetId);
+  }, [scrollSettingsSectionIntoView]);
+
+  useEffect(() => {
+    const handleSettingsEscapeBack = (event: KeyboardEvent): void => {
+      if (
+        event.defaultPrevented ||
+        document.body.dataset.echoShortcutRecording === 'true' ||
+        isImeComposingKeyEvent(event) ||
+        event.key !== 'Escape' ||
+        isSettingsEscapeBackEditableTarget(event.target)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      window.dispatchEvent(new Event(settingsBackNavigationEvent));
+    };
+
+    window.addEventListener('keydown', handleSettingsEscapeBack);
+    return () => {
+      window.removeEventListener('keydown', handleSettingsEscapeBack);
+    };
+  }, []);
 
   useEffect(() => {
     const handleOpenSettingsSection = (event: Event): void => {
@@ -5572,7 +5628,7 @@ export const SettingsPage = (): JSX.Element => {
     return () => {
       window.removeEventListener('settings:open-section', handleOpenSettingsSection);
     };
-  }, []);
+  }, [jumpToSettingsSection]);
 
   useEffect(() => {
     if (!appSettings) {
@@ -6279,35 +6335,67 @@ export const SettingsPage = (): JSX.Element => {
       });
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
 
-  const handleSidebarRouteMove = useCallback(
-    (routeId: SidebarRouteId, direction: -1 | 1): void => {
-      const item = sidebarSettingsRouteItemById.get(routeId);
-      if (!item) {
+  const handleSidebarRouteDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, routeId: SidebarRouteId): void => {
+    setDraggingSidebarRouteId(routeId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', routeId);
+  }, []);
+
+  const handleSidebarRouteDragEnd = useCallback((): void => {
+    setDraggingSidebarRouteId(null);
+  }, []);
+
+  const handleSidebarRouteDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleSidebarRouteDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>, targetRouteId: SidebarRouteId, placement: SidebarSettingsRouteItem['placement']): void => {
+      event.preventDefault();
+      const draggedRouteId = (event.dataTransfer.getData('text/plain') || draggingSidebarRouteId) as SidebarRouteId | null;
+      setDraggingSidebarRouteId(null);
+      if (!draggedRouteId || draggedRouteId === targetRouteId) {
         return;
       }
 
-      const groupItems = sidebarSettingsGroups[item.placement];
-      const currentGroupIndex = groupItems.findIndex((groupItem) => groupItem.id === routeId);
-      const target = groupItems[currentGroupIndex + direction];
-      if (!target) {
+      const draggedItem = sidebarSettingsRouteItemById.get(draggedRouteId);
+      const targetItem = sidebarSettingsRouteItemById.get(targetRouteId);
+      if (!draggedItem || !targetItem || draggedItem.placement !== placement || targetItem.placement !== placement) {
         return;
       }
 
-      const nextOrder = [...sidebarRouteOrder];
-      const currentIndex = nextOrder.indexOf(routeId);
-      const targetIndex = nextOrder.indexOf(target.id);
-      if (currentIndex < 0 || targetIndex < 0) {
+      const groupIds = sidebarSettingsGroups[placement].map((item) => item.id);
+      const draggedIndex = groupIds.indexOf(draggedRouteId);
+      const targetIndex = groupIds.indexOf(targetRouteId);
+      if (draggedIndex < 0 || targetIndex < 0) {
         return;
       }
 
-      nextOrder[currentIndex] = target.id;
-      nextOrder[targetIndex] = routeId;
+      const targetBounds = event.currentTarget.getBoundingClientRect();
+      const insertAfterTarget = event.clientY > targetBounds.top + targetBounds.height / 2;
+      let targetInsertIndex = targetIndex + (insertAfterTarget ? 1 : 0);
+      const nextGroupIds = groupIds.filter((id) => id !== draggedRouteId);
+      if (draggedIndex < targetInsertIndex) {
+        targetInsertIndex -= 1;
+      }
+      if (targetInsertIndex === draggedIndex) {
+        return;
+      }
+
+      nextGroupIds.splice(targetInsertIndex, 0, draggedRouteId);
+      const remainingGroupIds = [...nextGroupIds];
+      const nextOrder = sidebarRouteOrder.map((routeId) => {
+        const routeItem = sidebarSettingsRouteItemById.get(routeId);
+        return routeItem?.placement === placement ? remainingGroupIds.shift() ?? routeId : routeId;
+      });
+
       patchAppSettings({
         sidebarRouteOrder: nextOrder,
         sidebarHiddenRouteIds,
       });
     },
-    [patchAppSettings, sidebarHiddenRouteIds, sidebarRouteOrder, sidebarSettingsGroups],
+    [draggingSidebarRouteId, patchAppSettings, sidebarHiddenRouteIds, sidebarRouteOrder, sidebarSettingsGroups],
   );
 
   const handleSidebarRouteVisibilityToggle = useCallback(
@@ -6542,15 +6630,44 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
+    if (networkProxyDraft.mode === 'manual' && networkProxyDraft.proxyUrl.trim().length === 0) {
+      setNetworkProxyTestResult({
+        ok: false,
+        mode: networkProxyDraft.mode,
+        message: '请先填写手动代理地址。',
+        resolvedProxy: null,
+        status: null,
+        elapsedMs: 0,
+      });
+      return;
+    }
+
+    if (networkProxyDraft.mode === 'pac' && networkProxyDraft.pacUrl.trim().length === 0) {
+      setNetworkProxyTestResult({
+        ok: false,
+        mode: networkProxyDraft.mode,
+        message: '请先填写 PAC 地址。',
+        resolvedProxy: null,
+        status: null,
+        elapsedMs: 0,
+      });
+      return;
+    }
+
     setNetworkProxyBusy('test');
     setNetworkProxyTestResult(null);
     void app
-      .testNetworkProxy()
+      .testNetworkProxy({
+        networkProxyMode: networkProxyDraft.mode,
+        networkProxyUrl: networkProxyDraft.proxyUrl.trim() || null,
+        networkProxyPacUrl: networkProxyDraft.pacUrl.trim() || null,
+        networkProxyBypassRules: networkProxyDraft.bypassRules.trim() || defaultNetworkProxyBypassRules,
+      })
       .then((result) => setNetworkProxyTestResult(result))
       .catch((proxyError) => {
         setNetworkProxyTestResult({
           ok: false,
-          mode: appSettings?.networkProxyMode ?? 'off',
+          mode: networkProxyDraft.mode,
           message: proxyError instanceof Error ? proxyError.message : String(proxyError),
           resolvedProxy: null,
           status: null,
@@ -6558,7 +6675,7 @@ export const SettingsPage = (): JSX.Element => {
         });
       })
       .finally(() => setNetworkProxyBusy(null));
-  }, [appSettings?.networkProxyMode]);
+  }, [networkProxyDraft]);
 
   const togglePlaybackAdvancedPanelExpanded = useCallback((): void => {
     setPlaybackAdvancedPanelExpanded((expanded) => {
@@ -6889,9 +7006,11 @@ export const SettingsPage = (): JSX.Element => {
         return;
       }
 
+      const mediaType = inferAppWallpaperMediaType(wallpaperPath);
       patchAppSettings({
         appCustomWallpaperPath: wallpaperPath,
-        appWallpaperMediaType: inferAppWallpaperMediaType(wallpaperPath),
+        appWallpaperMediaType: mediaType,
+        ...(mediaType === 'video' ? { appVideoWallpaperPauseMode: 'never' } : {}),
       });
       setError(null);
     } catch (wallpaperError) {
@@ -9256,6 +9375,22 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={handleCloseToTrayToggle}
                 />
               </SettingRow>
+              <SettingRow
+                id="settings-row-sidebar-auto-hide"
+                highlighted={highlightedSettingId === 'settings-row-sidebar-auto-hide'}
+                title={t('settings.general.sidebarAutoHide.title')}
+                description={t('settings.general.sidebarAutoHide.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.sidebarAutoHideEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      sidebarAutoHideEnabled: !(appSettings?.sidebarAutoHideEnabled ?? false),
+                    })
+                  }
+                />
+              </SettingRow>
               <SettingRow title={t('settings.general.rememberWindowSize.title')} description={t('settings.general.rememberWindowSize.description')}>
                 <ToggleButton
                   active={appSettings?.rememberWindowSizeEnabled ?? true}
@@ -11285,38 +11420,31 @@ export const SettingsPage = (): JSX.Element => {
                         </div>
                         <div className="settings-sidebar-route-list">
                           {groupItems.length > 0 ? (
-                            groupItems.map((item, index) => {
+                            groupItems.map((item) => {
                               const label = t(item.labelKey);
                               const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
                               const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
 
                               return (
-                                <div className="settings-sidebar-route-item" data-hidden={isVisible ? undefined : 'true'} key={item.id}>
+                                <div
+                                  className="settings-sidebar-route-item"
+                                  data-dragging={draggingSidebarRouteId === item.id ? 'true' : undefined}
+                                  data-hidden={isVisible ? undefined : 'true'}
+                                  draggable={Boolean(appSettings)}
+                                  key={item.id}
+                                  onDragEnd={handleSidebarRouteDragEnd}
+                                  onDragOver={handleSidebarRouteDragOver}
+                                  onDragStart={(event) => handleSidebarRouteDragStart(event, item.id)}
+                                  onDrop={(event) => handleSidebarRouteDrop(event, item.id, placement)}
+                                >
+                                  <span className="settings-sidebar-route-drag-handle" aria-hidden="true">
+                                    <GripVertical size={15} />
+                                  </span>
                                   <span className="settings-sidebar-route-copy">
                                     <strong>{label}</strong>
                                     <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
                                   </span>
                                   <span className="settings-sidebar-route-actions">
-                                    <button
-                                      aria-label={t('settings.appearance.sidebar.moveUpAria', { label })}
-                                      className="settings-icon-button"
-                                      disabled={!appSettings || index === 0}
-                                      title={t('settings.appearance.sidebar.moveUp')}
-                                      type="button"
-                                      onClick={() => handleSidebarRouteMove(item.id, -1)}
-                                    >
-                                      <ArrowUp size={15} />
-                                    </button>
-                                    <button
-                                      aria-label={t('settings.appearance.sidebar.moveDownAria', { label })}
-                                      className="settings-icon-button"
-                                      disabled={!appSettings || index === groupItems.length - 1}
-                                      title={t('settings.appearance.sidebar.moveDown')}
-                                      type="button"
-                                      onClick={() => handleSidebarRouteMove(item.id, 1)}
-                                    >
-                                      <ArrowDown size={15} />
-                                    </button>
                                     <button
                                       aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
                                       aria-pressed={isVisible}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -7,6 +7,7 @@ import {
   GripVertical,
   Heart,
   History,
+  ListPlus,
   MinusCircle,
   MoreHorizontal,
   Music2,
@@ -34,6 +35,98 @@ import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer
 
 const automixTemporarilyDisabled = true;
 const randomQueuePageSize = 96;
+const locateCurrentTrackEvent = 'app:locate-current-track';
+const queuePagePerfWarnThresholdMs = 120;
+const queuePageFirstPaintWarnThresholdMs = 250;
+const queuePageDeferredTaskDelayMs = 120;
+const queuePageDeferredTaskTimeoutMs = 800;
+
+type QueuePagePerfValue = string | number | boolean | null | undefined;
+type QueuePageIdleWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+const formatQueuePagePerfValue = (value: QueuePagePerfValue): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return typeof value === 'number' ? String(Math.round(value * 10) / 10) : String(value);
+};
+
+const logQueuePagePerf = (
+  phase: string,
+  startedAtMs: number,
+  details: Record<string, QueuePagePerfValue> = {},
+  options: { always?: boolean; warnThresholdMs?: number } = {},
+): void => {
+  const durationMs = performance.now() - startedAtMs;
+  const warnThresholdMs = options.warnThresholdMs ?? queuePagePerfWarnThresholdMs;
+
+  if (!options.always && durationMs < warnThresholdMs) {
+    return;
+  }
+
+  const fields = Object.entries({ durationMs, ...details })
+    .map(([key, value]) => {
+      const text = formatQueuePagePerfValue(value);
+      return text === null ? null : `${key}=${text}`;
+    })
+    .filter((value): value is string => Boolean(value));
+  const message = `[queue-page-perf] ${phase}${fields.length ? ` ${fields.join(' ')}` : ''}`;
+
+  if (durationMs >= warnThresholdMs) {
+    console.warn(message);
+  } else {
+    console.info(message);
+  }
+};
+
+const measureQueuePageWork = <T,>(
+  phase: string,
+  work: () => T,
+  details: (result: T) => Record<string, QueuePagePerfValue> = () => ({}),
+): T => {
+  const startedAtMs = performance.now();
+  const result = work();
+  logQueuePagePerf(phase, startedAtMs, details(result));
+  return result;
+};
+
+const deferQueuePageIdleTask = (callback: () => void): (() => void) => {
+  const idleWindow = window as QueuePageIdleWindow;
+  let didCancel = false;
+  let idleHandle: number | null = null;
+  let fallbackHandle: number | null = null;
+  const delayHandle = window.setTimeout(() => {
+    const run = (): void => {
+      idleHandle = null;
+      fallbackHandle = null;
+      if (!didCancel) {
+        callback();
+      }
+    };
+
+    if (typeof idleWindow.requestIdleCallback === 'function') {
+      idleHandle = idleWindow.requestIdleCallback(run, { timeout: queuePageDeferredTaskTimeoutMs });
+      return;
+    }
+
+    fallbackHandle = window.setTimeout(run, 0);
+  }, queuePageDeferredTaskDelayMs);
+
+  return () => {
+    didCancel = true;
+    window.clearTimeout(delayHandle);
+    if (idleHandle !== null && typeof idleWindow.cancelIdleCallback === 'function') {
+      idleWindow.cancelIdleCallback(idleHandle);
+    }
+    if (fallbackHandle !== null) {
+      window.clearTimeout(fallbackHandle);
+    }
+  };
+};
 
 const formatDuration = (duration: number): string => {
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -181,7 +274,7 @@ export const QueuePage = (): JSX.Element => {
   const queue = usePlaybackQueue();
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [savedQueues, setSavedQueues] = useState<SavedQueueSnapshot[]>(() => readSavedQueueSnapshots());
+  const [savedQueues, setSavedQueues] = useState<SavedQueueSnapshot[]>([]);
   const [isGeneratingRandomQueue, setIsGeneratingRandomQueue] = useState(false);
   const [isGeneratingHistoryQueue, setIsGeneratingHistoryQueue] = useState(false);
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null);
@@ -193,24 +286,33 @@ export const QueuePage = (): JSX.Element => {
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const queueListRef = useRef<HTMLDivElement | null>(null);
+  const mountStartedAtRef = useRef(performance.now());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const currentIndex = useMemo(
-    () => (queue.currentQueueId ? queue.items.findIndex((item) => item.queueId === queue.currentQueueId) : -1),
+    () =>
+      measureQueuePageWork(
+        'computeCurrentIndex',
+        () => (queue.currentQueueId ? queue.items.findIndex((item) => item.queueId === queue.currentQueueId) : -1),
+        (index) => ({ currentIndex: index, items: queue.items.length }),
+      ),
     [queue.currentQueueId, queue.items],
   );
   const rows = useMemo(() => {
-    if (queue.items.length === 0) {
-      return [];
-    }
+    return measureQueuePageWork(
+      'computeRows',
+      () => {
+        if (queue.items.length === 0) {
+          return [];
+        }
 
-    return currentIndex >= 0 ? queue.items.slice(currentIndex) : queue.items;
+        return currentIndex >= 0 ? queue.items.slice(currentIndex) : queue.items;
+      },
+      (computedRows) => ({ currentIndex, items: queue.items.length, rows: computedRows.length }),
+    );
   }, [currentIndex, queue.items]);
   const upNextCount = currentIndex >= 0 ? Math.max(0, queue.items.length - currentIndex - 1) : queue.items.length;
   const nowPlaying = queue.currentTrack;
-  const queueTrackIds = useMemo(() => queue.items.filter((item) => !item.track.isTemporary).map((item) => item.track.id), [queue.items]);
-  const likedTrackIds = useLikedTrackIds(queueTrackIds);
   const isNowPlayingTemporary = nowPlaying?.isTemporary === true;
-  const isNowPlayingLiked = nowPlaying && !isNowPlayingTemporary ? likedTrackIds[nowPlaying.id] === true : false;
   const nowPlayingTags = qualityTags(nowPlaying);
   const nowPlayingCoverUrl = queueNowCoverUrl(nowPlaying);
   const sourceLabel = queue.currentItem?.source.label ?? t('queue.now.sourceFallback');
@@ -221,6 +323,88 @@ export const QueuePage = (): JSX.Element => {
     estimateSize: () => 64,
     overscan: 12,
   });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const firstPaintDetailsRef = useRef<Record<string, QueuePagePerfValue>>({});
+  firstPaintDetailsRef.current = {
+    items: queue.items.length,
+    rows: rows.length,
+    savedQueues: savedQueues.length,
+    virtualRows: virtualRows.length,
+  };
+  const likedTrackIdsInput = useMemo(
+    () =>
+      measureQueuePageWork(
+        'computeLikedTrackIdsInput',
+        () => {
+          const ids = new Set<string>();
+
+          if (nowPlaying && !isNowPlayingTemporary) {
+            ids.add(nowPlaying.id);
+          }
+
+          if (trackMenu && !trackMenu.track.isTemporary) {
+            ids.add(trackMenu.track.id);
+          }
+
+          for (const virtualRow of virtualRows) {
+            const track = rows[virtualRow.index]?.track;
+            if (track && !track.isTemporary) {
+              ids.add(track.id);
+            }
+          }
+
+          return Array.from(ids);
+        },
+        (ids) => ({ ids: ids.length, rows: rows.length, virtualRows: virtualRows.length }),
+      ),
+    [isNowPlayingTemporary, nowPlaying, rows, trackMenu, virtualRows],
+  );
+  const likedTrackIds = useLikedTrackIds(likedTrackIdsInput);
+  const isNowPlayingLiked = nowPlaying && !isNowPlayingTemporary ? likedTrackIds[nowPlaying.id] === true : false;
+
+  useEffect(() => {
+    return deferQueuePageIdleTask(() => {
+      const startedAtMs = performance.now();
+      const snapshots = readSavedQueueSnapshots();
+      setSavedQueues(snapshots);
+      logQueuePagePerf('loadSavedQueues', startedAtMs, { snapshots: snapshots.length }, { always: snapshots.length > 0 });
+    });
+  }, []);
+
+  useEffect(() => {
+    const logFirstPaint = (): void => {
+      logQueuePagePerf(
+        'firstPaint',
+        mountStartedAtRef.current,
+        firstPaintDetailsRef.current,
+        { always: true, warnThresholdMs: queuePageFirstPaintWarnThresholdMs },
+      );
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      const frameId = window.requestAnimationFrame(logFirstPaint);
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    const timeoutId = window.setTimeout(logFirstPaint, 16);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    const handleLocateCurrentTrack = (): void => {
+      const currentRowIndex = rows.findIndex((item) =>
+        queue.currentQueueId ? item.queueId === queue.currentQueueId : item.track.id === queue.currentTrackId,
+      );
+      if (currentRowIndex < 0) {
+        return;
+      }
+
+      rowVirtualizer.scrollToIndex(currentRowIndex, { align: 'center' });
+    };
+
+    window.addEventListener(locateCurrentTrackEvent, handleLocateCurrentTrack);
+    return () => window.removeEventListener(locateCurrentTrackEvent, handleLocateCurrentTrack);
+  }, [queue.currentQueueId, queue.currentTrackId, rowVirtualizer, rows]);
 
   const repeatLabels: Record<RepeatMode, string> = useMemo(
     () => ({
@@ -786,6 +970,15 @@ export const QueuePage = (): JSX.Element => {
           {isGeneratingHistoryQueue ? t('queue.action.generatingHistory') : t('queue.action.generateFromHistory')}
         </button>
         <button
+          className={`queue-tool-button ${queue.autoFillQueueEnabled ? 'is-active' : ''}`}
+          type="button"
+          aria-pressed={queue.autoFillQueueEnabled}
+          onClick={() => queue.setAutoFillQueueEnabled(!queue.autoFillQueueEnabled)}
+        >
+          <ListPlus size={16} />
+          {t('queue.action.autoFill')}
+        </button>
+        <button
           className={`queue-tool-button ${!automixTemporarilyDisabled && queue.automixEnabled ? 'is-active' : ''}`}
           type="button"
           aria-pressed={!automixTemporarilyDisabled && queue.automixEnabled}
@@ -869,7 +1062,7 @@ export const QueuePage = (): JSX.Element => {
         {rows.length > 0 ? (
           <div className="queue-list" ref={queueListRef} role="list" data-virtualized="true">
             <div className="queue-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              {virtualRows.map((virtualRow) => {
                 const item = rows[virtualRow.index];
                 const isCurrent = item.queueId === queue.currentQueueId;
                 const rowQualityTags = qualityTags(item.track);

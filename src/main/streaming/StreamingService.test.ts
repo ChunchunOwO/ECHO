@@ -282,6 +282,48 @@ describe('StreamingService playlist imports', () => {
     expect(result.providerPlaylistId).toBe('778899');
   });
 
+  it('imports NetEase djradio links as podcast playlists', async () => {
+    const registry = new StreamingProviderRegistry();
+    const getPlaylist = vi.fn(
+      async (input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> => ({
+        id: `streaming:netease:playlist:${input.providerPlaylistId}`,
+        provider: 'netease',
+        providerPlaylistId: input.providerPlaylistId,
+        title: 'NetEase Podcast',
+        description: null,
+        creator: null,
+        coverUrl: null,
+        coverThumb: null,
+        trackCount: 0,
+        tracks: [],
+        page: 1,
+        pageSize: 500,
+        total: 0,
+        hasMore: false,
+      }),
+    );
+    registry.register({
+      name: 'netease',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist,
+      resolvePlayback: vi.fn(),
+    });
+    const service = new StreamingService(registry, fakeCacheStore());
+
+    const result = await service.importPlaylistFromUrl(
+      'https://music.163.com/djradio?id=990232286&uct2=U2FsdGVkX1+uX3WDBvtPy2zyTiXl9QgSbvHnjmvo9EQ=',
+    );
+
+    expect(getPlaylist).toHaveBeenCalledWith({ providerPlaylistId: 'djradio:990232286', page: 1, pageSize: 500 });
+    expect(getPlaylist).not.toHaveBeenCalledWith({ providerPlaylistId: '990232286', page: 1, pageSize: 500 });
+    expect(result).toMatchObject({
+      provider: 'netease',
+      providerPlaylistId: 'djradio:990232286',
+      playlistName: 'NetEase Podcast',
+    });
+  });
+
   it('imports QQ Music mobile, desktop, hash, and copied-share playlist link variants', async () => {
     const registry = new StreamingProviderRegistry();
     const getPlaylist = vi.fn(async (input: { providerPlaylistId: string; page?: number; pageSize?: number }) =>
@@ -330,7 +372,7 @@ describe('StreamingService playlist imports', () => {
     const service = new StreamingService(registry, fakeCacheStore());
 
     await expect(service.importPlaylistFromUrl('https://y.qq.com/n/m/detail/taoge/index.html')).rejects.toThrow(
-      'Only NetEase Cloud Music, QQ Music, and Spotify playlist links are supported.',
+      'Only NetEase Cloud Music playlists or podcasts, QQ Music, and Spotify playlist links are supported.',
     );
   });
 

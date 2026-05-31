@@ -28,11 +28,14 @@ import {
 } from 'lucide-react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../../shared/types/desktopLyrics';
+import type { LibraryTrack } from '../../../shared/types/library';
 import type { MvSettings } from '../../../shared/types/mv';
-import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../../shared/types/lyrics';
+import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, LyricsTrackSnapshotRequest, TrackLyrics } from '../../../shared/types/lyrics';
+import { neteaseDjRadioPlaylistPrefix } from '../../../shared/types/streaming';
 import { registerAppearanceFontFile } from '../../preferences/appearancePreferences';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
+import { useOptionalPlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import {
   recordLyricsSourceQualityCandidates,
   recordLyricsSourceQualityOutcome,
@@ -478,6 +481,48 @@ const sourceFilterKey = (candidate: LyricsSearchCandidate): string => `${candida
 const searchableLyricsProviderIds: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo'];
 const searchableLyricsProviderSet = new Set<string>(searchableLyricsProviderIds);
 
+const isNeteaseDjRadioTrack = (track: LibraryTrack | null): boolean =>
+  track?.mediaType === 'streaming' &&
+  track.provider === 'netease' &&
+  (
+    track.fieldSources?.streamingSourcePlaylistId?.startsWith(neteaseDjRadioPlaylistPrefix) ||
+    track.fieldSources?.streamingAlbumId?.startsWith(neteaseDjRadioPlaylistPrefix)
+  );
+
+const isNeteaseStreamingTrack = (
+  track: LibraryTrack | null,
+): track is LibraryTrack & { provider: 'netease'; providerTrackId: string } =>
+  track?.mediaType === 'streaming' &&
+  track.provider === 'netease' &&
+  typeof track.providerTrackId === 'string' &&
+  track.providerTrackId.trim().length > 0;
+
+const resolveNeteaseDjRadioTrack = async (track: LibraryTrack | null): Promise<boolean> => {
+  if (isNeteaseDjRadioTrack(track)) {
+    return true;
+  }
+  if (!isNeteaseStreamingTrack(track)) {
+    return false;
+  }
+
+  const sourceInfo = await window.echo?.streaming
+    ?.getTrackSourceInfo?.({ provider: 'netease', providerTrackId: track.providerTrackId })
+    .catch(() => null);
+  return sourceInfo?.isNeteaseDjRadio === true;
+};
+
+const lyricsSnapshotRequestForTrack = (track: LibraryTrack): LyricsTrackSnapshotRequest => ({
+  trackId: track.id,
+  title: track.title.trim() || 'Untitled',
+  artist: track.artist.trim() || track.albumArtist.trim() || 'Unknown Artist',
+  album: track.album.trim() || null,
+  albumArtist: track.albumArtist.trim() || null,
+  durationSeconds: track.duration > 0 ? track.duration : null,
+  mediaType: track.mediaType ?? 'local',
+  sourceId: track.mediaType === 'streaming' ? track.providerTrackId ?? null : track.sourceId ?? null,
+  stableKey: track.stableKey ?? track.id,
+});
+
 const mergeLyricsCandidates = (
   current: LyricsSearchCandidate[],
   next: LyricsSearchCandidate[],
@@ -591,6 +636,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const debouncedSaveRequestIdRef = useRef(0);
   const debouncedSaveTimerRef = useRef<number | null>(null);
   const pendingDebouncedSettingsRef = useRef<Partial<AppSettings>>({});
+  const playbackQueue = useOptionalPlaybackQueue();
+  const currentQueueTrack = playbackQueue?.currentTrack ?? null;
 
   const effectiveSettings = settings ?? fallbackSettings;
   // Settings should expose every persistent lyrics preference; only current-track tools stay drawer-only.
@@ -873,6 +920,25 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
     return playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
   }, []);
+
+  const resolveCurrentLyricsTarget = useCallback(async (): Promise<{
+    trackId: string | null;
+    snapshot: LyricsTrackSnapshotRequest | null;
+  }> => {
+    const currentTrackId = await resolveCurrentTrackId();
+    const snapshotTrack =
+      currentQueueTrack && (!currentTrackId || currentQueueTrack.id === currentTrackId)
+        ? currentQueueTrack
+        : null;
+    const shouldUseSnapshot = await resolveNeteaseDjRadioTrack(snapshotTrack);
+
+    return {
+      trackId: currentTrackId ?? snapshotTrack?.id ?? null,
+      snapshot: shouldUseSnapshot && snapshotTrack
+        ? lyricsSnapshotRequestForTrack(snapshotTrack)
+        : null,
+    };
+  }, [currentQueueTrack, resolveCurrentTrackId]);
 
   const patchSettings = useCallback(async (patch: Partial<AppSettings>, optimistic = true): Promise<void> => {
     const app = window.echo?.app;
@@ -1262,7 +1328,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       }
 
       const lyricsApi = window.echo?.lyrics;
-      if (!lyricsApi?.searchCandidates) {
+      if (!lyricsApi?.searchCandidates && !lyricsApi?.searchCandidatesForSnapshot) {
         setError('Desktop bridge unavailable');
         return;
       }
@@ -1273,7 +1339,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       setActiveLyricsCandidateSource('all');
 
       try {
-        const currentTrackId = await resolveCurrentTrackId();
+        const { trackId: currentTrackId, snapshot } = await resolveCurrentLyricsTarget();
         if (!currentTrackId) {
           setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
           return;
@@ -1284,9 +1350,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         const normalizedSearchText = searchText?.trim();
         await Promise.allSettled(
           providers.map(async (provider) => {
-            const providerCandidates = normalizedSearchText
-              ? await lyricsApi.searchCandidates(currentTrackId, normalizedSearchText, provider)
-              : await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
+            const providerCandidates = snapshot && lyricsApi.searchCandidatesForSnapshot
+              ? await lyricsApi.searchCandidatesForSnapshot(snapshot, normalizedSearchText || undefined, provider)
+              : normalizedSearchText
+                ? await lyricsApi.searchCandidates(currentTrackId, normalizedSearchText, provider)
+                : await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
             recordLyricsSourceQualityCandidates(providerCandidates);
             collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
             setLyricsCandidates(collectedCandidates);
@@ -1308,7 +1376,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setIsLyricsCandidateLoading(false);
       }
     },
-    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t],
+    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t],
   );
 
   const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
@@ -1318,7 +1386,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     }
 
     const lyricsApi = window.echo?.lyrics;
-    if (!lyricsApi?.searchCandidates) {
+    if (!lyricsApi?.searchCandidates && !lyricsApi?.searchCandidatesForSnapshot) {
       setError('Desktop bridge unavailable');
       return;
     }
@@ -1329,7 +1397,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     setActiveLyricsCandidateSource('all');
 
     try {
-      const currentTrackId = await resolveCurrentTrackId();
+      const { trackId: currentTrackId, snapshot } = await resolveCurrentLyricsTarget();
       if (!currentTrackId) {
         setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
         return;
@@ -1340,7 +1408,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ['local'];
       await Promise.allSettled(
         providers.map(async (provider) => {
-          const providerCandidates = await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
+          const providerCandidates = snapshot && lyricsApi.searchCandidatesForSnapshot
+            ? await lyricsApi.searchCandidatesForSnapshot(snapshot, undefined, provider)
+            : await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
           recordLyricsSourceQualityCandidates(providerCandidates);
           collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
           setLyricsCandidates(collectedCandidates);
@@ -1361,7 +1431,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsLyricsCandidateLoading(false);
     }
-  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t]);
+  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t]);
 
   const applyLyricsCandidate = useCallback(
     async (candidateId: string): Promise<void> => {
@@ -1371,20 +1441,22 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       }
 
       const lyricsApi = window.echo?.lyrics;
-      if (!lyricsApi?.applyCandidate) {
+      if (!lyricsApi?.applyCandidate && !lyricsApi?.applyCandidateForSnapshot) {
         setError('Desktop bridge unavailable');
         return;
       }
 
       setApplyingLyricsCandidateId(candidateId);
       try {
-        const currentTrackId = await resolveCurrentTrackId();
+        const { trackId: currentTrackId, snapshot } = await resolveCurrentLyricsTarget();
         if (!currentTrackId) {
           setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
           return;
         }
 
-        const trackLyrics = await lyricsApi.applyCandidate(currentTrackId, candidateId);
+        const trackLyrics = snapshot && lyricsApi.applyCandidateForSnapshot
+          ? await lyricsApi.applyCandidateForSnapshot(snapshot, candidateId)
+          : await lyricsApi.applyCandidate(currentTrackId, candidateId);
         recordLyricsSourceQualityOutcome(
           lyricsCandidates.find((candidate) => candidate.id === candidateId),
           'applied',
@@ -1405,7 +1477,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, lyricsCandidates, resolveCurrentTrackId, t],
+    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, lyricsCandidates, resolveCurrentLyricsTarget, t],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {

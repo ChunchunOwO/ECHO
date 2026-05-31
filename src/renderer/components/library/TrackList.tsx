@@ -44,6 +44,7 @@ type TrackListProps = {
 
 const rowHeight = 76;
 const loadAheadRows = 12;
+const locateCurrentTrackEvent = 'app:locate-current-track';
 
 export const TrackList = memo(({ tracks, currentTrackId, loadingTrackId = null, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, isTrackDraggable, draggedTrackId = null, dropTargetTrackId = null, onTrackDragStart, onTrackDragOver, onTrackDrop, onTrackDragEnd }: TrackListProps): JSX.Element => {
   const { t } = useI18n();
@@ -118,6 +119,24 @@ export const TrackList = memo(({ tracks, currentTrackId, loadingTrackId = null, 
     requestLoadMore(lastVirtualIndex);
     requestLoadPrevious(firstVirtualIndex);
   }, [firstVirtualIndex, lastVirtualIndex, requestLoadMore, requestLoadPrevious]);
+
+  useEffect(() => {
+    const handleLocateCurrentTrack = (): void => {
+      if (!currentTrackId) {
+        return;
+      }
+
+      const loadedIndex = tracks.findIndex((track) => track.id === currentTrackId);
+      if (loadedIndex < 0) {
+        return;
+      }
+
+      rowVirtualizer.scrollToIndex(safeLoadedStartIndex + loadedIndex, { align: 'center' });
+    };
+
+    window.addEventListener(locateCurrentTrackEvent, handleLocateCurrentTrack);
+    return () => window.removeEventListener(locateCurrentTrackEvent, handleLocateCurrentTrack);
+  }, [currentTrackId, rowVirtualizer, safeLoadedStartIndex, tracks]);
 
   useEffect(() => {
     if (!onVisibleTrackIdsChange) {

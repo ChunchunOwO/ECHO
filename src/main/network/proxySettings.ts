@@ -1,4 +1,4 @@
-import { net, session } from 'electron';
+import { session } from 'electron';
 import type { Session } from 'electron';
 import type { AppSettings, NetworkProxyTestResult } from '../../shared/types/appSettings';
 import { defaultNetworkProxyBypassRules } from '../app/appSettings';
@@ -23,6 +23,18 @@ const proxyRuleForUrl = (rawUrl: string | null | undefined): string | undefined 
   } catch {
     return undefined;
   }
+};
+
+const isDirectProxyResolution = (resolvedProxy: string | null): boolean => {
+  if (!resolvedProxy) {
+    return false;
+  }
+
+  const entries = resolvedProxy
+    .split(';')
+    .map((entry) => entry.trim().toUpperCase())
+    .filter(Boolean);
+  return entries.length > 0 && entries.every((entry) => entry === 'DIRECT');
 };
 
 export const buildElectronProxyConfig = (settings: Pick<AppSettings, 'networkProxyMode' | 'networkProxyUrl' | 'networkProxyBypassRules' | 'networkProxyPacUrl'>) => {
@@ -55,20 +67,24 @@ export const applyNetworkProxySettings = async (
 export const testNetworkProxyConnection = async (
   settings: Pick<AppSettings, 'networkProxyMode' | 'networkProxyUrl' | 'networkProxyBypassRules' | 'networkProxyPacUrl'>,
   targetUrl = defaultProxyTestUrl,
+  targetSession: Session = session.defaultSession,
 ): Promise<NetworkProxyTestResult> => {
   const startedAt = Date.now();
   const mode = settings.networkProxyMode ?? 'off';
 
   try {
-    await applyNetworkProxySettings(settings);
-    const resolvedProxy = await session.defaultSession.resolveProxy(targetUrl).catch(() => null);
+    await applyNetworkProxySettings(settings, targetSession);
+    const resolvedProxy = await targetSession.resolveProxy(targetUrl).catch(() => null);
     const signal = AbortSignal.timeout(8000);
-    const response = await net.fetch(targetUrl, { signal });
+    const response = await targetSession.fetch(targetUrl, { signal });
     const elapsedMs = Date.now() - startedAt;
+    const responseOk = response.ok || response.status === 204;
+    const proxyExpected = mode === 'manual' || mode === 'pac';
+    const resolvedDirect = proxyExpected && isDirectProxyResolution(resolvedProxy);
     return {
-      ok: response.ok || response.status === 204,
+      ok: responseOk && !resolvedDirect,
       mode,
-      message: response.ok || response.status === 204 ? '连接正常' : `连接返回 HTTP ${response.status}`,
+      message: resolvedDirect ? '代理未生效，测试地址仍为直连' : responseOk ? '连接正常' : `连接返回 HTTP ${response.status}`,
       resolvedProxy,
       status: response.status,
       elapsedMs,

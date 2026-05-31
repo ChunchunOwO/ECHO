@@ -1311,44 +1311,59 @@ export const StreamingSearchPage = (): JSX.Element => {
     const canPlay = topTracks.some((track) => track.playable);
 
     return (
-      <div className={`artist-detail-page ${isArtistReturning ? 'is-returning' : ''}`}>
-        <button className="artist-detail-back" type="button" onClick={returnFromArtist}>
+      <div className={`streaming-artist-page ${isArtistReturning ? 'is-returning' : ''}`}>
+        <button className="streaming-artist-back" type="button" onClick={returnFromArtist}>
           <ArrowLeft size={17} />
           Streaming
         </button>
 
-        <section className="artist-hero" aria-label={`${artistName} streaming artist details`}>
-          <div className="artist-hero-avatar" data-cover={Boolean(heroImageUrl)} aria-hidden="true">
+        <section className="streaming-artist-hero" data-has-image={Boolean(heroImageUrl)} aria-label={`${artistName} streaming artist details`}>
+          <div className="streaming-artist-avatar" data-cover={Boolean(heroImageUrl)} aria-hidden="true">
             {heroImageUrl ? <img alt="" decoding="async" draggable={false} height={512} loading="lazy" src={heroImageUrl} width={512} /> : <span>{streamingArtistInitial(artistName)}</span>}
           </div>
 
-          <div className="artist-hero-copy">
-            <span className="artist-detail-kicker">Streaming Artist</span>
+          <div className="streaming-artist-copy">
+            <span className="streaming-artist-kicker">Streaming Artist</span>
             <h1>{artistName}</h1>
-            <div className="artist-hero-meta" aria-label="Streaming artist metadata">
+            <div className="streaming-artist-meta" aria-label="Streaming artist metadata">
               <span>{artistProvider}</span>
               <span>{formatTrackCount(topTracks.length)}</span>
               <span>{artistAlbums.length} albums</span>
             </div>
             <p>Streaming catalog from {artistProvider}.</p>
 
-            <div className="artist-hero-actions">
-              <button className="artist-primary-action" type="button" disabled={isArtistDetailLoading || !canPlay} onClick={() => void handlePlayArtist()}>
+            <div className="streaming-artist-actions">
+              <button className="streaming-artist-primary-action" type="button" disabled={isArtistDetailLoading || !canPlay} onClick={() => void handlePlayArtist()}>
                 {isArtistDetailLoading ? <Loader2 className="spinning-icon" size={16} /> : <Play size={16} fill="currentColor" />}
                 {isArtistDetailLoading ? 'Reading Artist' : 'Play Artist'}
               </button>
-              <button className="artist-secondary-action" type="button" disabled={!canPlay} onClick={handleQueueArtist}>
+              <button className="streaming-artist-secondary-action" type="button" disabled={!canPlay} onClick={handleQueueArtist}>
                 <ListPlus size={16} />
                 Add to Queue
               </button>
             </div>
 
-            {artistDetailError ? <p className="artist-detail-error">{artistDetailError}</p> : null}
+            {artistDetailError ? <p className="streaming-artist-error">{artistDetailError}</p> : null}
+          </div>
+
+          <div className="streaming-artist-stats" aria-label="Streaming artist summary">
+            <div>
+              <span>Source</span>
+              <strong>{artistProvider}</strong>
+            </div>
+            <div>
+              <span>Tracks</span>
+              <strong>{topTracks.length}</strong>
+            </div>
+            <div>
+              <span>Albums</span>
+              <strong>{artistAlbums.length}</strong>
+            </div>
           </div>
         </section>
 
-        <section className="artist-detail-section" aria-label={`${artistName} streaming top tracks`}>
-          <div className="artist-section-heading">
+        <section className="streaming-artist-section" aria-label={`${artistName} streaming top tracks`}>
+          <div className="streaming-artist-section-heading">
             <div>
               <span>Top Tracks</span>
               <h2>Songs</h2>
@@ -1357,7 +1372,7 @@ export const StreamingSearchPage = (): JSX.Element => {
           {isArtistDetailLoading && topTracks.length === 0 ? <div className="streaming-state">正在读取歌手...</div> : null}
           {!isArtistDetailLoading && topTracks.length === 0 && !artistDetailError ? <div className="streaming-state">这个歌手没有可显示的歌曲。</div> : null}
           {topTracks.length > 0 ? (
-            <div className="streaming-album-track-list">
+            <div className="streaming-artist-track-list">
               {topTracks.map((track) => {
                 const isPlaying = currentDetailStableKey === track.stableKey;
                 const isResolving = resolvingTrackKey === track.stableKey;
@@ -1398,14 +1413,14 @@ export const StreamingSearchPage = (): JSX.Element => {
         </section>
 
         {artistAlbums.length > 0 ? (
-          <section className="artist-detail-section" aria-label={`${artistName} streaming albums`}>
-            <div className="artist-section-heading">
+          <section className="streaming-artist-section" aria-label={`${artistName} streaming albums`}>
+            <div className="streaming-artist-section-heading">
               <div>
                 <span>Albums</span>
                 <h2>Discography</h2>
               </div>
             </div>
-            <div className="streaming-discovery-list">
+            <div className="streaming-artist-album-list">
               {artistAlbums.map(renderAlbumCard)}
             </div>
           </section>

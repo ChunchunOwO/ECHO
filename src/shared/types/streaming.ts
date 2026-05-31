@@ -24,6 +24,8 @@ export const streamingProviderNames: StreamingProviderName[] = [
 export const streamingStableKey = (provider: StreamingProviderName, providerTrackId: string): string =>
   `streaming:${provider}:${providerTrackId}`;
 
+export const neteaseDjRadioPlaylistPrefix = 'djradio:';
+
 export type StreamingArtistRef = {
   id: string;
   provider: StreamingProviderName;
@@ -51,6 +53,14 @@ export type StreamingTrack = {
   unavailableReason: string | null;
   lyricsStatus: StreamingLyricsStatus;
   mvStatus: StreamingMvStatus;
+};
+
+export type StreamingTrackSourceInfo = {
+  provider: StreamingProviderName;
+  providerTrackId: string;
+  albumId: string | null;
+  sourcePlaylistIds: string[];
+  isNeteaseDjRadio: boolean;
 };
 
 export type StreamingAlbum = {

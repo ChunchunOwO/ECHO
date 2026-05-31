@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { runMigrations } from './migrations';
-import { assertDatabaseHealthy, DatabaseHealthError, rememberDatabaseHealthOk } from './health';
+import { assertDatabaseOpenHealthy, DatabaseHealthError, rememberDatabaseHealthOk } from './health';
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 
 export type EchoDatabase = Database.Database;
@@ -84,7 +84,7 @@ export const createDatabase = (databasePath: string, options: CreateDatabaseOpti
     if (databasePath !== ':memory:') {
       mkdirSync(dirname(databasePath), { recursive: true });
       try {
-        assertDatabaseHealthy(databasePath, { cache: true });
+        assertDatabaseOpenHealthy(databasePath);
       } catch (error) {
         if (
           error instanceof DatabaseHealthError &&

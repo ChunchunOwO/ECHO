@@ -1541,6 +1541,51 @@ html[data-theme="dark"] .home-artwork {
   }
 }
 
+@media (orientation: portrait) and (min-width: 721px) and (max-width: 1400px) {
+  .home-hero,
+  .home-content-grid,
+  .home-stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-week-panel {
+    grid-template-areas:
+      "header"
+      "summary"
+      "heatmap"
+      "hint";
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .home-week-panel .home-section-header {
+    grid-area: header;
+  }
+
+  .home-week-summary {
+    grid-area: summary;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-week-heatmap {
+    --home-week-cell: 14px;
+    grid-area: heatmap;
+    justify-self: start;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .home-week-hint {
+    grid-area: hint;
+    max-width: none;
+    line-height: 1.5;
+  }
+
+  .home-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
   .home-page {
     gap: 16px;

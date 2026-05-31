@@ -1552,6 +1552,67 @@ html[data-theme="dark"] .artist-track-skeleton-actions {
   }
 }
 
+@media (orientation: portrait) and (min-width: 821px) and (max-width: 1400px) {
+  .artist-detail-page {
+    padding: 28px 24px;
+  }
+
+  .artist-hero {
+    justify-items: start;
+    padding: 28px;
+    min-height: 360px;
+  }
+
+  .artist-hero-copy {
+    max-width: 100%;
+  }
+
+  .artist-overview-grid,
+  .artist-overview-track-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .artist-section header,
+  .artist-albums-view-header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .artist-events-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .artist-event-row {
+    grid-template-columns: 58px minmax(0, 1fr) minmax(48px, auto);
+    gap: 12px;
+    padding: 10px 4px;
+  }
+
+  .artist-album-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .artist-track-header {
+    display: none;
+  }
+
+  .artist-track-row {
+    grid-template-columns: minmax(0, 1fr) 58px;
+    gap: 10px;
+  }
+
+  .artist-track-album,
+  .artist-track-tags {
+    display: none;
+  }
+
+  .artist-track-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
 @keyframes detail-page-enter {
   from {
     opacity: 0;

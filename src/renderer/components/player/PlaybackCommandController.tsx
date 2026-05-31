@@ -30,6 +30,7 @@ const clampPlaybackRate = (value: number): number => Math.max(0.5, Math.min(2, v
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const locateCurrentTrackEvent = 'app:locate-current-track';
 const localShortcutUnavailableActions = new Set<GlobalShortcutAction>(['showMainWindow']);
 const shortcutRecordingFlag = 'echoShortcutRecording';
 
@@ -43,15 +44,15 @@ const shortcutKeyAliases = new Map<string, string>([
   ['Escape', 'Esc'],
   ['+', 'Plus'],
   ['Add', 'Plus'],
-  ['NumpadAdd', 'Plus'],
+  ['NumpadAdd', 'numadd'],
   ['Subtract', '-'],
-  ['NumpadSubtract', '-'],
+  ['NumpadSubtract', 'numsub'],
   ['Multiply', '*'],
-  ['NumpadMultiply', '*'],
+  ['NumpadMultiply', 'nummult'],
   ['Divide', '/'],
-  ['NumpadDivide', '/'],
+  ['NumpadDivide', 'numdiv'],
   ['Decimal', '.'],
-  ['NumpadDecimal', '.'],
+  ['NumpadDecimal', 'numdec'],
   ['MediaPlayPause', 'MediaPlayPause'],
   ['MediaNextTrack', 'MediaNextTrack'],
   ['MediaPreviousTrack', 'MediaPreviousTrack'],
@@ -96,7 +97,7 @@ const normalizeShortcutEventKey = (event: KeyboardEvent): string | null => {
   }
 
   if (/^Numpad[0-9]$/u.test(code)) {
-    return code.slice(6);
+    return `num${code.slice(6)}`;
   }
 
   const aliased = shortcutKeyAliases.get(event.key);
@@ -395,6 +396,24 @@ export const PlaybackCommandController = (): null => {
     }
   }, []);
 
+  const toggleDesktopLyrics = useCallback(async (): Promise<void> => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics) {
+      return;
+    }
+
+    try {
+      const state = await desktopLyrics.getState();
+      if (state.visible) {
+        await desktopLyrics.hide();
+      } else {
+        await desktopLyrics.show();
+      }
+    } catch {
+      // Best effort: shortcut failures should not affect playback commands.
+    }
+  }, []);
+
   const commitSeek = useCallback(
     async (nextPositionSeconds: number): Promise<void> => {
       const playback = window.echo?.playback;
@@ -596,6 +615,16 @@ export const PlaybackCommandController = (): null => {
         return;
       }
 
+      if (action === 'locateCurrentTrack') {
+        window.dispatchEvent(new Event(locateCurrentTrackEvent));
+        return;
+      }
+
+      if (action === 'toggleDesktopLyrics') {
+        void toggleDesktopLyrics();
+        return;
+      }
+
       if (action === 'toggleDesktopLyricsLock') {
         void toggleDesktopLyricsLock();
         return;
@@ -610,7 +639,7 @@ export const PlaybackCommandController = (): null => {
         void commitSeek(positionSeconds + 10);
       }
     },
-    [commitSeek, handleBossKey, handleNext, handlePlayPause, handlePrevious, handleSpeedStep, handleStop, handleVolumeStep, positionSeconds, toggleDesktopLyricsLock],
+    [commitSeek, handleBossKey, handleNext, handlePlayPause, handlePrevious, handleSpeedStep, handleStop, handleVolumeStep, positionSeconds, toggleDesktopLyrics, toggleDesktopLyricsLock],
   );
 
   useEffect(() => {

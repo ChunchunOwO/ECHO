@@ -18,6 +18,13 @@ export type LibraryMaintenanceCleanupResult = LibraryCleanupResult & {
   shortDurationThresholdSeconds: number;
 };
 
+export type PlaybackHistoryRefreshResult = {
+  scannedCount: number;
+  removedCount: number;
+  removedEntriesCount: number;
+  removedStatsCount: number;
+};
+
 export type LibraryCacheClearResult = LibraryCleanupResult & {
   deletedCoverCacheFiles: number;
   freedCoverCacheBytes: number;

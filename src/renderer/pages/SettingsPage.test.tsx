@@ -713,6 +713,27 @@ describe('SettingsPage', () => {
     expect(screen.getByText('settings.appearance.theme.title')).toBeTruthy();
   });
 
+  it('dispatches home navigation when Escape is pressed in settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const settingsBack = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    window.addEventListener('app:navigate:settings-back', settingsBack, { once: true });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const nav = screen.getByRole('navigation', { name: 'route.settings.label' });
+    const appearanceButton = within(nav).getByRole('button', { name: /settings\.nav\.appearance\.label/ });
+
+    fireEvent.click(appearanceButton);
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(settingsBack).toHaveBeenCalledTimes(1);
+    expect(appearanceButton.getAttribute('aria-current')).toBe('page');
+  });
+
   it('marks onboarding incomplete from the general settings guide toggle', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const nextSettings = { ...settings, onboardingCompleted: false };
@@ -731,6 +752,23 @@ describe('SettingsPage', () => {
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ onboardingCompleted: false }));
     expect(settingsChanged).toHaveBeenCalledWith(expect.objectContaining({ detail: nextSettings }));
+  });
+
+  it('saves sidebar auto-hide from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, sidebarAutoHideEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.sidebarAutoHide.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true }));
   });
 
   it('saves sidebar visibility and order from appearance controls', async () => {
@@ -753,9 +791,9 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    const row = screen.getByText('\u5de6\u4fa7\u680f').closest('.setting-row') as HTMLElement;
+    const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
     const streamingItem = within(row).getByText('route.streaming.label').closest('.settings-sidebar-route-item') as HTMLElement;
-    fireEvent.click(within(streamingItem).getByRole('button', { name: /Hide route\.streaming\.label/ }));
+    fireEvent.click(streamingItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement);
 
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenLastCalledWith(
@@ -765,8 +803,34 @@ describe('SettingsPage', () => {
       ),
     );
 
-    const homeItem = within(row).getByText('route.home.label').closest('.settings-sidebar-route-item') as HTMLElement;
-    fireEvent.click(within(homeItem).getByRole('button', { name: /Move down route\.home\.label/ }));
+    const updatedRow = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
+    const dragData = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: 'none',
+      effectAllowed: 'none',
+      getData: (type: string) => dragData.get(type) ?? '',
+      setData: (type: string, value: string) => dragData.set(type, value),
+    };
+    const homeItem = within(updatedRow).getByText('route.home.label').closest('.settings-sidebar-route-item') as HTMLElement;
+    const songsItem = within(updatedRow).getByText('route.songs.label').closest('.settings-sidebar-route-item') as HTMLElement;
+    songsItem.getBoundingClientRect = vi.fn(() => ({
+      bottom: 10,
+      height: 10,
+      left: 0,
+      right: 10,
+      top: 0,
+      width: 10,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+    fireEvent.dragStart(homeItem, { dataTransfer });
+    dataTransfer.setData('text/plain', 'home');
+    fireEvent.dragOver(songsItem, { dataTransfer });
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(dropEvent, 'clientY', { value: 9 });
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: dataTransfer });
+    fireEvent(songsItem, dropEvent);
 
     await waitFor(() => {
       const lastPatch = setSettingsMock.mock.calls.at(-1)?.[0] as Partial<AppSettings>;
@@ -2144,6 +2208,31 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('records numpad digits as distinct global shortcut tokens', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.shortcuts.label')[0]);
+    const row = screen.getByText('settings.shortcuts.action.speedUp.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(getShortcutScope(row, 'global')).getByRole('button', { name: 'settings.shortcuts.action.record' }));
+    fireEvent.keyDown(window, { code: 'Numpad1', key: '1', ctrlKey: true, altKey: true });
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        globalShortcuts: {
+          ...createDefaultGlobalShortcuts(),
+          speedUp: { enabled: false, accelerator: 'Ctrl+Alt+num1' },
+        },
+      }),
+    );
+  });
+
   it('records browser navigation keys without rewriting them to mouse buttons', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
@@ -2409,8 +2498,8 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    expect(screen.queryByText('壁纸缩放')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /选择背景/ }));
+    expect(screen.queryByText('settings.appearance.wallpaper.scale')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.choose/ }));
 
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenCalledWith({
@@ -2418,11 +2507,11 @@ describe('SettingsPage', () => {
         appWallpaperMediaType: 'image',
       }),
     );
-    expect(await screen.findByText('壁纸缩放')).toBeTruthy();
-    expect(screen.getByText('壁纸模糊度')).toBeTruthy();
-    expect(screen.getByText('壁纸亮度')).toBeTruthy();
-    expect(screen.getByText('UI 透明度')).toBeTruthy();
-    expect(screen.getByText('统一透明度')).toBeTruthy();
+    expect(await screen.findByText('settings.appearance.wallpaper.scale')).toBeTruthy();
+    expect(screen.getByText('settings.appearance.wallpaper.blur')).toBeTruthy();
+    expect(screen.getByText('settings.appearance.wallpaper.brightness')).toBeTruthy();
+    expect(screen.getByText('settings.appearance.wallpaper.uiOpacity')).toBeTruthy();
+    expect(screen.getByText('settings.appearance.wallpaper.unifiedOpacity')).toBeTruthy();
   });
 
   it('shows video wallpaper performance mode after choosing a local video background', async () => {
@@ -2434,7 +2523,7 @@ describe('SettingsPage', () => {
       ...settings,
       appCustomWallpaperPath: wallpaperPath,
       appWallpaperMediaType: 'video',
-      appVideoWallpaperPauseMode: 'smart',
+      appVideoWallpaperPauseMode: 'never',
     });
     resetSettingsMock.mockResolvedValue(settings);
     clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
@@ -2443,17 +2532,18 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    fireEvent.click(screen.getByRole('button', { name: /选择背景/ }));
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.choose/ }));
 
     await waitFor(() =>
       expect(setSettingsMock).toHaveBeenCalledWith({
         appCustomWallpaperPath: wallpaperPath,
         appWallpaperMediaType: 'video',
+        appVideoWallpaperPauseMode: 'never',
       }),
     );
-    expect(await screen.findByText('视频壁纸 · 静音循环')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /智能暂停/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /最小化暂停/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /始终播放/ })).toBeTruthy();
+    expect(await screen.findByText('settings.appearance.wallpaper.videoStatus')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.videoPause\.smart/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.videoPause\.minimized/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.videoPause\.never/ })).toBeTruthy();
   });
 });

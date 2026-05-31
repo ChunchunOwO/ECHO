@@ -3316,6 +3316,94 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(screen.getAllByText("QQ Song").length).toBeGreaterThan(1));
   });
 
+  it("searches regular lyrics for NetEase djradio tracks without exact streaming lookup", async () => {
+    const track = makeTrack({
+      id: "streaming:netease:3370584713",
+      path: "streaming:netease:3370584713",
+      mediaType: "streaming",
+      provider: "netease",
+      providerTrackId: "3370584713",
+      stableKey: "streaming:netease:3370584713",
+      title: "IRIS OUT",
+      artist: "Podcast Host",
+      album: "NetEase Podcast",
+      duration: 147.048,
+      fieldSources: {},
+    });
+    mockEcho(track);
+    const searchCandidatesForSnapshot = vi.fn().mockResolvedValue([
+      makeLyricsCandidate({
+        id: "netease-djradio-candidate",
+        provider: "netease",
+        providerLyricsId: "netease:lyric:3370584713",
+        title: "IRIS OUT",
+        artist: "Podcast Host",
+        album: "NetEase Podcast",
+        durationSeconds: 147.048,
+        score: 0.74,
+        sourceLabel: "NetEase",
+      }),
+    ]);
+    window.echo.streaming = {
+      getTrackSourceInfo: vi.fn().mockResolvedValue({
+        provider: "netease",
+        providerTrackId: "3370584713",
+        albumId: null,
+        sourcePlaylistIds: ["djradio:990232286"],
+        isNeteaseDjRadio: true,
+      }),
+      getLyrics: vi.fn().mockResolvedValue({
+        provider: "netease",
+        providerTrackId: "3370584713",
+        status: "missing",
+        plainLyrics: null,
+        syncedLyrics: null,
+        instrumental: false,
+        lines: [],
+        sourceLabel: "NetEase",
+      }),
+    } as unknown as Window["echo"]["streaming"];
+    window.echo.lyrics = {
+      getForTrack: vi.fn(),
+      getForSnapshot: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      searchCandidatesForSnapshot,
+      applyCandidate: vi.fn(),
+      applyCandidateForSnapshot: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo.streaming?.getTrackSourceInfo).toHaveBeenCalledWith({
+      provider: "netease",
+      providerTrackId: "3370584713",
+    }));
+    await waitFor(() => expect(searchCandidatesForSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: "streaming:netease:3370584713",
+        title: "IRIS OUT",
+        artist: "Podcast Host",
+        album: "NetEase Podcast",
+        mediaType: "streaming",
+        sourceId: "3370584713",
+        stableKey: "streaming:netease:3370584713",
+      }),
+      undefined,
+      "netease",
+    ));
+    expect(window.echo.streaming?.getLyrics).not.toHaveBeenCalled();
+  });
+
   it("lets users switch lyrics source without clearing the current lyrics first", async () => {
     const track = makeTrack();
     mockEcho(track);

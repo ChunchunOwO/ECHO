@@ -18,6 +18,7 @@ import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, type DetailReturnTarget } from '../utils/albumNavigation';
 import { getRemoteSourcesBridge } from '../utils/echoBridge';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
+import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 60;
@@ -43,6 +44,8 @@ const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> 
   { value: 'recent', labelKey: 'library.sort.recent' },
   { value: 'random', labelKey: 'library.sort.random' },
 ];
+const albumsSortStorageKey = 'echo-next.albums.sort';
+const validAlbumSortValues = new Set<LibrarySort>(albumSortOptions.map((option) => option.value));
 
 type AlbumMenuState = {
   album: LibraryAlbum;
@@ -60,7 +63,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [albums, setAlbums] = useState<LibraryAlbum[]>([]);
   const [total, setTotal] = useState(0);
   const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
-  const [sort, setSort] = useState<LibrarySort>('default');
+  const [sort, setSort] = useState<LibrarySort>(() => readStoredLibrarySort(albumsSortStorageKey, validAlbumSortValues));
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
   const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
   const [remoteSources, setRemoteSources] = useState<RemoteSource[]>([]);
@@ -194,6 +197,10 @@ export const AlbumsPage = (): JSX.Element => {
   useEffect(() => {
     void loadAlbums(1, 'replace');
   }, [loadAlbums]);
+
+  useEffect(() => {
+    writeStoredLibrarySort(albumsSortStorageKey, sort);
+  }, [sort]);
 
   useEffect(() => {
     void refreshRemoteSources();

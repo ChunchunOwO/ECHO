@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { EchoDatabase } from '../database/createDatabase';
 import type { LibraryPlaylist } from '../../shared/types/library';
-import type { StreamingPlaylistDetail, StreamingProviderName, StreamingTrack } from '../../shared/types/streaming';
-import { streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
+import type { StreamingPlaylistDetail, StreamingProviderName, StreamingTrack, StreamingTrackSourceInfo } from '../../shared/types/streaming';
+import { neteaseDjRadioPlaylistPrefix, streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
 
 type DbRow = Record<string, unknown>;
 type PlaylistBackupCallback = (playlistId: string) => void;
@@ -252,6 +252,47 @@ export class StreamingCacheStore {
         .get(provider, providerTrackId) ?? null;
 
     return row ? this.mapTrack(row) : null;
+  }
+
+  getTrackSourceInfo(provider: StreamingProviderName, providerTrackId: string): StreamingTrackSourceInfo {
+    const trackRow =
+      this.database
+        .prepare<[StreamingProviderName, string], DbRow>(
+          'SELECT album_id FROM streaming_tracks WHERE provider = ? AND provider_track_id = ? LIMIT 1',
+        )
+        .get(provider, providerTrackId) ?? null;
+    const albumId = textOrNull(trackRow?.album_id);
+    const stableKey = streamingStableKey(provider, providerTrackId);
+    const playlistRows = this.database
+      .prepare<[StreamingProviderName, StreamingProviderName, string, string], DbRow>(
+        `SELECT DISTINCT playlists.source_playlist_id
+         FROM playlist_items
+         INNER JOIN playlists ON playlists.id = playlist_items.playlist_id
+         WHERE playlists.source_provider = ?
+           AND playlists.source_playlist_id IS NOT NULL
+           AND (
+             (playlist_items.source_provider = ? AND playlist_items.source_item_id = ?)
+             OR playlist_items.media_id = ?
+           )
+         ORDER BY playlists.source_playlist_id`,
+      )
+      .all(provider, provider, providerTrackId, stableKey);
+    const sourcePlaylistIds = playlistRows
+      .map((row) => textOrNull(row.source_playlist_id))
+      .filter((value): value is string => Boolean(value));
+
+    return {
+      provider,
+      providerTrackId,
+      albumId,
+      sourcePlaylistIds,
+      isNeteaseDjRadio:
+        provider === 'netease' &&
+        (
+          albumId?.startsWith(neteaseDjRadioPlaylistPrefix) === true ||
+          sourcePlaylistIds.some((sourcePlaylistId) => sourcePlaylistId.startsWith(neteaseDjRadioPlaylistPrefix))
+        ),
+    };
   }
 
   upsertTrack(track: StreamingTrack, raw: unknown = track): void {

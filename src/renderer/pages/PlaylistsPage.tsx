@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, GripVertical, Heart, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, GripVertical, Heart, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
@@ -324,6 +324,8 @@ const isSpotifyPlaylistOwnerImportError = (error: unknown): boolean => {
 const playlistSourceProviderLabel = (playlist: LibraryPlaylist): string | null =>
   playlist.sourceProvider === 'local' ? null : (playlistSourceProviderLabels[playlist.sourceProvider] ?? '网络');
 
+const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
+
 const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
   if (!playlist.sourcePlaylistId) {
     return null;
@@ -343,6 +345,27 @@ const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
 
   if (playlist.sourceProvider === 'spotify') {
     return `https://open.spotify.com/playlist/${encodeURIComponent(playlist.sourcePlaylistId)}`;
+  }
+
+  return null;
+};
+
+const streamingFavoriteCollectionUrl = (collection: StreamingFavoriteCollection): string | null => {
+  const providerPlaylistId = collection.providerPlaylistId.trim();
+  if (!providerPlaylistId) {
+    return null;
+  }
+
+  if (isHttpUrl(providerPlaylistId)) {
+    return providerPlaylistId;
+  }
+
+  if (collection.provider === 'youtube') {
+    return `https://www.youtube.com/playlist?list=${encodeURIComponent(providerPlaylistId)}`;
+  }
+
+  if (collection.provider === 'bilibili') {
+    return `https://www.bilibili.com/medialist/detail/ml${encodeURIComponent(providerPlaylistId)}`;
   }
 
   return null;
@@ -603,6 +626,7 @@ export const PlaylistsPage = (): JSX.Element => {
       (streamingFavorites.collections ?? []).find((collection) => favoriteCollectionSelectionId(collection.id) === selectedFavoriteListId) ?? null,
     [selectedFavoriteListId, streamingFavorites.collections],
   );
+  const selectedFavoriteShareUrl = selectedFavoriteCollection ? streamingFavoriteCollectionUrl(selectedFavoriteCollection) : null;
   const selectedFavoriteProvider = selectedFavoriteCollection?.provider ?? favoriteProviderFromSelectionId(selectedFavoriteListId);
   const selectedFavoriteProviderLabel = streamingFavoriteProviders.find((item) => item.value === selectedFavoriteProvider)?.label ?? selectedFavoriteProvider;
   const selectedFavoriteListName = selectedFavoriteCollection?.name ?? `${selectedFavoriteProviderLabel} 收藏`;
@@ -1577,6 +1601,25 @@ export const PlaylistsPage = (): JSX.Element => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const handleCopyPlaylistShareLink = async (url: string | null): Promise<void> => {
+    if (!url) {
+      return;
+    }
+
+    try {
+      if (!window.navigator.clipboard?.writeText) {
+        throw new Error('clipboard unavailable');
+      }
+
+      await window.navigator.clipboard.writeText(url);
+      setError(null);
+      setStatusMessage('歌单链接已复制');
+    } catch {
+      setError('无法复制歌单链接');
+      setStatusMessage(null);
+    }
+  };
+
   const handleImportPlaylistFile = async (): Promise<void> => {
     const library = window.echo?.library;
     if (!library?.importPlaylistFile) {
@@ -2421,6 +2464,12 @@ export const PlaylistsPage = (): JSX.Element => {
                   <ListPlus size={16} />
                   <span>添加到队列</span>
                 </button>
+                {selectedFavoriteShareUrl ? (
+                  <button className="secondary-action" type="button" onClick={() => void handleCopyPlaylistShareLink(selectedFavoriteShareUrl)}>
+                    <Share2 size={16} />
+                    <span>分享</span>
+                  </button>
+                ) : null}
                 {selectedFavoriteCollection ? (
                   <button className="secondary-action" type="button" disabled={syncingFavoriteCollectionId === selectedFavoriteCollection.id} onClick={() => void handleSyncFavoriteCollection()}>
                     {syncingFavoriteCollectionId === selectedFavoriteCollection.id ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
@@ -2573,6 +2622,12 @@ export const PlaylistsPage = (): JSX.Element => {
                   >
                     {playlistDownloadSummary?.isActive ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
                     <span>{playlistDownloadSummary?.isActive ? '下载中' : '下载歌单'}</span>
+                  </button>
+                ) : null}
+                {selectedStreamingPlaylistUrl ? (
+                  <button className="secondary-action" type="button" onClick={() => void handleCopyPlaylistShareLink(selectedStreamingPlaylistUrl)}>
+                    <Share2 size={16} />
+                    <span>分享</span>
                   </button>
                 ) : null}
                 {!isSelectedPlaylistProtected && !isSelectedPlaylistRemote ? (

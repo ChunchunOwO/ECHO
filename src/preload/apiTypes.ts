@@ -118,6 +118,7 @@ import type {
   NetworkTagCandidateSearchRequest,
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
+  PlaybackHistoryRefreshResult,
   PlaybackHistorySummary,
   PlaybackStatsDashboard,
   StartPlaybackHistoryRequest,
@@ -252,6 +253,7 @@ import type {
   StreamingSearchResult,
   StreamingTrack,
   StreamingTrackLikedResult,
+  StreamingTrackSourceInfo,
 } from '../shared/types/streaming';
 
 export type FontFileAsset = {
@@ -302,7 +304,7 @@ export type EchoApi = {
     onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
     openRepository: () => Promise<void>;
     openExternalUrl: (url: string) => Promise<void>;
-    testNetworkProxy: () => Promise<NetworkProxyTestResult>;
+    testNetworkProxy: (patch?: Partial<AppSettings>) => Promise<NetworkProxyTestResult>;
     validateGlobalShortcut: (accelerator: string) => Promise<GlobalShortcutValidationResult>;
     onGlobalShortcutCommand: (handler: (action: GlobalShortcutAction) => void) => () => void;
   };
@@ -435,6 +437,7 @@ export type EchoApi = {
     getPlaybackHistory: (query?: PlaybackHistoryQuery) => Promise<LibraryPage<PlaybackHistoryEntry>>;
     getPlaybackHistorySummary: (query?: PlaybackHistoryQuery) => Promise<PlaybackHistorySummary>;
     getPlaybackStatsDashboard: (query?: PlaybackHistoryQuery) => Promise<PlaybackStatsDashboard>;
+    refreshInvalidPlaybackHistory: () => Promise<PlaybackHistoryRefreshResult>;
     deletePlaybackHistoryEntry: (id: string) => Promise<void>;
     clearPlaybackHistory: () => Promise<void>;
     startPlaybackHistory: (request: StartPlaybackHistoryRequest) => Promise<StartPlaybackHistoryResult>;
@@ -584,6 +587,7 @@ export type EchoApi = {
   streaming: {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;
     getTrack: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingTrack>;
+    getTrackSourceInfo?: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingTrackSourceInfo>;
     getAlbum: (request: { provider: StreamingProviderName; providerAlbumId: string }) => Promise<StreamingAlbumDetail>;
     getArtist: (request: { provider: StreamingProviderName; providerArtistId: string }) => Promise<StreamingArtistDetail>;
     resolvePlayback: (request: StreamingPlaybackRequest) => Promise<StreamingPlaybackSource>;

@@ -207,6 +207,7 @@ export const normalizePersistedPlaybackSession = (
       isShuffleEnabled: mode.isShuffleEnabled === true,
       repeatMode: normalizeRepeatMode(mode.repeatMode),
       automixEnabled: mode.automixEnabled === true,
+      autoFillQueueEnabled: mode.autoFillQueueEnabled === true,
     },
     resume: normalizeResume(value.resume, items, updatedAt),
     updatedAt,

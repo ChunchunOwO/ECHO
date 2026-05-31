@@ -61,8 +61,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.signal.dsdDop': 'DSF bitstream -> DoP',
   'audioDrawer.signal.dsdDopFallback': 'DSD DoP fallback',
   'audioDrawer.signal.dsdDopStandby': 'DSD DoP not used',
-  'audioDrawer.device.systemAudio': 'Standard Output (Recommended)',
-  'audioDrawer.device.systemAudioDescription': 'Most stable for headphones, Bluetooth, and computer speakers',
+  'audioDrawer.device.systemAudio': 'Windows Direct Output',
+  'audioDrawer.device.systemAudioDescription': 'Default Windows audio path for headphones, Bluetooth, and computer speakers',
   'audioProfessional.action.hideDetails': 'Hide professional details',
   'audioProfessional.action.refresh': 'Refresh status',
   'audioProfessional.action.showDetails': 'Show professional details',
@@ -356,17 +356,17 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     expect(screen.getByRole('button', { name: /USB 1 \/ USB 2/ })).toBeTruthy();
   });
 
-  it('labels system audio as the recommended standard output', () => {
+  it('labels system audio as Windows direct output', () => {
     renderDrawer({
       ...baseStatus,
       outputMode: 'system',
       outputBackend: 'system-audio',
     });
 
-    expect(screen.getAllByRole('button', { name: /Standard Output \(Recommended\)/ }).some((button) =>
+    expect(screen.getAllByRole('button', { name: /Windows Direct Output/ }).some((button) =>
       button.className.includes('audio-device-pill'),
     )).toBe(true);
-    expect(screen.getByText('Most stable for headphones, Bluetooth, and computer speakers')).toBeTruthy();
+    expect(screen.getByText('Default Windows audio path for headphones, Bluetooth, and computer speakers')).toBeTruthy();
   });
 
   it('lets users leave HQPlayer takeover before choosing local output devices', async () => {

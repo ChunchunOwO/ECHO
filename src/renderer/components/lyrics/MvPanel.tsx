@@ -385,7 +385,13 @@ const youtubeVideoUrlFromStreamingTarget = (target: { provider: StreamingProvide
   return videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : null;
 };
 
-const youtubeEmbedUrlFromVideo = (video: TrackVideo | null, autoplay: boolean): string | null => {
+type YouTubeEmbedOptions = {
+  autoplay: boolean;
+  controls?: boolean;
+  loop?: boolean;
+};
+
+const youtubeEmbedUrlFromVideo = (video: TrackVideo | null, options: YouTubeEmbedOptions): string | null => {
   if (!video || video.provider !== 'youtube' || video.sourceType !== 'manual') {
     return null;
   }
@@ -396,10 +402,22 @@ const youtubeEmbedUrlFromVideo = (video: TrackVideo | null, autoplay: boolean): 
   }
 
   const url = new URL(`https://www.youtube.com/embed/${videoId}`);
-  url.searchParams.set('autoplay', autoplay ? '1' : '0');
+  const controls = options.controls !== false;
+  url.searchParams.set('autoplay', options.autoplay ? '1' : '0');
   url.searchParams.set('mute', '1');
-  url.searchParams.set('controls', '1');
+  url.searchParams.set('controls', controls ? '1' : '0');
   url.searchParams.set('rel', '0');
+  url.searchParams.set('playsinline', '1');
+  url.searchParams.set('iv_load_policy', '3');
+  if (!controls) {
+    url.searchParams.set('disablekb', '1');
+    url.searchParams.set('fs', '0');
+    url.searchParams.set('modestbranding', '1');
+  }
+  if (options.loop) {
+    url.searchParams.set('loop', '1');
+    url.searchParams.set('playlist', videoId);
+  }
   return url.toString();
 };
 
@@ -1029,15 +1047,24 @@ export const MvPanel = ({
   const selectedMvOffsetMs = clampOffset(Number(selectedVideo?.offsetMs ?? 0));
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
-  const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, isAudioPlaying);
+  const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, { autoplay: isAudioPlaying, controls: true });
   const showYouTubeEmbed = Boolean(isMvEnabled && youtubeEmbedUrl && !showVideo);
+  const youtubeBackgroundEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, {
+    autoplay: isAudioPlaying,
+    controls: false,
+    loop: true,
+  });
+  const showYouTubeImmersiveBackground = Boolean(
+    settings.immersiveBackground !== false && showYouTubeEmbed && youtubeBackgroundEmbedUrl,
+  );
   const shouldSurfaceSelectedFallback = Boolean(
     selectedVideo && !showYouTubeEmbed && (videoError || selectedVideo.playableInApp || selectedVideo.sourceType === 'manual'),
   );
   const adaptiveStream = isAdaptiveStream(selectedVideo);
-  const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
+  const showImmersiveBackground = Boolean((settings.immersiveBackground !== false && showVideo) || showYouTubeImmersiveBackground);
   const isLyricsReadabilityEnhanced = settings.lyricsReadabilityEnhanced === true || smartReadableColorsEnabled;
-  const unavailableReason = showVideo || showYouTubeEmbed
+  const hasVisibleMvSurface = showVideo || showYouTubeEmbed;
+  const unavailableReason = hasVisibleMvSurface
     ? null
     : getUnavailableReason({
         error,
@@ -1050,7 +1077,7 @@ export const MvPanel = ({
   const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? t('mvPanel.status.temporaryPlayback') : null;
   const mvNotice = unavailableReason ?? temporaryPlaybackNotice;
   const mvDiagnosticsReport = useMemo(() => {
-    if (!isDiagnosticsReportEnabled || showVideo) {
+    if (!isDiagnosticsReportEnabled || hasVisibleMvSurface) {
       return null;
     }
 
@@ -1109,7 +1136,7 @@ export const MvPanel = ({
     isLoading,
     selectedVideo,
     settings,
-    showVideo,
+    hasVisibleMvSurface,
     title,
     trackId,
     unavailableReason,
@@ -1544,6 +1571,7 @@ export const MvPanel = ({
         <div
           className="lyrics-mv-background"
           aria-hidden="true"
+          data-provider={showYouTubeImmersiveBackground ? 'youtube' : undefined}
           data-lyrics-readability={isLyricsReadabilityEnhanced ? 'true' : undefined}
           style={immersiveBackgroundStyle}
           onPointerDown={(event) => {
@@ -1571,25 +1599,35 @@ export const MvPanel = ({
             backgroundDragRef.current = null;
           }}
         >
-          <video
-            ref={backgroundVideoRef}
-            className="lyrics-mv-background-video"
-            src={!adaptiveStream ? (videoMediaUrl ?? undefined) : undefined}
-            autoPlay={isAudioPlaying}
-            loop
-            muted
-            onLoadedMetadata={(event) => {
-              applyVideoPlaybackRate(event.currentTarget);
-              syncVideoToAudio({ force: true, bypassCooldown: true });
-              if (isAudioPlayingRef.current) {
-                playVideo(event.currentTarget);
-                return;
-              }
+          {showYouTubeImmersiveBackground ? (
+            <iframe
+              className="lyrics-mv-background-video lyrics-mv-background-video--youtube"
+              src={youtubeBackgroundEmbedUrl ?? undefined}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              tabIndex={-1}
+              title=""
+            />
+          ) : (
+            <video
+              ref={backgroundVideoRef}
+              className="lyrics-mv-background-video"
+              src={!adaptiveStream ? (videoMediaUrl ?? undefined) : undefined}
+              autoPlay={isAudioPlaying}
+              loop
+              muted
+              onLoadedMetadata={(event) => {
+                applyVideoPlaybackRate(event.currentTarget);
+                syncVideoToAudio({ force: true, bypassCooldown: true });
+                if (isAudioPlayingRef.current) {
+                  playVideo(event.currentTarget);
+                  return;
+                }
 
-              event.currentTarget.pause();
-            }}
-            playsInline
-          />
+                event.currentTarget.pause();
+              }}
+              playsInline
+            />
+          )}
         </div>
       ) : null}
 

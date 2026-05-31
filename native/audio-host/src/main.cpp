@@ -184,6 +184,7 @@ enum class StdinFrameType : uint8_t
     AutomixNextPcmF32Le = 9,
     AutomixNextEnd = 10,
     AutomixCancel = 11,
+    SetPaused = 12,
 };
 
 struct StdinFrameHeader
@@ -1412,6 +1413,9 @@ public:
 
         output.clear(startSample, frameCount);
 
+        if (sessionPaused.load(std::memory_order_acquire))
+            return 0;
+
         if (shouldHoldForStartupPrebuffer())
             return 0;
 
@@ -1606,6 +1610,7 @@ public:
         sessionHasAudio.store(false, std::memory_order_release);
         stopRequested.store(false, std::memory_order_release);
         stopFadeRequested.store(false, std::memory_order_release);
+        sessionPaused.store(false, std::memory_order_release);
         declickFadeGeneration.fetch_add(1, std::memory_order_acq_rel);
         prebuffering.store(startupPrebufferFrames > 0, std::memory_order_release);
         cancelAutomix();
@@ -1618,8 +1623,14 @@ public:
 
     void requestStop()
     {
+        sessionPaused.store(false, std::memory_order_release);
         stopFadeRequested.store(true, std::memory_order_release);
         stopRequested.store(true, std::memory_order_release);
+    }
+
+    void setPaused(bool paused)
+    {
+        sessionPaused.store(paused, std::memory_order_release);
     }
 
     void setGain(float nextGain)
@@ -1986,6 +1997,7 @@ private:
     std::atomic<bool> prebuffering { false };
     std::atomic<bool> stopRequested { false };
     std::atomic<bool> stopFadeRequested { false };
+    std::atomic<bool> sessionPaused { false };
     std::atomic<uint64_t> declickFadeGeneration { 0 };
     std::atomic<uint64_t> framesPlayed { 0 };
     std::atomic<uint64_t> underrunCallbacks { 0 };
@@ -3155,6 +3167,13 @@ void handleFramedStdinPayload(
     {
         if (payload.size() >= sizeof(float))
             source.setGain(readLeFloat32(payload.data()));
+        return;
+    }
+
+    if (type == StdinFrameType::SetPaused)
+    {
+        if (hasSession && header.sessionId == currentSessionId && ! payload.empty())
+            source.setPaused(payload[0] != 0);
     }
 }
 

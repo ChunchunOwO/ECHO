@@ -113,6 +113,17 @@ describe('Connect receiver XML and SOAP helpers', () => {
     expect(metadata.artist).toBe('Unknown Artist');
   });
 
+  it('does not expose mixed-case stream tokens with only sparse digits', () => {
+    const opaqueTitle = 'N8RfPgDeUPDAPIFsYKSAHFRCrcjsaWuesur';
+    const metadata = parseReceiverMetadata(
+      `<DIDL-Lite><item><dc:title>${opaqueTitle}</dc:title></item></DIDL-Lite>`,
+      'http://m701.music.126.net/stream?id=123',
+    );
+
+    expect(metadata.title).toBe('External stream');
+    expect(parseReceiverMetadata('', `http://phone.local/media/${opaqueTitle}`).title).toBe('External stream');
+  });
+
   it('does not expose dotted opaque stream titles after receiver restore', () => {
     const opaqueTitle = '._92slRtOaWPuniOzuONt9eYvJdvmdXiyOoS8dDGxO';
     const metadata = parseReceiverMetadata(

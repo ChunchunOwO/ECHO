@@ -14,6 +14,8 @@ const showSaveDialogMock = vi.fn();
 const openExternalMock = vi.fn();
 const setAppSettingsMock = vi.fn((patch: Record<string, unknown>) => ({ coverCacheDir: patch.coverCacheDir ?? null, hideToTrayOnClose: false, ...patch }));
 const getAppSettingsMock = vi.fn<() => Record<string, unknown>>(() => ({ coverCacheDir: null, hideToTrayOnClose: false }));
+const proxyTestSessionMock = { partition: 'network-proxy-test' };
+const fromPartitionMock = vi.fn(() => proxyTestSessionMock);
 const getLibraryServiceMock = vi.fn();
 const ensureCoverCacheDirectoryMock = vi.fn();
 const ensureTrayMock = vi.fn();
@@ -74,6 +76,9 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: handleMock,
     on: onMock,
+  },
+  session: {
+    fromPartition: fromPartitionMock,
   },
   shell: {
     openExternal: openExternalMock,
@@ -268,6 +273,7 @@ describe('app IPC cover cache directory', () => {
     ensureTrayMock.mockClear();
     destroyTrayMock.mockClear();
     fromWebContentsMock.mockReset();
+    fromPartitionMock.mockClear();
     refreshGlobalShortcutRegistrationMock.mockClear();
     refreshDataBackupSchedulerMock.mockClear();
     getDataBackupStatusMock.mockClear();
@@ -643,7 +649,33 @@ describe('app IPC cover cache directory', () => {
 
     const result = await handlers[IpcChannels.AppTestNetworkProxy]!();
 
-    expect(testNetworkProxyConnectionMock).toHaveBeenCalledWith(expect.objectContaining({ networkProxyMode: 'off' }));
+    expect(fromPartitionMock).toHaveBeenCalledWith(expect.stringMatching(/^network-proxy-test-/u));
+    expect(testNetworkProxyConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ networkProxyMode: 'off' }),
+      undefined,
+      proxyTestSessionMock,
+    );
     expect(result).toMatchObject({ ok: true, resolvedProxy: 'DIRECT' });
+  });
+
+  it('tests draft network proxy settings through IPC without saving them', async () => {
+    getAppSettingsMock.mockReturnValue({ networkProxyMode: 'off', coverCacheDir: null, hideToTrayOnClose: false });
+
+    await handlers[IpcChannels.AppTestNetworkProxy]!(null, {
+      networkProxyMode: 'manual',
+      networkProxyUrl: '192.168.51.1:7890',
+      networkProxyBypassRules: '<local>',
+    });
+
+    expect(setAppSettingsMock).not.toHaveBeenCalled();
+    expect(testNetworkProxyConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        networkProxyMode: 'manual',
+        networkProxyUrl: '192.168.51.1:7890',
+        networkProxyBypassRules: '<local>',
+      }),
+      undefined,
+      proxyTestSessionMock,
+    );
   });
 });

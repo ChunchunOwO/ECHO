@@ -104,6 +104,16 @@ import type {
 import { COVER_CACHE_VERSION as currentCoverCacheVersion } from './libraryTypes';
 
 type DbRow = Record<string, unknown>;
+type PlaybackHistoryValidationCandidate = {
+  historyKey: string;
+  trackPath: string;
+};
+
+type PlaybackHistoryPruneResult = {
+  removedEntriesCount: number;
+  removedStatsCount: number;
+};
+
 const emptyArtistOnlineInfo = (message?: string): ArtistOnlineInfo => ({
   status: 'empty',
   bio: null,
@@ -3079,7 +3089,7 @@ export class LibraryStore {
       const completed = input.completed ?? this.isPlaybackCompleted(playedSeconds, durationSeconds);
       const previousPlayedSeconds = Math.max(0, Number(current.played_seconds ?? 0) || 0);
       const wasCompleted = Number(current.completed ?? 0) === 1;
-      const historyKey = playbackHistoryKey(textOrNull(current.track_id), String(current.track_path));
+      const historyKey = textOrNull(current.stable_key) ?? playbackHistoryKey(textOrNull(current.track_id), String(current.track_path));
 
       this.run(
         `UPDATE playback_history SET
@@ -3329,9 +3339,62 @@ export class LibraryStore {
     };
   }
 
+  getLocalPlaybackHistoryValidationCandidates(): PlaybackHistoryValidationCandidate[] {
+    const rows = this.allRows(
+      `SELECT history_key, track_path
+       FROM playback_history_stats
+       WHERE media_type = 'local'
+         AND history_key IS NOT NULL
+         AND TRIM(history_key) != ''
+         AND track_path IS NOT NULL
+         AND TRIM(track_path) != ''`,
+    );
+
+    return rows
+      .map((row) => ({
+        historyKey: String(row.history_key ?? ''),
+        trackPath: String(row.track_path ?? ''),
+      }))
+      .filter((candidate) => candidate.historyKey.trim() !== '' && candidate.trackPath.trim() !== '');
+  }
+
+  prunePlaybackHistoryByKeys(historyKeys: string[]): PlaybackHistoryPruneResult {
+    const uniqueKeys = Array.from(new Set(historyKeys.map((key) => key.trim()).filter(Boolean)));
+    if (uniqueKeys.length === 0) {
+      return { removedEntriesCount: 0, removedStatsCount: 0 };
+    }
+
+    return this.transaction(() => {
+      let removedEntriesCount = 0;
+      let removedStatsCount = 0;
+      const batchSize = 500;
+
+      for (let index = 0; index < uniqueKeys.length; index += batchSize) {
+        const batch = uniqueKeys.slice(index, index + batchSize);
+        const placeholders = batch.map(() => '?').join(', ');
+        removedEntriesCount += Number(
+          this.run(
+            `DELETE FROM playback_history
+             WHERE COALESCE(stable_key, track_id, track_path) IN (${placeholders})`,
+            ...batch,
+          ).changes ?? 0,
+        );
+        removedStatsCount += Number(
+          this.run(
+            `DELETE FROM playback_history_stats
+             WHERE history_key IN (${placeholders})`,
+            ...batch,
+          ).changes ?? 0,
+        );
+      }
+
+      return { removedEntriesCount, removedStatsCount };
+    });
+  }
+
   deletePlaybackHistoryEntry(id: string): void {
     this.transaction(() => {
-      this.run('DELETE FROM playback_history WHERE COALESCE(track_id, track_path) = ?', id);
+      this.run('DELETE FROM playback_history WHERE COALESCE(stable_key, track_id, track_path) = ?', id);
       this.run('DELETE FROM playback_history_stats WHERE history_key = ?', id);
     });
   }
@@ -5826,6 +5889,7 @@ export class LibraryStore {
     const rows = this.allRows(
       `SELECT
         playlist_items.*,
+        playlists.source_playlist_id AS playlist_source_playlist_id,
         tracks.id AS track_id,
         tracks.path AS track_path,
         tracks.title AS track_title,
@@ -5872,6 +5936,7 @@ export class LibraryStore {
         albums.duration AS album_duration,
         albums.cover_id AS album_cover_id
       FROM playlist_items
+      LEFT JOIN playlists ON playlists.id = playlist_items.playlist_id
       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
       LEFT JOIN streaming_tracks
         ON streaming_tracks.provider = playlist_items.source_provider
@@ -6647,6 +6712,7 @@ export class LibraryStore {
     const rows = this.allRows(
       `SELECT
         playlist_items.*,
+        playlists.source_playlist_id AS playlist_source_playlist_id,
         tracks.id AS track_id,
         tracks.path AS track_path,
         tracks.title AS track_title,
@@ -6693,6 +6759,7 @@ export class LibraryStore {
         albums.duration AS album_duration,
         albums.cover_id AS album_cover_id
        FROM playlist_items
+       LEFT JOIN playlists ON playlists.id = playlist_items.playlist_id
        LEFT JOIN tracks ON tracks.id = playlist_items.media_id
        LEFT JOIN streaming_tracks
          ON streaming_tracks.provider = playlist_items.source_provider
@@ -6739,6 +6806,7 @@ export class LibraryStore {
     return this.getRow(
       `SELECT
         playlist_items.*,
+        playlists.source_playlist_id AS playlist_source_playlist_id,
         tracks.id AS track_id,
         tracks.path AS track_path,
         tracks.title AS track_title,
@@ -6780,6 +6848,7 @@ export class LibraryStore {
         albums.duration AS album_duration,
         albums.cover_id AS album_cover_id
       FROM playlist_items
+      LEFT JOIN playlists ON playlists.id = playlist_items.playlist_id
       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
       LEFT JOIN streaming_tracks
         ON streaming_tracks.provider = playlist_items.source_provider
@@ -6849,6 +6918,15 @@ export class LibraryStore {
     const coverId = textOrNull(row.cover_id) ?? textOrNull(row.track_cover_id) ?? textOrNull(row.album_cover_id);
     const streamingRaw = parseJsonObject(row.streaming_raw_json);
     const streamingCoverUrl = textOrNull(streamingRaw.coverUrl) ?? textOrNull(row.streaming_cover_url);
+    const streamingFieldSources: Record<string, string> = {};
+    const streamingAlbumId = textOrNull(streamingRaw.albumId);
+    const streamingSourcePlaylistId = textOrNull(row.playlist_source_playlist_id);
+    if (streamingAlbumId) {
+      streamingFieldSources.streamingAlbumId = streamingAlbumId;
+    }
+    if (streamingSourcePlaylistId) {
+      streamingFieldSources.streamingSourcePlaylistId = streamingSourcePlaylistId;
+    }
     const trackMissing = Number(row.track_missing ?? 1) !== 0;
     const hasTrack = textOrNull(row.track_id) !== null && !trackMissing;
     const hasStreamingTrack = row.media_type === 'stream_track' && textOrNull(row.streaming_track_id) !== null;
@@ -6901,7 +6979,7 @@ export class LibraryStore {
             bitrate: null,
             coverId,
             coverThumb: streamingCoverUrl,
-            fieldSources: {},
+            fieldSources: streamingFieldSources,
             unavailable: Number(row.streaming_playable ?? 1) === 0 || Number(row.unavailable ?? 0) !== 0,
             playlistItemId: String(row.id),
           }

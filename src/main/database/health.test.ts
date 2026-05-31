@@ -7,6 +7,7 @@ import { createDatabase } from './createDatabase';
 import {
   checkDatabaseHealth,
   checkDatabaseHealthCached,
+  checkDatabaseOpenHealth,
   clearDatabaseHealthCacheForTests,
   isSqliteCorruptionMessage,
   rememberDatabaseHealthOk,
@@ -68,6 +69,25 @@ describe('database health', () => {
     expect(isSqliteCorruptionMessage('malformed database schema (6301a741-3d56-407f-a3d6-77e5a19a8416)')).toBe(true);
   });
 
+  it('uses a lightweight open check for readable SQLite files', () => {
+    const databasePath = join(root, 'library.sqlite');
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE sample (id TEXT PRIMARY KEY)');
+    database.close();
+
+    expect(checkDatabaseOpenHealth(databasePath)).toMatchObject({
+      status: 'ok',
+      message: 'database passed lightweight open check',
+    });
+  });
+
+  it('reports malformed files from the lightweight open check', () => {
+    const databasePath = join(root, 'library.sqlite');
+    writeFileSync(databasePath, 'not sqlite', 'utf8');
+
+    expect(checkDatabaseOpenHealth(databasePath).status).toBe('corrupt');
+  });
+
   it('reuses a healthy quick check when the database triplet signature is unchanged', () => {
     const databasePath = join(root, 'library.sqlite');
     const database = new Database(databasePath);
@@ -96,5 +116,33 @@ describe('database health', () => {
       status: 'ok',
       message: 'database health verified in active connection',
     });
+  });
+
+  it('reuses recent active health when WAL side files change', () => {
+    const databasePath = join(root, 'library.sqlite');
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE sample (id TEXT PRIMARY KEY)');
+    database.close();
+
+    rememberDatabaseHealthOk(databasePath);
+    writeFileSync(`${databasePath}-wal`, 'wal changed during active runtime', 'utf8');
+    writeFileSync(`${databasePath}-shm`, 'shm changed during active runtime', 'utf8');
+
+    expect(checkDatabaseHealthCached(databasePath)).toMatchObject({
+      status: 'ok',
+      message: 'database health verified in active connection',
+    });
+  });
+
+  it('does not reuse recent active health when the primary database file changes', () => {
+    const databasePath = join(root, 'library.sqlite');
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE sample (id TEXT PRIMARY KEY)');
+    database.close();
+
+    rememberDatabaseHealthOk(databasePath);
+    writeFileSync(databasePath, 'not sqlite', 'utf8');
+
+    expect(checkDatabaseHealthCached(databasePath).status).toBe('corrupt');
   });
 });

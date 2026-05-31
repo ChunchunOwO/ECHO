@@ -2010,6 +2010,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetPlaybackStatsDashboard, (_event, query: unknown) =>
     getLibraryService().getPlaybackStatsDashboard(normalizePlaybackHistoryQuery(query)),
   );
+  ipcMain.handle(IpcChannels.LibraryRefreshInvalidPlaybackHistory, () =>
+    getLibraryService().refreshInvalidPlaybackHistory(),
+  );
   ipcMain.handle(IpcChannels.LibraryDeletePlaybackHistoryEntry, (_event, id: unknown) =>
     getLibraryService().deletePlaybackHistoryEntry(requireText(id, 'historyId')),
   );

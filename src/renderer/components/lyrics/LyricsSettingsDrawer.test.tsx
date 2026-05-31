@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { DesktopLyricsState } from '../../../shared/types/desktopLyrics';
+import type { LibraryTrack } from '../../../shared/types/library';
 import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/lyrics';
 import type { MvSettings } from '../../../shared/types/mv';
+import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { LyricsSettingsDrawer, LyricsSettingsPanel } from './LyricsSettingsDrawer';
 
 const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
@@ -132,6 +135,39 @@ const makeTrackLyrics = (overrides: Partial<TrackLyrics> = {}): TrackLyrics => (
   updatedAt: '2026-05-14T00:00:00.000Z',
   ...overrides,
 });
+
+const makeTrack = (overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
+  id: 'track-1',
+  path: 'D:\\Music\\song.flac',
+  title: 'Test Song',
+  artist: 'Test Artist',
+  album: 'Test Album',
+  albumArtist: 'Test Album Artist',
+  trackNo: 1,
+  discNo: 1,
+  year: 2026,
+  genre: null,
+  duration: 180,
+  codec: 'flac',
+  sampleRate: 96000,
+  bitDepth: 24,
+  bitrate: 2400000,
+  coverId: null,
+  coverThumb: null,
+  fieldSources: {},
+  ...overrides,
+});
+
+const QueueSeed = ({ children, track }: { children: JSX.Element; track: LibraryTrack }): JSX.Element => {
+  const { replaceQueue, setCurrentTrackId } = usePlaybackQueue();
+
+  useEffect(() => {
+    replaceQueue([track]);
+    setCurrentTrackId(track.id);
+  }, [replaceQueue, setCurrentTrackId, track]);
+
+  return children;
+};
 
 const makeMvSettings = (overrides: Partial<MvSettings> = {}): MvSettings => ({
   autoSearch: true,
@@ -1237,6 +1273,101 @@ describe('LyricsSettingsDrawer', () => {
     expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'lrclib');
     expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'netease');
     expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'qqmusic');
+  });
+
+  it('searches NetEase podcast tracks through snapshot candidates in the drawer', async () => {
+    const track = makeTrack({
+      id: 'streaming:netease:3370584713',
+      path: 'streaming:netease:3370584713',
+      mediaType: 'streaming',
+      provider: 'netease',
+      providerTrackId: '3370584713',
+      stableKey: 'streaming:netease:3370584713',
+      title: 'IRIS OUT',
+      artist: 'Podcast Host',
+      album: 'NetEase Podcast',
+      albumArtist: 'Podcast Host',
+      duration: 147.048,
+      fieldSources: {},
+    });
+    const searchCandidates = vi.fn().mockResolvedValue([]);
+    const searchCandidatesForSnapshot = vi.fn().mockImplementation(
+      (_snapshot: unknown, _searchText: string | undefined, provider: string) =>
+        Promise.resolve(provider === 'netease'
+          ? [makeLyricsCandidate({
+              id: 'netease-podcast-candidate',
+              provider: 'netease',
+              title: 'IRIS OUT',
+              artist: 'Podcast Host',
+              album: 'NetEase Podcast',
+              sourceLabel: 'NetEase',
+            })]
+          : []),
+    );
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'streaming:netease:3370584713' }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'streaming:netease:3370584713' }),
+      },
+      streaming: {
+        getTrackSourceInfo: vi.fn().mockResolvedValue({
+          provider: 'netease',
+          providerTrackId: '3370584713',
+          albumId: null,
+          sourcePlaylistIds: ['djradio:990232286'],
+          isNeteaseDjRadio: true,
+        }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(null),
+        searchCandidates,
+        searchCandidatesForSnapshot,
+        applyCandidate: vi.fn(),
+        applyCandidateForSnapshot: vi.fn(),
+        markInstrumental: vi.fn(),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsSettingsDrawer isOpen onClose={vi.fn()} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    const searchInput = screen.getByRole('searchbox') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: 'IRIS OUT' } });
+    fireEvent.submit(searchInput.closest('form')!);
+
+    expect(await screen.findByText('IRIS OUT')).toBeTruthy();
+    await waitFor(() => expect(window.echo?.streaming?.getTrackSourceInfo).toHaveBeenCalledWith({
+      provider: 'netease',
+      providerTrackId: '3370584713',
+    }));
+    await waitFor(() => expect(searchCandidatesForSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: 'streaming:netease:3370584713',
+        title: 'IRIS OUT',
+        artist: 'Podcast Host',
+        album: 'NetEase Podcast',
+        mediaType: 'streaming',
+        sourceId: '3370584713',
+        stableKey: 'streaming:netease:3370584713',
+      }),
+      'IRIS OUT',
+      'netease',
+    ));
+    expect(searchCandidates).not.toHaveBeenCalled();
   });
 
   it('marks the current track as instrumental from the drawer', async () => {

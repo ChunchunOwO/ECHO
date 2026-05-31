@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { randomUUID } from 'node:crypto';
 import { userInfo } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
@@ -306,6 +306,29 @@ const applyAppSettingsPatch = async (
   return settings;
 };
 
+const normalizeNetworkProxyTestSettings = (rawPatch: unknown): AppSettings => {
+  const current = getAppSettings();
+  if (!rawPatch || typeof rawPatch !== 'object' || Array.isArray(rawPatch)) {
+    return current;
+  }
+
+  const patch = rawPatch as Partial<AppSettings>;
+  const networkProxyPatch: Partial<AppSettings> = {};
+  if (Object.prototype.hasOwnProperty.call(patch, 'networkProxyMode')) {
+    networkProxyPatch.networkProxyMode = patch.networkProxyMode;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'networkProxyUrl')) {
+    networkProxyPatch.networkProxyUrl = patch.networkProxyUrl;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'networkProxyPacUrl')) {
+    networkProxyPatch.networkProxyPacUrl = patch.networkProxyPacUrl;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'networkProxyBypassRules')) {
+    networkProxyPatch.networkProxyBypassRules = patch.networkProxyBypassRules;
+  }
+  return normalizeSettings({ ...current, ...networkProxyPatch });
+};
+
 const preserveCurrentDataBackupTarget = (settings: AppSettings, currentSettings: AppSettings): AppSettings => ({
   ...settings,
   autoDataBackupEnabled: currentSettings.autoDataBackupEnabled === true && Boolean(currentSettings.autoDataBackupDirectory),
@@ -525,7 +548,13 @@ export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppOpenExternalUrl, async (_event: IpcMainInvokeEvent, rawUrl: unknown): Promise<void> => {
     await shell.openExternal(requireExternalHttpUrl(rawUrl));
   });
-  ipcMain.handle(IpcChannels.AppTestNetworkProxy, () => testNetworkProxyConnection(getAppSettings()));
+  ipcMain.handle(IpcChannels.AppTestNetworkProxy, (_event: IpcMainInvokeEvent, rawPatch?: unknown) =>
+    testNetworkProxyConnection(
+      normalizeNetworkProxyTestSettings(rawPatch),
+      undefined,
+      session.fromPartition(`network-proxy-test-${randomUUID()}`),
+    ),
+  );
   ipcMain.handle(
     IpcChannels.AppSetCoverCacheDirectory,
     async (_event: IpcMainInvokeEvent, rawRequest: unknown): Promise<CoverCacheMigrationResult | null> => {

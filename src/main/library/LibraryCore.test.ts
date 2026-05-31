@@ -2614,6 +2614,31 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('refreshes playback history by removing missing local file entries only from history', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'Deleted History Song.flac');
+    harness.metadataService.overrides.set(filePath, baseMetadata({ title: 'Deleted History', artist: 'Blue Artist', album: 'Night Album', duration: 60 }));
+    harness.addFolder();
+    await harness.scanFolder();
+    const track = harness.service.getTracks({ pageSize: 10 }).items.find((item) => item.title === 'Deleted History')!;
+    const history = harness.service.startPlaybackHistory({ trackId: track.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    harness.service.finishPlaybackHistory({ historyId: history.historyId, playedSeconds: 35 });
+
+    unlinkSync(filePath);
+
+    const result = await harness.service.refreshInvalidPlaybackHistory();
+
+    expect(result).toMatchObject({
+      removedCount: 1,
+      removedStatsCount: 1,
+      scannedCount: 1,
+    });
+    expect(result.removedEntriesCount).toBeGreaterThanOrEqual(1);
+    expect(harness.service.getPlaybackHistory({ pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(1);
+    harness.cleanup();
+  });
+
   it('playback history range filters aggregate only plays inside the requested window', async () => {
     const harness = createHarness();
     const firstFile = writeAudioFile(harness.folder, 'Weekly Song.flac');

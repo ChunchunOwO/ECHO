@@ -167,6 +167,9 @@ export const createOutputSettings = (
     if (outputMode === 'asio' && Number.isInteger(Number(device.asioOutputChannelStart)) && Number(device.asioOutputChannelStart) >= 0) {
       settings.asioOutputChannelStart = Number(device.asioOutputChannelStart);
     }
+  } else {
+    settings.deviceIndex = undefined;
+    settings.deviceName = undefined;
   }
 
   return settings;

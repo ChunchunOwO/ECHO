@@ -126,7 +126,7 @@ const detectAudioDrawerPlatform = (): NodeJS.Platform | 'unknown' =>
 
 const getSystemAudioPlatformLabel = (platform: NodeJS.Platform | 'unknown'): string => {
   if (platform === 'win32') {
-    return 'Windows';
+    return 'WASAPI';
   }
   if (platform === 'linux') {
     return 'Linux';
@@ -253,6 +253,8 @@ const formatMode = (mode: AudioOutputMode | null | undefined, copy: AudioDrawerC
 
   return copy.shared;
 };
+
+const formatWasapiDeviceMode = (exclusive: boolean): string => (exclusive ? 'WASAPI Exclusive' : 'WASAPI Shared');
 
 const shouldHighlightCurrentOutput = (mode: AudioOutputMode | null | undefined, backend: string | null | undefined): boolean =>
   mode === 'asio' || mode === 'exclusive' || backend === 'asio' || backend === 'wasapi-exclusive';
@@ -835,7 +837,11 @@ export const AudioSettingsDrawer = ({
   const windowsAudioServiceRestartAvailable = rendererPlatform === 'win32';
   const systemAudioPlatformLabel = useMemo(() => getSystemAudioPlatformLabel(rendererPlatform), [rendererPlatform]);
   const wasapiExclusive = outputMode === 'exclusive';
-  const systemAudioActive = !hqPlayerTakeoverEnabled && (outputMode === 'system' || status?.outputMode === 'system');
+  const systemAudioActive = !hqPlayerTakeoverEnabled && (
+    rendererPlatform === 'win32'
+      ? outputMode === 'shared' && status?.outputMode !== 'system' && !status?.outputDeviceName && sharedBackend !== 'directsound'
+      : outputMode === 'system' || status?.outputMode === 'system'
+  );
   const lockWasapiExclusive = !advancedNativeOutputAvailable || outputMode === 'asio' || outputMode === 'system';
   const statusDevice = useMemo(() => {
     if (!status) {
@@ -1354,14 +1360,16 @@ export const AudioSettingsDrawer = ({
 
   const applySystemAudio = (): void => {
     const remembered = readRememberedAudioOutput();
+    const nextMode: AudioOutputMode = rendererPlatform === 'win32' ? 'shared' : 'system';
+    const nextSharedBackend: AudioSharedBackend = rendererPlatform === 'win32' ? 'windows' : 'auto';
     const settings = createOutputSettings(
-      'system',
+      nextMode,
       null,
       status?.latencyProfile ?? remembered.latencyProfile ?? 'balanced',
-      'auto',
+      nextSharedBackend,
     );
-    setOutputMode('system');
-    setSharedBackend('auto');
+    setOutputMode(nextMode);
+    setSharedBackend(nextSharedBackend);
     void applyOutput(settings);
   };
 
@@ -1900,7 +1908,7 @@ export const AudioSettingsDrawer = ({
               onChange={(event) => toggleLowLoadPlaybackMode(event.currentTarget.checked)}
             />
           </label>
-          <p>{t('audioDrawer.option.lowLoadPlaybackModeDescription')}</p>
+          <p className="audio-section-note">{t('audioDrawer.option.lowLoadPlaybackModeDescription')}</p>
           <label className="audio-toggle-row">
             <span>
               <ShieldAlert size={17} />
@@ -1912,7 +1920,7 @@ export const AudioSettingsDrawer = ({
               onChange={(event) => toggleLowLoadPlaybackEnhancements(event.currentTarget.checked)}
             />
           </label>
-          <p>{t('audioDrawer.option.lowLoadPlaybackEnhancementsDescription')}</p>
+          <p className="audio-section-note">{t('audioDrawer.option.lowLoadPlaybackEnhancementsDescription')}</p>
         </section>
 
         <section className="audio-drawer-section">
@@ -1954,7 +1962,7 @@ export const AudioSettingsDrawer = ({
             {systemAudioActive ? <Check size={15} /> : null}
           </button>
           <button
-            className={`audio-device-pill ${!hqPlayerTakeoverEnabled && !status?.outputDeviceName && outputMode !== 'asio' && outputMode !== 'system' ? 'active' : ''}`}
+            className={`audio-device-pill ${!systemAudioActive && !hqPlayerTakeoverEnabled && !status?.outputDeviceName && outputMode !== 'asio' && outputMode !== 'system' ? 'active' : ''}`}
             type="button"
             title={copy.systemDefaultOutput}
             disabled={isBusy}
@@ -1963,10 +1971,10 @@ export const AudioSettingsDrawer = ({
             <Waves size={15} />
             <span>
               <strong>{t('audioDrawer.device.systemDefault')}</strong>
-              <small>{wasapiExclusive ? t('audioDrawer.mode.exclusiveCandidate') : copy.shared} / {t('audioDrawer.device.systemSelectedRoute')}</small>
+              <small>{formatWasapiDeviceMode(wasapiExclusive)} / {t('audioDrawer.device.systemSelectedRoute')}</small>
             </span>
-            <em>{wasapiExclusive ? copy.exclusive : copy.shared}</em>
-            {!hqPlayerTakeoverEnabled && outputMode !== 'asio' && outputMode !== 'system' && !status?.outputDeviceName ? <Check size={15} /> : null}
+            <em>WASAPI</em>
+            {!systemAudioActive && !hqPlayerTakeoverEnabled && outputMode !== 'asio' && outputMode !== 'system' && !status?.outputDeviceName ? <Check size={15} /> : null}
           </button>
           {sharedDevices.length === 0 ? <p className="audio-drawer-empty">{t('audioDrawer.empty.systemDevices')}</p> : null}
           {sharedDevices.map((device) => {
@@ -1988,9 +1996,9 @@ export const AudioSettingsDrawer = ({
                 <DeviceIcon size={15} />
                 <span>
                   <strong>{device.name}</strong>
-                  <small>{wasapiExclusive ? t('audioDrawer.mode.exclusiveCandidate') : copy.shared} / {sampleRate || t('audioDrawer.status.sampleRatePending')}</small>
+                  <small>{formatWasapiDeviceMode(wasapiExclusive)} / {sampleRate || t('audioDrawer.status.sampleRatePending')}</small>
                 </span>
-                <em>{sampleRate || (wasapiExclusive ? copy.exclusive : copy.shared)}</em>
+                <em>WASAPI</em>
                 {isActive ? <Check size={15} /> : null}
               </button>
             );

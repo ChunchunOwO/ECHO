@@ -185,6 +185,7 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .page-surface:has(.settings-page),
 .page-surface:has(.queue-page),
 .page-surface:has(.streaming-page),
+.page-surface:has(.streaming-artist-page),
 .page-surface:has(.album-detail-page),
 .page-surface:has(.artist-detail-page) {
   background: var(--echo-polish-page-bg), var(--theme-app-bg);
@@ -194,6 +195,7 @@ html[data-theme="dark"] .sidebar-folder:hover {
 .songs-page,
 .queue-page,
 .streaming-page,
+.streaming-artist-page,
 .playlists-page,
 .liked-page,
 .folders-page,
@@ -1285,20 +1287,23 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   }
 }
 
-@media (orientation: portrait) and (min-width: 641px) and (max-width: 1400px) {
+@media (orientation: portrait) and (min-width: 641px) and (max-width: 980px) {
   .sidebar {
-    padding: 12px 10px 14px;
+    padding: 8px 10px;
   }
 
   .nav-item {
-    min-height: 46px;
-    padding-inline: 6px;
+    width: 54px;
+    min-height: 50px;
+    padding: 0;
   }
 
   .player-bar {
-    grid-template-columns: minmax(0, 0.88fr) minmax(320px, 1.12fr);
-    gap: 12px;
-    padding-inline: 20px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 12px 18px 14px;
+    overflow: hidden;
   }
 
   .player-now {
@@ -1355,6 +1360,68 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 
   .settings-nav-desc {
     display: none;
+  }
+
+  .settings-page .setting-row,
+  .settings-page .setting-row--compact-panel,
+  .settings-page .setting-row--package-export,
+  .settings-page #settings-sec-shortcuts .setting-row--compact-panel,
+  .settings-page #settings-row-mysterious-key {
+    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    justify-content: stretch;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .settings-page .setting-row > :not(.setting-info),
+  .settings-page .setting-row--compact-panel > :not(.setting-info),
+  .settings-page .setting-row--package-export > :not(.setting-info),
+  .settings-page #settings-row-mysterious-key > .settings-cache-panel--download,
+  .settings-page .settings-package-export-panel {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .settings-page .setting-info p,
+  .settings-page .setting-row--compact-panel .setting-info p {
+    max-width: none;
+  }
+
+  .settings-page .setting-row--shortcut,
+  .settings-page .setting-row--shortcut-header {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .settings-page .setting-row--shortcut-header {
+    display: none;
+  }
+
+  .settings-page .settings-shortcut-control .settings-chip-row--actions,
+  .settings-page .settings-package-export-panel .settings-chip-row,
+  .settings-page #settings-row-mysterious-key .settings-chip-row,
+  .settings-page #settings-row-mysterious-key .settings-mysterious-key-accepted,
+  .settings-page .settings-chip-row {
+    justify-content: flex-start;
+  }
+
+  .settings-replay-gain-simple,
+  .settings-data-backup-primary,
+  .settings-data-backup-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-data-backup-frequency,
+  .settings-data-backup-actions,
+  .settings-wallpaper-empty-actions {
+    justify-content: flex-start;
+  }
+
+  .settings-wallpaper-empty-actions {
+    width: 100%;
   }
 }
 

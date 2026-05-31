@@ -25,6 +25,7 @@ import type {
   StreamingSearchRequest,
   StreamingSearchResult,
   StreamingTrack,
+  StreamingTrackSourceInfo,
 } from '../../shared/types/streaming';
 import { streamingStableKey } from '../../shared/types/streaming';
 import { BpmAnalyzer } from '../library/audioAnalysis/BpmAnalyzer';
@@ -225,6 +226,11 @@ const playlistIdFromParsedUrl = (url: URL, depth = 0): StreamingPlaylistUrlTarge
   };
 
   if (host.includes('music.163.com') || host.includes('163cn.tv')) {
+    const djRadioId = findParam('id', 'radioId', 'djradioId') ?? combinedPath.match(/djradio\/(\d+)/iu)?.[1] ?? null;
+    if (djRadioId && /(?:^|\/)(?:m\/)?djradio(?:[/?#]|$)/iu.test(combinedPath)) {
+      return { provider: 'netease', providerPlaylistId: `djradio:${djRadioId}` };
+    }
+
     const id = findParam('id', 'playlistId') ?? combinedPath.match(/playlist\/(\d+)/iu)?.[1] ?? null;
     if (id) {
       return { provider: 'netease', providerPlaylistId: id };
@@ -391,7 +397,7 @@ const resolvePlaylistIdFromUrl = async (rawUrl: string): Promise<StreamingPlayli
     return resolvedTarget;
   }
 
-  throw new Error('Only NetEase Cloud Music, QQ Music, and Spotify playlist links are supported.');
+  throw new Error('Only NetEase Cloud Music playlists or podcasts, QQ Music, and Spotify playlist links are supported.');
 };
 
 const resolveFavoritePlaylistIdFromUrl = (rawUrl: string): StreamingFavoritePlaylistUrlTarget => {
@@ -650,6 +656,10 @@ export class StreamingService {
       this.cacheStore.upsertTrack(track);
       return this.memoryCache.set(key, track, trackDetailTtlMs);
     });
+  }
+
+  getTrackSourceInfo(request: StreamingTrackRequest): StreamingTrackSourceInfo {
+    return this.cacheStore.getTrackSourceInfo(request.provider, request.providerTrackId);
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {

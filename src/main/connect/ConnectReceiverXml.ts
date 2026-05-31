@@ -84,15 +84,19 @@ const hasCjkOrKana = (value: string): boolean => /[\u3040-\u30ff\u3400-\u9fff]/u
 
 const looksLikeEncodedBlob = (value: string): boolean => {
   const candidate = value.replace(/^\.+/u, '');
-  return candidate.length >= 16 &&
-  /^[A-Za-z0-9+/=_-]+$/u.test(candidate) &&
-  /[+/=_-]/u.test(candidate) &&
-  !hasCjkOrKana(candidate) &&
-  (candidate.endsWith('=') ||
-    (candidate.length >= 24 &&
-      [...candidate].filter((char) => /\d/u.test(char)).length >= 3 &&
-      [...candidate].filter((char) => /[A-Z]/u.test(char)).length >= 3 &&
-      [...candidate].filter((char) => /[a-z]/u.test(char)).length >= 3));
+  if (candidate.length < 16 || !/^[A-Za-z0-9+/=_-]+$/u.test(candidate) || hasCjkOrKana(candidate)) {
+    return false;
+  }
+
+  const digitCount = [...candidate].filter((char) => /\d/u.test(char)).length;
+  const upperCount = [...candidate].filter((char) => /[A-Z]/u.test(char)).length;
+  const lowerCount = [...candidate].filter((char) => /[a-z]/u.test(char)).length;
+  const base64Like =
+    /[+/=_-]/u.test(candidate) &&
+    (candidate.endsWith('=') || (candidate.length >= 24 && digitCount >= 3 && upperCount >= 3 && lowerCount >= 3));
+  const opaqueMixedToken = candidate.length >= 24 && digitCount >= 1 && upperCount >= 4 && lowerCount >= 4;
+
+  return base64Like || opaqueMixedToken;
 };
 
 const cleanMetadataText = (value: string | null | undefined): string | null => {
@@ -138,8 +142,7 @@ export const titleFromUri = (uri: string | null | undefined): string | null => {
 
     const pathTitle = decodeURIComponent(basename(url.pathname));
     const withoutExtension = pathTitle.replace(/\.[a-z0-9]{2,5}$/iu, '').trim();
-    const isHiddenOpaqueBasename = withoutExtension.startsWith('.') && looksLikeEncodedBlob(withoutExtension);
-    if (withoutExtension && !isHiddenOpaqueBasename && !noisyUriBasenames.has(withoutExtension.toLowerCase()) && !/^[a-f0-9_-]{12,}$/iu.test(withoutExtension)) {
+    if (withoutExtension && !looksLikeEncodedBlob(withoutExtension) && !noisyUriBasenames.has(withoutExtension.toLowerCase()) && !/^[a-f0-9_-]{12,}$/iu.test(withoutExtension)) {
       return pathTitle;
     }
 

@@ -1562,6 +1562,89 @@ html[data-theme="dark"] .album-detail-error {
   }
 }
 
+@media (orientation: portrait) and (min-width: 981px) and (max-width: 1400px) {
+  .album-detail-page {
+    --album-detail-page-x: clamp(24px, 3vw, 38px);
+    --album-detail-track-x: 0px;
+    --album-detail-track-content-x: clamp(18px, 2vw, 28px);
+    gap: 18px;
+    padding: 20px var(--album-detail-page-x) 24px;
+  }
+
+  .album-back-button {
+    top: 14px;
+  }
+
+  .album-detail-hero {
+    grid-template-columns: minmax(300px, 0.42fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(26px, 4vw, 48px);
+    padding: 42px 0 14px;
+  }
+
+  .album-detail-cover {
+    width: clamp(300px, 32vw, 420px);
+    min-width: 0;
+  }
+
+  .album-detail-copy h1 {
+    max-width: 100%;
+    font-size: clamp(38px, 4.4vw, 58px);
+  }
+
+  .album-detail-artist-link {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .album-detail-actions {
+    flex-wrap: wrap;
+  }
+
+  .album-detail-facts {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    padding: 14px 0 0;
+    border-top: 1px solid var(--theme-panel-border);
+    border-left: 0;
+  }
+
+  .album-detail-tabs {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-inline: var(--album-detail-track-content-x);
+  }
+
+  .album-online-header,
+  .album-related-row,
+  .album-track-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .album-release-detail-card,
+  .album-release-version-card,
+  .album-external-rating-grid,
+  .album-source-link-grid,
+  .album-related-artist-grid,
+  .album-information-article {
+    grid-template-columns: 1fr;
+  }
+
+  .album-track-header,
+  .album-track-row {
+    grid-template-columns: 38px minmax(0, 1fr) 56px 34px;
+    gap: 12px;
+  }
+
+  .album-track-header span:nth-child(3),
+  .album-track-tags {
+    display: none;
+  }
+}
+
 @keyframes detail-page-enter {
   from {
     opacity: 0;

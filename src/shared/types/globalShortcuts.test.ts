@@ -18,11 +18,30 @@ describe('recommended shortcuts', () => {
     expect(globalShortcuts.openAudioSettings).toEqual({ enabled: false, accelerator: null });
     expect(globalShortcuts.openMvSettings).toEqual({ enabled: false, accelerator: null });
     expect(globalShortcuts.openLyricsSettings).toEqual({ enabled: false, accelerator: null });
+    expect(localShortcuts.locateCurrentTrack).toEqual({ enabled: false, accelerator: null });
+    expect(globalShortcuts.locateCurrentTrack).toEqual({ enabled: false, accelerator: null });
+    expect(localShortcuts.toggleDesktopLyrics).toEqual({ enabled: false, accelerator: null });
+    expect(globalShortcuts.toggleDesktopLyrics).toEqual({ enabled: false, accelerator: null });
 
     for (const binding of [...Object.values(localShortcuts), ...Object.values(globalShortcuts)]) {
       if (binding.accelerator) {
         expect(validateGlobalShortcutAccelerator(binding.accelerator).valid).toBe(true);
       }
     }
+  });
+
+  it('keeps numpad keys distinct from top-row number keys', () => {
+    expect(validateGlobalShortcutAccelerator('Ctrl+Alt+Numpad1')).toEqual({
+      accelerator: 'Ctrl+Alt+num1',
+      available: true,
+      reason: 'available',
+      valid: true,
+    });
+    expect(validateGlobalShortcutAccelerator('Ctrl+Alt+num1')).toEqual({
+      accelerator: 'Ctrl+Alt+num1',
+      available: true,
+      reason: 'available',
+      valid: true,
+    });
   });
 });

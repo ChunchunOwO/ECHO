@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { Readable } from 'node:stream';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app, protocol } from 'electron';
@@ -59,6 +60,82 @@ const contentTypeForPath = (filePath: string, fallback: string | null): string =
     default:
       return fallback ?? 'application/octet-stream';
   }
+};
+
+const parseRange = (rangeHeader: string | null, size: number): { start: number; end: number } | null => {
+  if (!rangeHeader) {
+    return null;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!match) {
+    return null;
+  }
+
+  const rawStart = match[1];
+  const rawEnd = match[2];
+  if (!rawStart && !rawEnd) {
+    return null;
+  }
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0 || size <= 0) {
+      return null;
+    }
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+
+  const start = Number(rawStart);
+  const end = rawEnd ? Number(rawEnd) : size - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) {
+    return null;
+  }
+
+  return { start, end: Math.min(end, size - 1) };
+};
+
+const streamBody = (filePath: string, range: { start: number; end: number } | null): BodyInit =>
+  Readable.toWeb(createReadStream(filePath, range ?? undefined)) as unknown as BodyInit;
+
+const wallpaperResponse = (request: Request, wallpaperPath: string): Response => {
+  const contentType = contentTypeForPath(wallpaperPath, null);
+  if (!contentType.startsWith('video/')) {
+    return new Response(readFileSync(wallpaperPath), {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': wallpaperCacheControlHeader,
+      },
+    });
+  }
+
+  const fileStat = statSync(wallpaperPath);
+  if (!fileStat.isFile()) {
+    return missingCoverResponse();
+  }
+
+  const rangeHeader = request.headers.get('range');
+  const range = parseRange(rangeHeader, fileStat.size);
+  const headers = new Headers({
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': wallpaperCacheControlHeader,
+    'Content-Type': contentType,
+  });
+
+  if (rangeHeader && !range) {
+    headers.set('Content-Length', '0');
+    headers.set('Content-Range', `bytes */${fileStat.size}`);
+    return new Response('', { status: 416, headers });
+  }
+
+  if (range) {
+    headers.set('Content-Length', String(range.end - range.start + 1));
+    headers.set('Content-Range', `bytes ${range.start}-${range.end}/${fileStat.size}`);
+    return new Response(request.method === 'HEAD' ? null : streamBody(wallpaperPath, range), { status: 206, headers });
+  }
+
+  headers.set('Content-Length', String(fileStat.size));
+  return new Response(request.method === 'HEAD' ? null : streamBody(wallpaperPath, null), { headers });
 };
 
 const cachedRemoteCoverExtensions = ['avif', 'webp', 'png', 'jpg', 'jpeg', 'gif'] as const;
@@ -321,12 +398,7 @@ export const registerCoverProtocolHandler = (): void => {
         return missingCoverResponse();
       }
 
-      return new Response(readFileSync(wallpaperPath), {
-        headers: {
-          'Content-Type': contentTypeForPath(wallpaperPath, null),
-          'Cache-Control': wallpaperCacheControlHeader,
-        },
-      });
+      return wallpaperResponse(request, wallpaperPath);
     } catch {
       return missingCoverResponse();
     }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BarChart3, CalendarDays, Clock3, Disc3, ListX, Music2, Play, Plus, Radio, Search, Trash2, Trophy } from 'lucide-react';
+import { BarChart3, CalendarDays, Clock3, Disc3, ListX, Music2, Radio, RefreshCw, Search, Trash2, Trophy } from 'lucide-react';
 import type {
   LibraryTrack,
   PlaybackHistoryEntry,
@@ -13,17 +13,16 @@ import type {
   PlaybackStatsTrack,
 } from '../../shared/types/library';
 import { useI18n } from '../i18n/I18nProvider';
-import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 import { openArtistDetailByName } from '../utils/artistNavigation';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
-const pageSize = 50;
+const pageSize = 10;
 const historyPageCacheStorageKey = 'echo-next.history-page-cache.v1';
 const historyPageCacheVersion = 1;
 const isHistoryPageTestRuntime = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
 const historyCachedRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 900;
-const historyStatsRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 1200;
+const historyStatsRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 1600;
 
 type HistoryFilter = 'all' | 'today' | 'week' | 'month' | 'completed';
 
@@ -114,6 +113,29 @@ const isDefaultHistoryQuery = (filter: HistoryFilter, search: string): boolean =
 const hasHistoryPageData = (data: HistoryPageData | null): boolean =>
   Boolean(data && (data.items.length > 0 || data.total > 0 || data.summary || data.stats));
 
+const sortHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[] =>
+  [...items]
+    .sort((left, right) => right.playCount - left.playCount || Date.parse(right.startedAt) - Date.parse(left.startedAt));
+
+const mergeHistoryItems = (
+  currentItems: PlaybackHistoryEntry[],
+  nextItems: PlaybackHistoryEntry[],
+  mode: 'replace' | 'append',
+): PlaybackHistoryEntry[] => {
+  if (mode === 'replace') {
+    return sortHistoryItems(nextItems);
+  }
+
+  const itemsById = new Map<string, PlaybackHistoryEntry>();
+  for (const item of currentItems) {
+    itemsById.set(item.id, item);
+  }
+  for (const item of nextItems) {
+    itemsById.set(item.id, item);
+  }
+  return sortHistoryItems(Array.from(itemsById.values()));
+};
+
 const normalizeStoredHistoryPageData = (value: unknown): HistoryPageData | null => {
   if (!isRecord(value)) {
     return null;
@@ -131,7 +153,7 @@ const normalizeStoredHistoryPageData = (value: unknown): HistoryPageData | null 
   return {
     filter,
     hasMore: value.hasMore === true,
-    items: Array.isArray(value.items) ? (value.items as PlaybackHistoryEntry[]) : [],
+    items: Array.isArray(value.items) ? sortHistoryItems(value.items as PlaybackHistoryEntry[]) : [],
     page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1,
     search,
     stats: isRecord(value.stats) ? (value.stats as PlaybackStatsDashboard) : null,
@@ -368,31 +390,6 @@ const formatDayLabel = (date: string): string => {
 const formatMonthLabel = (date: Date): string =>
   new Intl.DateTimeFormat(undefined, { month: 'short' }).format(date);
 
-const trackFromHistory = (entry: PlaybackHistoryEntry): LibraryTrack => ({
-  id: entry.stableKey ?? entry.trackId ?? entry.id,
-  mediaType: entry.mediaType,
-  path: entry.mediaType === 'streaming' ? entry.stableKey ?? entry.trackPath : entry.trackPath,
-  provider: entry.provider,
-  providerTrackId: entry.providerTrackId,
-  stableKey: entry.stableKey,
-  title: entry.title,
-  artist: entry.artist,
-  album: entry.album,
-  albumArtist: entry.albumArtist,
-  trackNo: null,
-  discNo: null,
-  year: null,
-  genre: null,
-  duration: entry.durationSnapshot ?? entry.durationSeconds,
-  codec: null,
-  sampleRate: null,
-  bitDepth: null,
-  bitrate: null,
-  coverId: entry.coverId,
-  coverThumb: entry.coverSnapshot ?? entry.coverThumb,
-  fieldSources: {},
-});
-
 const trackFromStatsTrack = (track: PlaybackStatsTrack): LibraryTrack => ({
   id: track.trackId ?? track.id,
   path: track.id,
@@ -416,7 +413,6 @@ const trackFromStatsTrack = (track: PlaybackStatsTrack): LibraryTrack => ({
 
 export const HistoryPage = (): JSX.Element => {
   const { t } = useI18n();
-  const queue = usePlaybackQueue();
   const initialHistoryDataRef = useRef<HistoryPageData | null>(null);
   if (initialHistoryDataRef.current === null) {
     initialHistoryDataRef.current = getInitialHistoryPageData();
@@ -431,10 +427,12 @@ export const HistoryPage = (): JSX.Element => {
   const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshingInvalid, setIsRefreshingInvalid] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshResultMessage, setRefreshResultMessage] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const statsRequestIdRef = useRef(0);
   const statsRefreshTimerRef = useRef<number | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const clearStatsRefreshTimer = useCallback((): void => {
     if (statsRefreshTimerRef.current !== null) {
@@ -443,17 +441,29 @@ export const HistoryPage = (): JSX.Element => {
     }
   }, []);
 
+  const invalidateStatsRefresh = useCallback((): void => {
+    statsRequestIdRef.current += 1;
+    clearStatsRefreshTimer();
+  }, [clearStatsRefreshTimer]);
+
   useEffect(() => clearStatsRefreshTimer, [clearStatsRefreshTimer]);
 
+  useEffect(() => {
+    setRefreshResultMessage(null);
+  }, [filter, search]);
+
   const scheduleStatsRefresh = useCallback(
-    (historyQuery: PlaybackHistoryQuery, requestId: number, shouldCacheSnapshot: boolean): void => {
+    (historyQuery: PlaybackHistoryQuery, shouldCacheSnapshot: boolean): void => {
       clearStatsRefreshTimer();
-      statsRefreshTimerRef.current = window.setTimeout(() => {
+      const statsRequestId = statsRequestIdRef.current + 1;
+      statsRequestIdRef.current = statsRequestId;
+
+      const refreshStats = (): void => {
         statsRefreshTimerRef.current = null;
         const library = window.echo?.library;
 
         if (!library?.getPlaybackStatsDashboard) {
-          if (requestIdRef.current === requestId) {
+          if (statsRequestIdRef.current === statsRequestId) {
             setStats(null);
             if (shouldCacheSnapshot) {
               mergeCachedHistoryPageData({ stats: null });
@@ -464,7 +474,7 @@ export const HistoryPage = (): JSX.Element => {
 
         void library.getPlaybackStatsDashboard(historyQuery)
           .then((nextStats) => {
-            if (requestIdRef.current !== requestId) {
+            if (statsRequestIdRef.current !== statsRequestId) {
               return;
             }
 
@@ -474,11 +484,13 @@ export const HistoryPage = (): JSX.Element => {
             }
           })
           .catch((statsError) => {
-            if (requestIdRef.current === requestId) {
+            if (statsRequestIdRef.current === statsRequestId) {
               setError(statsError instanceof Error ? statsError.message : String(statsError));
             }
           });
-      }, historyStatsRefreshDelayMs);
+      };
+
+      statsRefreshTimerRef.current = window.setTimeout(refreshStats, historyStatsRefreshDelayMs);
     },
     [clearStatsRefreshTimer],
   );
@@ -488,7 +500,9 @@ export const HistoryPage = (): JSX.Element => {
       const library = window.echo?.library;
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
-      clearStatsRefreshTimer();
+      if (mode === 'replace') {
+        invalidateStatsRefresh();
+      }
       const shouldCacheSnapshot = mode === 'replace' && nextPage === 1 && isDefaultHistoryQuery(filter, search);
       const hasVisibleCachedSnapshot = shouldCacheSnapshot && hasHistoryPageData(cachedHistoryPageData);
       setIsLoading(!hasVisibleCachedSnapshot);
@@ -501,6 +515,8 @@ export const HistoryPage = (): JSX.Element => {
         setItems([]);
         setSummary(null);
         setStats(null);
+        setPage(1);
+        setHasMore(false);
         setError(t('historyPage.error.desktopBridgeRead'));
         setIsLoading(false);
         return;
@@ -511,6 +527,7 @@ export const HistoryPage = (): JSX.Element => {
         const historyQuery = {
           page: nextPage,
           pageSize,
+          sort: 'plays' as const,
           search,
           ...rangeQuery,
         };
@@ -523,7 +540,7 @@ export const HistoryPage = (): JSX.Element => {
           return;
         }
 
-        setItems((current) => (mode === 'append' ? [...current, ...historyResult.items] : historyResult.items));
+        setItems((currentItems) => mergeHistoryItems(currentItems, historyResult.items, mode));
         setPage(historyResult.page);
         setTotal(historyResult.total);
         setHasMore(historyResult.hasMore);
@@ -534,7 +551,7 @@ export const HistoryPage = (): JSX.Element => {
           setCachedHistoryPageData({
             filter,
             hasMore: historyResult.hasMore,
-            items: historyResult.items,
+            items: sortHistoryItems(historyResult.items),
             page: historyResult.page,
             search,
             stats: cachedHistoryPageData?.stats ?? null,
@@ -543,7 +560,7 @@ export const HistoryPage = (): JSX.Element => {
           });
         }
         if (mode === 'replace') {
-          scheduleStatsRefresh(historyQuery, requestId, shouldCacheSnapshot);
+          scheduleStatsRefresh(historyQuery, shouldCacheSnapshot);
         }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
@@ -555,7 +572,7 @@ export const HistoryPage = (): JSX.Element => {
         }
       }
     },
-    [clearStatsRefreshTimer, filter, scheduleStatsRefresh, search, t],
+    [filter, invalidateStatsRefresh, scheduleStatsRefresh, search, t],
   );
 
   useEffect(() => {
@@ -564,23 +581,6 @@ export const HistoryPage = (): JSX.Element => {
 
     return scheduleHistoryWork(() => void loadHistory(1, 'replace'), delayMs);
   }, [loadHistory]);
-
-  useEffect(() => {
-    const target = loadMoreRef.current;
-
-    if (!target || !hasMore) {
-      return undefined;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting) && !isLoading) {
-        void loadHistory(page + 1, 'append');
-      }
-    });
-
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [hasMore, isLoading, loadHistory, page]);
 
   const summaryLabels = useMemo(() => {
     const keys = filterSummaryLabelKeys[filter];
@@ -597,40 +597,45 @@ export const HistoryPage = (): JSX.Element => {
       return [];
     }
 
-    return [[t(filterSummaryLabelKeys[filter].group), items] as const];
+    return [[t(filterSummaryLabelKeys[filter].group), sortHistoryItems(items)] as const];
   }, [filter, items, t]);
 
   const handleDeleteEntry = useCallback(
     async (entry: PlaybackHistoryEntry): Promise<void> => {
+      const library = window.echo?.library;
+      if (!library?.deletePlaybackHistoryEntry) {
+        setError(t('historyPage.error.desktopBridgeRead'));
+        return;
+      }
+
       try {
-        await window.echo?.library?.deletePlaybackHistoryEntry(entry.id);
+        setError(null);
+        await library.deletePlaybackHistoryEntry(entry.id);
         const shouldCacheSnapshot = isDefaultHistoryQuery(filter, search);
-        setItems((current) => {
-          const nextItems = current.filter((item) => item.id !== entry.id);
+        const nextTotal = Math.max(0, total - 1);
+        setItems((currentItems) => {
+          const nextItems = currentItems.filter((item) => item.id !== entry.id);
           if (shouldCacheSnapshot) {
             mergeCachedHistoryPageData({
               items: nextItems,
-              total: Math.max(0, total - 1),
+              total: nextTotal,
             });
           }
           return nextItems;
         });
-        setTotal((current) => Math.max(0, current - 1));
+        setTotal(nextTotal);
         const historyQuery = { search, ...historyFilterRange(filter) };
-        const [nextSummary, nextStats] = await Promise.all([
-          window.echo?.library?.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null),
-          window.echo?.library?.getPlaybackStatsDashboard?.(historyQuery) ?? Promise.resolve(null),
-        ]);
+        const nextSummary = await (library.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null));
         setSummary(nextSummary);
-        setStats(nextStats);
         if (shouldCacheSnapshot) {
-          mergeCachedHistoryPageData({ stats: nextStats, summary: nextSummary });
+          mergeCachedHistoryPageData({ summary: nextSummary });
         }
+        scheduleStatsRefresh(historyQuery, shouldCacheSnapshot);
       } catch (deleteError) {
         setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
       }
     },
-    [filter, search, total],
+    [filter, scheduleStatsRefresh, search, t, total],
   );
 
   const handleClearHistory = useCallback(async (): Promise<void> => {
@@ -645,13 +650,11 @@ export const HistoryPage = (): JSX.Element => {
       setPage(1);
       setTotal(0);
       setHasMore(false);
+      invalidateStatsRefresh();
+      setStats(null);
       const historyQuery = { search, ...historyFilterRange(filter) };
-      const [nextSummary, nextStats] = await Promise.all([
-        window.echo?.library?.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null),
-        window.echo?.library?.getPlaybackStatsDashboard?.(historyQuery) ?? Promise.resolve(null),
-      ]);
+      const nextSummary = await (window.echo?.library?.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null));
       setSummary(nextSummary);
-      setStats(nextStats);
       if (shouldCacheSnapshot) {
         setCachedHistoryPageData({
           filter,
@@ -659,7 +662,7 @@ export const HistoryPage = (): JSX.Element => {
           items: [],
           page: 1,
           search,
-          stats: nextStats,
+          stats: null,
           summary: nextSummary,
           total: 0,
         });
@@ -667,49 +670,33 @@ export const HistoryPage = (): JSX.Element => {
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));
     }
-  }, [filter, search, t]);
+  }, [filter, invalidateStatsRefresh, search, t]);
 
-  const handlePlay = useCallback(
-    async (entry: PlaybackHistoryEntry): Promise<void> => {
-      try {
-        await queue.playTrack(trackFromHistory(entry), {
-          forceNewQueueItem: true,
-          source: { type: 'manual', label: '播放历史' },
-        });
-        setItems((current) =>
-          {
-            const nextItems = current
-              .map((item) => (item.id === entry.id ? { ...item, playCount: item.playCount + 1, startedAt: new Date().toISOString() } : item))
-              .sort((left, right) => right.playCount - left.playCount || Date.parse(right.startedAt) - Date.parse(left.startedAt));
-            if (isDefaultHistoryQuery(filter, search)) {
-              mergeCachedHistoryPageData({ items: nextItems });
-            }
-            return nextItems;
-          }
-        );
-        const historyQuery = { search, ...historyFilterRange(filter) };
-        const [nextSummary, nextStats] = await Promise.all([
-          window.echo?.library?.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null),
-          window.echo?.library?.getPlaybackStatsDashboard?.(historyQuery) ?? Promise.resolve(null),
-        ]);
-        setSummary(nextSummary);
-        setStats(nextStats);
-        if (isDefaultHistoryQuery(filter, search)) {
-          mergeCachedHistoryPageData({ stats: nextStats, summary: nextSummary });
-        }
-      } catch (playError) {
-        setError(playError instanceof Error ? playError.message : String(playError));
-      }
-    },
-    [filter, queue, search],
-  );
+  const handleRefreshInvalidHistory = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.refreshInvalidPlaybackHistory) {
+      setError(t('historyPage.error.desktopBridgeRead'));
+      return;
+    }
 
-  const handleAddToQueue = useCallback(
-    (entry: PlaybackHistoryEntry): void => {
-      queue.appendToQueue(trackFromHistory(entry), { type: 'manual', label: '播放历史' });
-    },
-    [queue],
-  );
+    setIsRefreshingInvalid(true);
+    setRefreshResultMessage(null);
+    setError(null);
+
+    try {
+      const result = await library.refreshInvalidPlaybackHistory();
+      await loadHistory(1, 'replace');
+      setRefreshResultMessage(
+        result.removedCount > 0
+          ? t('historyPage.refresh.removed', { count: result.removedCount })
+          : t('historyPage.refresh.none'),
+      );
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    } finally {
+      setIsRefreshingInvalid(false);
+    }
+  }, [loadHistory, t]);
 
   const handleOpenTopTrack = useCallback(async (track: PlaybackStatsTrack): Promise<void> => {
     try {
@@ -742,10 +729,16 @@ export const HistoryPage = (): JSX.Element => {
           <span className="section-kicker">{t('historyPage.header.kicker')}</span>
           <h1>{t('historyPage.header.title')}</h1>
         </div>
-        <button className="history-danger-button" type="button" disabled={total === 0} onClick={() => void handleClearHistory()}>
-          <ListX size={16} />
-          {t('historyPage.action.clear')}
-        </button>
+        <div className="history-header-actions">
+          <button className="history-action-button" type="button" disabled={isRefreshingInvalid} onClick={() => void handleRefreshInvalidHistory()}>
+            <RefreshCw className={isRefreshingInvalid ? 'history-spin-icon' : undefined} size={16} />
+            {isRefreshingInvalid ? t('historyPage.refresh.running') : t('historyPage.action.refreshInvalid')}
+          </button>
+          <button className="history-danger-button" type="button" disabled={total === 0} onClick={() => void handleClearHistory()}>
+            <ListX size={16} />
+            {t('historyPage.action.clear')}
+          </button>
+        </div>
       </header>
 
       <section className="history-toolbar" aria-label={t('historyPage.toolbar.aria')}>
@@ -782,8 +775,6 @@ export const HistoryPage = (): JSX.Element => {
                     className="history-row"
                     key={entry.id}
                     role="listitem"
-                    title={t('historyPage.list.doubleClick')}
-                    onDoubleClick={() => void handlePlay(entry)}
                   >
                     <div className="history-cover" data-empty={!entry.coverThumb}>
                       {entry.coverThumb ? <img alt="" src={entry.coverThumb} /> : <Music2 size={20} />}
@@ -799,12 +790,6 @@ export const HistoryPage = (): JSX.Element => {
                       {entry.sourceLabel ? t('historyPage.list.source', { source: entry.sourceLabel }) : t('historyPage.list.unknownSource')}
                     </span>
                     <div className="history-actions">
-                      <button type="button" aria-label={`播放 ${entry.title}`} title="播放" onClick={() => void handlePlay(entry)}>
-                        <Play size={15} fill="currentColor" />
-                      </button>
-                      <button type="button" aria-label={`加入队列 ${entry.title}`} title="加入队列" onClick={() => handleAddToQueue(entry)}>
-                        <Plus size={15} />
-                      </button>
                       <button className="danger" type="button" aria-label={`从历史移除 ${entry.title}`} title="从历史移除" onClick={() => void handleDeleteEntry(entry)}>
                         <Trash2 size={15} />
                       </button>
@@ -824,14 +809,16 @@ export const HistoryPage = (): JSX.Element => {
       </section>
 
       {hasMore ? (
-        <div className="history-load-more-sentinel" ref={loadMoreRef}>
+        <div className="history-load-more-sentinel">
           <button className="history-load-more" type="button" disabled={isLoading} onClick={() => void loadHistory(page + 1, 'append')}>
             {isLoading ? t('historyPage.loadingMore') : t('historyPage.loadMore')}
           </button>
         </div>
       ) : null}
 
-      {error || isLoading ? <p className="history-footer">{error ?? t('historyPage.loading')}</p> : null}
+      {error || isLoading || refreshResultMessage ? (
+        <p className="history-footer">{error ?? (isLoading ? t('historyPage.loading') : refreshResultMessage)}</p>
+      ) : null}
     </div>
   );
 };

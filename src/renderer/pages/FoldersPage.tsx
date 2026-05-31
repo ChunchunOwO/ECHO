@@ -55,6 +55,7 @@ import { getRemoteSourcesBridge } from '../utils/echoBridge';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import type { TranslationKey } from '../i18n/locales';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
+import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
 
 type FolderTarget = {
   folderId: string;
@@ -207,6 +208,8 @@ const sortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'qualityDesc', labelKey: 'folders.sort.quality' },
   { value: 'random', labelKey: 'folders.sort.random' },
 ];
+const foldersSortStorageKey = 'echo-next.folders.sort';
+const validFolderSortValues = new Set<LibrarySort>(sortOptions.map((option) => option.value));
 
 const remoteIndexedRefreshMinIntervalMs = 15_000;
 const targetKey = (folderId: string, path: string): string => `${folderId}::${path}`;
@@ -536,7 +539,7 @@ export const FoldersPage = (): JSX.Element => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const { search, searchInputProps } = useImeAwareDebouncedSearch(220);
-  const [sort, setSort] = useState<LibrarySort>('default');
+  const [sort, setSort] = useState<LibrarySort>(() => readStoredLibrarySort(foldersSortStorageKey, validFolderSortValues));
   const localizedSortOptions = useMemo(
     () => sortOptions.map((option) => ({ value: option.value, label: t(option.labelKey) })),
     [t],
@@ -1075,6 +1078,10 @@ export const FoldersPage = (): JSX.Element => {
     bulkRequestIdRef.current += 1;
     void loadTracks(1, 'replace');
   }, [loadTracks]);
+
+  useEffect(() => {
+    writeStoredLibrarySort(foldersSortStorageKey, sort);
+  }, [sort]);
 
   useEffect(() => {
     const activeJobIds = Object.values(scanStatuses)

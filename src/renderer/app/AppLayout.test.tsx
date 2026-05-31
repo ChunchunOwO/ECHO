@@ -52,6 +52,21 @@ const routesWithHome: AppRoute[] = [
   ...routes,
 ];
 
+const routesWithSettings: AppRoute[] = [
+  routesWithHome[0],
+  routes[0],
+  {
+    id: 'settings',
+    label: 'Settings',
+    labelKey: 'route.settings.label',
+    description: 'Settings',
+    descriptionKey: 'route.settings.description',
+    icon: Music2,
+    placement: 'utility',
+    element: <div>Settings shell</div>,
+  },
+];
+
 const routesWithQueue: AppRoute[] = [
   routes[0],
   routes[1],
@@ -133,6 +148,29 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
     expect(onSongsUnmount).not.toHaveBeenCalled();
     expect(container.querySelector('[data-route-id="songs"]')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('returns from Settings to Home by default', async () => {
+    window.localStorage.clear();
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithSettings} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByText('Home shell')).toBeTruthy());
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Songs' }));
+
+    await waitFor(() => expect(screen.getByText('Shell page')).toBeTruthy());
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Settings' }));
+
+    await waitFor(() => expect(screen.getByText('Settings shell')).toBeTruthy());
+    window.dispatchEvent(new Event('app:navigate:settings-back'));
+
+    await waitFor(() => expect(screen.getByText('Home shell')).toBeTruthy());
+    expect(screen.queryByText('Settings shell')).toBeNull();
   });
 
   it('unmounts History when leaving so heavy stats work cannot stay resident', async () => {
@@ -518,6 +556,26 @@ describe('AppLayout standalone routes', () => {
       expect(within(sidebar).queryByRole('button', { name: 'Songs' })).toBeNull();
       expect(within(sidebar).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['Queue', 'Home']);
     });
+  });
+
+  it('applies saved sidebar auto-hide from settings', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarAutoHideEnabled: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(container.querySelector('.app-shell--sidebar-auto-hide')).toBeTruthy());
   });
 
   it('notifies the library views when a download is imported', async () => {
@@ -1264,6 +1322,43 @@ describe('AppLayout standalone routes', () => {
     expect(shell.style.getPropertyValue('--app-wallpaper-ui-page-base-alpha')).toBe('0.310');
   });
 
+  it('keeps very low nonzero wallpaper opacity from dropping backdrop blur to raw wallpaper', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\wallpaper.png',
+          appWallpaperScalePercent: 100,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 1,
+          appWallpaperVisualProtectionEnabled: false,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(container.querySelector('.app-wallpaper-layer')).toBeTruthy());
+    fireEvent.load(container.querySelector('.app-wallpaper-layer img') as HTMLImageElement);
+
+    const shell = await waitFor(() => {
+      const element = container.querySelector('.app-shell--wallpaper-ready') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLElement;
+    });
+
+    expect(shell.dataset.wallpaperUiTransparent).toBeUndefined();
+    expect(shell.style.getPropertyValue('--app-wallpaper-ui-titlebar-alpha')).toBe('0.007');
+    expect(shell.style.getPropertyValue('--app-wallpaper-ui-surface-blur')).toBe('8.1px');
+  });
+
   it('marks wallpaper chrome as transparent only when protection is off and UI opacity is zero', async () => {
     window.echo = {
       app: {
@@ -1340,6 +1435,98 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
     await waitFor(() => expect(playSpy).toHaveBeenCalled());
     playSpy.mockRestore();
+  });
+
+  it('keeps ready video app wallpaper visible after a late media error', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\motion.mp4',
+          appWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'never',
+          appWallpaperScalePercent: 115,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 80,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLVideoElement;
+    });
+    fireEvent.loadedData(video);
+    await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+
+    fireEvent.error(video);
+
+    expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy();
+    expect((container.querySelector('.app-wallpaper-layer') as HTMLElement | null)?.dataset.loaded).toBe('true');
+    playSpy.mockRestore();
+  });
+
+  it('keeps the loaded video frame visible when smart pause stops playback', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\motion.mp4',
+          appWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'smart',
+          appWallpaperScalePercent: 115,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 80,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLVideoElement;
+    });
+    fireEvent.loadedData(video);
+    await waitFor(() => expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy());
+
+    vi.useFakeTimers();
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+      vi.advanceTimersByTime(15000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(pauseSpy).toHaveBeenCalled();
+    expect(container.querySelector('.app-shell--wallpaper-ready')).toBeTruthy();
+    expect((container.querySelector('.app-wallpaper-layer') as HTMLElement | null)?.dataset.loaded).toBe('true');
+    playSpy.mockRestore();
+    pauseSpy.mockRestore();
   });
 
   it('keeps video wallpaper mounted when navigating away and resumes it on return', async () => {

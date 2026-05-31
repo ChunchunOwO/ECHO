@@ -750,6 +750,134 @@ describe('playback media prepare IPC', () => {
     expect(setPlaybackActive).toHaveBeenCalledWith(true);
   });
 
+  it('lets pause bypass a slow streaming audio start', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    let status = {
+      state: 'playing',
+      currentTrackId: 'previous-track',
+      positionSeconds: 12.5,
+      durationSeconds: 180,
+      currentFilePath: 'D:\\Music\\previous.flac',
+    };
+    let finishAudioStart!: () => void;
+    const playLocalFile = vi.fn(() => new Promise<void>((resolve) => {
+      finishAudioStart = resolve;
+    }));
+    const pause = vi.fn(async () => {
+      status = {
+        ...status,
+        state: 'paused',
+      };
+      return status;
+    });
+    const play = vi.fn(async () => {
+      status = {
+        ...status,
+        state: 'playing',
+      };
+      return status;
+    });
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const resolvePlayback = vi.fn().mockResolvedValue({
+      url: 'https://stream.example.test/slow.flac',
+      sampleRate: 44100,
+      codec: 'flac',
+      bitDepth: 16,
+      bitrate: 900000,
+      headers: {},
+      requiresProxy: false,
+    });
+
+    vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        on: vi.fn(),
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => status,
+        on: vi.fn(),
+        restorePlaybackMemory: vi.fn(),
+        playLocalFile,
+        prepareLocalFile,
+        pause,
+        play,
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: vi.fn(() => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive: vi.fn(),
+        refreshTrackMetadata: vi.fn(),
+        createStreamUrl: vi.fn(),
+        backfillDuration: vi.fn(),
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback,
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    const slowStreamingPlay = handlers.get(IpcChannels.PlaybackPlayMediaItem)?.({}, {
+      item: {
+        mediaType: 'streaming',
+        trackId: 'streaming:netease:slow',
+        provider: 'netease',
+        providerTrackId: 'slow',
+        stableKey: 'streaming:netease:slow',
+        title: 'Slow Stream',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 120,
+      },
+    }) as Promise<unknown>;
+    await expect.poll(() => playLocalFile.mock.calls.length).toBe(1);
+
+    await expect(handlers.get(IpcChannels.PlaybackPause)?.({})).resolves.toEqual({
+      state: 'paused',
+      currentTrackId: 'previous-track',
+      positionMs: 12500,
+      durationMs: 180000,
+      filePath: 'D:\\Music\\previous.flac',
+    });
+    expect(pause).toHaveBeenCalledTimes(1);
+
+    await expect(handlers.get(IpcChannels.PlaybackPlay)?.({})).resolves.toEqual({
+      state: 'playing',
+      currentTrackId: 'previous-track',
+      positionMs: 12500,
+      durationMs: 180000,
+      filePath: 'D:\\Music\\previous.flac',
+    });
+    expect(play).toHaveBeenCalledTimes(1);
+
+    finishAudioStart();
+    await expect(slowStreamingPlay).resolves.toEqual(expect.objectContaining({
+      state: 'playing',
+      currentTrackId: 'previous-track',
+      filePath: 'D:\\Music\\previous.flac',
+    }));
+  });
+
   it('falls back to a matching local track when QQ Music rejects a playable VIP stream', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const playLocalFile = vi.fn().mockResolvedValue(undefined);
@@ -1216,7 +1344,7 @@ describe('playback media prepare IPC', () => {
     warn.mockRestore();
   });
 
-  it('returns the current playback status when an enqueued audio command times out', async () => {
+  it('returns the current playback status when an immediate playback control command times out', async () => {
     vi.useFakeTimers();
 
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -1290,6 +1418,6 @@ describe('playback media prepare IPC', () => {
       filePath: 'D:\\Music\\stable.flac',
     });
     expect(pause).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith('[playback] audio command timed out; returning current playback status');
+    expect(warnSpy).toHaveBeenCalledWith('[playback] immediate audio command timed out; returning current playback status');
   });
 });

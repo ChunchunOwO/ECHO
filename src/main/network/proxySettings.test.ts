@@ -5,11 +5,9 @@ const resolveProxyMock = vi.fn();
 const fetchMock = vi.fn();
 
 vi.mock('electron', () => ({
-  net: {
-    fetch: fetchMock,
-  },
   session: {
     defaultSession: {
+      fetch: fetchMock,
       setProxy: setProxyMock,
       resolveProxy: resolveProxyMock,
     },
@@ -69,6 +67,23 @@ describe('network proxy settings', () => {
       ok: true,
       mode: 'system',
       resolvedProxy: 'PROXY 127.0.0.1:7890',
+      status: 204,
+    });
+  });
+
+  it('flags manual proxy tests that still resolve to direct', async () => {
+    const { testNetworkProxyConnection } = await import('./proxySettings');
+    setProxyMock.mockResolvedValue(undefined);
+    resolveProxyMock.mockResolvedValue('DIRECT');
+    fetchMock.mockResolvedValue({ ok: true, status: 204 });
+
+    const result = await testNetworkProxyConnection({ networkProxyMode: 'manual', networkProxyUrl: 'http://127.0.0.1:7890/' });
+
+    expect(result).toMatchObject({
+      ok: false,
+      mode: 'manual',
+      message: '代理未生效，测试地址仍为直连',
+      resolvedProxy: 'DIRECT',
       status: 204,
     });
   });

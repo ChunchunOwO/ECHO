@@ -85,6 +85,7 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastRunAt).toBeNull();
     expect(settings.autoDataBackupLastPath).toBeNull();
     expect(settings.autoDataBackupLastError).toBeNull();
+    expect(settings.sidebarAutoHideEnabled).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
@@ -293,6 +294,13 @@ describe('app settings normalization', () => {
     expect(manual.networkProxyMode).toBe('manual');
     expect(manual.networkProxyUrl).toBe('socks5://127.0.0.1:7890');
     expect(manual.networkProxyBypassRules).toBe('localhost;127.0.0.1;*.local');
+
+    const hostPort = normalizeSettings({
+      networkProxyMode: 'manual',
+      networkProxyUrl: '192.168.51.1:7890',
+    });
+    expect(hostPort.networkProxyMode).toBe('manual');
+    expect(hostPort.networkProxyUrl).toBe('http://192.168.51.1:7890/');
 
     expect(normalizeSettings({ networkProxyMode: 'manual', networkProxyUrl: 'ftp://127.0.0.1:21' }).networkProxyMode).toBe('off');
     expect(normalizeSettings({ networkProxyMode: 'pac', networkProxyPacUrl: 'file:///proxy.pac' }).networkProxyMode).toBe('off');
@@ -659,13 +667,13 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ autoAccountCheckOnStartup: 'no' as never }).autoAccountCheckOnStartup).toBe(true);
   });
 
-  it('keeps account expiry notices visible unless explicitly suppressed', async () => {
+  it('suppresses account expiry notices unless explicitly enabled', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).suppressAccountExpiryNotices).toBe(false);
+    expect(normalizeSettings({}).suppressAccountExpiryNotices).toBe(true);
     expect(normalizeSettings({ suppressAccountExpiryNotices: true }).suppressAccountExpiryNotices).toBe(true);
     expect(normalizeSettings({ suppressAccountExpiryNotices: false }).suppressAccountExpiryNotices).toBe(false);
-    expect(normalizeSettings({ suppressAccountExpiryNotices: 'yes' as never }).suppressAccountExpiryNotices).toBe(false);
+    expect(normalizeSettings({ suppressAccountExpiryNotices: 'yes' as never }).suppressAccountExpiryNotices).toBe(true);
   });
 
   it('keeps Spotify official player auto launch enabled unless explicitly disabled', async () => {
@@ -732,6 +740,14 @@ describe('app settings normalization', () => {
       height: 620,
     });
     expect(normalizeSettings({ rememberedWindowSize: { width: 'wide', height: 720 } as never }).rememberedWindowSize).toBeNull();
+  });
+
+  it('normalizes sidebar auto-hide as a default-off opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).sidebarAutoHideEnabled).toBe(false);
+    expect(normalizeSettings({ sidebarAutoHideEnabled: true }).sidebarAutoHideEnabled).toBe(true);
+    expect(normalizeSettings({ sidebarAutoHideEnabled: 'true' as never }).sidebarAutoHideEnabled).toBe(false);
   });
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {

@@ -123,6 +123,7 @@ export type PersistedPlaybackSessionMode = {
   isShuffleEnabled: boolean;
   repeatMode: PersistedPlaybackRepeatMode;
   automixEnabled: boolean;
+  autoFillQueueEnabled?: boolean;
 };
 
 export type PersistedPlaybackSessionResume = {

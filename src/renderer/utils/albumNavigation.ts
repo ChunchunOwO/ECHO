@@ -42,6 +42,50 @@ const isSameAlbumCandidate = (candidate: LibraryAlbum, album: LibraryAlbum): boo
   return sameTitle && sameArtist && sameYear;
 };
 
+const hasReadableAlbumTracks = async (
+  library: NonNullable<NonNullable<Window['echo']>['library']>,
+  candidate: LibraryAlbum,
+  requestedAlbum: LibraryAlbum,
+): Promise<boolean> => {
+  const expectedTrackCount = Math.max(candidate.trackCount, requestedAlbum.trackCount);
+  if (!library.getAlbumTracks || expectedTrackCount <= 0) {
+    return true;
+  }
+
+  try {
+    const result = await library.getAlbumTracks(candidate.id, { page: 1, pageSize: 1 });
+    return result.total > 0 || result.items.length > 0;
+  } catch {
+    return true;
+  }
+};
+
+const findReadableAlbumCandidate = async (
+  library: NonNullable<NonNullable<Window['echo']>['library']>,
+  album: LibraryAlbum,
+  candidates: LibraryAlbum[],
+): Promise<LibraryAlbum | null> => {
+  const orderedCandidates: LibraryAlbum[] = [];
+  const seenIds = new Set<string>();
+  const pushCandidate = (candidate: LibraryAlbum | undefined): void => {
+    if (candidate && !seenIds.has(candidate.id)) {
+      seenIds.add(candidate.id);
+      orderedCandidates.push(candidate);
+    }
+  };
+
+  pushCandidate(candidates.find((candidate) => candidate.albumKey === album.albumKey));
+  candidates.filter((candidate) => isSameAlbumCandidate(candidate, album)).forEach(pushCandidate);
+
+  for (const candidate of orderedCandidates.slice(0, 5)) {
+    if (await hasReadableAlbumTracks(library, candidate, album)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
 export const resolveAlbumDetailNavigationTarget = async (album: LibraryAlbum): Promise<LibraryAlbum> => {
   const library = window.echo?.library;
 
@@ -51,7 +95,7 @@ export const resolveAlbumDetailNavigationTarget = async (album: LibraryAlbum): P
 
   try {
     const currentAlbum = await library.getAlbum?.(album.id);
-    if (currentAlbum) {
+    if (currentAlbum && await hasReadableAlbumTracks(library, currentAlbum, album)) {
       return currentAlbum;
     }
   } catch {
@@ -69,14 +113,9 @@ export const resolveAlbumDetailNavigationTarget = async (album: LibraryAlbum): P
 
   try {
     const result = await library.getAlbums({ page: 1, pageSize: 50, search });
-    const exactKeyMatch = result.items.find((candidate) => candidate.albumKey === album.albumKey);
-    if (exactKeyMatch) {
-      return exactKeyMatch;
-    }
-
-    const exactIdentityMatch = result.items.find((candidate) => isSameAlbumCandidate(candidate, album));
-    if (exactIdentityMatch) {
-      return exactIdentityMatch;
+    const readableMatch = await findReadableAlbumCandidate(library, album, result.items);
+    if (readableMatch) {
+      return readableMatch;
     }
   } catch {
     return album;

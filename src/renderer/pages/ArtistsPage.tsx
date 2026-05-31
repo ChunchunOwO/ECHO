@@ -16,6 +16,7 @@ import type { DetailReturnTarget } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent, consumePendingArtistDetailNavigation } from '../utils/artistNavigation';
 import { getRemoteSourcesBridge } from '../utils/echoBridge';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
+import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 96;
@@ -33,6 +34,8 @@ const artistSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }>
   { value: 'createdDesc', labelKey: 'library.sort.createdDesc' },
   { value: 'random', labelKey: 'library.sort.random' },
 ];
+const artistsSortStorageKey = 'echo-next.artists.sort';
+const validArtistSortValues = new Set<LibrarySort>(artistSortOptions.map((option) => option.value));
 
 const hasArtistAvatar = (artist: LibraryArtist): boolean => Boolean(artist.avatarUrl || artist.avatarThumbUrl);
 
@@ -58,7 +61,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [artists, setArtists] = useState<LibraryArtist[]>([]);
   const [total, setTotal] = useState(0);
   const { search, searchInputProps } = useImeAwareDebouncedSearch(250);
-  const [sort, setSort] = useState<LibrarySort>('default');
+  const [sort, setSort] = useState<LibrarySort>(() => readStoredLibrarySort(artistsSortStorageKey, validArtistSortValues));
   const [sourceMode, setSourceModeState] = useState<LibrarySourceMode>(() => readStoredLibrarySourceMode());
   const [remoteSourceId, setRemoteSourceId] = useState<string | null>(null);
   const [remoteSources, setRemoteSources] = useState<RemoteSource[]>([]);
@@ -200,6 +203,10 @@ export const ArtistsPage = (): JSX.Element => {
   useEffect(() => {
     void loadArtists(1, 'replace');
   }, [loadArtists]);
+
+  useEffect(() => {
+    writeStoredLibrarySort(artistsSortStorageKey, sort);
+  }, [sort]);
 
   useEffect(() => {
     void refreshRemoteSources();

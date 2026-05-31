@@ -352,6 +352,81 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(playLocalFile).not.toHaveBeenCalled();
   });
 
+  it('syncs active DLNA status into the queue current item', async () => {
+    const localTrack = makeTrack(1);
+    const dlnaTrack = makeTrack(2);
+    let emitConnectStatus: ((status: ConnectSessionStatus) => void) | null = null;
+
+    window.echo = {
+      connect: {
+        onStatus: vi.fn((listener: (status: ConnectSessionStatus) => void) => {
+          emitConnectStatus = listener;
+          return () => undefined;
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const QueueProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const sharedStatus = useSharedPlaybackStatus();
+      const didSeedRef = useRef(false);
+
+      useEffect(() => {
+        if (didSeedRef.current) {
+          return;
+        }
+        didSeedRef.current = true;
+        queue.replaceQueue([localTrack, dlnaTrack], { startTrackId: localTrack.id });
+        queue.setCurrentTrackId(localTrack.id);
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="current-title">{queue.currentTrack?.title ?? ''}</output>
+          <output aria-label="shared-file">{sharedStatus.playbackStatus?.filePath ?? ''}</output>
+          <output aria-label="shared-position">{sharedStatus.playbackStatus?.positionMs ?? ''}</output>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo?.connect?.onStatus).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(localTrack.id));
+
+    act(() => {
+      emitConnectStatus?.({
+        deviceId: 'dlna:renderer-1',
+        protocol: 'dlna',
+        state: 'playing',
+        currentTrackId: dlnaTrack.id,
+        metadata: {
+          title: dlnaTrack.title,
+          artist: dlnaTrack.artist,
+          album: dlnaTrack.album,
+          albumArtist: dlnaTrack.albumArtist,
+          durationSeconds: dlnaTrack.duration,
+          coverHttpUrl: '',
+        },
+        positionSeconds: 18.25,
+        durationSeconds: dlnaTrack.duration,
+        latencyMs: 32,
+        error: null,
+        updatedAt: '2026-05-30T09:30:00.000Z',
+      });
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(dlnaTrack.id));
+    expect(screen.getByLabelText('current-title').textContent).toBe(dlnaTrack.title);
+    expect(screen.getByLabelText('shared-file').textContent).toBe(dlnaTrack.path);
+    expect(screen.getByLabelText('shared-position').textContent).toBe('18250');
+  });
+
   it('does not wait for history writes before switching tracks', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
@@ -3938,6 +4013,81 @@ describe('PlaybackQueueProvider playback modes', () => {
 
     await waitFor(() => expect(screen.getByTestId('shuffle').textContent).toBe('on'));
     expect(screen.getByTestId('repeat').textContent).toBe('off');
+  });
+
+  it('keeps auto-fill queue off by default and fills a random queue only after enabling it', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const third = makeTrack(3);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+    const getTracks = vi.fn().mockResolvedValue({ items: [second, third], total: 2, page: 1, pageSize: 96 });
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      library: {
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const AutoFillProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(first, { replaceQueueWith: [first] });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="auto-fill">{queue.autoFillQueueEnabled ? 'on' : 'off'}</output>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="queue-track-ids">{queue.items.map((item) => item.track.id).join(',')}</output>
+          <button type="button" onClick={() => queue.setAutoFillQueueEnabled(true)}>
+            enable auto fill
+          </button>
+          <button type="button" onClick={() => void queue.playNext({ autoAdvance: true })}>
+            auto next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutoFillProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(first.id));
+    expect(screen.getByLabelText('auto-fill').textContent).toBe('off');
+
+    fireEvent.click(screen.getByRole('button', { name: 'auto next' }));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(getTracks).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'enable auto fill' }));
+    fireEvent.click(screen.getByRole('button', { name: 'auto next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(second.id));
+    expect(getTracks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'random', randomWindow: true }));
+    expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-2,track-3');
+    expect(playLocalFile).toHaveBeenCalledTimes(2);
   });
 
   it('remembers shuffle and repeat mode across provider restarts', async () => {

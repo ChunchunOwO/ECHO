@@ -146,6 +146,37 @@ describe('StreamingCacheStore', () => {
     expect(() => library.deletePlaylist(imported.playlist.id)).toThrow(/cannot be deleted/i);
   });
 
+  it('reports NetEase djradio source info for cached playlist tracks', () => {
+    database = createDatabase(':memory:');
+    const cache = new StreamingCacheStore(database);
+    const podcastTrack = track({
+      id: 'streaming:netease:3370584713',
+      providerTrackId: '3370584713',
+      stableKey: 'streaming:netease:3370584713',
+      albumId: null,
+    });
+
+    cache.importStreamingPlaylistPage(
+      {
+        ...playlist([podcastTrack]),
+        providerPlaylistId: 'djradio:990232286',
+        title: 'NetEase Podcast',
+      },
+      {
+        reset: true,
+        startPosition: 0,
+      },
+    );
+
+    expect(cache.getTrackSourceInfo('netease', '3370584713')).toMatchObject({
+      provider: 'netease',
+      providerTrackId: '3370584713',
+      albumId: null,
+      sourcePlaylistIds: ['djradio:990232286'],
+      isNeteaseDjRadio: true,
+    });
+  });
+
   it('backs up existing imported playlist items before a reset import clears them', () => {
     database = createDatabase(':memory:');
     const backup = vi.fn((playlistId: string) => {

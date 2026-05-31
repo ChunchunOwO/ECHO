@@ -2364,7 +2364,7 @@
 
 .settings-sidebar-route-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -2373,10 +2373,26 @@
   border: 1px solid var(--theme-panel-border);
   border-radius: 8px;
   background: var(--theme-list-row-bg);
+  cursor: grab;
 }
 
 .settings-sidebar-route-item[data-hidden="true"] {
   opacity: 0.62;
+}
+
+.settings-sidebar-route-item[data-dragging="true"] {
+  border-color: var(--theme-accent-border);
+  box-shadow: 0 8px 18px rgba(80, 103, 224, 0.16);
+  cursor: grabbing;
+  opacity: 0.78;
+}
+
+.settings-sidebar-route-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--theme-muted-text);
 }
 
 .settings-sidebar-route-copy {
@@ -3735,6 +3751,30 @@
   .plugins-header {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (orientation: portrait) and (min-width: 901px) and (max-width: 1400px) {
+  .plugin-example-grid,
+  .plugins-layout,
+  .plugin-security-grid,
+  .plugin-activity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plugins-header,
+  .plugin-detail-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plugins-list {
+    max-height: 320px;
+  }
+
+  .plugin-setting-row,
+  .plugin-log-list p {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -6208,6 +6248,11 @@
   gap: 11px;
 }
 
+.lyrics-engine-meter .audio-engine-meter__top,
+.mv-engine-meter .audio-engine-meter__top {
+  grid-template-columns: 34px minmax(0, 1fr) 18px;
+}
+
 .audio-engine-meter__summary,
 .audio-engine-meter__refresh {
   display: grid;
@@ -6261,6 +6306,7 @@
 }
 
 .audio-engine-meter__summary div,
+.audio-engine-meter__top > div,
 .audio-engine-meter__grid span,
 .audio-current-output-card__body,
 .audio-device-pill span {
@@ -8518,6 +8564,62 @@
   .audio-controls-grid,
   .now-playing-shell {
     grid-template-columns: 1fr;
+  }
+
+  .player-now {
+    gap: 12px;
+  }
+
+  .player-cover {
+    width: 76px;
+    height: 76px;
+    border-radius: 12px;
+  }
+
+  .player-track-copy {
+    gap: 3px;
+  }
+
+  .player-track-copy strong {
+    font-size: 15px;
+  }
+
+  .player-track-copy > span {
+    font-size: 12px;
+  }
+
+  .player-tags {
+    max-height: 38px;
+    gap: 4px;
+  }
+
+  .player-tags .hifi-tag {
+    height: 17px;
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 9px;
+  }
+}
+
+@media (orientation: portrait) and (min-width: 821px) and (max-width: 1400px) {
+  .page-surface {
+    padding: 28px 24px;
+  }
+
+  .metric-strip,
+  .album-grid-preview,
+  .artist-columns,
+  .library-folder-entry,
+  .library-folder-row,
+  .audio-host-strip,
+  .audio-status-grid,
+  .audio-controls-grid,
+  .now-playing-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-device-table {
+    overflow-x: auto;
   }
 
   .player-now {
@@ -11597,6 +11699,14 @@ html[data-theme="dark"] .downloads-page .empty-state strong {
   gap: 18px;
 }
 
+.history-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .history-header h1 {
   margin: 4px 0 0;
   color: var(--echo-heading-text);
@@ -11639,6 +11749,7 @@ html[data-theme="dark"] .downloads-page .empty-state strong {
 }
 
 .history-filter-tabs button,
+.history-action-button,
 .history-danger-button,
 .history-load-more,
 .history-actions button {
@@ -11657,6 +11768,10 @@ html[data-theme="dark"] .downloads-page .empty-state strong {
   font-weight: 760;
 }
 
+.history-action-button {
+  padding: 0 13px;
+}
+
 .history-filter-tabs button {
   padding: 0 12px;
 }
@@ -11673,10 +11788,21 @@ html[data-theme="dark"] .downloads-page .empty-state strong {
 }
 
 .history-danger-button:disabled,
+.history-action-button:disabled,
 .history-load-more:disabled,
 .history-actions button:disabled {
   cursor: default;
   opacity: 0.48;
+}
+
+.history-spin-icon {
+  animation: history-spin 0.9s linear infinite;
+}
+
+@keyframes history-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .history-summary-grid {
@@ -12241,6 +12367,7 @@ html[data-theme="dark"] .page-surface:has(.history-page) {
 
 html[data-theme="dark"] .history-search,
 html[data-theme="dark"] .history-filter-tabs button,
+html[data-theme="dark"] .history-action-button,
 html[data-theme="dark"] .history-danger-button,
 html[data-theme="dark"] .history-load-more,
 html[data-theme="dark"] .history-actions button,
@@ -12268,6 +12395,7 @@ html[data-theme="dark"] .history-search input::placeholder {
 }
 
 html[data-theme="dark"] .history-filter-tabs button:hover,
+html[data-theme="dark"] .history-action-button:hover:not(:disabled),
 html[data-theme="dark"] .history-load-more:hover:not(:disabled),
 html[data-theme="dark"] .history-actions button:hover:not(:disabled) {
   color: var(--echo-heading-text);
@@ -12976,6 +13104,61 @@ html[data-theme="dark"] .history-play-count {
 
   .download-icon-button {
     justify-self: end;
+  }
+}
+
+@media (orientation: portrait) and (min-width: 761px) and (max-width: 1400px) {
+  .settings-wallpaper-controls,
+  .settings-page .settings-cache-panel--mv-immersive {
+    grid-template-columns: 1fr;
+  }
+
+  .downloads-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "url"
+      "search"
+      "side"
+      "queue";
+  }
+
+  .downloads-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .download-job-row {
+    grid-template-columns: 1fr;
+  }
+
+  .download-search-result {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .download-search-result .downloads-action-button,
+  .download-icon-button {
+    justify-self: end;
+  }
+
+  .history-summary-grid,
+  .history-stats-hero,
+  .history-stats-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-activity-body {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .history-row {
+    grid-template-columns: 44px minmax(0, 1fr) 82px 104px;
+  }
+
+  .history-time,
+  .history-duration,
+  .history-source {
+    display: none;
   }
 }
 
@@ -15775,6 +15958,145 @@ html[data-theme="dark"] .history-play-count {
   .remote-source-navidrome-guide {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .remote-source-navidrome-guide button {
+    justify-content: center;
+  }
+}
+
+@media (orientation: portrait) and (min-width: 761px) and (max-width: 1400px) {
+  .connect-page {
+    padding: 22px 20px 30px;
+  }
+
+  .connect-header,
+  .connect-section-title,
+  .connect-device-row,
+  .connect-hqplayer-header,
+  .remote-background-section-head,
+  .remote-source-navidrome-guide {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connect-section-actions,
+  .connect-header-actions,
+  .connect-hqplayer-actions {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .connect-hqplayer-actions .settings-action-button,
+  .connect-hqplayer-state,
+  .connect-header .settings-action-button,
+  .connect-header-actions,
+  .connect-device-row .settings-action-button,
+  .connect-receiver-body .settings-action-button {
+    width: 100%;
+  }
+
+  .connect-hqplayer-layout,
+  .connect-hqplayer-collapsed,
+  .connect-hqplayer-fields,
+  .remote-command-center,
+  .remote-overview-grid,
+  .baidu-oauth-helper,
+  .remote-browser-workbench,
+  .remote-source-form,
+  .remote-source-grid,
+  .remote-source-health-strip,
+  .remote-sync-status,
+  .remote-job-grid,
+  .remote-background-effective .remote-job-grid,
+  .remote-background-panel,
+  .remote-background-concurrency-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-hqplayer-collapsed .settings-inline-toggle {
+    justify-self: stretch;
+  }
+
+  .connect-autostart-toggle {
+    width: 100%;
+    justify-content: space-between;
+    white-space: normal;
+  }
+
+  .connect-stage {
+    min-height: 0;
+  }
+
+  .connect-now--stage {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .connect-now--stage .connect-controls {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, 34px) minmax(140px, 1fr);
+    justify-content: stretch;
+    padding-top: 8px;
+    border-top: 1px solid #eceff2;
+  }
+
+  .connect-now--stage .connect-volume {
+    grid-column: 5;
+  }
+
+  .connect-device-section--stage .connect-device-list {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-device-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+
+  .connect-device-icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .connect-device-glyph {
+    width: 30px;
+    height: 30px;
+  }
+
+  .connect-device-meta,
+  .connect-device-row .settings-action-button,
+  .connect-receiver-meta,
+  .connect-receiver-body > .settings-action-button {
+    grid-column: 1 / -1;
+  }
+
+  .connect-receiver-body,
+  .connect-now {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .connect-artwork {
+    width: 84px;
+    height: 84px;
+  }
+
+  .connect-controls {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, 34px) minmax(140px, 1fr);
+    align-items: center;
+    justify-content: stretch;
+  }
+
+  .connect-volume {
+    grid-column: 5;
+  }
+
+  .connect-device-meta {
+    width: 100%;
+    flex-basis: auto;
+    grid-auto-flow: column;
+    justify-content: space-between;
+    justify-items: start;
   }
 
   .remote-source-navidrome-guide button {

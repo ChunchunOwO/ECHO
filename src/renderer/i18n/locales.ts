@@ -1083,6 +1083,7 @@ export type TranslationKey =
   | 'queue.action.generateFromHistory'
   | 'queue.action.generatingHistory'
   | 'queue.action.generatingRandom'
+  | 'queue.action.autoFill'
   | 'queue.action.like'
   | 'queue.action.more'
   | 'queue.action.openFolder'
@@ -1133,6 +1134,7 @@ export type TranslationKey =
   | 'route.history.description'
   | 'route.history.label'
   | 'historyPage.action.clear'
+  | 'historyPage.action.refreshInvalid'
   | 'historyPage.confirm.clear'
   | 'historyPage.date.none'
   | 'historyPage.duration.hoursMinutes'
@@ -1158,6 +1160,9 @@ export type TranslationKey =
   | 'historyPage.loadingMore'
   | 'historyPage.metric.plays'
   | 'historyPage.metric.tracks'
+  | 'historyPage.refresh.none'
+  | 'historyPage.refresh.removed'
+  | 'historyPage.refresh.running'
   | 'historyPage.search.placeholder'
   | 'historyPage.summary.all.count'
   | 'historyPage.summary.all.duration'
@@ -2154,6 +2159,8 @@ export type TranslationKey =
   | 'settings.general.rememberWindowSize.title'
   | 'settings.general.searchTraditionalVariants.description'
   | 'settings.general.searchTraditionalVariants.title'
+  | 'settings.general.sidebarAutoHide.description'
+  | 'settings.general.sidebarAutoHide.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -2729,6 +2736,8 @@ export type TranslationKey =
   | 'settings.shortcuts.action.openLyricsSettings.title'
   | 'settings.shortcuts.action.openMvSettings.description'
   | 'settings.shortcuts.action.openMvSettings.title'
+  | 'settings.shortcuts.action.locateCurrentTrack.description'
+  | 'settings.shortcuts.action.locateCurrentTrack.title'
   | 'settings.shortcuts.action.playPause.description'
   | 'settings.shortcuts.action.playPause.title'
   | 'settings.shortcuts.action.previousTrack.description'
@@ -2747,6 +2756,8 @@ export type TranslationKey =
   | 'settings.shortcuts.action.speedUp.title'
   | 'settings.shortcuts.action.stop.description'
   | 'settings.shortcuts.action.stop.title'
+  | 'settings.shortcuts.action.toggleDesktopLyrics.description'
+  | 'settings.shortcuts.action.toggleDesktopLyrics.title'
   | 'settings.shortcuts.action.toggleDesktopLyricsLock.description'
   | 'settings.shortcuts.action.toggleDesktopLyricsLock.title'
   | 'settings.shortcuts.action.volumeDown.description'
@@ -3292,8 +3303,8 @@ const zhCN: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO 驱动',
   'audioDrawer.device.lowLatency': '低延迟',
   'audioDrawer.device.selected': '已选择',
-  'audioDrawer.device.systemAudio': '标准输出（推荐）',
-  'audioDrawer.device.systemAudioDescription': '最稳定，适合普通耳机、蓝牙、电脑扬声器',
+  'audioDrawer.device.systemAudio': 'Windows直出',
+  'audioDrawer.device.systemAudioDescription': '默认 Windows 音频路径，适合普通耳机、蓝牙、电脑扬声器',
   'audioDrawer.device.systemDefault': '系统默认',
   'audioDrawer.device.systemDefaultOutput': '系统默认输出',
   'audioDrawer.device.systemOutput': '系统输出',
@@ -3330,7 +3341,7 @@ const zhCN: TranslationMap = {
   'audioDrawer.note.currentOutput': '这里显示现在真正使用的输出路径；共享适合日常，ASIO 和 WASAPI 独占会以金色标出。',
   'audioDrawer.note.engine': '这里快速查看输出设备、模式、采样率、EQ 和重采样状态。',
   'audioDrawer.note.juceOutput': '默认关闭。FFmpeg 兼容路径作为默认输出；需要时可手动开启 JUCE 输出，失败会自动回退。',
-  'audioDrawer.note.juceDecode': '默认关闭。开启后，本地 WAV/FLAC/MP3 在无需重采样时使用长驻原生解码；MP3 走 Windows Media，失败会自动回退 FFmpeg。',
+  'audioDrawer.note.juceDecode': '默认关闭。播放 DSD 需打开。开启后，本地 WAV/FLAC/MP3 在无需重采样时使用长驻原生解码；MP3 走 Windows Media，失败会自动回退 FFmpeg。',
   'audioDrawer.note.dsdDop': '默认关闭。本地 DSF 在独占或 ASIO 下尝试 DoP 直出；失败会自动回退 FFmpeg PCM，最终以 DAC 显示为准。',
   'audioDrawer.note.asioNativeDsd': '默认关闭。仅 ASIO + 本地 DSF + DoP 开启且无 EQ/音量/变速/DSP 时尝试；失败会退回现有 DoP/PCM。',
   'audioDrawer.note.dsdAutoVolumeLock': '默认关闭。开启后播放 DSD 时临时锁定 ECHO 音量为 100%，切回 PCM 后恢复到原来的音量。',
@@ -3779,6 +3790,7 @@ const zhCN: TranslationMap = {
   'queue.action.generateRandom': '生成随机队列',
   'queue.action.generatingHistory': '生成中',
   'queue.action.generatingRandom': '生成中',
+  'queue.action.autoFill': '自动补齐队列',
   'queue.action.like': '喜欢',
   'queue.action.more': '更多',
   'queue.action.openFolder': '打开所在文件夹',
@@ -3911,6 +3923,7 @@ const zhCN: TranslationMap = {
   'route.history.description': '播放历史。',
   'route.history.label': '历史',
   'historyPage.action.clear': '清空历史',
+  'historyPage.action.refreshInvalid': '刷新失效歌曲',
   'historyPage.confirm.clear': '清空播放历史？这不会删除你的音乐文件，也不会清空曲库。',
   'historyPage.date.none': '暂无',
   'historyPage.duration.hoursMinutes': '{hours} 小时 {minutes} 分钟',
@@ -3936,6 +3949,9 @@ const zhCN: TranslationMap = {
   'historyPage.loadingMore': '正在加载...',
   'historyPage.metric.plays': '{count} 次',
   'historyPage.metric.tracks': '{count} 首',
+  'historyPage.refresh.none': '没有发现失效历史歌曲。',
+  'historyPage.refresh.removed': '已移除 {count} 首失效历史歌曲。',
+  'historyPage.refresh.running': '正在刷新...',
   'historyPage.search.placeholder': '搜索标题、艺术家、专辑或路径',
   'historyPage.summary.all.count': '总播放',
   'historyPage.summary.all.duration': '总时长',
@@ -4916,6 +4932,8 @@ const zhCN: TranslationMap = {
   'settings.general.dataPackage.action.recovery': '恢复入口',
   'settings.general.dataPackage.note': '恢复前请先在危险区创建健康快照；迁移包里的 RESTORE.md 会说明每个文件的用途。',
   'settings.general.closeToTray': '关闭时隐藏到托盘',
+  'settings.general.sidebarAutoHide.title': '隐藏侧栏',
+  'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
   'settings.general.fastStartup.title': '快速启动',
   'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
@@ -5473,6 +5491,8 @@ const zhCN: TranslationMap = {
   'settings.shortcuts.action.openLyricsSettings.title': '打开歌词设置',
   'settings.shortcuts.action.openMvSettings.description': '打开 MV 设置抽屉。',
   'settings.shortcuts.action.openMvSettings.title': '打开 MV 设置',
+  'settings.shortcuts.action.locateCurrentTrack.description': '把当前列表滚动到正在播放的歌曲位置。',
+  'settings.shortcuts.action.locateCurrentTrack.title': '定位到当前播放歌曲',
   'settings.shortcuts.action.playPause.description': '在全局范围切换播放和暂停。',
   'settings.shortcuts.action.playPause.title': '播放 / 暂停',
   'settings.shortcuts.action.previousTrack.description': '切到当前播放队列里的上一首。',
@@ -5491,6 +5511,8 @@ const zhCN: TranslationMap = {
   'settings.shortcuts.action.speedUp.title': '播放加速',
   'settings.shortcuts.action.stop.description': '停止当前播放并释放播放状态。',
   'settings.shortcuts.action.stop.title': '停止播放',
+  'settings.shortcuts.action.toggleDesktopLyrics.description': '打开或关闭桌面歌词窗口。',
+  'settings.shortcuts.action.toggleDesktopLyrics.title': '打开 / 关闭桌面歌词',
   'settings.shortcuts.action.toggleDesktopLyricsLock.description': '切换桌面歌词鼠标穿透锁定状态。',
   'settings.shortcuts.action.toggleDesktopLyricsLock.title': '锁定 / 解锁歌词',
   'settings.shortcuts.action.volumeDown.description': '把 ECHO 音量降低 5%。',
@@ -6242,8 +6264,8 @@ const zhTW: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO 驅動',
   'audioDrawer.device.lowLatency': '低延遲',
   'audioDrawer.device.selected': '已選取',
-  'audioDrawer.device.systemAudio': '標準輸出（推薦）',
-  'audioDrawer.device.systemAudioDescription': '最穩定，適合普通耳機、藍牙、電腦喇叭',
+  'audioDrawer.device.systemAudio': 'Windows直出',
+  'audioDrawer.device.systemAudioDescription': '預設 Windows 音訊路徑，適合普通耳機、藍牙、電腦喇叭',
   'audioDrawer.device.systemDefault': '系統預設',
   'audioDrawer.device.systemDefaultOutput': '系統預設輸出',
   'audioDrawer.device.systemOutput': '系統輸出',
@@ -6611,6 +6633,7 @@ const zhTW: TranslationMap = {
   'route.downloads.label': '下載',
   'route.folders.label': '資料夾',
   'historyPage.action.clear': '清空歷史',
+  'historyPage.action.refreshInvalid': '刷新失效歌曲',
   'historyPage.confirm.clear': '要清空播放歷史嗎？這不會刪除你的音樂檔案，也不會清空曲庫。',
   'historyPage.date.none': '暫無',
   'historyPage.duration.hoursMinutes': '{hours} 小時 {minutes} 分鐘',
@@ -6636,6 +6659,9 @@ const zhTW: TranslationMap = {
   'historyPage.loadingMore': '正在載入...',
   'historyPage.metric.plays': '{count} 次',
   'historyPage.metric.tracks': '{count} 首',
+  'historyPage.refresh.none': '沒有發現失效歷史歌曲。',
+  'historyPage.refresh.removed': '已移除 {count} 首失效歷史歌曲。',
+  'historyPage.refresh.running': '正在刷新...',
   'historyPage.search.placeholder': '搜尋標題、藝術家、專輯或路徑',
   'historyPage.summary.all.count': '總播放',
   'historyPage.summary.all.duration': '總時長',
@@ -7144,6 +7170,7 @@ const zhTW: TranslationMap = {
   'queue.action.generateRandom': '產生隨機佇列',
   'queue.action.generatingHistory': '產生中',
   'queue.action.generatingRandom': '產生中',
+  'queue.action.autoFill': '自動補齊佇列',
   'queue.action.like': '喜歡',
   'queue.action.more': '更多',
   'queue.action.openFolder': '打開所在資料夾',
@@ -7420,6 +7447,8 @@ const zhTW: TranslationMap = {
   'settings.shortcuts.action.openLyricsSettings.title': '打開歌詞設定',
   'settings.shortcuts.action.openMvSettings.description': '打開 MV 設定抽屜。',
   'settings.shortcuts.action.openMvSettings.title': '打開 MV 設定',
+  'settings.shortcuts.action.locateCurrentTrack.description': '把目前列表捲動到正在播放的歌曲位置。',
+  'settings.shortcuts.action.locateCurrentTrack.title': '定位到目前播放歌曲',
   'settings.shortcuts.action.playPause.description': '在全域範圍切換播放與暫停。',
   'settings.shortcuts.action.playPause.title': '播放 / 暫停',
   'settings.shortcuts.action.previousTrack.description': '切到目前播放佇列裡的上一首。',
@@ -7438,6 +7467,8 @@ const zhTW: TranslationMap = {
   'settings.shortcuts.action.speedUp.title': '播放加速',
   'settings.shortcuts.action.stop.description': '停止目前播放並釋放播放狀態。',
   'settings.shortcuts.action.stop.title': '停止播放',
+  'settings.shortcuts.action.toggleDesktopLyrics.description': '打開或關閉桌面歌詞視窗。',
+  'settings.shortcuts.action.toggleDesktopLyrics.title': '打開 / 關閉桌面歌詞',
   'settings.shortcuts.action.toggleDesktopLyricsLock.description': '切換桌面歌詞滑鼠穿透鎖定狀態。',
   'settings.shortcuts.action.toggleDesktopLyricsLock.title': '鎖定 / 解鎖歌詞',
   'settings.shortcuts.action.volumeDown.description': '把 ECHO 音量降低 5%。',
@@ -7465,6 +7496,8 @@ const zhTW: TranslationMap = {
   'settings.general.artistStreamingAlbums.description': '開啟後，藝人詳情的專輯頁會在本地專輯下方按需搜尋並顯示串流專輯；預設關閉，避免增加頁面與網路壓力。',
   'settings.general.artistStreamingAlbums.title': '串流專輯',
   'settings.general.closeToTray': '關閉時隱藏到系統匣',
+  'settings.general.sidebarAutoHide.title': '隱藏側邊欄',
+  'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
   'settings.general.fastStartup.title': '快速啟動',
   'settings.general.firstRunWizard.description': '開啟後會重新顯示第一次啟動時的向導，可選擇標準輸出（系統音訊）、WASAPI、Exclusive 或 ASIO；完成或略過後會自動關閉這個開關。',
@@ -8773,8 +8806,8 @@ const jaJP: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO ドライバー',
   'audioDrawer.device.lowLatency': '低遅延',
   'audioDrawer.device.selected': '選択中',
-  'audioDrawer.device.systemAudio': '標準出力（推奨）',
-  'audioDrawer.device.systemAudioDescription': 'もっとも安定。一般的なヘッドホン、Bluetooth、PC スピーカー向け',
+  'audioDrawer.device.systemAudio': 'Windows ダイレクト出力',
+  'audioDrawer.device.systemAudioDescription': '既定の Windows オーディオ経路。一般的なヘッドホン、Bluetooth、PC スピーカー向け',
   'audioDrawer.device.systemDefault': 'システム既定',
   'audioDrawer.device.systemDefaultOutput': 'システム既定出力',
   'audioDrawer.device.systemOutput': 'システム出力',
@@ -9145,6 +9178,7 @@ const jaJP: TranslationMap = {
   'route.history.description': '再生履歴。',
   'route.history.label': '履歴',
   'historyPage.action.clear': '履歴を消去',
+  'historyPage.action.refreshInvalid': '無効な曲を更新',
   'historyPage.confirm.clear': '再生履歴を消去しますか？音楽ファイルやライブラリ自体は削除されません。',
   'historyPage.date.none': 'まだありません',
   'historyPage.duration.hoursMinutes': '{hours} 時間 {minutes} 分',
@@ -9170,6 +9204,9 @@ const jaJP: TranslationMap = {
   'historyPage.loadingMore': '読み込み中...',
   'historyPage.metric.plays': '{count} 回',
   'historyPage.metric.tracks': '{count} 曲',
+  'historyPage.refresh.none': '無効な履歴の曲は見つかりませんでした。',
+  'historyPage.refresh.removed': '無効な履歴の曲を {count} 曲削除しました。',
+  'historyPage.refresh.running': '更新中...',
   'historyPage.search.placeholder': 'タイトル、アーティスト、アルバム、パスを検索',
   'historyPage.summary.all.count': '総再生',
   'historyPage.summary.all.duration': '総再生時間',
@@ -9701,6 +9738,7 @@ const jaJP: TranslationMap = {
   'queue.action.generateRandom': 'ランダムキューを作成',
   'queue.action.generatingHistory': '作成中',
   'queue.action.generatingRandom': '作成中',
+  'queue.action.autoFill': 'キューを自動補充',
   'queue.action.like': 'お気に入り',
   'queue.action.more': 'その他',
   'queue.action.openFolder': '保存フォルダを開く',
@@ -9962,6 +10000,8 @@ const jaJP: TranslationMap = {
   'settings.shortcuts.action.openLyricsSettings.title': '歌詞設定を開く',
   'settings.shortcuts.action.openMvSettings.description': 'MV 設定ドロワーを開きます。',
   'settings.shortcuts.action.openMvSettings.title': 'MV 設定を開く',
+  'settings.shortcuts.action.locateCurrentTrack.description': '現在のリストを再生中の曲の位置までスクロールします。',
+  'settings.shortcuts.action.locateCurrentTrack.title': '再生中の曲へ移動',
   'settings.shortcuts.action.playPause.description': 'グローバルで再生と一時停止を切り替えます。',
   'settings.shortcuts.action.playPause.title': '再生 / 一時停止',
   'settings.shortcuts.action.previousTrack.description': '現在の再生キューの前の曲へ移動します。',
@@ -9980,6 +10020,8 @@ const jaJP: TranslationMap = {
   'settings.shortcuts.action.speedUp.title': '再生速度を上げる',
   'settings.shortcuts.action.stop.description': '現在の再生を停止し、再生状態を解放します。',
   'settings.shortcuts.action.stop.title': '再生停止',
+  'settings.shortcuts.action.toggleDesktopLyrics.description': 'デスクトップ歌詞ウィンドウを表示または非表示にします。',
+  'settings.shortcuts.action.toggleDesktopLyrics.title': 'デスクトップ歌詞の表示切替',
   'settings.shortcuts.action.toggleDesktopLyricsLock.description': 'デスクトップ歌詞のマウス透過ロックを切り替えます。',
   'settings.shortcuts.action.toggleDesktopLyricsLock.title': '歌詞をロック / 解除',
   'settings.shortcuts.action.volumeDown.description': 'ECHO の音量を 5% 下げます。',
@@ -10038,6 +10080,8 @@ const jaJP: TranslationMap = {
   'settings.general.dataPackage.action.recovery': '復元入口',
   'settings.general.dataPackage.note': '復元前に危険な操作エリアで健全スナップショットを作成してください。移行パッケージ内の RESTORE.md に各ファイルの用途が書かれています。',
   'settings.general.closeToTray': '閉じる時にトレイへ隠す',
+  'settings.general.sidebarAutoHide.title': 'サイドバーを隠す',
+  'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
   'settings.general.fastStartup.title': '高速起動',
   'settings.general.firstRunWizard.description': '有効にすると初回起動時のガイドをもう一度表示し、標準出力（システムオーディオ）、WASAPI、Exclusive、ASIO を選べます。完了またはスキップ後、このスイッチは自動でオフになります。',
@@ -11375,8 +11419,8 @@ const enUS: TranslationMap = {
   'audioDrawer.device.asioDriver': 'ASIO driver',
   'audioDrawer.device.lowLatency': 'Low latency',
   'audioDrawer.device.selected': 'Selected',
-  'audioDrawer.device.systemAudio': 'Standard Output (Recommended)',
-  'audioDrawer.device.systemAudioDescription': 'Most stable for headphones, Bluetooth, and computer speakers',
+  'audioDrawer.device.systemAudio': 'Windows Direct Output',
+  'audioDrawer.device.systemAudioDescription': 'Default Windows audio path for headphones, Bluetooth, and computer speakers',
   'audioDrawer.device.systemDefault': 'System default',
   'audioDrawer.device.systemDefaultOutput': 'System default output',
   'audioDrawer.device.systemOutput': 'System output',
@@ -11747,6 +11791,7 @@ const enUS: TranslationMap = {
   'route.history.description': 'Playback history.',
   'route.history.label': 'History',
   'historyPage.action.clear': 'Clear history',
+  'historyPage.action.refreshInvalid': 'Refresh invalid songs',
   'historyPage.confirm.clear': 'Clear playback history? This will not delete your music files or empty the library.',
   'historyPage.date.none': 'None yet',
   'historyPage.duration.hoursMinutes': '{hours} hr {minutes} min',
@@ -11772,6 +11817,9 @@ const enUS: TranslationMap = {
   'historyPage.loadingMore': 'Loading...',
   'historyPage.metric.plays': '{count} plays',
   'historyPage.metric.tracks': '{count} tracks',
+  'historyPage.refresh.none': 'No invalid history songs found.',
+  'historyPage.refresh.removed': 'Removed {count} invalid history songs.',
+  'historyPage.refresh.running': 'Refreshing...',
   'historyPage.search.placeholder': 'Search title, artist, album, or path',
   'historyPage.summary.all.count': 'Total plays',
   'historyPage.summary.all.duration': 'Total time',
@@ -12303,6 +12351,7 @@ const enUS: TranslationMap = {
   'queue.action.generateRandom': 'Generate random queue',
   'queue.action.generatingHistory': 'Generating',
   'queue.action.generatingRandom': 'Generating',
+  'queue.action.autoFill': 'Auto-fill queue',
   'queue.action.like': 'Like',
   'queue.action.more': 'More',
   'queue.action.openFolder': 'Open containing folder',
@@ -12708,6 +12757,8 @@ const enUS: TranslationMap = {
   'settings.general.dataPackage.action.recovery': 'Recovery Entry',
   'settings.general.dataPackage.note': 'Create a healthy snapshot in Danger Zone before restoring. The RESTORE.md file inside the package explains what each file is for.',
   'settings.general.closeToTray': 'Hide to tray on close',
+  'settings.general.sidebarAutoHide.title': 'Hide Sidebar',
+  'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
   'settings.general.fastStartup.title': 'Fast Startup',
   'settings.general.firstRunWizard.description': 'Show the first-run guide again after opening. You can choose Standard Output (system audio), WASAPI, Exclusive, or ASIO; this switch turns off automatically after finishing or skipping.',
@@ -12869,6 +12920,8 @@ const enUS: TranslationMap = {
   'settings.shortcuts.action.openLyricsSettings.title': 'Open Lyrics Settings',
   'settings.shortcuts.action.openMvSettings.description': 'Open the MV settings drawer.',
   'settings.shortcuts.action.openMvSettings.title': 'Open MV Settings',
+  'settings.shortcuts.action.locateCurrentTrack.description': 'Scroll the current list back to the playing track.',
+  'settings.shortcuts.action.locateCurrentTrack.title': 'Locate Playing Track',
   'settings.shortcuts.action.playPause.description': 'Toggle play and pause globally.',
   'settings.shortcuts.action.playPause.title': 'Play / Pause',
   'settings.shortcuts.action.previousTrack.description': 'Jump to the previous item in the active playback queue.',
@@ -12887,6 +12940,8 @@ const enUS: TranslationMap = {
   'settings.shortcuts.action.speedUp.title': 'Speed Up',
   'settings.shortcuts.action.stop.description': 'Stop current playback and clear the active playback state.',
   'settings.shortcuts.action.stop.title': 'Stop Playback',
+  'settings.shortcuts.action.toggleDesktopLyrics.description': 'Show or hide the desktop lyrics window.',
+  'settings.shortcuts.action.toggleDesktopLyrics.title': 'Show / Hide Desktop Lyrics',
   'settings.shortcuts.action.volumeDown.description': 'Lower ECHO volume by 5%.',
   'settings.shortcuts.action.volumeDown.title': 'Volume Down',
   'settings.shortcuts.action.volumeUp.description': 'Raise ECHO volume by 5%.',

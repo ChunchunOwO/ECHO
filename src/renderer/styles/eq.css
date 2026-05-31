@@ -2282,6 +2282,43 @@ html[data-theme="dark"] .eq-panel-error {
   }
 }
 
+@media (orientation: portrait) and (min-width: 681px) and (max-width: 1400px) {
+  .eq-header,
+  .eq-signal-strip,
+  .channel-balance-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .eq-workbench,
+  .eq-preset-metadata,
+  .eq-preset-console,
+  .channel-balance-grid,
+  .channel-console-grid,
+  .eq-preamp-bar,
+  .eq-advanced-grid,
+  .eq-ab-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-simple-summary,
+  .eq-inspector-fields,
+  .eq-level-meter,
+  .eq-band-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eq-signal-chain,
+  .eq-signal-heading {
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .eq-band-console-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 680px) {
   .eq-header-actions,
   .eq-preset-browser,

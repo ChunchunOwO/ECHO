@@ -41,6 +41,7 @@ const remoteImageUrl = (url: string, referer: string): string =>
   `echo-image://remote/${encodeURIComponent(url)}?referer=${encodeURIComponent(referer)}`;
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   setNeteaseApiForTests(undefined);
   accountStatus.connected = true;
@@ -598,6 +599,38 @@ describe('China streaming providers', () => {
       url: 'https://m701.music.126.net/legacy/song.mp3',
       codec: 'mp3',
       bitrate: 320000,
+    });
+  });
+
+  it('falls back to the public NetEase playback URL API when the enhanced resolver stalls', async () => {
+    vi.useFakeTimers();
+    const songUrlV1 = vi.fn(() => new Promise<never>(() => undefined));
+    const fetchRunner = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: 123,
+            url: 'https://m701.music.126.net/fallback/song.flac',
+            br: 999000,
+            type: 'flac',
+            level: 'lossless',
+          },
+        ],
+      }),
+    );
+    setNeteaseApiForTests({ song_url_v1: songUrlV1 });
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const pending = new NeteaseStreamingProvider().resolvePlayback({ provider: 'netease', providerTrackId: '123', quality: 'lossless' });
+    await vi.advanceTimersByTimeAsync(2500);
+    const source = await pending;
+
+    expect(songUrlV1).toHaveBeenCalledTimes(1);
+    expect(fetchRunner).toHaveBeenCalledTimes(1);
+    expect(source).toMatchObject({
+      url: 'https://m701.music.126.net/fallback/song.flac',
+      codec: 'flac',
+      bitrate: 999000,
     });
   });
 
@@ -1629,6 +1662,100 @@ describe('China streaming providers', () => {
       title: 'Deep Page Song',
       artist: 'Deep Artist',
       album: 'Deep Album',
+    });
+  });
+
+  it('loads NetEase djradio podcasts as playlist tracks', async () => {
+    const djDetail = vi.fn().mockResolvedValue({
+      body: {
+        data: {
+          id: 990232286,
+          name: 'NetEase Podcast',
+          desc: 'Podcast description',
+          picUrl: 'https://p.music.126.net/podcast.jpg',
+          programCount: 91,
+          dj: { nickname: 'Podcast Host', userId: 315024388 },
+        },
+      },
+    });
+    const djProgram = vi.fn().mockResolvedValue({
+      body: {
+        count: 89,
+        more: true,
+        programs: [
+          {
+            id: 3717478129,
+            name: 'IRIS OUT／歌ってみた【星川サラにじさんじ】',
+            mainTrackId: 3370584713,
+            duration: 147048,
+            coverUrl: 'https://p.music.126.net/episode.jpg',
+            existLyric: false,
+            mainSong: {
+              id: 3370584713,
+              name: 'IRIS OUT／歌ってみた【星川サラにじさんじ】',
+              duration: 147048,
+              artists: [],
+              album: { id: 0, name: null, picUrl: null },
+              fee: 0,
+            },
+            dj: { nickname: 'Podcast Host', userId: 315024388 },
+          },
+          {
+            id: 3714838368,
+            name: '【MV】流星☆ラブビーム！／星川サラ【オリジナル曲】',
+            mainTrackId: 3356941636,
+            duration: 165912,
+            mainSong: {
+              id: 3356941636,
+              name: '【MV】流星☆ラブビーム！／星川サラ【オリジナル曲】',
+              duration: 165912,
+              artists: [{ id: 315024388, name: 'Podcast Host' }],
+              album: { id: 0, name: '[DJ节目]Ted007zz的DJ节目 第90期', picUrl: 'https://p.music.126.net/noisy-album.jpg' },
+              fee: 0,
+            },
+            dj: { nickname: 'Podcast Host', userId: 315024388 },
+          },
+        ],
+      },
+    });
+    setNeteaseApiForTests({ dj_detail: djDetail, dj_program: djProgram });
+
+    const playlist = await new NeteaseStreamingProvider().getPlaylist({ providerPlaylistId: 'djradio:990232286', page: 2, pageSize: 10 });
+
+    expect(djDetail).toHaveBeenCalledWith({ rid: '990232286', cookie: 'MUSIC_U=secret; csrf=hidden' });
+    expect(djProgram).toHaveBeenCalledWith({
+      rid: '990232286',
+      limit: 10,
+      offset: 10,
+      asc: 'false',
+      cookie: 'MUSIC_U=secret; csrf=hidden',
+    });
+    expect(playlist).toMatchObject({
+      provider: 'netease',
+      providerPlaylistId: 'djradio:990232286',
+      title: 'NetEase Podcast',
+      description: 'Podcast description',
+      creator: 'Podcast Host',
+      trackCount: 89,
+      total: 89,
+      hasMore: true,
+    });
+    expect(playlist.coverThumb).toBe(remoteImageUrl('https://p.music.126.net/podcast.jpg?param=160y160', 'https://music.163.com/'));
+    expect(playlist.tracks[0]).toMatchObject({
+      providerTrackId: '3370584713',
+      title: 'IRIS OUT／歌ってみた【星川サラにじさんじ】',
+      artist: 'Podcast Host',
+      album: 'NetEase Podcast',
+      albumId: 'djradio:990232286',
+      duration: 147.048,
+      coverThumb: remoteImageUrl('https://p.music.126.net/episode.jpg?param=160y160', 'https://music.163.com/'),
+      lyricsStatus: 'unknown',
+    });
+    expect(playlist.tracks[1]).toMatchObject({
+      providerTrackId: '3356941636',
+      title: '【MV】流星☆ラブビーム！／星川サラ【オリジナル曲】',
+      album: 'NetEase Podcast',
+      albumId: 'djradio:990232286',
     });
   });
 

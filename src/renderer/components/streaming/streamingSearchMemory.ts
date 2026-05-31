@@ -21,7 +21,7 @@ export type StreamingSearchMemory = {
 
 const initialStreamingSearchMemory: StreamingSearchMemory = {
   provider: 'netease',
-  quality: 'max',
+  quality: 'lossless',
   activeTab: 'track',
   input: '',
   query: '',
@@ -31,11 +31,59 @@ const initialStreamingSearchMemory: StreamingSearchMemory = {
   scrollTop: 0,
 };
 
-let streamingSearchMemory: StreamingSearchMemory = { ...initialStreamingSearchMemory };
+const qualityStorageKey = 'echo-next.streaming.quality';
 
-export const readStreamingSearchMemory = (): StreamingSearchMemory => streamingSearchMemory;
+const normalizeStreamingQualityPreference = (value: unknown): StreamingQualityPreference | null =>
+  value === 'standard' || value === 'high' || value === 'lossless' || value === 'hires' || value === 'max'
+    ? value
+    : null;
+
+const readPersistedQuality = (): StreamingQualityPreference | null => {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return null;
+    }
+
+    return normalizeStreamingQualityPreference(window.localStorage.getItem(qualityStorageKey));
+  } catch {
+    return null;
+  }
+};
+
+const writePersistedQuality = (quality: StreamingQualityPreference): void => {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+
+    window.localStorage.setItem(qualityStorageKey, quality);
+  } catch {
+    // Quality memory should never block streaming UI changes.
+  }
+};
+
+let streamingSearchMemory: StreamingSearchMemory = {
+  ...initialStreamingSearchMemory,
+  quality: readPersistedQuality() ?? initialStreamingSearchMemory.quality,
+};
+
+export const readStreamingSearchMemory = (): StreamingSearchMemory => {
+  const quality = readPersistedQuality();
+  if (quality && quality !== streamingSearchMemory.quality) {
+    streamingSearchMemory = {
+      ...streamingSearchMemory,
+      quality,
+    };
+  }
+
+  return streamingSearchMemory;
+};
 
 export const updateStreamingSearchMemory = (patch: Partial<StreamingSearchMemory>): StreamingSearchMemory => {
+  if (patch.quality) {
+    writePersistedQuality(patch.quality);
+  }
+
   streamingSearchMemory = {
     ...streamingSearchMemory,
     ...patch,

@@ -24,6 +24,12 @@ const SQLITE_CORRUPTION_PATTERN =
 
 const nowIso = (): string => new Date().toISOString();
 const databaseHealthCache = new Map<string, DatabaseHealthResult>();
+const recentActiveHealthTtlMs = 30 * 60 * 1000;
+const recentActiveHealthCache = new Map<string, {
+  health: DatabaseHealthResult;
+  primarySignature: string;
+  rememberedAtMs: number;
+}>();
 
 export const isSqliteCorruptionMessage = (message: string): boolean => SQLITE_CORRUPTION_PATTERN.test(message);
 
@@ -49,8 +55,12 @@ const databaseTripletSignature = (databasePath: string): string => {
   return [normalizedPath, `${normalizedPath}-wal`, `${normalizedPath}-shm`].map(fileSignature).join('|');
 };
 
+const databasePrimarySignature = (databasePath: string): string => fileSignature(resolve(databasePath));
+
 const databaseHealthCacheKey = (databasePath: string, mode: 'quick' | 'integrity'): string =>
   `${mode}:${databaseTripletSignature(databasePath)}`;
+
+const recentActiveHealthCacheKey = (databasePath: string): string => resolve(databasePath);
 
 const failed = (databasePath: string, error: unknown): DatabaseHealthResult => {
   const message = error instanceof Error ? error.message : String(error);
@@ -68,6 +78,32 @@ const readPragmaDetail = (database: Database.Database, pragma: 'quick_check' | '
 };
 
 export const isDatabaseHealthy = (health: DatabaseHealthResult): boolean => health.status === 'ok';
+
+export const checkDatabaseOpenHealth = (databasePath: string): DatabaseHealthResult => {
+  if (databasePath === ':memory:') {
+    return ok(databasePath, 'in-memory database');
+  }
+
+  if (!existsSync(databasePath)) {
+    return ok(databasePath, 'database does not exist yet');
+  }
+
+  let database: Database.Database | null = null;
+  try {
+    database = new Database(databasePath, { readonly: true, fileMustExist: true });
+    database.pragma('schema_version');
+    database.prepare('SELECT name FROM sqlite_master LIMIT 1').get();
+    return ok(databasePath, 'database passed lightweight open check');
+  } catch (error) {
+    return failed(databasePath, error);
+  } finally {
+    try {
+      database?.close();
+    } catch {
+      // Ignore close failures while reporting the lightweight open result.
+    }
+  }
+};
 
 export const checkDatabaseHealth = (
   databasePath: string,
@@ -132,6 +168,21 @@ export const checkDatabaseHealthCached = (
     return checkDatabaseHealth(databasePath, mode);
   }
 
+  const recentCacheKey = recentActiveHealthCacheKey(databasePath);
+  const recentActiveHealth = recentActiveHealthCache.get(recentCacheKey);
+  if (recentActiveHealth && isDatabaseHealthy(recentActiveHealth.health)) {
+    const ageMs = Date.now() - recentActiveHealth.rememberedAtMs;
+    if (ageMs <= recentActiveHealthTtlMs && recentActiveHealth.primarySignature === databasePrimarySignature(databasePath)) {
+      return {
+        ...recentActiveHealth.health,
+        checkedAt: nowIso(),
+        message: recentActiveHealth.health.message ?? 'reused recent active database health check',
+      };
+    }
+
+    recentActiveHealthCache.delete(recentCacheKey);
+  }
+
   const cacheKey = databaseHealthCacheKey(databasePath, mode);
   const cached = databaseHealthCache.get(cacheKey);
   if (cached && isDatabaseHealthy(cached)) {
@@ -156,17 +207,30 @@ export const rememberDatabaseHealthOk = (
   const health = ok(databasePath, 'database health verified in active connection');
   if (databasePath !== ':memory:' && mode === 'quick') {
     databaseHealthCache.set(databaseHealthCacheKey(databasePath, mode), health);
+    recentActiveHealthCache.set(recentActiveHealthCacheKey(databasePath), {
+      health,
+      primarySignature: databasePrimarySignature(databasePath),
+      rememberedAtMs: Date.now(),
+    });
   }
   return health;
 };
 
 export const clearDatabaseHealthCacheForTests = (): void => {
   databaseHealthCache.clear();
+  recentActiveHealthCache.clear();
 };
 
 export const assertDatabaseHealthy = (databasePath: string, options: { cache?: boolean } = {}): void => {
   const health =
     options.cache === true ? checkDatabaseHealthCached(databasePath, 'quick') : checkDatabaseHealth(databasePath, 'quick');
+  if (!isDatabaseHealthy(health)) {
+    throw new DatabaseHealthError(health);
+  }
+};
+
+export const assertDatabaseOpenHealthy = (databasePath: string): void => {
+  const health = checkDatabaseOpenHealth(databasePath);
   if (!isDatabaseHealthy(health)) {
     throw new DatabaseHealthError(health);
   }

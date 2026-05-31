@@ -314,6 +314,7 @@ const frameTypeAutomixPrepare = 8;
 const frameTypeAutomixNextPcmF32Le = 9;
 const frameTypeAutomixNextEnd = 10;
 const frameTypeAutomixCancel = 11;
+const frameTypeSetPaused = 12;
 
 const createFrameHeader = (type: number, sessionId: number, payloadBytes: number): Buffer => {
   const header = Buffer.alloc(16);
@@ -881,6 +882,14 @@ export class NativeOutputBridge extends EventEmitter {
     const payload = Buffer.alloc(4);
     payload.writeFloatLE(safeVolume, 0);
     this.writeFrame(frameTypeSetVolume, 0, payload);
+  }
+
+  setPaused(paused: boolean): void {
+    if (!this.currentSessionId) {
+      return;
+    }
+
+    this.writeFrame(frameTypeSetPaused, this.currentSessionId, Buffer.from([paused ? 1 : 0]));
   }
 
   writePcmFrame(sessionId: number, chunk: Buffer, callback: (error?: Error | null) => void): void {

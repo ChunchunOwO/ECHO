@@ -336,6 +336,13 @@ export const registerStreamingIpc = (): void => {
       throw friendlyError(error, 'Streaming track lookup failed.');
     }
   });
+  ipcMain.handle(IpcChannels.StreamingGetTrackSourceInfo, async (_event, request: unknown) => {
+    try {
+      return getStreamingService().getTrackSourceInfo(normalizeTrackRequest(request));
+    } catch (error) {
+      throw friendlyError(error, 'Streaming track source lookup failed.');
+    }
+  });
   ipcMain.handle(IpcChannels.StreamingGetAlbum, async (_event, request: unknown) => {
     try {
       const { provider, providerAlbumId } = normalizeAlbumRequest(request);

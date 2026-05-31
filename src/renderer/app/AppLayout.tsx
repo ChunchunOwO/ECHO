@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, ReactElement } from 'react';
 import { X } from 'lucide-react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { PlaybackQueueDrawer } from '../components/player/PlaybackQueueDrawer';
@@ -120,7 +120,7 @@ type LyricsMiniPlayerSettings = Pick<
   | 'lyricsPlayerBarDrawerColor'
 >;
 
-type SidebarLayoutSettings = Pick<AppSettings, 'sidebarHiddenRouteIds' | 'sidebarRouteOrder'>;
+type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sidebarHiddenRouteIds' | 'sidebarRouteOrder'>;
 
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
@@ -145,6 +145,7 @@ const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
 const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
+  sidebarAutoHideEnabled: false,
 };
 
 const persistentRouteIds = new Set<AppRouteId>(['songs', 'streaming', 'playlists']);
@@ -228,6 +229,7 @@ const tintedMiniPlayerRgb = (sample: ReadableColorSample): Rgb => {
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
@@ -418,6 +420,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       isAppWallpaperReady && appWallpaperSettings.appWallpaperVisualProtectionEnabled
         ? Math.max(appWallpaperRawUiAlpha, 0.36)
         : appWallpaperRawUiAlpha;
+    const blurAlpha = appWallpaperRawUiAlpha > 0 ? Math.max(uiAlpha, 0.45) : uiAlpha;
     const isUnified = isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled;
     const scaledAlpha = (value: number): string => (uiAlpha * value).toFixed(3);
     const unifiedAlpha = uiAlpha.toFixed(3);
@@ -437,9 +440,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       '--app-wallpaper-ui-soft-shadow-alpha': isUnified ? '0' : scaledAlpha(0.08),
       '--app-wallpaper-ui-player-shadow-alpha': isUnified ? '0' : scaledAlpha(0.045),
       '--app-wallpaper-ui-inset-alpha': isUnified ? '0' : scaledAlpha(0.82),
-      '--app-wallpaper-ui-titlebar-blur': `${(uiAlpha * 18).toFixed(1)}px`,
-      '--app-wallpaper-ui-sidebar-blur': `${(uiAlpha * (isUnified ? 18 : 24)).toFixed(1)}px`,
-      '--app-wallpaper-ui-surface-blur': `${(uiAlpha * 18).toFixed(1)}px`,
+      '--app-wallpaper-ui-titlebar-blur': `${(blurAlpha * 18).toFixed(1)}px`,
+      '--app-wallpaper-ui-sidebar-blur': `${(blurAlpha * (isUnified ? 18 : 24)).toFixed(1)}px`,
+      '--app-wallpaper-ui-surface-blur': `${(blurAlpha * 18).toFixed(1)}px`,
     } as CSSProperties;
   }, [
     appWallpaperRawUiAlpha,
@@ -526,10 +529,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       const hasSidebarRouteOrder = Object.prototype.hasOwnProperty.call(settings, 'sidebarRouteOrder');
       const hasSidebarHiddenRouteIds = Object.prototype.hasOwnProperty.call(settings, 'sidebarHiddenRouteIds');
-      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds) {
+      const hasSidebarAutoHideEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarAutoHideEnabled');
+      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds || hasSidebarAutoHideEnabled) {
         setSidebarLayoutSettings((current) => ({
           sidebarRouteOrder: hasSidebarRouteOrder ? normalizeSidebarRouteOrder(settings.sidebarRouteOrder) : current.sidebarRouteOrder,
           sidebarHiddenRouteIds: hasSidebarHiddenRouteIds ? normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds) : current.sidebarHiddenRouteIds,
+          sidebarAutoHideEnabled: hasSidebarAutoHideEnabled ? settings.sidebarAutoHideEnabled === true : current.sidebarAutoHideEnabled,
         }));
       }
     };
@@ -656,12 +661,19 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       return;
     }
 
-    if (shouldPauseAppWallpaperVideo) {
+    const hasReadyFrame = video.readyState >= 2 || (appWallpaperKey !== null && loadedAppWallpaperKey === appWallpaperKey);
+
+    if (shouldPauseAppWallpaperVideo && hasReadyFrame) {
       video.pause();
       return;
     }
 
-    if (video.readyState >= 2 && appWallpaperKey && loadedAppWallpaperKey !== appWallpaperKey) {
+    if (shouldPauseAppWallpaperVideo && (!shouldShowAppWallpaperVisual || isAppWallpaperDocumentHidden)) {
+      video.pause();
+      return;
+    }
+
+    if (hasReadyFrame && appWallpaperKey && loadedAppWallpaperKey !== appWallpaperKey) {
       setLoadedAppWallpaperKey(appWallpaperKey);
     }
 
@@ -678,6 +690,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [
     appWallpaperKey,
     appWallpaperUrl,
+    isAppWallpaperDocumentHidden,
     isAppWallpaperVideo,
     loadedAppWallpaperKey,
     shouldPauseAppWallpaperVideo,
@@ -1223,6 +1236,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateSettings = (): void => {
       navigateRoute('settings');
     };
+    const handleNavigateSettingsBack = (): void => {
+      if (activeRouteId !== 'settings') {
+        return;
+      }
+
+      const targetRouteId =
+        navigableRoutes.find((route) => route.id === 'home')?.id ??
+        navigableRoutes.find((route) => route.id === 'songs')?.id ??
+        navigableRoutes.find((route) => route.id !== 'settings')?.id ??
+        null;
+
+      if (targetRouteId) {
+        navigateRoute(targetRouteId, 'settings-back');
+      }
+    };
     const handleNavigatePlugins = (): void => {
       navigateRoute('plugins');
     };
@@ -1268,6 +1296,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     window.addEventListener('app:navigate:songs', handleNavigateSongs);
     window.addEventListener('app:navigate:settings', handleNavigateSettings);
+    window.addEventListener(settingsBackNavigationEvent, handleNavigateSettingsBack);
     window.addEventListener('app:navigate:plugins', handleNavigatePlugins);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
@@ -1280,6 +1309,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
       window.removeEventListener('app:navigate:songs', handleNavigateSongs);
       window.removeEventListener('app:navigate:settings', handleNavigateSettings);
+      window.removeEventListener(settingsBackNavigationEvent, handleNavigateSettingsBack);
       window.removeEventListener('app:navigate:plugins', handleNavigatePlugins);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
@@ -1288,7 +1318,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
       window.removeEventListener(artistDetailNavigationEvent, handleNavigateArtistDetail);
     };
-  }, [activeLyricsViewMode, activeRouteId, navigateRoute, routes, setLyricsViewMode]);
+  }, [activeLyricsViewMode, activeRouteId, navigateRoute, navigableRoutes, routes, setLyricsViewMode]);
 
   useEffect(() => {
     const handleOpenAudioSettings = (): void => setIsAudioDrawerOpen(true);
@@ -1638,6 +1668,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         shouldShowAppWallpaperVisual ? 'app-shell--wallpaper' : ''
       } ${
         shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
+      } ${
+        sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-auto-hide' : ''
       }`}
       data-wallpaper-unified-opacity={shouldShowAppWallpaperVisual && isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
       data-wallpaper-visual-protection={
@@ -1666,7 +1698,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
               style={appWallpaperStyle}
               onCanPlay={() => setLoadedAppWallpaperKey(appWallpaperKey)}
               onLoadedData={() => setLoadedAppWallpaperKey(appWallpaperKey)}
-              onError={() => setLoadedAppWallpaperKey(null)}
+              onEnded={(event) => {
+                event.currentTarget.currentTime = 0;
+                void event.currentTarget.play().catch(() => undefined);
+              }}
+              onError={() => {
+                setLoadedAppWallpaperKey((current) => (current === appWallpaperKey ? current : null));
+              }}
             />
           ) : (
             <img
@@ -1709,6 +1747,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       {renderedRoutes.map((route) => {
         const isActive = route.id === activeRoute.id;
         const routeIsStandalone = route.chrome === 'standalone';
+        const routeElement =
+          route.id === 'lyrics' && isValidElement(route.element)
+            ? cloneElement(route.element as ReactElement<{ usePlayerDrawerHeader?: boolean }>, {
+                usePlayerDrawerHeader: shouldUseLyricsPlayerDrawer,
+              })
+            : route.element;
 
         return (
           <main
@@ -1718,7 +1762,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             hidden={!isActive}
             key={route.id}
           >
-            {route.element}
+            {routeElement}
           </main>
         );
       })}

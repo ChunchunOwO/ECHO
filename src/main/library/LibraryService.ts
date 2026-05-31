@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { stat as statFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers';
 import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
@@ -90,6 +91,7 @@ import type {
   MetadataResult,
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
+  PlaybackHistoryRefreshResult,
   PlaybackHistorySummary,
   PlaybackStatsDashboard,
   StartPlaybackHistoryRequest,
@@ -176,6 +178,15 @@ const broadcastLibraryChanged = (): void => {
 };
 
 const romanizedSearchPattern = /[a-z]{2,}/iu;
+const playbackHistoryRefreshConcurrency = 16;
+
+const isExistingFile = async (filePath: string): Promise<boolean> => {
+  try {
+    return (await statFile(filePath)).isFile();
+  } catch {
+    return false;
+  }
+};
 
 export class LibraryService {
   private artistsDirty = false;
@@ -1160,6 +1171,47 @@ export class LibraryService {
 
   getPlaybackStatsDashboard(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
     return this.store.getPlaybackStatsDashboard(query);
+  }
+
+  async refreshInvalidPlaybackHistory(): Promise<PlaybackHistoryRefreshResult> {
+    const candidates = this.store.getLocalPlaybackHistoryValidationCandidates();
+    const pathsByHistoryKey = new Map<string, Set<string>>();
+
+    for (const candidate of candidates) {
+      const paths = pathsByHistoryKey.get(candidate.historyKey) ?? new Set<string>();
+      paths.add(candidate.trackPath);
+      pathsByHistoryKey.set(candidate.historyKey, paths);
+    }
+
+    const groupedCandidates = Array.from(pathsByHistoryKey.entries());
+    const invalidHistoryKeys: string[] = [];
+
+    for (let index = 0; index < groupedCandidates.length; index += playbackHistoryRefreshConcurrency) {
+      const batch = groupedCandidates.slice(index, index + playbackHistoryRefreshConcurrency);
+      const batchResults = await Promise.all(
+        batch.map(async ([historyKey, paths]) => {
+          for (const filePath of paths) {
+            if (await isExistingFile(filePath)) {
+              return null;
+            }
+          }
+
+          return historyKey;
+        }),
+      );
+
+      invalidHistoryKeys.push(...batchResults.filter((historyKey): historyKey is string => typeof historyKey === 'string'));
+      await yieldToMainLoop();
+    }
+
+    const pruneResult = this.store.prunePlaybackHistoryByKeys(invalidHistoryKeys);
+
+    return {
+      scannedCount: groupedCandidates.length,
+      removedCount: invalidHistoryKeys.length,
+      removedEntriesCount: pruneResult.removedEntriesCount,
+      removedStatsCount: pruneResult.removedStatsCount,
+    };
   }
 
   deletePlaybackHistoryEntry(id: string): void {

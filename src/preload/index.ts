@@ -56,12 +56,30 @@ type SystemPlaybackErrorReport = {
   phase: string;
   message: string;
   recovered: boolean;
+  currentFilePath?: {
+    basename: string;
+    pathHash: string;
+  } | null;
   mediaType?: 'local' | 'remote' | 'streaming';
   provider?: string | null;
   trackId?: string | null;
   sourceKind?: 'local' | 'remote' | 'renderer';
   sourceHost?: string | null;
   mimeType?: string | null;
+  codec?: string | null;
+  container?: string | null;
+  duration?: number | null;
+  fileSampleRate?: number | null;
+  bitDepth?: number | null;
+  firstFfprobeResult?: {
+    codec: string | null;
+    container: string | null;
+    duration: number | null;
+    fileSampleRate: number | null;
+    bitDepth: number | null;
+    bitrate: number | null;
+    channels: number | null;
+  } | null;
   recoveryAttempt?: number;
   maxRecoveryAttempts?: number;
   htmlAudio?: {
@@ -69,6 +87,7 @@ type SystemPlaybackErrorReport = {
     readyState: number | null;
     errorCode: number | null;
     errorMessage: string | null;
+    srcType: string;
   };
 };
 
@@ -155,6 +174,84 @@ const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim()
 const systemAudioTransportFadeStepMs = 10;
 const audioTransportFadeCurves = new Set<AudioTransportFadeCurve>(['linear', 'smooth', 'equalPower']);
 const isRendererReadyUrl = (value: string): boolean => /^(?:blob|data):/iu.test(value.trim());
+const hashPathForDiagnostics = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+const safePathForDiagnostics = (value: string | null | undefined): SystemPlaybackErrorReport['currentFilePath'] => {
+  const raw = value?.trim();
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.replace(/\\/gu, '/');
+  const basename = normalized.split('/').filter(Boolean).at(-1) ?? raw;
+  return { basename, pathHash: hashPathForDiagnostics(raw) };
+};
+const inferContainerForDiagnostics = (value: string | null | undefined, mimeType?: string | null): string | null => {
+  const mimeSubtype = mimeType?.split(';', 1)[0]?.split('/').at(-1)?.trim();
+  if (mimeSubtype) {
+    return mimeSubtype.toUpperCase();
+  }
+  const pathPart = value?.split(/[?#]/u, 1)[0] ?? '';
+  const extension = /\.([a-z0-9]+)$/iu.exec(pathPart)?.[1];
+  return extension ? extension.toUpperCase() : null;
+};
+const sourceTechnicalDiagnostics = (
+  source: SystemPlaybackSource | null,
+): Pick<SystemPlaybackErrorReport, 'codec' | 'container' | 'duration' | 'fileSampleRate' | 'bitDepth' | 'firstFfprobeResult'> => {
+  const probe = source?.probe;
+  const container = inferContainerForDiagnostics(source?.filePath, source?.mimeType);
+  const duration = finiteSeconds(probe?.durationSeconds) ?? finiteSeconds(source?.durationSeconds) ?? null;
+  const codec = typeof probe?.codec === 'string' && probe.codec.trim() ? probe.codec : null;
+  const fileSampleRate = typeof probe?.fileSampleRate === 'number' && Number.isFinite(probe.fileSampleRate) ? probe.fileSampleRate : null;
+  const bitDepth = typeof probe?.bitDepth === 'number' && Number.isFinite(probe.bitDepth) ? probe.bitDepth : null;
+  const bitrate = typeof probe?.bitrate === 'number' && Number.isFinite(probe.bitrate) ? probe.bitrate : null;
+  const channels = typeof probe?.channels === 'number' && Number.isFinite(probe.channels) ? probe.channels : null;
+  return {
+    codec,
+    container,
+    duration,
+    fileSampleRate,
+    bitDepth,
+    firstFfprobeResult: probe
+      ? {
+          codec,
+          container,
+          duration,
+          fileSampleRate,
+          bitDepth,
+          bitrate,
+          channels,
+        }
+      : null,
+  };
+};
+const htmlAudioSrcType = (value: string | null | undefined): string => {
+  const raw = value?.trim() ?? '';
+  if (!raw) {
+    return 'empty';
+  }
+  if (/^blob:/iu.test(raw)) {
+    return 'blob';
+  }
+  if (/^data:/iu.test(raw)) {
+    return 'data';
+  }
+  if (/^https?:/iu.test(raw)) {
+    return 'http';
+  }
+  if (/^echo-audio:/iu.test(raw)) {
+    return 'echo-audio';
+  }
+  if (/^file:/iu.test(raw)) {
+    return 'file';
+  }
+  return 'other';
+};
 const isLocalSystemSource = (source: SystemPlaybackSource | null): boolean => {
   const rawUrl = source?.filePath?.trim() ?? '';
   return rawUrl.length > 0 && !isHttpUrl(rawUrl) && !isRendererReadyUrl(rawUrl);
@@ -221,11 +318,13 @@ const sourceDiagnostics = (source: SystemPlaybackSource | null): Pick<SystemPlay
 
 const htmlAudioDiagnostics = (): SystemPlaybackErrorReport['htmlAudio'] => {
   const element = systemAudioElement;
+  const src = element?.currentSrc || element?.src;
   return {
     networkState: typeof element?.networkState === 'number' ? element.networkState : null,
     readyState: typeof element?.readyState === 'number' ? element.readyState : null,
     errorCode: typeof element?.error?.code === 'number' ? element.error.code : null,
     errorMessage: element?.error?.message ?? null,
+    srcType: htmlAudioSrcType(src),
   };
 };
 
@@ -245,6 +344,26 @@ const mediaRequestDiagnostics = (request: PlaybackMediaStartRequest | null): Pic
 const reportSystemPlaybackError = (report: SystemPlaybackErrorReport): void => {
   void ipcRenderer.invoke(IpcChannels.AudioReportSystemPlaybackError, report).catch(() => undefined);
 };
+
+const createSystemPlaybackErrorReportBase = (
+  source: SystemPlaybackSource | null,
+): Pick<
+  SystemPlaybackErrorReport,
+  | 'currentFilePath'
+  | 'sourceKind'
+  | 'sourceHost'
+  | 'mimeType'
+  | 'codec'
+  | 'container'
+  | 'duration'
+  | 'fileSampleRate'
+  | 'bitDepth'
+  | 'firstFfprobeResult'
+> => ({
+  currentFilePath: safePathForDiagnostics(source?.filePath),
+  ...sourceDiagnostics(source),
+  ...sourceTechnicalDiagnostics(source),
+});
 
 const createFallbackAudioStatus = (): AudioStatus => ({
   host: 'ready',
@@ -871,7 +990,7 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
         message: systemAudioError,
         recovered: false,
         ...mediaRequestDiagnostics(systemMediaPlaybackContext?.request ?? null),
-        ...sourceDiagnostics(systemAudioSource),
+        ...createSystemPlaybackErrorReportBase(systemAudioSource),
         trackId: systemAudioSource?.trackId ?? null,
         recoveryAttempt: systemMediaPlaybackContext?.recoveryAttempts ?? 0,
         maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
@@ -885,7 +1004,7 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
         message: createSystemAudioLooseDurationMessage(endedPositionSeconds, durationSeconds),
         recovered: true,
         ...mediaRequestDiagnostics(systemMediaPlaybackContext?.request ?? null),
-        ...sourceDiagnostics(systemAudioSource),
+        ...createSystemPlaybackErrorReportBase(systemAudioSource),
         trackId: systemAudioSource?.trackId ?? null,
         recoveryAttempt: systemMediaPlaybackContext?.recoveryAttempts ?? 0,
         maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
@@ -1023,7 +1142,7 @@ const handleSystemPlaybackFailure = async (
       message,
       recovered: false,
       ...mediaRequestDiagnostics(context?.request ?? null),
-      ...sourceDiagnostics(context?.source ?? systemAudioSource),
+      ...createSystemPlaybackErrorReportBase(context?.source ?? systemAudioSource),
       recoveryAttempt: context?.recoveryAttempts ?? 0,
       maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
       htmlAudio: htmlAudioDiagnostics(),
@@ -1072,7 +1191,7 @@ const handleSystemPlaybackFailure = async (
       message,
       recovered: true,
       ...mediaRequestDiagnostics(context.request),
-      ...sourceDiagnostics(context.source),
+      ...createSystemPlaybackErrorReportBase(context.source),
       recoveryAttempt,
       maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
       htmlAudio: htmlAudioDiagnostics(),
@@ -1086,7 +1205,7 @@ const handleSystemPlaybackFailure = async (
         message: `${message}; retry="${recoveryMessage}"`,
         recovered: false,
         ...mediaRequestDiagnostics(context.request),
-        ...sourceDiagnostics(context.source),
+        ...createSystemPlaybackErrorReportBase(context.source),
         recoveryAttempt,
         maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
         htmlAudio: htmlAudioDiagnostics(),
@@ -1318,7 +1437,8 @@ const echoApi: EchoApi = {
     },
     openRepository: () => ipcRenderer.invoke(IpcChannels.AppOpenRepository),
     openExternalUrl: (url) => ipcRenderer.invoke(IpcChannels.AppOpenExternalUrl, url),
-    testNetworkProxy: () => ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy),
+    testNetworkProxy: (patch) =>
+      patch === undefined ? ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy) : ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy, patch),
     validateGlobalShortcut: (accelerator) => ipcRenderer.invoke(IpcChannels.AppValidateGlobalShortcut, accelerator),
     onGlobalShortcutCommand: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, action: unknown): void => {
@@ -1516,6 +1636,7 @@ const echoApi: EchoApi = {
     getPlaybackHistory: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackHistory, query),
     getPlaybackHistorySummary: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackHistorySummary, query),
     getPlaybackStatsDashboard: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaybackStatsDashboard, query),
+    refreshInvalidPlaybackHistory: () => ipcRenderer.invoke(IpcChannels.LibraryRefreshInvalidPlaybackHistory),
     deletePlaybackHistoryEntry: (id) => ipcRenderer.invoke(IpcChannels.LibraryDeletePlaybackHistoryEntry, id),
     clearPlaybackHistory: () => ipcRenderer.invoke(IpcChannels.LibraryClearPlaybackHistory),
     startPlaybackHistory: (request) => ipcRenderer.invoke(IpcChannels.LibraryStartPlaybackHistory, request),
@@ -1819,6 +1940,7 @@ const echoApi: EchoApi = {
   streaming: {
     search: (request) => ipcRenderer.invoke(IpcChannels.StreamingSearch, request),
     getTrack: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetTrack, request),
+    getTrackSourceInfo: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetTrackSourceInfo, request),
     getAlbum: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetAlbum, request),
     getArtist: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetArtist, request),
     resolvePlayback: (request) => ipcRenderer.invoke(IpcChannels.StreamingResolvePlayback, request),

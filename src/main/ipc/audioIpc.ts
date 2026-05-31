@@ -150,11 +150,15 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
     output.sharedBackend = normalizeAudioSharedBackendForPlatform(input.sharedBackend as AudioSharedBackend, process.platform);
   }
 
-  if (typeof input.deviceIndex === 'number' && Number.isInteger(input.deviceIndex)) {
+  if (Object.prototype.hasOwnProperty.call(input, 'deviceIndex') && input.deviceIndex == null) {
+    output.deviceIndex = undefined;
+  } else if (typeof input.deviceIndex === 'number' && Number.isInteger(input.deviceIndex)) {
     output.deviceIndex = input.deviceIndex;
   }
 
-  if (typeof input.deviceName === 'string' && input.deviceName.trim()) {
+  if (Object.prototype.hasOwnProperty.call(input, 'deviceName') && input.deviceName == null) {
+    output.deviceName = undefined;
+  } else if (typeof input.deviceName === 'string' && input.deviceName.trim()) {
     output.deviceName = input.deviceName;
   }
 
@@ -308,11 +312,44 @@ const normalizeHtmlAudioDiagnostics = (value: unknown): Record<string, unknown> 
   }
 
   const input = value as Record<string, unknown>;
+  const srcType = safeText(input.srcType, 32);
   return {
     networkState: typeof input.networkState === 'number' && Number.isFinite(input.networkState) ? input.networkState : null,
     readyState: typeof input.readyState === 'number' && Number.isFinite(input.readyState) ? input.readyState : null,
     errorCode: typeof input.errorCode === 'number' && Number.isFinite(input.errorCode) ? input.errorCode : null,
     errorMessage: safeText(input.errorMessage, 160),
+    srcType,
+  };
+};
+
+const normalizeSafePathDiagnostics = (value: unknown): { basename: string; pathHash: string } | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Record<string, unknown>;
+  const basename = safeText(input.basename, 180);
+  const pathHash = safeText(input.pathHash, 64);
+  return basename && pathHash ? { basename, pathHash } : null;
+};
+
+const normalizeNumberOrNull = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const normalizeFirstFfprobeResult = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    codec: safeText(input.codec, 80),
+    container: safeText(input.container, 40),
+    duration: normalizeNumberOrNull(input.duration),
+    fileSampleRate: normalizeNumberOrNull(input.fileSampleRate),
+    bitDepth: normalizeNumberOrNull(input.bitDepth),
+    bitrate: normalizeNumberOrNull(input.bitrate),
+    channels: normalizeNumberOrNull(input.channels),
   };
 };
 
@@ -343,6 +380,7 @@ const normalizeSystemPlaybackErrorReport = (value: unknown): {
     recovered,
     details: {
       outputMode: 'system',
+      currentFilePath: normalizeSafePathDiagnostics(input.currentFilePath),
       mediaType,
       provider: safeText(input.provider, 64),
       trackId: safeText(input.trackId, 128),
@@ -351,6 +389,12 @@ const normalizeSystemPlaybackErrorReport = (value: unknown): {
         : null,
       sourceHost: safeText(input.sourceHost, 128),
       mimeType: safeText(input.mimeType, 96),
+      codec: safeText(input.codec, 80),
+      container: safeText(input.container, 40),
+      duration: normalizeNumberOrNull(input.duration),
+      fileSampleRate: normalizeNumberOrNull(input.fileSampleRate),
+      bitDepth: normalizeNumberOrNull(input.bitDepth),
+      firstFfprobeResult: normalizeFirstFfprobeResult(input.firstFfprobeResult),
       recoveryAttempt: typeof input.recoveryAttempt === 'number' && Number.isFinite(input.recoveryAttempt)
         ? Math.max(0, Math.round(input.recoveryAttempt))
         : null,

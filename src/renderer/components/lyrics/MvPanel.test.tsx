@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
 import { MvPanel, type MvAudioClock } from './MvPanel';
+import { mvDiagnosticsStorageKey } from './mvDiagnostics';
 
 const makeVideo = (overrides: Partial<TrackVideo> = {}): TrackVideo => ({
   id: 'video-1',
@@ -139,11 +140,13 @@ const renderPanel = (
 };
 
 beforeEach(() => {
+  window.localStorage.removeItem(mvDiagnosticsStorageKey);
   vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
   vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
 });
 
 afterEach(() => {
+  window.localStorage.removeItem(mvDiagnosticsStorageKey);
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -940,6 +943,41 @@ describe('MvPanel', () => {
     });
     expect(frame.getAttribute('src')).toContain('mute=1');
     expect(frame.getAttribute('src')).toContain('autoplay=1');
+    expect(frame.getAttribute('src')).toContain('controls=1');
+    expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-immersive-active')).toBe('true');
+
+    const backgroundFrame = container.querySelector('iframe.lyrics-mv-background-video--youtube') as HTMLIFrameElement | null;
+    expect(backgroundFrame?.getAttribute('src')).toContain('https://www.youtube.com/embed/abc123DEF45');
+    expect(backgroundFrame?.getAttribute('src')).toContain('controls=0');
+    expect(backgroundFrame?.getAttribute('src')).toContain('loop=1');
+    expect(backgroundFrame?.getAttribute('src')).toContain('playlist=abc123DEF45');
+  });
+
+  it('keeps the MV diagnostics report hidden while a YouTube iframe is visible', async () => {
+    window.localStorage.setItem(mvDiagnosticsStorageKey, 'true');
+    const { container } = renderPanel(
+      makeVideo({
+        id: 'youtube:abc123DEF45',
+        provider: 'youtube',
+        sourceType: 'manual',
+        sourceId: 'abc123DEF45',
+        providerUrl: 'https://www.youtube.com/watch?v=abc123DEF45',
+        mediaUrl: null,
+        playableInApp: false,
+      }),
+      true,
+      {
+        ...defaultMvSettings,
+        immersiveBackground: false,
+      },
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('iframe.lyrics-mv-video--youtube')?.getAttribute('src')).toContain(
+        'https://www.youtube.com/embed/abc123DEF45',
+      );
+    });
+    expect(container.querySelector('.lyrics-mv-diagnostics-report')).toBeNull();
   });
 
   it('applies immersive MV visual tuning variables', async () => {

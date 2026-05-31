@@ -27,7 +27,7 @@ import type {
   StreamingLyricsResult,
   StreamingProviderName,
 } from "../../shared/types/streaming";
-import { streamingProviderNames } from "../../shared/types/streaming";
+import { neteaseDjRadioPlaylistPrefix, streamingProviderNames } from "../../shared/types/streaming";
 import type { PlaybackStatus } from "../../shared/types/playback";
 import { decodeTextFileBytes } from "../../shared/utils/decodeTextFile";
 import { shouldShowRomanizationForLyrics } from "../../shared/utils/lyricsLanguage";
@@ -62,6 +62,7 @@ import { serializeFontList } from "../preferences/appearancePreferences";
 
 type LyricsPageProps = {
   initialLyrics?: LyricLine[];
+  usePlayerDrawerHeader?: boolean;
 };
 
 type LyricsSmartAlignmentAutoState = {
@@ -270,6 +271,22 @@ const isStreamingTrack = (
   isStreamingProviderName(track.provider) &&
   typeof track.providerTrackId === "string" &&
   track.providerTrackId.trim().length > 0;
+
+type StreamingLyricsTarget = {
+  provider: StreamingProviderName;
+  providerTrackId: string;
+};
+
+const streamingTargetKey = (target: StreamingLyricsTarget | null): string | null =>
+  target ? `${target.provider}:${target.providerTrackId}` : null;
+
+const isNeteaseDjRadioTrack = (track: LibraryTrack | null): boolean =>
+  track?.mediaType === "streaming" &&
+  track.provider === "netease" &&
+  (
+    track.fieldSources?.streamingSourcePlaylistId?.startsWith(neteaseDjRadioPlaylistPrefix) ||
+    track.fieldSources?.streamingAlbumId?.startsWith(neteaseDjRadioPlaylistPrefix)
+  );
 
 const isSnapshotTrackId = (trackId: string | null | undefined): boolean =>
   Boolean(trackId?.startsWith("dlna-receiver:") || trackId?.startsWith("airplay-receiver:"));
@@ -1237,7 +1254,7 @@ const useLyricsDisplayPosition = (
   return { audioClock };
 };
 
-export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
+export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: LyricsPageProps): JSX.Element => {
   const queue = usePlaybackQueue();
   const sharedPlaybackStatus = useSharedPlaybackStatus();
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(
@@ -1397,6 +1414,76 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         : null,
     [currentTrack],
   );
+  const currentStreamingTargetKey = useMemo(() => streamingTargetKey(streamingTarget), [streamingTarget]);
+  const hasCurrentNeteaseDjRadioMarker = isNeteaseDjRadioTrack(currentTrack);
+  const [neteaseDjRadioLookup, setNeteaseDjRadioLookup] = useState<{ key: string; isDjRadio: boolean } | null>(null);
+  useEffect(() => {
+    if (!streamingTarget || streamingTarget.provider !== "netease" || hasCurrentNeteaseDjRadioMarker || !currentStreamingTargetKey) {
+      setNeteaseDjRadioLookup(null);
+      return undefined;
+    }
+
+    const streamingApi = window.echo?.streaming;
+    if (!streamingApi?.getTrackSourceInfo) {
+      setNeteaseDjRadioLookup({ key: currentStreamingTargetKey, isDjRadio: false });
+      return undefined;
+    }
+
+    let cancelled = false;
+    void streamingApi
+      .getTrackSourceInfo(streamingTarget)
+      .then((sourceInfo) => {
+        if (!cancelled) {
+          setNeteaseDjRadioLookup({
+            key: currentStreamingTargetKey,
+            isDjRadio: sourceInfo.isNeteaseDjRadio === true,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNeteaseDjRadioLookup({ key: currentStreamingTargetKey, isDjRadio: false });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStreamingTargetKey, hasCurrentNeteaseDjRadioMarker, streamingTarget]);
+  const isCurrentNeteaseDjRadioTrack =
+    hasCurrentNeteaseDjRadioMarker
+      ? true
+      : streamingTarget?.provider === "netease"
+        ? neteaseDjRadioLookup?.key === currentStreamingTargetKey
+          ? neteaseDjRadioLookup.isDjRadio
+          : null
+        : false;
+  const resolveCurrentNeteaseDjRadioTrack = useCallback(async (): Promise<boolean> => {
+    if (hasCurrentNeteaseDjRadioMarker) {
+      return true;
+    }
+    if (!streamingTarget || streamingTarget.provider !== "netease" || !currentStreamingTargetKey) {
+      return false;
+    }
+    if (neteaseDjRadioLookup?.key === currentStreamingTargetKey) {
+      return neteaseDjRadioLookup.isDjRadio;
+    }
+
+    const streamingApi = window.echo?.streaming;
+    if (!streamingApi?.getTrackSourceInfo) {
+      return false;
+    }
+
+    try {
+      const sourceInfo = await streamingApi.getTrackSourceInfo(streamingTarget);
+      const isDjRadio = sourceInfo.isNeteaseDjRadio === true;
+      setNeteaseDjRadioLookup({ key: currentStreamingTargetKey, isDjRadio });
+      return isDjRadio;
+    } catch {
+      setNeteaseDjRadioLookup({ key: currentStreamingTargetKey, isDjRadio: false });
+      return false;
+    }
+  }, [currentStreamingTargetKey, hasCurrentNeteaseDjRadioMarker, neteaseDjRadioLookup, streamingTarget]);
   const filePath =
     currentTrack?.path ??
     audioStatus?.currentFilePath ??
@@ -2491,7 +2578,20 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       return;
     }
 
-    if (streamingTarget) {
+    if (streamingTarget && isCurrentNeteaseDjRadioTrack === null) {
+      lyricsRequestRef.current += 1;
+      setIsLyricsLoading(true);
+      setIsCandidateLoading(false);
+      setLyrics(emptyLyrics(0));
+      dispatchCurrentLyricsProviderChanged(null);
+      setLyricsStatus("Loading lyrics...");
+      setCandidates([]);
+      setActiveCandidateSource(readRememberedCandidateSource());
+      setIsLyricsMatchPanelRevealed(false);
+      return;
+    }
+
+    if (streamingTarget && isCurrentNeteaseDjRadioTrack === false) {
       const streamingApi = window.echo?.streaming;
       if (!streamingApi?.getLyrics) {
         lyricsRequestRef.current += 1;
@@ -2684,6 +2784,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     getLyricsForActiveTrack,
     initialLyrics,
     isLyricsDisplaySettingsReady,
+    isCurrentNeteaseDjRadioTrack,
     lyricsDisplaySettings.lyricsAutoSearch,
     lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled,
     lyricsDisplaySettings.lyricsEnabled,
@@ -2704,7 +2805,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     setIsLyricsMatchPanelClosed(false);
     setIsLyricsMatchPanelRevealed(true);
 
-    if (streamingTarget && !searchText?.trim()) {
+    const isNeteaseDjRadioForSearch = await resolveCurrentNeteaseDjRadioTrack();
+    if (streamingTarget && !isNeteaseDjRadioForSearch && !searchText?.trim()) {
       const streamingApi = window.echo?.streaming;
       if (streamingApi?.getLyrics) {
         setIsCandidateLoading(false);
@@ -2799,6 +2901,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     lyrics.lines.length,
     lyricsDisplaySettings.lyricsEnabled,
     lyrics.offsetMs,
+    resolveCurrentNeteaseDjRadioTrack,
     searchLyricsCandidatesForProvider,
     streamingTarget,
     trackId,
@@ -2814,7 +2917,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     setIsLyricsMatchPanelClosed(false);
     setIsLyricsMatchPanelRevealed(true);
 
-    if (streamingTarget) {
+    const isNeteaseDjRadioForRematch = await resolveCurrentNeteaseDjRadioTrack();
+    if (streamingTarget && !isNeteaseDjRadioForRematch) {
       await handleSearchLyrics();
       return;
     }
@@ -2886,6 +2990,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     handleSearchLyrics,
     lyrics.offsetMs,
     lyricsDisplaySettings.lyricsEnabled,
+    resolveCurrentNeteaseDjRadioTrack,
     searchLyricsCandidatesForProvider,
     streamingTarget,
     trackId,
@@ -3887,6 +3992,51 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           <Upload size={28} />
           <strong>Drop lyrics to apply</strong>
         </div>
+      ) : null}
+      {usePlayerDrawerHeader && !lyricsDisplaySettings.lyricsHeaderHidden ? (
+        <header className="lyrics-track-header lyrics-track-header-floating">
+          <div
+            className="lyrics-track-cover"
+            data-empty={!headerCoverUrl}
+            title="Copy cover"
+            onContextMenu={handleTrackCoverContextMenu}
+          >
+            {headerCoverUrl ? (
+              <img alt="" draggable={false} src={headerCoverUrl} />
+            ) : (
+              <Disc3 size={26} />
+            )}
+          </div>
+          <div
+            className="lyrics-track-copy"
+            title="Copy track info"
+            onContextMenu={handleTrackInfoContextMenu}
+          >
+            <span className="lyrics-kicker">Now Playing</span>
+            <h1 title="Copy title" onContextMenu={handleTrackTitleContextMenu}>
+              {title}
+            </h1>
+            {album ? (
+              <button
+                className="lyrics-track-album"
+                type="button"
+                aria-disabled={!currentTrack || isAlbumNavigating}
+                title={`Open ${album}`}
+                onClick={handleOpenAlbumDetail}
+                onContextMenu={handleTrackAlbumContextMenu}
+              >
+                {album}
+              </button>
+            ) : null}
+            <p
+              className="lyrics-track-artist"
+              title="Copy artist"
+              onContextMenu={handleTrackArtistContextMenu}
+            >
+              {artist}
+            </p>
+          </div>
+        </header>
       ) : null}
       <section className="lyrics-left-panel">
         <button

@@ -20,6 +20,12 @@ export const useAnimatedBackNavigation = (onBack: () => void, enabled = true) =>
     onBackRef.current = onBack;
   }, [onBack]);
 
+  useEffect(() => {
+    if (!enabled) {
+      setIsReturning(false);
+    }
+  }, [enabled]);
+
   const returnBack = useCallback((): void => {
     if (!enabled) {
       return;

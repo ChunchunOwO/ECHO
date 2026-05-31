@@ -140,6 +140,20 @@ describe('global playback shortcuts', () => {
     expect(sendMock).toHaveBeenCalledWith(IpcChannels.AppGlobalShortcutCommand, 'playPause');
   });
 
+  it('registers numpad digit accelerators without rewriting them to top-row digits', async () => {
+    currentSettings = createSettings({
+      globalShortcuts: {
+        ...createDefaultGlobalShortcuts(),
+        nextTrack: { enabled: true, accelerator: 'Ctrl+Alt+Numpad1' },
+      },
+    });
+    const shortcuts = await import('./backgroundPlaybackShortcuts');
+
+    shortcuts.refreshBackgroundSpaceRegistration();
+
+    expect(registerMock).toHaveBeenCalledWith('Ctrl+Alt+num1', expect.any(Function));
+  });
+
   it('disables enabled shortcuts when Electron cannot register them', async () => {
     currentSettings = createSettings({
       globalShortcuts: {

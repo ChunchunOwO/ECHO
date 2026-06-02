@@ -1835,6 +1835,10 @@ export type TranslationKey =
   | 'settings.appearance.wallpaper.choose'
   | 'settings.appearance.wallpaper.clear'
   | 'settings.appearance.wallpaper.description'
+  | 'settings.appearance.wallpaper.landscapePath'
+  | 'settings.appearance.wallpaper.portraitChoose'
+  | 'settings.appearance.wallpaper.portraitClear'
+  | 'settings.appearance.wallpaper.portraitPath'
   | 'settings.appearance.wallpaper.scale'
   | 'settings.appearance.wallpaper.title'
   | 'settings.appearance.wallpaper.uiOpacity'
@@ -1932,6 +1936,8 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.ginzaNoir.description'
   | 'settings.appearance.themePreset.frostJazz'
   | 'settings.appearance.themePreset.frostJazz.description'
+  | 'settings.appearance.themePreset.FINAL'
+  | 'settings.appearance.themePreset.FINAL.description'
   | 'settings.appearance.themePreset.title'
   | 'settings.appearance.themePreset.wisteriaBubble'
   | 'settings.appearance.themePreset.wisteriaBubble.description'
@@ -2342,12 +2348,31 @@ export type TranslationKey =
   | 'settings.eq.ab.loudnessMatched'
   | 'settings.eq.ab.summary'
   | 'settings.eq.ab.title'
+  | 'settings.eq.autoGain.adjustment'
+  | 'settings.eq.autoGain.status'
+  | 'settings.eq.autoGain.status.clipping'
+  | 'settings.eq.autoGain.status.holding'
+  | 'settings.eq.autoGain.status.idle'
+  | 'settings.eq.autoGain.status.recovering'
+  | 'settings.eq.autoGain.status.reducing'
+  | 'settings.eq.autoGain.toggle'
+  | 'settings.eq.analyzer.overlayAria'
+  | 'settings.eq.analyzer.input'
+  | 'settings.eq.analyzer.mode'
+  | 'settings.eq.analyzer.postEq'
+  | 'settings.eq.analyzer.status'
+  | 'settings.eq.analyzer.status.live'
+  | 'settings.eq.analyzer.status.noSignal'
+  | 'settings.eq.analyzer.status.off'
+  | 'settings.eq.analyzer.status.priming'
+  | 'settings.eq.analyzer.toggle'
   | 'settings.eq.band.fallback'
   | 'settings.eq.band.frequency'
   | 'settings.eq.band.frequencyStepper'
   | 'settings.eq.band.frequencySnapped'
   | 'settings.eq.band.frequencyUnlocked'
   | 'settings.eq.band.gain'
+  | 'settings.eq.band.gainFixed'
   | 'settings.eq.band.gainStepper'
   | 'settings.eq.band.bypassed'
   | 'settings.eq.band.console'
@@ -2359,6 +2384,10 @@ export type TranslationKey =
   | 'settings.eq.band.modeFree'
   | 'settings.eq.band.modeStandard'
   | 'settings.eq.band.q'
+  | 'settings.eq.band.qPresetNarrow'
+  | 'settings.eq.band.qPresetNormal'
+  | 'settings.eq.band.qPresets'
+  | 'settings.eq.band.qPresetWide'
   | 'settings.eq.band.readoutsAria'
   | 'settings.eq.bitPerfect.channelDisabled'
   | 'settings.eq.bitPerfect.disabled'
@@ -2412,7 +2441,10 @@ export type TranslationKey =
   | 'settings.eq.error.profileName'
   | 'settings.eq.error.profileTarget'
   | 'settings.eq.filter.highShelf'
+  | 'settings.eq.filter.highPass'
   | 'settings.eq.filter.lowShelf'
+  | 'settings.eq.filter.lowPass'
+  | 'settings.eq.filter.notch'
   | 'settings.eq.filter.peaking'
   | 'settings.eq.level.clips'
   | 'settings.eq.level.estimatedOutputPeak'
@@ -2465,20 +2497,26 @@ export type TranslationKey =
   | 'settings.eq.preset.meta.type.bassBoost'
   | 'settings.eq.preset.meta.type.bkRoomCurve'
   | 'settings.eq.preset.meta.type.broadcastVoice'
+  | 'settings.eq.preset.meta.type.bluetoothSpeakerCleanup'
   | 'settings.eq.preset.meta.type.classicSmiley'
   | 'settings.eq.preset.meta.type.classical'
   | 'settings.eq.preset.meta.type.diffuseField'
   | 'settings.eq.preset.meta.type.flat'
   | 'settings.eq.preset.meta.type.harmanInEar'
   | 'settings.eq.preset.meta.type.harmanTarget'
+  | 'settings.eq.preset.meta.type.headphoneNotch'
   | 'settings.eq.preset.meta.type.headphoneWarm'
   | 'settings.eq.preset.meta.type.loudness'
   | 'settings.eq.preset.meta.type.night'
   | 'settings.eq.preset.meta.type.rock'
+  | 'settings.eq.preset.meta.type.sibilanceTamer'
   | 'settings.eq.preset.meta.type.studioNeutral'
+  | 'settings.eq.preset.meta.type.subCleanup'
+  | 'settings.eq.preset.meta.type.subsonicFilter'
   | 'settings.eq.preset.meta.type.trebleSparkle'
   | 'settings.eq.preset.meta.type.vinylWarmth'
   | 'settings.eq.preset.meta.type.vocalClear'
+  | 'settings.eq.preset.meta.type.vocalDeEss'
   | 'settings.eq.preset.meta.utilityCaution'
   | 'settings.eq.preset.meta.utilityPurpose'
   | 'settings.eq.preset.meta.utilityScenario'
@@ -4652,9 +4690,13 @@ const zhCN: TranslationMap = {
   'settings.appearance.textDepth.description': '调整界面文字颜色深浅；数值越低越浅。',
   'settings.appearance.textDepth.title': '文字颜色深浅',
   'settings.appearance.wallpaper.title': '自定义背景',
-  'settings.appearance.wallpaper.description': '支持图片和本地视频；视频静音循环，不进入音频链路。',
-  'settings.appearance.wallpaper.choose': '选择背景',
-  'settings.appearance.wallpaper.clear': '清除背景',
+  'settings.appearance.wallpaper.description': '横屏与竖屏背景独立保存；竖屏窗口只会应用竖屏背景。支持图片和本地视频。',
+  'settings.appearance.wallpaper.choose': '选择横屏背景',
+  'settings.appearance.wallpaper.clear': '清除横屏背景',
+  'settings.appearance.wallpaper.portraitChoose': '选择竖屏背景',
+  'settings.appearance.wallpaper.portraitClear': '清除竖屏背景',
+  'settings.appearance.wallpaper.landscapePath': '横屏',
+  'settings.appearance.wallpaper.portraitPath': '竖屏',
   'settings.appearance.wallpaper.videoStatus': '视频壁纸 · 静音循环',
   'settings.appearance.wallpaper.videoPause.smart': '智能暂停',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化暂停',
@@ -4738,6 +4780,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香槟金和橱窗蓝，成熟一点。',
   'settings.appearance.themePreset.frostJazz': '霜林爵士',
   'settings.appearance.themePreset.frostJazz.description': '冷蓝爵士底色，带一抹梅紫舞台光。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': '川崎工房、精密金属与声学测量线感，安静克制的 FINAL 音响气质。',
   'settings.appearance.themeCustom.title': '自定义当前主题',
   'settings.appearance.themeCustom.description': '先选一个主题，再微调颜色；每个主题都会记住自己的自定义。',
   'settings.appearance.themeCustom.action.autoFix': '自动修正文字',
@@ -5145,13 +5189,36 @@ const zhCN: TranslationMap = {
   'settings.eq.ab.loudnessMatched': '响度匹配',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
   'settings.eq.ab.title': 'A/B 对比',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '状态',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.analyzer.overlayAria': 'EQ 实时频谱叠加',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': '频谱模式',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '状态',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': '频谱',
   'settings.eq.band.fallback': '频段',
   'settings.eq.band.frequency': '频率',
   'settings.eq.band.frequencyStepper': '频率步进',
   'settings.eq.band.frequencySnapped': '吸附到标准频点',
   'settings.eq.band.frequencyUnlocked': '自由频率',
   'settings.eq.band.gain': '增益',
+  'settings.eq.band.gainFixed': '此类型不使用增益',
   'settings.eq.band.gainStepper': '增益步进',
+  'settings.eq.band.qPresets': 'Q 快捷值',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.bypassed': '旁路',
   'settings.eq.band.console': '选中频段控制台',
   'settings.eq.band.enabled': '启用此段',
@@ -5215,7 +5282,10 @@ const zhCN: TranslationMap = {
   'settings.eq.error.profileName': '请输入配置档名称。',
   'settings.eq.error.profileTarget': '请选择一个配置档。',
   'settings.eq.filter.highShelf': '高架',
+  'settings.eq.filter.highPass': '高通',
   'settings.eq.filter.lowShelf': '低架',
+  'settings.eq.filter.lowPass': '低通',
+  'settings.eq.filter.notch': '陷波',
   'settings.eq.filter.peaking': '峰值',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
@@ -5268,20 +5338,26 @@ const zhCN: TranslationMap = {
   'settings.eq.preset.meta.type.bassBoost': '低频增强',
   'settings.eq.preset.meta.type.bkRoomCurve': 'B&K 房间曲线',
   'settings.eq.preset.meta.type.broadcastVoice': '广播人声',
+  'settings.eq.preset.meta.type.bluetoothSpeakerCleanup': '蓝牙音箱清理',
   'settings.eq.preset.meta.type.classicSmiley': '经典微笑曲线',
   'settings.eq.preset.meta.type.classical': '古典',
   'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
   'settings.eq.preset.meta.type.flat': '平直',
   'settings.eq.preset.meta.type.harmanInEar': 'Harman 入耳目标',
   'settings.eq.preset.meta.type.harmanTarget': 'Harman 目标',
+  'settings.eq.preset.meta.type.headphoneNotch': '耳机峰值陷波',
   'settings.eq.preset.meta.type.headphoneWarm': '耳机暖声',
   'settings.eq.preset.meta.type.loudness': '响度补偿',
   'settings.eq.preset.meta.type.night': '夜间',
   'settings.eq.preset.meta.type.rock': '摇滚',
+  'settings.eq.preset.meta.type.sibilanceTamer': '齿音收敛',
   'settings.eq.preset.meta.type.studioNeutral': '录音室中性',
+  'settings.eq.preset.meta.type.subCleanup': '超低频清理',
+  'settings.eq.preset.meta.type.subsonicFilter': '次声滤波',
   'settings.eq.preset.meta.type.trebleSparkle': '高频空气感',
   'settings.eq.preset.meta.type.vinylWarmth': '黑胶暖声',
   'settings.eq.preset.meta.type.vocalClear': '人声清晰',
+  'settings.eq.preset.meta.type.vocalDeEss': '人声去齿音',
   'settings.eq.preset.meta.utilityCaution': '工具型预设会改变监听判断，请确认后再保存。',
   'settings.eq.preset.meta.utilityPurpose': '用于检查、补偿或更安全的监听。',
   'settings.eq.preset.meta.utilityScenario': '适合定位问题、降低疲劳或做快速对比。',
@@ -7418,8 +7494,31 @@ const zhTW: TranslationMap = {
   'settings.eq.action.resetChannelBalance': '重置聲道平衡',
   'settings.eq.action.save': '儲存',
   'settings.eq.action.showAdvanced': 'PEQ 控制台',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '狀態',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.analyzer.overlayAria': 'EQ 即時頻譜疊加',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': '頻譜模式',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '狀態',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': '頻譜',
   'settings.eq.band.console': '選中頻段控制台',
   'settings.eq.band.enabledShort': '啟用',
+  'settings.eq.band.gainFixed': '此類型不使用增益',
+  'settings.eq.band.qPresets': 'Q 快捷值',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.matrix': 'PEQ 頻段矩陣',
   'settings.eq.band.modeFree': '自由頻率',
   'settings.eq.band.modeStandard': '標準頻點',
@@ -7436,6 +7535,12 @@ const zhTW: TranslationMap = {
   'settings.eq.channel.title': '聲道平衡',
   'settings.eq.curve.aria': '可拖動 10 段 EQ 頻響曲線',
   'settings.eq.curve.dragBand': '拖動 {frequency} EQ 頻段',
+  'settings.eq.filter.highShelf': '高架',
+  'settings.eq.filter.highPass': '高通',
+  'settings.eq.filter.lowShelf': '低架',
+  'settings.eq.filter.lowPass': '低通',
+  'settings.eq.filter.notch': '陷波',
+  'settings.eq.filter.peaking': '峰值',
   'settings.eq.error.bridgeChannelBalance': '桌面橋接不可用。請在 ECHO Next 桌面端控制聲道平衡。',
   'settings.eq.error.bridgeControlEq': '桌面橋接不可用。請在 ECHO Next 桌面端控制 EQ。',
   'settings.eq.error.bridgeDeletePreset': '桌面橋接不可用。請在 ECHO Next 桌面端刪除 EQ 預設。',
@@ -7887,9 +7992,13 @@ const zhTW: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
   'settings.appearance.wallpaper.title': '自訂背景',
-  'settings.appearance.wallpaper.description': '支援圖片與本地影片；影片會靜音循環，不會進入音訊鏈路。',
-  'settings.appearance.wallpaper.choose': '選擇背景',
-  'settings.appearance.wallpaper.clear': '清除背景',
+  'settings.appearance.wallpaper.description': '橫向與直向背景會分開儲存；直向視窗只會套用直向背景。支援圖片與本地影片。',
+  'settings.appearance.wallpaper.choose': '選擇橫向背景',
+  'settings.appearance.wallpaper.clear': '清除橫向背景',
+  'settings.appearance.wallpaper.portraitChoose': '選擇直向背景',
+  'settings.appearance.wallpaper.portraitClear': '清除直向背景',
+  'settings.appearance.wallpaper.landscapePath': '橫向',
+  'settings.appearance.wallpaper.portraitPath': '直向',
   'settings.appearance.wallpaper.videoStatus': '影片桌布 · 靜音循環',
   'settings.appearance.wallpaper.videoPause.smart': '智慧暫停',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化暫停',
@@ -7960,6 +8069,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香檳金和櫥窗藍，成熟一點。',
   'settings.appearance.themePreset.frostJazz': '霜林爵士',
   'settings.appearance.themePreset.frostJazz.description': '冷藍爵士底色，帶一抹梅紫舞台光。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': '川崎工房、精密金屬與聲學測量線感，安靜克制的 FINAL 音響氣質。',
   'settings.appearance.themeCustom.title': '自訂目前主題',
   'settings.appearance.themeCustom.description': '先選一個主題，再微調顏色；每個主題都會記住自己的自訂。',
   'settings.appearance.themeCustom.action.autoFix': '自動修正文字',
@@ -9954,6 +10065,12 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.title': 'チャンネルバランス',
   'settings.eq.curve.aria': 'ドラッグ可能な 10 バンド EQ 周波数特性',
   'settings.eq.curve.dragBand': '{frequency} EQ バンドをドラッグ',
+  'settings.eq.filter.highShelf': 'ハイシェルフ',
+  'settings.eq.filter.highPass': 'ハイパス',
+  'settings.eq.filter.lowShelf': 'ローシェルフ',
+  'settings.eq.filter.lowPass': 'ローパス',
+  'settings.eq.filter.notch': 'ノッチ',
+  'settings.eq.filter.peaking': 'ピーキング',
   'settings.eq.error.bridgeChannelBalance': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でチャンネルバランスを操作してください。',
   'settings.eq.error.bridgeControlEq': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ を操作してください。',
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
@@ -9962,8 +10079,31 @@ const jaJP: TranslationMap = {
   'settings.eq.action.hideAdvanced': 'PEQ コンソールを隠す',
   'settings.eq.action.showAdvanced': 'PEQ コンソール',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '状態',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.analyzer.overlayAria': 'EQ リアルタイムスペクトラム表示',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': 'スペクトラムモード',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '状態',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': 'スペクトラム',
   'settings.eq.band.console': '選択バンドコンソール',
   'settings.eq.band.enabledShort': '有効',
+  'settings.eq.band.gainFixed': 'このタイプではゲイン固定',
+  'settings.eq.band.qPresets': 'Q クイック値',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.matrix': 'PEQ バンドマトリクス',
   'settings.eq.band.modeFree': '自由周波数',
   'settings.eq.band.modeStandard': '標準バンド',
@@ -10482,9 +10622,13 @@ const jaJP: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
   'settings.appearance.wallpaper.title': 'カスタム背景',
-  'settings.appearance.wallpaper.description': '画像とローカル動画に対応します。動画はミュートでループし、音声経路には入りません。',
-  'settings.appearance.wallpaper.choose': '背景を選択',
-  'settings.appearance.wallpaper.clear': '背景をクリア',
+  'settings.appearance.wallpaper.description': '横向きと縦向きの背景を別々に保存します。縦向きウィンドウでは縦向き背景だけを適用します。画像とローカル動画に対応します。',
+  'settings.appearance.wallpaper.choose': '横向き背景を選択',
+  'settings.appearance.wallpaper.clear': '横向き背景をクリア',
+  'settings.appearance.wallpaper.portraitChoose': '縦向き背景を選択',
+  'settings.appearance.wallpaper.portraitClear': '縦向き背景をクリア',
+  'settings.appearance.wallpaper.landscapePath': '横向き',
+  'settings.appearance.wallpaper.portraitPath': '縦向き',
   'settings.appearance.wallpaper.videoStatus': '動画壁紙 ・ ミュートループ',
   'settings.appearance.wallpaper.videoPause.smart': '自動一時停止',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化で停止',
@@ -10555,6 +10699,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黒曜石、シャンパンゴールド、ショーウィンドウの青。',
   'settings.appearance.themePreset.frostJazz': 'フロストジャズ',
   'settings.appearance.themePreset.frostJazz.description': '冷たいブルージャズに梅紫のステージライト。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': '川崎の工房、精密金属、音響測定線の気配をまとった静かで端正な FINAL らしさ。',
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
@@ -12590,6 +12736,24 @@ const enUS: TranslationMap = {
   'settings.eq.ab.loudnessMatched': 'Loudness matched',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
   'settings.eq.ab.title': 'A/B Compare',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': 'Status',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.analyzer.overlayAria': 'EQ realtime spectrum overlay',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': 'Analyzer mode',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': 'Status',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': 'Analyzer',
   'settings.eq.band.fallback': 'Band',
   'settings.eq.band.frequency': 'Frequency',
   'settings.eq.band.frequencyStepper': 'Frequency stepper',
@@ -12597,6 +12761,11 @@ const enUS: TranslationMap = {
   'settings.eq.band.frequencyUnlocked': 'Free frequency',
   'settings.eq.band.gain': 'Gain',
   'settings.eq.band.gainStepper': 'Gain stepper',
+  'settings.eq.band.gainFixed': 'Gain is fixed for this type',
+  'settings.eq.band.qPresets': 'Q presets',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.bypassed': 'Bypassed',
   'settings.eq.band.console': 'Selected band console',
   'settings.eq.band.enabled': 'Band enabled',
@@ -12660,7 +12829,10 @@ const enUS: TranslationMap = {
   'settings.eq.error.profileName': 'Enter a profile name before saving.',
   'settings.eq.error.profileTarget': 'Select a profile first.',
   'settings.eq.filter.highShelf': 'High shelf',
+  'settings.eq.filter.highPass': 'High pass',
   'settings.eq.filter.lowShelf': 'Low shelf',
+  'settings.eq.filter.lowPass': 'Low pass',
+  'settings.eq.filter.notch': 'Notch',
   'settings.eq.filter.peaking': 'Peaking',
   'settings.eq.level.clips': 'Clips {count}',
   'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
@@ -12713,20 +12885,26 @@ const enUS: TranslationMap = {
   'settings.eq.preset.meta.type.bassBoost': 'Bass Boost',
   'settings.eq.preset.meta.type.bkRoomCurve': 'B&K Room Curve',
   'settings.eq.preset.meta.type.broadcastVoice': 'Broadcast Voice',
+  'settings.eq.preset.meta.type.bluetoothSpeakerCleanup': 'Bluetooth Speaker Cleanup',
   'settings.eq.preset.meta.type.classicSmiley': 'Classic Smiley',
   'settings.eq.preset.meta.type.classical': 'Classical',
   'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
   'settings.eq.preset.meta.type.flat': 'Flat',
   'settings.eq.preset.meta.type.harmanInEar': 'Harman In-Ear',
   'settings.eq.preset.meta.type.harmanTarget': 'Harman Target',
+  'settings.eq.preset.meta.type.headphoneNotch': 'Headphone Notch',
   'settings.eq.preset.meta.type.headphoneWarm': 'Headphone Warm',
   'settings.eq.preset.meta.type.loudness': 'Loudness',
   'settings.eq.preset.meta.type.night': 'Night',
   'settings.eq.preset.meta.type.rock': 'Rock',
+  'settings.eq.preset.meta.type.sibilanceTamer': 'Sibilance Tamer',
   'settings.eq.preset.meta.type.studioNeutral': 'Studio Neutral',
+  'settings.eq.preset.meta.type.subCleanup': 'Sub Cleanup',
+  'settings.eq.preset.meta.type.subsonicFilter': 'Subsonic Filter',
   'settings.eq.preset.meta.type.trebleSparkle': 'Treble Sparkle',
   'settings.eq.preset.meta.type.vinylWarmth': 'Vinyl Warmth',
   'settings.eq.preset.meta.type.vocalClear': 'Vocal Clear',
+  'settings.eq.preset.meta.type.vocalDeEss': 'Vocal De-ess',
   'settings.eq.preset.meta.utilityCaution': 'Utility presets can change monitoring judgment; confirm before saving.',
   'settings.eq.preset.meta.utilityPurpose': 'Supports checks, compensation, or safer monitoring.',
   'settings.eq.preset.meta.utilityScenario': 'Useful for finding issues, reducing fatigue, or quick comparisons.',
@@ -13261,9 +13439,13 @@ const enUS: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': 'Now Playing Cover Color',
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
   'settings.appearance.wallpaper.title': 'Custom Background',
-  'settings.appearance.wallpaper.description': 'Supports images and local videos. Videos loop silently and never enter the audio pipeline.',
-  'settings.appearance.wallpaper.choose': 'Choose Background',
-  'settings.appearance.wallpaper.clear': 'Clear Background',
+  'settings.appearance.wallpaper.description': 'Landscape and portrait backgrounds are saved separately. Portrait windows only apply the portrait background. Supports images and local videos.',
+  'settings.appearance.wallpaper.choose': 'Choose Landscape Background',
+  'settings.appearance.wallpaper.clear': 'Clear Landscape Background',
+  'settings.appearance.wallpaper.portraitChoose': 'Choose Portrait Background',
+  'settings.appearance.wallpaper.portraitClear': 'Clear Portrait Background',
+  'settings.appearance.wallpaper.landscapePath': 'Landscape',
+  'settings.appearance.wallpaper.portraitPath': 'Portrait',
   'settings.appearance.wallpaper.videoStatus': 'Video Wallpaper · Muted Loop',
   'settings.appearance.wallpaper.videoPause.smart': 'Smart Pause',
   'settings.appearance.wallpaper.videoPause.minimized': 'Pause When Minimized',
@@ -13334,6 +13516,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': 'Obsidian, champagne gold, and boutique-window blue.',
   'settings.appearance.themePreset.frostJazz': 'Frost Jazz',
   'settings.appearance.themePreset.frostJazz.description': 'Cool blue jazz tones with a plum stage-light accent.',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': 'A quiet FINAL tone shaped by Kawasaki craft, precision metal, and acoustic measurement lines.',
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',

@@ -22,8 +22,8 @@ const recordClassCacheFlush = 0x8001;
 const classicAirPlayVersion = '130.14';
 const airPlay2SourceVersion = '366.0';
 // AirPlay2 experimental receiver: HomeKit/transient pairing + FairPlay + iOS-compatible audio capability flags.
-export const airPlay2FeatureMask = 0x1c300405f4200;
-export const airPlay2FeatureBits = '0x405f4200,0x1c300';
+export const airPlay2FeatureMask = 0x1c340405fca00;
+export const airPlay2FeatureBits = '0x405fca00,0x1c340';
 
 const cleanMac = (mac: string): string => {
   const cleaned = mac.replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
@@ -250,24 +250,48 @@ export class AirPlayMdnsAdvertiser {
       encodeName(hostName),
     ]);
     const addressData = Buffer.from(advertisement.address.split('.').map((part) => Number(part) & 0xff));
-    const raopTxtData = encodeTxt([
-      `am=${advertisement.model}`,
-      'tp=UDP',
-      'sm=false',
-      'sv=false',
-      'ek=1',
-      'et=0,1',
-      'md=0,1,2',
-      'cn=0,1',
-      'ch=2',
-      'pw=false',
-      'sf=0x4',
-      'ss=16',
-      'sr=44100',
-      'vn=3',
-      `vs=${classicAirPlayVersion}`,
-      'txtvers=1',
-    ]);
+    const raopTxtValues = advertisement.airPlay2Experimental
+      ? [
+        `am=${advertisement.model}`,
+        'tp=UDP',
+        'sm=false',
+        'sv=false',
+        'ek=1',
+        'et=0,1,3',
+        `ft=${airPlay2FeatureBits}`,
+        'md=0,1,2',
+        'cn=0,1,2',
+        'ch=2',
+        'pw=false',
+        'sf=0x4',
+        'ss=16',
+        'sr=44100',
+        'vn=3',
+        `vs=${airPlay2SourceVersion}`,
+        'vv=2',
+        `pi=${createAirPlay2PairingUuid(mac, advertisement.airPlayPublicKey, 'airplay')}`,
+        `pk=${advertisement.airPlayPublicKey ?? '0000000000000000000000000000000000000000000000000000000000000000'}`,
+        'txtvers=1',
+      ]
+      : [
+        `am=${advertisement.model}`,
+        'tp=UDP',
+        'sm=false',
+        'sv=false',
+        'ek=1',
+        'et=0,1',
+        'md=0,1,2',
+        'cn=0,1',
+        'ch=2',
+        'pw=false',
+        'sf=0x4',
+        'ss=16',
+        'sr=44100',
+        'vn=3',
+        `vs=${classicAirPlayVersion}`,
+        'txtvers=1',
+      ];
+    const raopTxtData = encodeTxt(raopTxtValues);
     const airPlayTxtData = encodeTxt([
       `deviceid=${colonMac(mac)}`,
       `features=${airPlay2FeatureBits}`,

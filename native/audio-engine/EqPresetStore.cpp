@@ -1,6 +1,7 @@
 #include "EqPresetStore.h"
 
 #include <cmath>
+#include <utility>
 
 namespace echo
 {
@@ -30,6 +31,19 @@ EqPreset makePreset(const std::string& id, const std::string& name, float preamp
 
     return preset;
 }
+
+EqPreset makeParametricPreset(const std::string& id, const std::string& name, float preampDb, std::vector<EqBandState> bands)
+{
+    EqPreset preset;
+    preset.id = id;
+    preset.name = name;
+    preset.preampDb = clampEqPreampDb(preampDb);
+    preset.readonlyPreset = true;
+    preset.createdAt = "built-in";
+    preset.updatedAt = "built-in";
+    preset.bands = std::move(bands);
+    return preset;
+}
 } // namespace
 
 std::vector<EqPreset> EqPresetStore::createBuiltInPresets()
@@ -45,6 +59,78 @@ std::vector<EqPreset> EqPresetStore::createBuiltInPresets()
         makePreset("anime-jpop", "Anime / J-Pop", -3.0f, { 1.5f, 1.2f, 0.6f, -0.5f, -0.8f, 0.8f, 2.0f, 2.6f, 2.2f, 1.0f }),
         makePreset("rock", "Rock", -3.0f, { 2.5f, 2.0f, 1.0f, -0.5f, -1.0f, 0.0f, 1.2f, 2.3f, 2.0f, 1.2f }),
         makePreset("classical", "Classical", -1.0f, { 0.5f, 0.5f, 0.0f, 0.0f, -0.3f, -0.2f, 0.4f, 1.0f, 1.2f, 0.8f }),
+        makeParametricPreset("sub-cleanup", "Sub Cleanup", -2.0f, {
+            { 28.0f, 0.0f, 0.7f, EqFilterType::HighPass, true },
+            { 70.0f, 1.5f, 0.8f, EqFilterType::LowShelf, true },
+            { 125.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 240.0f, -2.5f, 1.1f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 1000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 2000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 4000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 8000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 16000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+        }),
+        makeParametricPreset("vocal-de-ess", "Vocal De-ess", -3.0f, {
+            { 31.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 62.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 180.0f, -1.5f, 1.0f, EqFilterType::Peaking, true },
+            { 250.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 1000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 3200.0f, 1.5f, 0.9f, EqFilterType::Peaking, true },
+            { 4000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 7200.0f, -4.5f, 4.2f, EqFilterType::Peaking, true },
+            { 18000.0f, 0.0f, 0.7f, EqFilterType::LowPass, true },
+        }),
+        makeParametricPreset("headphone-notch", "Headphone Notch", -3.0f, {
+            { 35.0f, 1.5f, 0.8f, EqFilterType::LowShelf, true },
+            { 62.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 125.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 250.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 2800.0f, -2.0f, 1.4f, EqFilterType::Peaking, true },
+            { 2000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 6200.0f, 0.0f, 7.5f, EqFilterType::Notch, true },
+            { 9000.0f, -2.5f, 2.2f, EqFilterType::Peaking, true },
+            { 16000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+        }),
+        makeParametricPreset("subsonic-filter", "Subsonic Filter", -2.0f, {
+            { 24.0f, 0.0f, 0.7f, EqFilterType::HighPass, true },
+            { 80.0f, 0.8f, 0.7f, EqFilterType::LowShelf, true },
+            { 125.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 250.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 1000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 2000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 4000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 8000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 16000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+        }),
+        makeParametricPreset("sibilance-tamer", "Sibilance Tamer", -4.0f, {
+            { 31.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 62.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 180.0f, -1.2f, 1.0f, EqFilterType::Peaking, true },
+            { 250.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 1000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 2000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 5600.0f, -2.8f, 3.5f, EqFilterType::Peaking, true },
+            { 8200.0f, 0.0f, 6.0f, EqFilterType::Notch, true },
+            { 12500.0f, -1.0f, 0.8f, EqFilterType::HighShelf, true },
+        }),
+        makeParametricPreset("bluetooth-speaker-cleanup", "Bluetooth Speaker Cleanup", -3.0f, {
+            { 55.0f, 0.0f, 0.7f, EqFilterType::HighPass, true },
+            { 120.0f, -2.0f, 0.8f, EqFilterType::LowShelf, true },
+            { 125.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 420.0f, -2.0f, 1.2f, EqFilterType::Peaking, true },
+            { 500.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 1000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 2000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 8500.0f, 2.0f, 0.8f, EqFilterType::HighShelf, true },
+            { 8000.0f, 0.0f, 1.0f, EqFilterType::Peaking, true },
+            { 18000.0f, 0.0f, 0.7f, EqFilterType::LowPass, true },
+        }),
     };
 }
 

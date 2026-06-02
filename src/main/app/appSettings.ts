@@ -119,6 +119,7 @@ const appThemePresets: AppThemePreset[] = [
   'matsuriLantern',
   'ginzaNoir',
   'frostJazz',
+  'FINAL',
 ];
 const themeOverrideColorKeys: Array<keyof Pick<
   AppThemeToneOverride,
@@ -406,7 +407,9 @@ export const defaultSettings: AppSettings = {
   rememberWindowSizeEnabled: true,
   rememberedWindowSize: null,
   appCustomWallpaperPath: null,
+  appPortraitWallpaperPath: null,
   appWallpaperMediaType: 'image',
+  appPortraitWallpaperMediaType: 'image',
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
   appWallpaperBrightnessPercent: 100,
@@ -1442,7 +1445,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const appWallpaperBrightnessPercent = Number(settings.appWallpaperBrightnessPercent);
   const appWallpaperUiOpacityPercent = Number(settings.appWallpaperUiOpacityPercent);
   const appCustomWallpaperPath = normalizeAppWallpaperPath(settings.appCustomWallpaperPath);
+  const appPortraitWallpaperPath = normalizeAppWallpaperPath(settings.appPortraitWallpaperPath);
   const appWallpaperMediaType = normalizeAppWallpaperMediaType(appCustomWallpaperPath);
+  const appPortraitWallpaperMediaType = normalizeAppWallpaperMediaType(appPortraitWallpaperPath);
   const networkProxyUrl = normalizeNetworkProxyUrl(settings.networkProxyUrl);
   const networkProxyPacUrl = normalizeNetworkProxyPacUrl(settings.networkProxyPacUrl);
   const networkProxyMode = normalizeNetworkProxyMode(settings.networkProxyMode, networkProxyUrl, networkProxyPacUrl);
@@ -1573,7 +1578,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     rememberWindowSizeEnabled: settings.rememberWindowSizeEnabled !== false,
     rememberedWindowSize: normalizeRememberedWindowSize(settings.rememberedWindowSize),
     appCustomWallpaperPath,
+    appPortraitWallpaperPath,
     appWallpaperMediaType,
+    appPortraitWallpaperMediaType,
     appWallpaperScalePercent: Number.isFinite(appWallpaperScalePercent)
       ? Math.round(clamp(appWallpaperScalePercent, 100, 220))
       : defaultSettings.appWallpaperScalePercent,

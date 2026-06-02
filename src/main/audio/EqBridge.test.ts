@@ -35,6 +35,12 @@ const expectedBuiltInCurves: Record<string, { preampDb: number; gains: number[] 
   'classic-smiley': { preampDb: -8, gains: [7, 6, 3, -2.8, -4.5, -3.2, 1, 4, 6.2, 7] },
   'vinyl-warmth': { preampDb: -6, gains: [5, 4.4, 2.8, 1, 0, -0.7, -1.6, -2.8, -4, -5.2] },
   'broadcast-voice': { preampDb: -6, gains: [-8, -6.5, -3.4, 1.5, 4, 5.5, 4.4, 1.5, -2.5, -5.5] },
+  'sub-cleanup': { preampDb: -2, gains: [0, 1.5, 0, -2.5, 0, 0, 0, 0, 0, 0] },
+  'vocal-de-ess': { preampDb: -3, gains: [0, 0, -1.5, 0, 0, 0, 1.5, 0, -4.5, 0] },
+  'headphone-notch': { preampDb: -3, gains: [1.5, 0, 0, 0, 0, -2, 0, 0, -2.5, 0] },
+  'subsonic-filter': { preampDb: -2, gains: [0, 0.8, 0, 0, 0, 0, 0, 0, 0, 0] },
+  'sibilance-tamer': { preampDb: -4, gains: [0, 0, -1.2, 0, 0, 0, 0, -2.8, 0, -1] },
+  'bluetooth-speaker-cleanup': { preampDb: -3, gains: [0, -2, 0, -2, 0, 0, 0, 2, 0, 0] },
 };
 
 afterEach(() => {
@@ -382,6 +388,13 @@ describe('EqBridge protocol validation', () => {
       expect(preset.preampDb, preset.name).toBe(expected.preampDb);
       expect(preset.bands).toHaveLength(10);
       expect(preset.bands.map((band) => band.gainDb), preset.name).toEqual(expected.gains);
+
+      const usesParametricFilter = preset.bands.some((band) => band.filterType && band.filterType !== 'peaking');
+
+      if (usesParametricFilter) {
+        expect(preset.bands.some((band) => band.filterType === 'lowPass' || band.filterType === 'highPass' || band.filterType === 'notch'), preset.name).toBe(true);
+        continue;
+      }
 
       if (preset.id === 'flat') {
         continue;

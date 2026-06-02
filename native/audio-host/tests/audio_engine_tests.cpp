@@ -241,6 +241,33 @@ void testPeqBandControlsClampAndBypass()
     requireBuffersClose(bypassed, dry, nearTolerance, "disabled PEQ band must become transparent");
 }
 
+void testPeqAdditionalFilterTypesStayFinite()
+{
+    const std::vector<echo::EqFilterType> filterTypes {
+        echo::EqFilterType::LowPass,
+        echo::EqFilterType::HighPass,
+        echo::EqFilterType::Notch,
+    };
+
+    for (const auto filterType : filterTypes)
+    {
+        echo::EqProcessor processor;
+        processor.prepare(48000.0, 4096, 2);
+        processor.setEnabled(true);
+        processor.setBandFrequencyHz(4, filterType == echo::EqFilterType::HighPass ? 90.0f : 7200.0f);
+        processor.setBandQ(4, filterType == echo::EqFilterType::Notch ? 6.5f : 0.707f);
+        processor.setBandFilterType(4, filterType);
+        processor.setBandGainDb(4, 12.0f);
+
+        auto buffer = makeBuffer(2, 4096);
+        processor.processBlock(buffer, 0, buffer.getNumSamples());
+        requireFinite(buffer, "additional PEQ filter output must stay finite");
+
+        const auto state = processor.getState();
+        require(state.bandFilterTypes[4] == filterType, "additional PEQ filter type must round-trip in processor state");
+    }
+}
+
 void testHostBufferFallbackAttempts()
 {
     const auto shared = parseOptions({ "echo-audio-host" });
@@ -910,6 +937,24 @@ void testProtocolMessages()
         channelBalanceProcessor);
     requireContains(filterResponse, R"("filterType":"highShelf")", "filter type response");
 
+    const auto lowPassResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"lowPass"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(lowPassResponse, R"("filterType":"lowPass")", "low pass filter response");
+
+    const auto highPassResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"highPass"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(highPassResponse, R"("filterType":"highPass")", "high pass filter response");
+
+    const auto notchResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"notch"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(notchResponse, R"("filterType":"notch")", "notch filter response");
+
     const auto bypassResponse = echo::EqMessageProtocol::handleJsonLine(
         R"({"type":"eq:set-band-enabled","band":3,"enabled":false})",
         eqProcessor,
@@ -947,7 +992,7 @@ void testProtocolMessages()
     requireContains(invalidPresetResponse, "invalid_preset_bands", "invalid preset response");
 
     const auto invalidFilterResponse = echo::EqMessageProtocol::handleJsonLine(
-        R"({"type":"eq:set-band-filter-type","band":1,"filterType":"notch"})",
+        R"({"type":"eq:set-band-filter-type","band":1,"filterType":"allPass"})",
         eqProcessor,
         channelBalanceProcessor);
     requireContains(invalidFilterResponse, R"("type":"eq:error")", "invalid filter response");
@@ -966,6 +1011,7 @@ int main()
         { "EQ limiter protects enabled output", testEqLimiterProtectsEnabledOutput },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "PEQ band controls clamp and bypass", testPeqBandControlsClampAndBypass },
+        { "PEQ additional filter types stay finite", testPeqAdditionalFilterTypesStayFinite },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },
         { "host backend names", testHostBackendNames },

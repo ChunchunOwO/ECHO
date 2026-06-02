@@ -59,6 +59,7 @@ const themePresets: Array<{ preset: AppThemePreset; labelKey: TranslationKey; de
   { preset: 'echoTwilight', labelKey: 'settings.appearance.themePreset.echoTwilight', descriptionKey: 'settings.appearance.themePreset.echoTwilight.description' },
   { preset: 'graphiteAurora', labelKey: 'settings.appearance.themePreset.graphiteAurora', descriptionKey: 'settings.appearance.themePreset.graphiteAurora.description' },
   { preset: 'darkSideMoon', labelKey: 'settings.appearance.themePreset.darkSideMoon', descriptionKey: 'settings.appearance.themePreset.darkSideMoon.description' },
+  { preset: 'FINAL', labelKey: 'settings.appearance.themePreset.FINAL', descriptionKey: 'settings.appearance.themePreset.FINAL.description' },
 ];
 
 const detectFirstRunPlatform = (): NodeJS.Platform | 'unknown' =>

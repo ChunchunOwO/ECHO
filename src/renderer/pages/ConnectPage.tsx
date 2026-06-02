@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   Cable,
   Cast,
+  Check,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
   Loader2,
@@ -603,6 +605,41 @@ const formatTimestamp = (value: string | null): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
+type ReceiverDebugEvent = ConnectReceiverStatus['debugEvents'][number];
+
+const formatReceiverDebugEvent = (event: ReceiverDebugEvent): string => {
+  const statusCode = event.statusCode === null ? '-' : String(event.statusCode);
+  return [
+    new Date(event.at).toLocaleTimeString(),
+    event.remoteAddress ?? '-',
+    event.method,
+    event.path,
+    event.action ? `#${event.action}` : '#-',
+    statusCode,
+    event.message ?? '',
+  ].filter(Boolean).join(' ');
+};
+
+const writeTextToClipboard = async (value: string): Promise<void> => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) {
+    throw new Error('clipboard unavailable');
+  }
+};
+
 const formatHqEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
   settings.port ? `${settings.host}:${settings.port}` : `${settings.host}:未配置`;
 
@@ -831,6 +868,7 @@ export const ConnectPage = (): JSX.Element => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReceiverBusy, setIsReceiverBusy] = useState(false);
   const [isAirPlayReceiverBusy, setIsAirPlayReceiverBusy] = useState(false);
+  const [copiedAirPlayDebug, setCopiedAirPlayDebug] = useState(false);
   const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
   const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
@@ -869,6 +907,10 @@ export const ConnectPage = (): JSX.Element => {
     [devices, hiddenDeviceIds],
   );
   const hiddenDeviceCount = hiddenDeviceIds.size;
+  const airPlayDebugText = useMemo(
+    () => airPlayReceiverStatus.debugEvents.map(formatReceiverDebugEvent).join('\n'),
+    [airPlayReceiverStatus.debugEvents],
+  );
   const currentTrack = queue.currentTrack ?? queue.lastPlayedTrack ?? null;
   const currentFilePath =
     currentTrack?.path ??
@@ -1249,6 +1291,20 @@ export const ConnectPage = (): JSX.Element => {
       setIsAirPlayReceiverBusy(false);
     }
   }, []);
+
+  const copyAirPlayDebug = useCallback(async (): Promise<void> => {
+    if (!airPlayDebugText) {
+      return;
+    }
+
+    try {
+      await writeTextToClipboard(airPlayDebugText);
+      setCopiedAirPlayDebug(true);
+      window.setTimeout(() => setCopiedAirPlayDebug(false), 1600);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? `Failed to copy AirPlay Debug: ${copyError.message}` : 'Failed to copy AirPlay Debug.');
+    }
+  }, [airPlayDebugText]);
 
   const connectDevice = useCallback(
     async (device: ConnectDevice): Promise<void> => {
@@ -2166,14 +2222,29 @@ export const ConnectPage = (): JSX.Element => {
         <details className="connect-receiver-debug" aria-label="AirPlay receiver log">
           <summary>
             <span>AirPlay Debug</span>
-            <small>{airPlayReceiverStatus.debugEvents.length > 0 ? `${airPlayReceiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+            <div className="connect-receiver-debug__actions">
+              <small>{airPlayReceiverStatus.debugEvents.length > 0 ? `${airPlayReceiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+              <button
+                className="connect-debug-copy-button"
+                type="button"
+                aria-label="Copy AirPlay Debug"
+                title="Copy AirPlay Debug"
+                disabled={!airPlayDebugText}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void copyAirPlayDebug();
+                }}
+              >
+                {copiedAirPlayDebug ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
           </summary>
           <div className="connect-receiver-debug__items">
             {airPlayReceiverStatus.debugEvents.length > 0 ? (
               airPlayReceiverStatus.debugEvents.slice(0, 6).map((event) => (
                 <code key={event.id}>
-                  {new Date(event.at).toLocaleTimeString()} {event.method} {event.action ?? '-'}
-                  {event.message ? ` ${event.message}` : ''}
+                  {formatReceiverDebugEvent(event)}
                 </code>
               ))
             ) : (

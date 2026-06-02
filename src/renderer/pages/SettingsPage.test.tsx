@@ -2531,6 +2531,66 @@ describe('SettingsPage', () => {
     expect(screen.getByText('settings.appearance.wallpaper.unifiedOpacity')).toBeTruthy();
   });
 
+  it('saves a portrait app wallpaper separately from the landscape background', async () => {
+    const wallpaperPath = 'D:\\Echo\\app-wallpapers\\portrait.webp';
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    chooseAppWallpaperMock.mockResolvedValue(wallpaperPath);
+    setSettingsMock.mockResolvedValue({
+      ...settings,
+      appPortraitWallpaperPath: wallpaperPath,
+      appPortraitWallpaperMediaType: 'image',
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.portraitChoose/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: 'image',
+      }),
+    );
+    expect(await screen.findByText('settings.appearance.wallpaper.portraitPath')).toBeTruthy();
+    expect(screen.queryByText('settings.appearance.wallpaper.landscapePath')).toBeNull();
+  });
+
+  it('enables video wallpaper controls after choosing a portrait video background', async () => {
+    const wallpaperPath = 'D:\\Echo\\app-wallpapers\\portrait-motion.webm';
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    chooseAppWallpaperMock.mockResolvedValue(wallpaperPath);
+    setSettingsMock.mockResolvedValue({
+      ...settings,
+      appPortraitWallpaperPath: wallpaperPath,
+      appPortraitWallpaperMediaType: 'video',
+      appVideoWallpaperPauseMode: 'never',
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.portraitChoose/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: 'video',
+        appVideoWallpaperPauseMode: 'never',
+      }),
+    );
+    expect(await screen.findByText('settings.appearance.wallpaper.videoStatus')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.videoPause\.never/ })).toBeTruthy();
+  });
+
   it('shows video wallpaper performance mode after choosing a local video background', async () => {
     const wallpaperPath = 'D:\\Echo\\app-wallpapers\\motion.mp4';
     Element.prototype.scrollIntoView = vi.fn();

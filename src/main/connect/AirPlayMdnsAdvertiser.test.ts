@@ -79,6 +79,7 @@ describe('AirPlayMdnsAdvertiser', () => {
     expect(payload).toContain('sf=0x4');
     expect(payload).toContain('vs=130.14');
     expect(payload).not.toContain('_airplay');
+    expect(payload).not.toContain('ft=');
     expect(payload).not.toContain('features=');
     expect(payload).not.toContain('0x527FFFF7');
     expect(payload).not.toContain('cn=0,1,2,3');
@@ -102,7 +103,11 @@ describe('AirPlayMdnsAdvertiser', () => {
     expect(payload).toContain('_raop');
     expect(payload).toContain('_airplay');
     expect(payload).toContain('deviceid=60:CF:84:CB:1E:D1');
-    expect(payload).toContain('features=0x405f4200,0x1c300');
+    expect(payload).toContain('features=0x405fca00,0x1c340');
+    expect(payload).toContain('ft=0x405fca00,0x1c340');
+    expect(payload).toContain('et=0,1,3');
+    expect(payload).toContain('cn=0,1,2');
+    expect(payload).toContain('vs=366.0');
     expect(payload).toContain('srcvers=366.0');
     expect(payload).toContain(`pi=${createAirPlay2PairingUuid(
       '60:CF:84:CB:1E:D1',
@@ -135,10 +140,8 @@ describe('AirPlayMdnsAdvertiser', () => {
   });
 
   it('keeps experimental AirPlay 2 feature bits aligned with implemented receiver paths', () => {
-    expect([9, 14, 16, 17, 18, 19, 20, 22, 30, 40, 41, 46, 47, 48].every(hasAirPlay2FeatureBit)).toBe(true);
+    expect([9, 11, 14, 15, 16, 17, 18, 19, 20, 22, 30, 38, 40, 41, 46, 47, 48].every(hasAirPlay2FeatureBit)).toBe(true);
 
-    expect(hasAirPlay2FeatureBit(11)).toBe(false);
-    expect(hasAirPlay2FeatureBit(15)).toBe(false);
     expect(hasAirPlay2FeatureBit(21)).toBe(false);
     expect(hasAirPlay2FeatureBit(51)).toBe(false);
     expect(hasAirPlay2FeatureBit(59)).toBe(false);

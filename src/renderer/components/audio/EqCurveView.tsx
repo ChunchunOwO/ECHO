@@ -1,15 +1,33 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import type { EqBand } from '../../../shared/types/eq';
+import type { AudioLevelTelemetry } from '../../../shared/types/audio';
+import type { EqBand, EqFilterType } from '../../../shared/types/eq';
 import { eqFrequenciesHz, eqMaxFrequencyHz, eqMaxGainDb, eqMinFrequencyHz, eqMinGainDb } from '../../../shared/types/eq';
 import { useI18n } from '../../i18n/I18nProvider';
-import { clamp, computeEqCurvePoints, formatDb, formatFrequencyLabel, resolveBandFrequency } from './eqPanelUtils';
+import type { TranslationKey } from '../../i18n/locales';
+import {
+  clamp,
+  computeEqBandGainDbAtFrequency,
+  computeEqBandNodePoint,
+  computeEqCurvePoints,
+  computeEqResponseGainDbAtFrequency,
+  computeEqSpectrumBars,
+  type EqAnalyzerMode,
+  formatDb,
+  formatFrequencyLabel,
+  isEqFilterGainEditable,
+  resolveBandFrequency,
+} from './eqPanelUtils';
 
 type EqCurveViewProps = {
   bands: EqBand[];
   enabled: boolean;
   frequencyUnlocked: boolean;
   selectedBandIndex: number;
+  spectrumEnabled?: boolean;
+  analyzerMode?: EqAnalyzerMode;
+  visualSpectrum?: number[];
+  visualTelemetryState?: AudioLevelTelemetry['visualTelemetryState'];
   onBandSelect: (index: number) => void;
   onBandChange: (index: number, gainDb: number) => void;
   onBandCommit: (index: number, gainDb: number) => void;
@@ -23,6 +41,14 @@ type DragPoint = {
   gainDb: number;
 };
 
+type HoverReadout = {
+  x: number;
+  y: number;
+  frequencyHz: number;
+  totalGainDb: number;
+  bandGainDb: number;
+};
+
 const width = 920;
 const height = 360;
 const paddingLeft = 62;
@@ -32,13 +58,39 @@ const paddingBottom = 42;
 const plotWidth = width - paddingLeft - paddingRight;
 const plotHeight = height - paddingTop - paddingBottom;
 const axisGains = [12, 9, 6, 3, 0, -3, -6, -9, -12];
+const eqFilterLabelKeys: Record<EqFilterType, TranslationKey> = {
+  peaking: 'settings.eq.filter.peaking',
+  lowShelf: 'settings.eq.filter.lowShelf',
+  highShelf: 'settings.eq.filter.highShelf',
+  lowPass: 'settings.eq.filter.lowPass',
+  highPass: 'settings.eq.filter.highPass',
+  notch: 'settings.eq.filter.notch',
+};
+
+const filterNodeKinds: Record<EqFilterType, 'peak' | 'shelf' | 'pass' | 'notch'> = {
+  peaking: 'peak',
+  lowShelf: 'shelf',
+  highShelf: 'shelf',
+  lowPass: 'pass',
+  highPass: 'pass',
+  notch: 'notch',
+};
+
+const filterNodeGlyphs: Record<EqFilterType, string> = {
+  peaking: 'P',
+  lowShelf: 'S',
+  highShelf: 'S',
+  lowPass: 'F',
+  highPass: 'F',
+  notch: 'N',
+};
 
 const toSvgPoint = (point: { x: number; y: number }): { x: number; y: number } => ({
   x: paddingLeft + point.x * plotWidth,
   y: paddingTop + point.y * plotHeight,
 });
 
-const bandToSvgPoint = (band: EqBand): { x: number; y: number } => toSvgPoint(computeEqCurvePoints([band])[0]);
+const bandToSvgPoint = (band: EqBand): { x: number; y: number } => toSvgPoint(computeEqBandNodePoint(band));
 
 const gainToY = (gainDb: number): number => {
   const normalized = (gainDb - eqMinGainDb) / (eqMaxGainDb - eqMinGainDb);
@@ -123,6 +175,10 @@ export const EqCurveView = ({
   enabled,
   frequencyUnlocked,
   selectedBandIndex,
+  spectrumEnabled = false,
+  analyzerMode = 'input',
+  visualSpectrum,
+  visualTelemetryState,
   onBandSelect,
   onBandChange,
   onBandCommit,
@@ -133,18 +189,31 @@ export const EqCurveView = ({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [activeBand, setActiveBand] = useState<number | null>(null);
   const [hoverBand, setHoverBand] = useState<number | null>(null);
+  const [hoverReadout, setHoverReadout] = useState<HoverReadout | null>(null);
   const [fineEdit, setFineEdit] = useState(false);
   const [dragPreview, setDragPreview] = useState<{ index: number; band: EqBand } | null>(null);
-  const displayBands = dragPreview
-    ? bands.map((band, index) => (index === dragPreview.index ? dragPreview.band : band))
-    : bands;
-  const points = computeEqCurvePoints(displayBands).map(toSvgPoint);
+  const displayBands = useMemo(
+    () => (dragPreview ? bands.map((band, index) => (index === dragPreview.index ? dragPreview.band : band)) : bands),
+    [bands, dragPreview],
+  );
+  const points = useMemo(() => computeEqCurvePoints(displayBands).map(toSvgPoint), [displayBands]);
   const path = makeSmoothPath(points);
   const zeroY = gainToY(0);
   const fillPath = path ? `${path} L ${paddingLeft + plotWidth} ${zeroY.toFixed(1)} L ${paddingLeft} ${zeroY.toFixed(1)} Z` : '';
   const readoutBandIndex = activeBand ?? hoverBand ?? selectedBandIndex;
   const selectedBand = displayBands[readoutBandIndex];
   const selectedPoint = selectedBand ? bandToSvgPoint(selectedBand) : null;
+  const selectedBandPath = useMemo(
+    () => (selectedBand ? makeSmoothPath(computeEqCurvePoints([selectedBand]).map(toSvgPoint)) : ''),
+    [selectedBand],
+  );
+  const spectrumBars = useMemo(
+    () => (spectrumEnabled ? computeEqSpectrumBars(visualSpectrum, displayBands, analyzerMode) : []),
+    [analyzerMode, displayBands, spectrumEnabled, visualSpectrum],
+  );
+  const hasLiveSpectrum = spectrumBars.length > 0 && visualTelemetryState !== 'fallback';
+  const selectedBandGainEditable = selectedBand ? isEqFilterGainEditable(selectedBand.filterType) : true;
+  const selectedBandType = selectedBand?.filterType ?? 'peaking';
   const readoutModeLabel = fineEdit
     ? t('settings.eq.curve.fineEdit')
     : frequencyUnlocked
@@ -170,18 +239,38 @@ export const EqCurveView = ({
     };
   };
 
+  const updateHoverReadout = (event: ReactPointerEvent<SVGElement>): void => {
+    const svgPoint = clientPointToSvgPoint(svgRef.current, event.clientX, event.clientY);
+    const rect = svgRef.current?.getBoundingClientRect();
+    const x = svgPoint?.x ?? (rect && rect.width > 0 ? (event.clientX - rect.left) * (width / rect.width) : paddingLeft);
+    const y = svgPoint?.y ?? (rect && rect.height > 0 ? (event.clientY - rect.top) * (height / rect.height) : zeroY);
+    const frequencyHz = xToFrequency(x);
+
+    setHoverReadout({
+      x: clamp(x, paddingLeft, paddingLeft + plotWidth),
+      y: clamp(y, paddingTop, paddingTop + plotHeight),
+      frequencyHz,
+      totalGainDb: computeEqResponseGainDbAtFrequency(displayBands, frequencyHz),
+      bandGainDb: computeEqBandGainDbAtFrequency(selectedBand, frequencyHz),
+    });
+  };
+
   const updateBandFromEvent = (event: ReactPointerEvent<SVGElement>, index: number): DragPoint => {
     const point = pointFromEvent(event);
     const previewFrequencyHz = frequencyUnlocked ? point.frequencyHz : point.rawFrequencyHz;
+    const band = bands[index] ?? { frequencyHz: point.frequencyHz, gainDb: 0, q: 1, filterType: 'peaking' as const, enabled: true };
+    const gainEditable = isEqFilterGainEditable(band.filterType);
     setDragPreview({
       index,
       band: {
-        ...(bands[index] ?? { frequencyHz: point.frequencyHz, gainDb: 0, q: 1, filterType: 'peaking' as const, enabled: true }),
+        ...band,
         frequencyHz: previewFrequencyHz,
-        gainDb: point.gainDb,
+        gainDb: gainEditable ? point.gainDb : 0,
       },
     });
-    onBandChange(index, point.gainDb);
+    if (gainEditable) {
+      onBandChange(index, point.gainDb);
+    }
     if (frequencyUnlocked && point.frequencyHz !== bands[index]?.frequencyHz) {
       onBandFrequencyChange(index, point.frequencyHz);
     }
@@ -198,6 +287,7 @@ export const EqCurveView = ({
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>): void => {
     if (activeBand === null) {
+      updateHoverReadout(event);
       return;
     }
 
@@ -210,7 +300,9 @@ export const EqCurveView = ({
     }
 
     const point = updateBandFromEvent(event, activeBand);
-    onBandCommit(activeBand, point.gainDb);
+    if (isEqFilterGainEditable(bands[activeBand]?.filterType)) {
+      onBandCommit(activeBand, point.gainDb);
+    }
     if (point.frequencyHz !== bands[activeBand]?.frequencyHz) {
       onBandFrequencyCommit(activeBand, point.frequencyHz);
     }
@@ -231,6 +323,10 @@ export const EqCurveView = ({
     onBandSelect(index);
 
     if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      if (!isEqFilterGainEditable(bands[index].filterType)) {
+        return;
+      }
+
       const delta = event.shiftKey ? 0.1 : 0.5;
       const gainDb = Math.round(clamp(bands[index].gainDb + (event.key === 'ArrowUp' ? delta : -delta), eqMinGainDb, eqMaxGainDb) * 10) / 10;
       onBandChange(index, gainDb);
@@ -273,6 +369,7 @@ export const EqCurveView = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onPointerLeave={() => setHoverReadout(null)}
       >
         <defs>
           <linearGradient id="eqCurveStroke" x1="0%" x2="100%" y1="0%" y2="0%">
@@ -299,7 +396,28 @@ export const EqCurveView = ({
         })}
 
         <line className="eq-zero-line" x1={paddingLeft} x2={paddingLeft + plotWidth} y1={zeroY} y2={zeroY} />
+        {spectrumEnabled ? (
+          <g className="eq-spectrum-overlay" data-state={visualTelemetryState ?? 'fallback'} aria-label={t('settings.eq.analyzer.overlayAria')}>
+            {spectrumBars.map((bar, index) => {
+              const x = paddingLeft + bar.x * plotWidth;
+              const barHeight = Math.max(2, bar.value * plotHeight * 0.58);
+              return (
+                <line
+                  className="eq-spectrum-bar"
+                  data-live={hasLiveSpectrum}
+                  data-mode={analyzerMode}
+                  key={`${index}-${bar.value.toFixed(3)}`}
+                  x1={x.toFixed(1)}
+                  x2={x.toFixed(1)}
+                  y1={(paddingTop + plotHeight).toFixed(1)}
+                  y2={(paddingTop + plotHeight - barHeight).toFixed(1)}
+                />
+              );
+            })}
+          </g>
+        ) : null}
         <path className="eq-curve-fill" d={fillPath} />
+        {selectedBandPath ? <path className="eq-curve-selected-band" d={selectedBandPath} /> : null}
         <path className="eq-curve-stroke" d={path} />
         <path className="eq-curve-hit-area" d={path} />
 
@@ -313,6 +431,7 @@ export const EqCurveView = ({
               data-active={selected}
               data-bypassed={band.enabled === false}
               data-dragging={activeBand === index}
+              data-filter-kind={filterNodeKinds[band.filterType ?? 'peaking']}
               data-testid={`eq-curve-node-${index}`}
               key={`${band.frequencyHz}-${index}`}
               tabIndex={0}
@@ -324,8 +443,14 @@ export const EqCurveView = ({
               onPointerLeave={() => setHoverBand((current) => (current === index ? null : current))}
               onPointerDown={(event) => handlePointerDown(event, index)}
             >
+              <title>
+                {`${t(eqFilterLabelKeys[band.filterType ?? 'peaking'])} / ${formatFrequencyLabel(band.frequencyHz)} / ${isEqFilterGainEditable(band.filterType) ? formatDb(band.gainDb) : t('settings.eq.band.gainFixed')} / Q ${Number(band.q ?? 1).toFixed(1)}`}
+              </title>
               <circle className="eq-curve-node-hit" r="16" />
               <circle className="eq-curve-node" r={selected ? 9 : 7.5} />
+              <text className="eq-curve-node-type" y="-10">
+                {filterNodeGlyphs[band.filterType ?? 'peaking']}
+              </text>
               <text className="eq-curve-node-number" y="3.5">
                 {formatFrequencyLabel(band.frequencyHz)}
               </text>
@@ -345,16 +470,28 @@ export const EqCurveView = ({
         {selectedBand && selectedPoint ? (
           <g className="eq-selected-readout" transform={`translate(${selectedPoint.x.toFixed(1)} ${(selectedPoint.y - 22).toFixed(1)})`}>
             <text className="eq-selected-readout-frequency" y="-4">
-              {formatFrequencyLabel(selectedBand.frequencyHz)}
+              {`${formatFrequencyLabel(selectedBand.frequencyHz)} / Q ${Number(selectedBand.q ?? 1).toFixed(1)} / ${t(eqFilterLabelKeys[selectedBandType])}`}
             </text>
             <text className="eq-selected-readout-gain" x="28" y="16">
-              {formatDb(selectedBand.gainDb)}
+              {selectedBandGainEditable ? formatDb(selectedBand.gainDb) : t('settings.eq.band.gainFixed')}
             </text>
             {readoutModeLabel ? (
               <text className="eq-selected-readout-mode" x="-28" y="16">
                 {readoutModeLabel}
               </text>
             ) : null}
+          </g>
+        ) : null}
+        {hoverReadout ? (
+          <g className="eq-hover-readout" transform={`translate(${hoverReadout.x.toFixed(1)} ${Math.max(paddingTop + 22, hoverReadout.y - 30).toFixed(1)})`}>
+            <line x1="0" x2="0" y1={(paddingTop - hoverReadout.y).toFixed(1)} y2={(paddingTop + plotHeight - hoverReadout.y).toFixed(1)} />
+            <rect x="-64" y="-22" width="128" height="32" rx="7" />
+            <text y="-8">
+              {`${formatFrequencyLabel(hoverReadout.frequencyHz)} / ${formatDb(hoverReadout.totalGainDb)}`}
+            </text>
+            <text y="5">
+              {`${t(eqFilterLabelKeys[selectedBandType])} ${formatDb(hoverReadout.bandGainDb)}`}
+            </text>
           </g>
         ) : null}
       </svg>

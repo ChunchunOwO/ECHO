@@ -462,6 +462,7 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'matsuriLantern' }).appearanceThemePreset).toBe('matsuriLantern');
     expect(normalizeSettings({ appearanceThemePreset: 'ginzaNoir' }).appearanceThemePreset).toBe('ginzaNoir');
     expect(normalizeSettings({ appearanceThemePreset: 'frostJazz' }).appearanceThemePreset).toBe('frostJazz');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL' }).appearanceThemePreset).toBe('FINAL');
     expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
   });
 
@@ -771,13 +772,18 @@ describe('app settings normalization', () => {
     const appWallpaperDirectory = join(userDataPath, 'app-wallpapers');
     mkdirSync(appWallpaperDirectory, { recursive: true });
     const videoWallpaperPath = join(appWallpaperDirectory, 'motion.mp4');
+    const portraitWallpaperPath = join(appWallpaperDirectory, 'portrait.webp');
+    const portraitVideoWallpaperPath = join(appWallpaperDirectory, 'portrait-motion.webm');
     const unsupportedWallpaperPath = join(appWallpaperDirectory, 'motion.mkv');
     writeFileSync(videoWallpaperPath, 'video');
+    writeFileSync(portraitWallpaperPath, 'portrait');
+    writeFileSync(portraitVideoWallpaperPath, 'portrait-video');
     writeFileSync(unsupportedWallpaperPath, 'unsupported');
 
     expect(
       normalizeSettings({
         appCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
+        appPortraitWallpaperPath: 'D:\\Outside\\portrait.png',
         appWallpaperScalePercent: 999,
         appWallpaperBlurPx: 99,
         appWallpaperBrightnessPercent: 12,
@@ -787,6 +793,7 @@ describe('app settings normalization', () => {
       }),
     ).toMatchObject({
       appCustomWallpaperPath: null,
+      appPortraitWallpaperPath: null,
       appWallpaperScalePercent: 220,
       appWallpaperBlurPx: 40,
       appWallpaperBrightnessPercent: 40,
@@ -816,24 +823,42 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         appCustomWallpaperPath: videoWallpaperPath,
+        appPortraitWallpaperPath: portraitWallpaperPath,
         appWallpaperMediaType: 'image',
+        appPortraitWallpaperMediaType: 'video',
         appVideoWallpaperPauseMode: 'minimized',
       }),
     ).toMatchObject({
       appCustomWallpaperPath: videoWallpaperPath,
+      appPortraitWallpaperPath: portraitWallpaperPath,
       appWallpaperMediaType: 'video',
+      appPortraitWallpaperMediaType: 'image',
       appVideoWallpaperPauseMode: 'minimized',
     });
 
     expect(
       normalizeSettings({
+        appPortraitWallpaperPath: portraitVideoWallpaperPath,
+        appPortraitWallpaperMediaType: 'image',
+      }),
+    ).toMatchObject({
+      appPortraitWallpaperPath: portraitVideoWallpaperPath,
+      appPortraitWallpaperMediaType: 'video',
+    });
+
+    expect(
+      normalizeSettings({
         appCustomWallpaperPath: unsupportedWallpaperPath,
+        appPortraitWallpaperPath: unsupportedWallpaperPath,
         appWallpaperMediaType: 'video',
+        appPortraitWallpaperMediaType: 'video',
         appVideoWallpaperPauseMode: 'always' as never,
       }),
     ).toMatchObject({
       appCustomWallpaperPath: null,
+      appPortraitWallpaperPath: null,
       appWallpaperMediaType: 'image',
+      appPortraitWallpaperMediaType: 'image',
       appVideoWallpaperPauseMode: 'smart',
     });
   });

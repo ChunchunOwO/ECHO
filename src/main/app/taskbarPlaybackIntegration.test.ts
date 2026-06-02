@@ -128,6 +128,33 @@ describe('TaskbarPlaybackIntegration', () => {
     integration.dispose();
   });
 
+  it('uses audio status metadata for streaming tracks that are not in the library', async () => {
+    const { TaskbarPlaybackIntegration } = await import('./taskbarPlaybackIntegration');
+    const audioSession = createAudioSession(makeStatus({
+      currentFilePath: 'https://cdn.example.test/play/opaque-stream-token?expires=soon',
+      currentTrackId: 'streaming:youtube:abc123',
+      currentTrackTitle: 'Streaming Song',
+      currentTrackArtist: 'Streaming Artist',
+      currentTrackAlbumArtist: 'Streaming Album Artist',
+    }));
+    const integration = new TaskbarPlaybackIntegration({
+      window,
+      audioSession,
+      platform: 'win32',
+      getSettings: () => ({ taskbarPlaybackControlsEnabled: true }),
+      getLibrary: () => ({
+        getTrack: () => null,
+      }),
+      createIcon: () => ({ isEmpty: () => false }) as never,
+    });
+
+    integration.initialize();
+
+    expect(window.setTitle).toHaveBeenCalledWith('Streaming Song - Streaming Artist | ECHO Next');
+    expect(window.setThumbnailToolTip).toHaveBeenCalledWith('Streaming Song - Streaming Artist | ECHO Next');
+    integration.dispose();
+  });
+
   it('keeps paused progress but marks the taskbar progress as paused', async () => {
     const { TaskbarPlaybackIntegration } = await import('./taskbarPlaybackIntegration');
     const audioSession = createAudioSession(makeStatus({ state: 'paused', positionSeconds: 80, durationSeconds: 160 }));

@@ -8,6 +8,7 @@ import {
   createPublicKey,
   diffieHellman,
   generateKeyPairSync,
+  getCiphers,
   hkdfSync,
   randomBytes,
   sign,
@@ -122,7 +123,9 @@ type AirPlay2PairVerifyState = {
   controlWriteKey: Buffer;
 };
 
-type AirPlay2EncryptedControlState = Pick<AirPlay2PairVerifyState, 'controlReadKey' | 'controlWriteKey'>;
+type AirPlay2EncryptedControlState = Pick<AirPlay2PairVerifyState, 'controlReadKey' | 'controlWriteKey'> & {
+  keyLabel: string;
+};
 
 type AirPlay2PairSetupState = {
   salt: Buffer;
@@ -151,6 +154,8 @@ type AirPlay2SessionSetupInfo = {
 type AirPlay2ControlCipherState = {
   readCounter: number;
   writeCounter: number;
+  readCounterOffset: number;
+  writeCounterOffset: number;
 };
 
 type AirPlay2TlvField = {
@@ -175,9 +180,11 @@ type AirPlay2ProbeResponse = {
 
 type AirPlay2TcpConnection = {
   buffer: Buffer;
+  plaintextBuffer: Buffer;
   encrypted: boolean;
   draining: boolean;
   cipher: AirPlay2ControlCipherState;
+  lastFrameSummary: string | null;
 };
 
 type AirPlay2UdpListener = {
@@ -313,14 +320,28 @@ const airPlay2SrpModulusHex = [
 const airPlay2SrpModulus = BigInt(`0x${airPlay2SrpModulusHex}`);
 const airPlay2SrpModulusBytes = airPlay2SrpModulusHex.length / 2;
 const airPlay2SrpGenerator = 5n;
-const airPlay2FairPlaySetup1Mode3Response = Buffer.from(
+const airPlay2FairPlaySetup1Responses = [
+  [
+    '46504c59030102000000008202000f9f3f9e0a2521dbdf312ab2bfb29e8d232b6376a8c818701d22ae93d82737feaf9db4fdf41c2d',
+    'ba9d1f49caaabf6591ac1f7bc6f7e0663d21afe01565953eab81f418ceed095adb7c3d0e254909a79831d49c3982973434',
+    'facb42c63a1cd911a6fe941a8a6d4a743b46c3a7649e44c78955e49d8155009549c4e2f7a3f6d5ba',
+  ],
+  [
+    '46504c5903010200000000820201cf32a25714b2524f8aa0ad7af164e37bcf4424e200047efc0ad67afcd95ded1c2730bb591b962ed63a9c4d',
+    'ed88ba8fc78de64d91ccfd5c7b56da88e31f5cceafc7431995a01665a54e1939d25b94db64b9e45d8d063e1e6af07e',
+    '9656162b0efa404275ea5a44d9591c7256b9fbe6513898b80227721988571650942ad946688a',
+  ],
+  [
+    '46504c5903010200000000820202c169a352eeed35b18cdd9c58d64f16c1519a89eb5317bd0d4336cd68f638ff9d016a5b52b7',
+    'fa9216b2b65482c78444118121a2c7fed83db7119e9182aad7d18c7063e2a457555910af9e0efc76347d164043807f58',
+    '1ee4fbe42ca9dedc1b5eb2a3aa3d2ecd59e7eee70b3629f22afd161d877353ddb99adc8e07006e56f850ce',
+  ],
   [
     '46504c59030102000000008202039001e1727e0f57f9f5880db104a6257a23f5cfff1abbe1e93045251afb97eb9fc001',
     '1ebe0f3a81df5b691d76acb2f7a5c708e3d328f56bb39dbde5f29c8a17f481487e3ae863c678325422e6f78e166d18aa',
     '7fd636258bce28726f661f738893ce44311e4be6c0535193e5ef72e8686233729c227d820c999445d89246c8c359',
-  ].join(''),
-  'hex',
-);
+  ],
+].map((chunks) => Buffer.from(chunks.join(''), 'hex'));
 const airPlay2FairPlaySetup2ResponsePrefix = Buffer.from('46504c590301040000000014', 'hex');
 const airPlay2FairPlaySetup2SuffixBytes = 20;
 
@@ -544,6 +565,219 @@ const summarizeBuffer = (value: Buffer): string => {
   return `${value.length}b:${digest}`;
 };
 
+const summarizeBufferPrefix = (value: Buffer, maxBytes = 16): string =>
+  value.subarray(0, Math.min(value.length, maxBytes)).toString('hex') || '-';
+
+const airPlay2CipherName = 'chacha20-poly1305';
+
+const airPlay2CipherAvailable = (): boolean => {
+  try {
+    return getCiphers().includes(airPlay2CipherName);
+  } catch {
+    return false;
+  }
+};
+
+const shouldUseAirPlay2NativeCipher = (): boolean =>
+  process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK !== '1' && airPlay2CipherAvailable();
+
+const airPlay2CipherProvider = (): 'native' | 'fallback' =>
+  shouldUseAirPlay2NativeCipher() ? 'native' : 'fallback';
+
+const summarizeAirPlay2CryptoError = (operation: string, error: unknown, details: string): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error && typeof error === 'object' && 'code' in error
+    ? ` code=${String((error as { code?: unknown }).code)}`
+    : '';
+  return `${operation} failed cipher=${airPlay2CipherName} provider=${airPlay2CipherProvider()} available=${airPlay2CipherAvailable() ? 'yes' : 'no'}${code}; ${details}; ${message}`;
+};
+
+const summarizeAirPlay2EncryptedControlFrame = (frame: Buffer): string => {
+  const declaredLength = frame.length >= 2 ? frame.readUInt16LE(0) : null;
+  const expectedLength = declaredLength === null ? null : 2 + declaredLength + 16;
+  const cipherLength = declaredLength === null ? null : Math.max(0, Math.min(declaredLength, Math.max(0, frame.length - 2)));
+  const tagLength = declaredLength === null ? null : Math.max(0, Math.min(16, frame.length - 2 - (cipherLength ?? 0)));
+  return [
+    `frame=${frame.length}b`,
+    `declared=${declaredLength ?? 'missing'}`,
+    `expected=${expectedLength ?? 'unknown'}b`,
+    `cipher=${cipherLength ?? 'unknown'}b`,
+    `tag=${tagLength ?? 'unknown'}b`,
+    `prefix=${summarizeBufferPrefix(frame)}`,
+    `hash=${summarizeBuffer(frame)}`,
+  ].join(' ');
+};
+
+const airPlay2SocketPeer = (socket: Socket): string =>
+  `${socket.remoteAddress ?? 'unknown'}:${socket.remotePort ?? 'unknown'}`;
+
+const readUInt32Le = (buffer: Buffer, offset: number): number => buffer.readUInt32LE(offset) >>> 0;
+
+const writeUInt32Le = (buffer: Buffer, value: number, offset: number): void => {
+  buffer.writeUInt32LE(value >>> 0, offset);
+};
+
+const rotateLeft32 = (value: number, shift: number): number =>
+  ((value << shift) | (value >>> (32 - shift))) >>> 0;
+
+const chacha20QuarterRound = (state: number[], a: number, b: number, c: number, d: number): void => {
+  state[a] = (state[a] + state[b]) >>> 0;
+  state[d] = rotateLeft32(state[d] ^ state[a], 16);
+  state[c] = (state[c] + state[d]) >>> 0;
+  state[b] = rotateLeft32(state[b] ^ state[c], 12);
+  state[a] = (state[a] + state[b]) >>> 0;
+  state[d] = rotateLeft32(state[d] ^ state[a], 8);
+  state[c] = (state[c] + state[d]) >>> 0;
+  state[b] = rotateLeft32(state[b] ^ state[c], 7);
+};
+
+const chacha20Block = (key: Buffer, nonce: Buffer, counter: number): Buffer => {
+  if (key.length !== 32) {
+    throw new Error(`ChaCha20-Poly1305 key must be 32 bytes; got ${key.length}.`);
+  }
+  if (nonce.length !== 12) {
+    throw new Error(`ChaCha20-Poly1305 nonce must be 12 bytes; got ${nonce.length}.`);
+  }
+
+  const initialState = [
+    0x61707865,
+    0x3320646e,
+    0x79622d32,
+    0x6b206574,
+    readUInt32Le(key, 0),
+    readUInt32Le(key, 4),
+    readUInt32Le(key, 8),
+    readUInt32Le(key, 12),
+    readUInt32Le(key, 16),
+    readUInt32Le(key, 20),
+    readUInt32Le(key, 24),
+    readUInt32Le(key, 28),
+    counter >>> 0,
+    readUInt32Le(nonce, 0),
+    readUInt32Le(nonce, 4),
+    readUInt32Le(nonce, 8),
+  ];
+  const workingState = [...initialState];
+  for (let round = 0; round < 10; round += 1) {
+    chacha20QuarterRound(workingState, 0, 4, 8, 12);
+    chacha20QuarterRound(workingState, 1, 5, 9, 13);
+    chacha20QuarterRound(workingState, 2, 6, 10, 14);
+    chacha20QuarterRound(workingState, 3, 7, 11, 15);
+    chacha20QuarterRound(workingState, 0, 5, 10, 15);
+    chacha20QuarterRound(workingState, 1, 6, 11, 12);
+    chacha20QuarterRound(workingState, 2, 7, 8, 13);
+    chacha20QuarterRound(workingState, 3, 4, 9, 14);
+  }
+
+  const output = Buffer.allocUnsafe(64);
+  for (let index = 0; index < 16; index += 1) {
+    writeUInt32Le(output, (workingState[index] + initialState[index]) >>> 0, index * 4);
+  }
+  return output;
+};
+
+const chacha20Xor = (key: Buffer, nonce: Buffer, counter: number, input: Buffer): Buffer => {
+  const output = Buffer.allocUnsafe(input.length);
+  for (let offset = 0; offset < input.length; offset += 64) {
+    const block = chacha20Block(key, nonce, counter);
+    const chunkLength = Math.min(64, input.length - offset);
+    for (let index = 0; index < chunkLength; index += 1) {
+      output[offset + index] = input[offset + index] ^ block[index];
+    }
+    counter = (counter + 1) >>> 0;
+  }
+  return output;
+};
+
+const bigintFromLittleEndian = (value: Buffer): bigint => {
+  let result = 0n;
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    result = (result << 8n) + BigInt(value[index]);
+  }
+  return result;
+};
+
+const bigintToLittleEndian = (value: bigint, length: number): Buffer => {
+  const output = Buffer.alloc(length);
+  let next = value;
+  for (let index = 0; index < length; index += 1) {
+    output[index] = Number(next & 0xffn);
+    next >>= 8n;
+  }
+  return output;
+};
+
+const poly1305Authenticate = (key: Buffer, message: Buffer): Buffer => {
+  if (key.length !== 32) {
+    throw new Error(`Poly1305 key must be 32 bytes; got ${key.length}.`);
+  }
+  const rBytes = Buffer.from(key.subarray(0, 16));
+  rBytes[3] &= 15;
+  rBytes[7] &= 15;
+  rBytes[11] &= 15;
+  rBytes[15] &= 15;
+  rBytes[4] &= 252;
+  rBytes[8] &= 252;
+  rBytes[12] &= 252;
+  const r = bigintFromLittleEndian(rBytes);
+  const s = bigintFromLittleEndian(key.subarray(16, 32));
+  const p = (1n << 130n) - 5n;
+  let accumulator = 0n;
+  for (let offset = 0; offset < message.length; offset += 16) {
+    const chunk = message.subarray(offset, Math.min(offset + 16, message.length));
+    const n = bigintFromLittleEndian(chunk) + (1n << BigInt(8 * chunk.length));
+    accumulator = ((accumulator + n) * r) % p;
+  }
+  return bigintToLittleEndian((accumulator + s) & ((1n << 128n) - 1n), 16);
+};
+
+const pad16 = (value: Buffer): Buffer =>
+  value.length % 16 === 0 ? Buffer.alloc(0) : Buffer.alloc(16 - (value.length % 16));
+
+const uint64LittleEndian = (value: number): Buffer => {
+  const output = Buffer.alloc(8);
+  output.writeUInt32LE(value >>> 0, 0);
+  output.writeUInt32LE(Math.floor(value / 0x1_0000_0000), 4);
+  return output;
+};
+
+const chacha20Poly1305MacData = (aad: Buffer, ciphertext: Buffer): Buffer =>
+  Buffer.concat([
+    aad,
+    pad16(aad),
+    ciphertext,
+    pad16(ciphertext),
+    uint64LittleEndian(aad.length),
+    uint64LittleEndian(ciphertext.length),
+  ]);
+
+const fallbackEncryptChaCha20Poly1305 = (
+  key: Buffer,
+  nonce: Buffer,
+  plaintext: Buffer,
+  aad = Buffer.alloc(0),
+): { encrypted: Buffer; tag: Buffer } => {
+  const polyKey = chacha20Block(key, nonce, 0).subarray(0, 32);
+  const encrypted = chacha20Xor(key, nonce, 1, plaintext);
+  const tag = poly1305Authenticate(polyKey, chacha20Poly1305MacData(aad, encrypted));
+  return { encrypted, tag };
+};
+
+const fallbackDecryptChaCha20Poly1305 = (
+  key: Buffer,
+  nonce: Buffer,
+  encrypted: Buffer,
+  tag: Buffer,
+  aad = Buffer.alloc(0),
+): Buffer => {
+  const polyKey = chacha20Block(key, nonce, 0).subarray(0, 32);
+  const expectedTag = poly1305Authenticate(polyKey, chacha20Poly1305MacData(aad, encrypted));
+  if (tag.length !== 16 || !timingSafeEqual(tag, expectedTag)) {
+    throw new Error(`ChaCha20-Poly1305 authentication tag did not verify; expected=${summarizeBuffer(expectedTag)} got=${summarizeBuffer(tag)}.`);
+  }
+  return chacha20Xor(key, nonce, 1, encrypted);
+};
+
 const parseAirPlay2RtpPacket = (packet: Buffer): AirPlay2RtpPacket | null => {
   if (packet.length < 12) {
     return null;
@@ -608,10 +842,21 @@ const decryptAirPlay2RtpPayload = (packet: AirPlay2RtpPacket, sharedKey: Buffer)
   const encrypted = packet.payload.subarray(0, encryptedEnd);
   const nonce = Buffer.concat([Buffer.alloc(4), packet.payload.subarray(encryptedEnd, encryptedEnd + 8)]);
   const tag = packet.payload.subarray(encryptedEnd + 8);
-  const decipher = createDecipheriv('chacha20-poly1305', sharedKey, nonce, { authTagLength: 16 });
-  decipher.setAAD(packet.aad, { plaintextLength: encrypted.length });
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  try {
+    if (shouldUseAirPlay2NativeCipher()) {
+      const decipher = createDecipheriv(airPlay2CipherName, sharedKey, nonce, { authTagLength: 16 });
+      decipher.setAAD(packet.aad, { plaintextLength: encrypted.length });
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    }
+    return fallbackDecryptChaCha20Poly1305(sharedKey, nonce, encrypted, tag, Buffer.from(packet.aad));
+  } catch (error) {
+    throw new Error(summarizeAirPlay2CryptoError(
+      'RTP decrypt',
+      error,
+      `${summarizeAirPlay2RtpPacket(packet)} nonce=${nonce.toString('hex')} encrypted=${encrypted.length}b tag=${summarizeBuffer(tag)}`,
+    ));
+  }
 };
 
 const resolveAirPlay2PcmFormat = (streamInfo: AirPlay2SetupStreamInfo | null): AirPlay2PcmFormat | null => {
@@ -783,10 +1028,82 @@ const createAirPlay2CounterNonce = (counter: number): Buffer => {
 const deriveAirPlay2Key = (inputKey: Buffer, salt: string, info: string): Buffer =>
   Buffer.from(hkdfSync('sha512', inputKey, Buffer.from(salt, 'utf8'), Buffer.from(info, 'utf8'), 32));
 
-const createAirPlay2EncryptedControlState = (encryptionKey: Buffer): AirPlay2EncryptedControlState => ({
-  controlReadKey: deriveAirPlay2Key(encryptionKey, airPlay2ControlSalt, 'Control-Read-Encryption-Key'),
-  controlWriteKey: deriveAirPlay2Key(encryptionKey, airPlay2ControlSalt, 'Control-Write-Encryption-Key'),
+const createAirPlay2EncryptedControlState = (
+  encryptionKey: Buffer,
+  keyLabel: string,
+  swapped = false,
+): AirPlay2EncryptedControlState => ({
+  controlReadKey: deriveAirPlay2Key(
+    encryptionKey,
+    airPlay2ControlSalt,
+    swapped ? 'Control-Write-Encryption-Key' : 'Control-Read-Encryption-Key',
+  ),
+  controlWriteKey: deriveAirPlay2Key(
+    encryptionKey,
+    airPlay2ControlSalt,
+    swapped ? 'Control-Read-Encryption-Key' : 'Control-Write-Encryption-Key',
+  ),
+  keyLabel,
 });
+
+const uniqueAirPlay2EncryptedControlStates = (
+  states: AirPlay2EncryptedControlState[],
+): AirPlay2EncryptedControlState[] => {
+  const unique: AirPlay2EncryptedControlState[] = [];
+  for (const state of states) {
+    if (!unique.some((item) =>
+      item.controlReadKey.equals(state.controlReadKey) && item.controlWriteKey.equals(state.controlWriteKey)
+    )) {
+      unique.push(state);
+    }
+  }
+  return unique;
+};
+
+const createAirPlay2TransientControlStates = (session: ReturnType<typeof calculateAirPlay2SrpSession>): AirPlay2EncryptedControlState[] => {
+  const setupKeyFromSessionKey = deriveAirPlay2Key(
+    session.sessionKey,
+    airPlay2PairSetupEncryptSalt,
+    airPlay2PairSetupEncryptInfo,
+  );
+  const setupKeyFromSharedSecret = deriveAirPlay2Key(
+    session.sessionSecret,
+    airPlay2PairSetupEncryptSalt,
+    airPlay2PairSetupEncryptInfo,
+  );
+  const keyMaterials: Array<{ label: string; value: Buffer }> = [
+    { label: 'srp-session-key', value: session.sessionKey },
+    { label: 'srp-shared-secret-padded', value: session.sessionSecret },
+    { label: 'srp-shared-secret-minimal', value: session.sessionSecretMinimal },
+    { label: 'pair-setup-encrypt-key/session-key', value: setupKeyFromSessionKey },
+    { label: 'pair-setup-encrypt-key/shared-secret', value: setupKeyFromSharedSecret },
+  ];
+
+  return uniqueAirPlay2EncryptedControlStates(keyMaterials.flatMap(({ label, value }) => [
+    createAirPlay2EncryptedControlState(value, label),
+    createAirPlay2EncryptedControlState(value, `${label}/swapped`, true),
+  ]));
+};
+
+const createAirPlay2PairVerifyControlStates = (
+  state: AirPlay2PairVerifyState | null,
+): AirPlay2EncryptedControlState[] => {
+  if (!state) {
+    return [];
+  }
+  return uniqueAirPlay2EncryptedControlStates([
+    {
+      controlReadKey: state.controlReadKey,
+      controlWriteKey: state.controlWriteKey,
+      keyLabel: 'pair-verify-m1-shared-secret',
+    },
+    {
+      controlReadKey: state.controlWriteKey,
+      controlWriteKey: state.controlReadKey,
+      keyLabel: 'pair-verify-m1-shared-secret/swapped',
+    },
+  ]);
+};
 
 const hashAirPlay2Sha512 = (...buffers: Buffer[]): Buffer => {
   const hash = createHash('sha512');
@@ -857,7 +1174,7 @@ const calculateAirPlay2SrpSession = (
   serverPublicKey: Buffer,
   privateKey: bigint,
   verifier: bigint,
-): { sessionKey: Buffer; clientProof: Buffer; serverProof: Buffer } => {
+): { sessionKey: Buffer; sessionSecret: Buffer; sessionSecretMinimal: Buffer; clientProof: Buffer; serverProof: Buffer } => {
   const clientPublic = airPlay2BigintFromBuffer(clientPublicKey);
   if (clientPublic % airPlay2SrpModulus === 0n) {
     throw new Error('Pair-Setup M3 client SRP public key is invalid.');
@@ -868,14 +1185,21 @@ const calculateAirPlay2SrpSession = (
     privateKey,
     airPlay2SrpModulus,
   );
-  const sessionKey = hashAirPlay2Sha512(airPlay2BigintToBuffer(sessionSecret));
+  const sessionSecretBuffer = airPlay2BigintToBuffer(sessionSecret);
+  const sessionKey = hashAirPlay2Sha512(sessionSecretBuffer);
   const modulusHash = hashAirPlay2Sha512(airPlay2BigintToBuffer(airPlay2SrpModulus));
   const generatorHash = hashAirPlay2Sha512(airPlay2BigintToMinimalBuffer(airPlay2SrpGenerator));
   const groupHash = Buffer.from(modulusHash.map((value, index) => value ^ generatorHash[index]));
   const usernameHash = hashAirPlay2Sha512(Buffer.from(airPlay2PairSetupUsername, 'utf8'));
   const clientProof = hashAirPlay2Sha512(groupHash, usernameHash, salt, clientPublicKey, serverPublicKey, sessionKey);
   const serverProof = hashAirPlay2Sha512(clientPublicKey, clientProof, sessionKey);
-  return { sessionKey, clientProof, serverProof };
+  return {
+    sessionKey,
+    sessionSecret: sessionSecretBuffer,
+    sessionSecretMinimal: airPlay2BigintToMinimalBuffer(sessionSecret),
+    clientProof,
+    serverProof,
+  };
 };
 
 const encodeAirPlay2Tlv = (fields: AirPlay2TlvField[]): Buffer => {
@@ -934,9 +1258,22 @@ const airPlay2TlvNumber = (value: Buffer | null): number =>
   value ? value.reduce((next, byte) => (next * 256) + byte, 0) : 0;
 
 const encryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): Buffer => {
-  const cipher = createCipheriv('chacha20-poly1305', key, createAirPlay2Nonce(nonceLabel), { authTagLength: 16 });
-  const encrypted = Buffer.concat([cipher.update(body), cipher.final()]);
-  return Buffer.concat([encrypted, cipher.getAuthTag()]);
+  const nonce = createAirPlay2Nonce(nonceLabel);
+  try {
+    if (shouldUseAirPlay2NativeCipher()) {
+      const cipher = createCipheriv(airPlay2CipherName, key, nonce, { authTagLength: 16 });
+      const encrypted = Buffer.concat([cipher.update(body), cipher.final()]);
+      return Buffer.concat([encrypted, cipher.getAuthTag()]);
+    }
+    const { encrypted, tag } = fallbackEncryptChaCha20Poly1305(key, nonce, body);
+    return Buffer.concat([encrypted, tag]);
+  } catch (error) {
+    throw new Error(summarizeAirPlay2CryptoError(
+      `payload encrypt ${nonceLabel}`,
+      error,
+      `key=${key.length}b nonce=${nonce.toString('hex')} body=${summarizeBuffer(body)}`,
+    ));
+  }
 };
 
 const decryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): Buffer => {
@@ -945,32 +1282,83 @@ const decryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): 
   }
   const encrypted = body.subarray(0, -16);
   const tag = body.subarray(-16);
-  const decipher = createDecipheriv('chacha20-poly1305', key, createAirPlay2Nonce(nonceLabel), { authTagLength: 16 });
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  const nonce = createAirPlay2Nonce(nonceLabel);
+  try {
+    if (shouldUseAirPlay2NativeCipher()) {
+      const decipher = createDecipheriv(airPlay2CipherName, key, nonce, { authTagLength: 16 });
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    }
+    return fallbackDecryptChaCha20Poly1305(key, nonce, encrypted, tag);
+  } catch (error) {
+    throw new Error(summarizeAirPlay2CryptoError(
+      `payload decrypt ${nonceLabel}`,
+      error,
+      `key=${key.length}b nonce=${nonce.toString('hex')} encrypted=${encrypted.length}b tag=${summarizeBuffer(tag)} body=${summarizeBuffer(body)}`,
+    ));
+  }
 };
 
 const encryptAirPlay2ControlFrame = (key: Buffer, counter: number, payload: Buffer): Buffer => {
-  const cipher = createCipheriv('chacha20-poly1305', key, createAirPlay2CounterNonce(counter), { authTagLength: 16 });
-  const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
-  const frame = Buffer.alloc(2 + encrypted.length + 16);
-  frame.writeUInt16LE(payload.length, 0);
-  encrypted.copy(frame, 2);
-  cipher.getAuthTag().copy(frame, 2 + encrypted.length);
-  return frame;
+  const nonce = createAirPlay2CounterNonce(counter);
+  try {
+    const header = Buffer.alloc(2);
+    header.writeUInt16LE(payload.length, 0);
+    const { encrypted, tag } = shouldUseAirPlay2NativeCipher()
+      ? (() => {
+        const cipher = createCipheriv(airPlay2CipherName, key, nonce, { authTagLength: 16 });
+        cipher.setAAD(header, { plaintextLength: payload.length });
+        const encryptedPayload = Buffer.concat([cipher.update(payload), cipher.final()]);
+        return { encrypted: encryptedPayload, tag: cipher.getAuthTag() };
+      })()
+      : fallbackEncryptChaCha20Poly1305(key, nonce, payload, header);
+    const frame = Buffer.alloc(2 + encrypted.length + 16);
+    header.copy(frame, 0);
+    encrypted.copy(frame, 2);
+    tag.copy(frame, 2 + encrypted.length);
+    return frame;
+  } catch (error) {
+    throw new Error(summarizeAirPlay2CryptoError(
+      'control frame encrypt',
+      error,
+      `key=${key.length}b counter=${counter} nonce=${nonce.toString('hex')} payload=${summarizeBuffer(payload)}`,
+    ));
+  }
 };
 
 const decryptAirPlay2ControlFrame = (key: Buffer, counter: number, frame: Buffer): Buffer => {
   if (frame.length < 18) {
-    throw new Error('AirPlay 2 encrypted control frame is too short.');
+    throw new Error(`AirPlay 2 encrypted control frame is too short; ${summarizeAirPlay2EncryptedControlFrame(frame)}.`);
   }
   const length = frame.readUInt16LE(0);
   if (frame.length !== 2 + length + 16) {
-    throw new Error(`AirPlay 2 encrypted control frame length mismatch: ${frame.length} != ${2 + length + 16}.`);
+    throw new Error(`AirPlay 2 encrypted control frame length mismatch; ${summarizeAirPlay2EncryptedControlFrame(frame)}.`);
   }
-  const decipher = createDecipheriv('chacha20-poly1305', key, createAirPlay2CounterNonce(counter), { authTagLength: 16 });
-  decipher.setAuthTag(frame.subarray(2 + length));
-  return Buffer.concat([decipher.update(frame.subarray(2, 2 + length)), decipher.final()]);
+  const nonce = createAirPlay2CounterNonce(counter);
+  try {
+    const header = frame.subarray(0, 2);
+    const encrypted = frame.subarray(2, 2 + length);
+    const tag = frame.subarray(2 + length);
+    if (shouldUseAirPlay2NativeCipher()) {
+      const decipher = createDecipheriv(airPlay2CipherName, key, nonce, { authTagLength: 16 });
+      decipher.setAAD(header, { plaintextLength: encrypted.length });
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    }
+    const encryptedCopy = Buffer.alloc(encrypted.length);
+    const tagCopy = Buffer.alloc(tag.length);
+    const headerCopy = Buffer.alloc(header.length);
+    encrypted.copy(encryptedCopy);
+    tag.copy(tagCopy);
+    header.copy(headerCopy);
+    return fallbackDecryptChaCha20Poly1305(key, nonce, encryptedCopy, tagCopy, headerCopy);
+  } catch (error) {
+    throw new Error(summarizeAirPlay2CryptoError(
+      'control frame decrypt',
+      error,
+      `key=${key.length}b counter=${counter} nonce=${nonce.toString('hex')} ${summarizeAirPlay2EncryptedControlFrame(frame)}`,
+    ));
+  }
 };
 
 const summarizeAirPlay2Tlv = (body: Buffer): string | null => {
@@ -1271,8 +1659,25 @@ const decodeAirPlay2Bplist = (body: Buffer): { value: AirPlay2BplistValue; error
   }
 
   const cache = new Map<number, AirPlay2BplistValue>();
+  let parseError: string | null = null;
+  const markParseError = (ref: number, reason: string): void => {
+    if (parseError) {
+      return;
+    }
+    const objectOffset = offsets[ref];
+    const marker = body[objectOffset];
+    parseError = [
+      reason,
+      `ref=${ref}`,
+      `offset=${objectOffset}`,
+      `marker=0x${marker.toString(16).padStart(2, '0')}`,
+      `type=0x${(marker & 0xf0).toString(16).padStart(2, '0')}`,
+      `info=0x${(marker & 0x0f).toString(16)}`,
+    ].join(' ');
+  };
   const parseRef = (ref: number, depth = 0): AirPlay2BplistValue | undefined => {
     if (ref < 0 || ref >= offsets.length || depth > 64) {
+      parseError ??= `invalid binary plist reference ref=${ref} depth=${depth}`;
       return undefined;
     }
     const cached = cache.get(ref);
@@ -1336,6 +1741,21 @@ const decodeAirPlay2Bplist = (body: Buffer): { value: AirPlay2BplistValue; error
         }
         value = array;
       }
+    } else if (type === 0xc0) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      if (lengthInfo && lengthInfo.cursor + lengthInfo.length * refSize <= trailerOffset) {
+        const setItems: AirPlay2BplistValue[] = [];
+        cache.set(ref, setItems);
+        for (let index = 0; index < lengthInfo.length; index += 1) {
+          const childRef = readAirPlay2BplistUintNumber(body, lengthInfo.cursor + index * refSize, refSize);
+          const child = childRef === null ? undefined : parseRef(childRef, depth + 1);
+          if (child === undefined) {
+            return undefined;
+          }
+          setItems.push(child);
+        }
+        value = setItems;
+      }
     } else if (type === 0xd0) {
       const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
       if (lengthInfo && lengthInfo.cursor + lengthInfo.length * refSize * 2 <= trailerOffset) {
@@ -1357,6 +1777,7 @@ const decodeAirPlay2Bplist = (body: Buffer): { value: AirPlay2BplistValue; error
     }
 
     if (value === undefined) {
+      markParseError(ref, 'unsupported binary plist object');
       return undefined;
     }
     cache.set(ref, value);
@@ -1365,7 +1786,7 @@ const decodeAirPlay2Bplist = (body: Buffer): { value: AirPlay2BplistValue; error
 
   const value = parseRef(topObject);
   if (value === undefined) {
-    return { value: null, error: 'unsupported binary plist object' };
+    return { value: null, error: parseError ?? 'unsupported binary plist object' };
   }
   return { value, error: null };
 };
@@ -2015,6 +2436,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private airPlay2PairSetupState: AirPlay2PairSetupState | null = null;
   private airPlay2PairVerifyState: AirPlay2PairVerifyState | null = null;
   private airPlay2EncryptedControlState: AirPlay2EncryptedControlState | null = null;
+  private airPlay2EncryptedControlCandidates: AirPlay2EncryptedControlState[] = [];
   private airPlay2FairPlayState: AirPlay2FairPlayState | null = null;
   private airPlay2SessionSetupInfo: AirPlay2SessionSetupInfo | null = null;
   private pcmStream: PassThrough | null = null;
@@ -2334,6 +2756,11 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       this.airPlay2ProbeServer = server;
       this.airPlay2ProbePort = port;
       this.addDebugEvent('airplay2', `probe server listening on ${port}`);
+      this.addDebugEvent(
+        'crypto',
+        `runtime cipher=${airPlay2CipherName} provider=${airPlay2CipherProvider()} available=${airPlay2CipherAvailable() ? 'yes' : 'no'} node=${process.versions.node ?? '-'} openssl=${process.versions.openssl ?? '-'} electron=${process.versions.electron ?? '-'}`,
+        { method: 'BOOT', path: '/airplay2' },
+      );
       return port;
     } catch (error) {
       this.addDebugEvent('airplay2', error instanceof Error ? error.message : String(error));
@@ -2348,6 +2775,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.airPlay2PairSetupState = null;
     this.airPlay2PairVerifyState = null;
     this.airPlay2EncryptedControlState = null;
+    this.airPlay2EncryptedControlCandidates = [];
     this.airPlay2FairPlayState = null;
     this.airPlay2SessionSetupInfo = null;
     await this.stopAirPlay2SessionResources();
@@ -2390,9 +2818,11 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private handleAirPlay2TcpConnection(socket: Socket): void {
     const connection: AirPlay2TcpConnection = {
       buffer: Buffer.alloc(0),
+      plaintextBuffer: Buffer.alloc(0),
       encrypted: false,
       draining: false,
-      cipher: { readCounter: 0, writeCounter: 0 },
+      cipher: { readCounter: 0, writeCounter: 0, readCounterOffset: 0, writeCounterOffset: 0 },
+      lastFrameSummary: null,
     };
 
     socket.on('data', (chunk) => {
@@ -2402,7 +2832,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       }
     });
     socket.on('error', (error) => {
-      this.addDebugEvent('probe-error', error.message, { method: 'TCP', path: '/airplay2', statusCode: null });
+      this.addDebugEvent('probe-error', `socket=${airPlay2SocketPeer(socket)} ${error.message}`, {
+        method: 'TCP',
+        path: '/airplay2',
+        statusCode: null,
+        remoteAddress: airPlay2SocketPeer(socket),
+      });
     });
   }
 
@@ -2427,17 +2862,31 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
             return;
           }
           const frame = connection.buffer.subarray(0, frameLength);
+          connection.lastFrameSummary = summarizeAirPlay2EncryptedControlFrame(frame);
           connection.buffer = connection.buffer.subarray(frameLength);
-          const plaintext = decryptAirPlay2ControlFrame(state.controlWriteKey, connection.cipher.readCounter, frame);
+          const decrypted = this.decryptAirPlay2ControlFrame(socket, connection, state, frame);
+          const plaintext = decrypted.plaintext;
           connection.cipher.readCounter += 1;
-          const parsed = parseAirPlay2TextRequest(plaintext);
-          if (!parsed || parsed.consumed !== plaintext.length) {
-            throw new Error(`Invalid encrypted AirPlay 2 control payload: ${summarizeBuffer(plaintext)}.`);
+          connection.lastFrameSummary = `${connection.lastFrameSummary} key=${decrypted.state.keyLabel} counter=${decrypted.counter} plaintext=${summarizeBuffer(plaintext)}`;
+          connection.plaintextBuffer = Buffer.concat([connection.plaintextBuffer, plaintext]);
+          let handledEncryptedRequest = false;
+          while (connection.plaintextBuffer.length > 0) {
+            const parsed = parseAirPlay2TextRequest(connection.plaintextBuffer);
+            if (!parsed) {
+              break;
+            }
+            connection.plaintextBuffer = connection.plaintextBuffer.subarray(parsed.consumed);
+            connection.lastFrameSummary = `${connection.lastFrameSummary} request=${parsed.request.method} ${parsed.request.path} consumed=${parsed.consumed} remainingPlain=${connection.plaintextBuffer.length}`;
+            const response = await this.handleAirPlay2ProbeRequest(parsed.request);
+            const serialized = serializeAirPlay2ProbeResponse(parsed.request, response);
+            const writeCounter = connection.cipher.writeCounter + connection.cipher.writeCounterOffset;
+            socket.write(encryptAirPlay2ControlFrame(decrypted.state.controlReadKey, writeCounter, serialized));
+            connection.cipher.writeCounter += 1;
+            handledEncryptedRequest = true;
           }
-          const response = await this.handleAirPlay2ProbeRequest(parsed.request);
-          const serialized = serializeAirPlay2ProbeResponse(parsed.request, response);
-          socket.write(encryptAirPlay2ControlFrame(state.controlReadKey, connection.cipher.writeCounter, serialized));
-          connection.cipher.writeCounter += 1;
+          if (!handledEncryptedRequest) {
+            connection.lastFrameSummary = `${connection.lastFrameSummary} waitingPlain=${summarizeBuffer(connection.plaintextBuffer)} prefix=${summarizeBufferPrefix(connection.plaintextBuffer, 48)}`;
+          }
           continue;
         }
 
@@ -2450,14 +2899,36 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         socket.write(serializeAirPlay2ProbeResponse(parsed.request, response));
         if (response.encryptedAfterWrite) {
           connection.encrypted = true;
-          connection.cipher = { readCounter: 0, writeCounter: 0 };
+          connection.cipher = { readCounter: 0, writeCounter: 0, readCounterOffset: 0, writeCounterOffset: 0 };
+          connection.plaintextBuffer = Buffer.alloc(0);
+          connection.lastFrameSummary = 'encrypted control enabled after response';
+          this.addDebugEvent('crypto', `Encrypted AirPlay 2 control enabled socket=${airPlay2SocketPeer(socket)} key=${this.airPlay2EncryptedControlState?.keyLabel ?? 'unknown'} candidates=${this.airPlay2EncryptedControlCandidates.length}`, {
+            method: 'ENC',
+            path: parsed.request.path,
+            statusCode: 200,
+            remoteAddress: airPlay2SocketPeer(socket),
+          });
         }
       }
     } catch (error) {
-      this.addDebugEvent('probe-error', error instanceof Error ? error.message : String(error), {
+      const context = connection.encrypted
+        ? [
+          `socket=${airPlay2SocketPeer(socket)}`,
+          `readCounter=${connection.cipher.readCounter}`,
+          `readOffset=${connection.cipher.readCounterOffset}`,
+          `writeCounter=${connection.cipher.writeCounter}`,
+          `writeOffset=${connection.cipher.writeCounterOffset}`,
+          `buffer=${summarizeBuffer(connection.buffer)}`,
+          `plainBuffer=${summarizeBuffer(connection.plaintextBuffer)}`,
+          `keyState=${this.airPlay2EncryptedControlState ? 'ready' : 'missing'}`,
+          connection.lastFrameSummary ? `lastFrame=[${connection.lastFrameSummary}]` : 'lastFrame=none',
+        ].join(' ')
+        : `socket=${airPlay2SocketPeer(socket)} buffer=${summarizeBuffer(connection.buffer)} prefix=${summarizeBufferPrefix(connection.buffer, 48)}`;
+      this.addDebugEvent('probe-error', `${error instanceof Error ? error.message : String(error)}; ${context}`, {
         method: connection.encrypted ? 'ENC' : 'TCP',
         path: '/airplay2',
         statusCode: 400,
+        remoteAddress: airPlay2SocketPeer(socket),
       });
       socket.end();
     } finally {
@@ -2466,6 +2937,50 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         void this.drainAirPlay2TcpConnection(socket, connection);
       }
     }
+  }
+
+  private decryptAirPlay2ControlFrame(
+    socket: Socket,
+    connection: AirPlay2TcpConnection,
+    state: AirPlay2EncryptedControlState,
+    frame: Buffer,
+  ): { plaintext: Buffer; state: AirPlay2EncryptedControlState; counter: number } {
+    const candidates = [state, ...this.airPlay2EncryptedControlCandidates];
+    const errors: string[] = [];
+    for (const candidate of candidates) {
+      for (const offset of [...new Set([connection.cipher.readCounterOffset, 0, 1, 2])]) {
+        const counter = connection.cipher.readCounter + offset;
+        try {
+          const plaintext = decryptAirPlay2ControlFrame(candidate.controlWriteKey, counter, frame);
+          if (candidate !== state || offset !== connection.cipher.readCounterOffset) {
+            this.airPlay2EncryptedControlState = candidate;
+            this.airPlay2EncryptedControlCandidates = this.airPlay2EncryptedControlCandidates.filter((item) => item !== candidate);
+            connection.cipher.readCounterOffset = offset;
+            connection.cipher.writeCounterOffset = offset;
+            this.addDebugEvent(
+              'crypto',
+              `Selected AirPlay 2 encrypted control key=${candidate.keyLabel}; counterOffset=${offset}; socket=${airPlay2SocketPeer(socket)}`,
+              {
+                method: 'ENC',
+                path: '/airplay2',
+                statusCode: 200,
+                remoteAddress: airPlay2SocketPeer(socket),
+              },
+            );
+          }
+          return { plaintext, state: candidate, counter };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (offset === connection.cipher.readCounterOffset) {
+            errors.push(`${candidate.keyLabel}@${counter}: ${message}`);
+          }
+        }
+      }
+    }
+
+    throw new Error(
+      `AirPlay 2 encrypted control frame did not verify with ${candidates.length} key candidate(s); ${errors.join(' | ')}`,
+    );
   }
 
   private async handleAirPlay2ProbeRequest(request: AirPlay2ProbeRequest): Promise<AirPlay2ProbeResponse> {
@@ -3235,7 +3750,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
       state.sessionKey = session.sessionKey;
       if (state.transient) {
-        this.airPlay2EncryptedControlState = createAirPlay2EncryptedControlState(session.sessionKey);
+        const controlStates = uniqueAirPlay2EncryptedControlStates([
+          ...createAirPlay2PairVerifyControlStates(this.airPlay2PairVerifyState),
+          ...createAirPlay2TransientControlStates(session),
+        ]);
+        this.airPlay2EncryptedControlState = controlStates[0] ?? null;
+        this.airPlay2EncryptedControlCandidates = controlStates.slice(1);
       }
       const responseBody = encodeAirPlay2Tlv([
         { type: 6, value: Buffer.from([4]) },
@@ -3244,7 +3764,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       this.addDebugEvent(
         'pair-setup',
         state.transient
-          ? 'M3 SRP proof verified; M4 accessory proof sent; transient control channel ready'
+          ? `M3 SRP proof verified; M4 accessory proof sent; transient control channel ready key=${this.airPlay2EncryptedControlState?.keyLabel ?? 'missing'} candidates=${this.airPlay2EncryptedControlCandidates.length}`
           : 'M3 SRP proof verified; M4 accessory proof sent',
         { method, path, statusCode: 200 },
       );
@@ -3358,15 +3878,16 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
       if (sequence === 1) {
         const mode = body[14];
-        if (mode !== 3) {
-          throw new Error(`Unsupported FairPlay setup mode=${mode}; only mode 3 is wired so far.`);
+        const responseBody = airPlay2FairPlaySetup1Responses[mode];
+        if (!responseBody) {
+          throw new Error(`Unsupported FairPlay setup mode=${mode}; expected 0-3.`);
         }
         this.airPlay2FairPlayState = { keyMessage: null };
-        this.addDebugEvent('fp-setup', 'FairPlay setup seq=1 mode=3 response sent', { method, path, statusCode: 200 });
+        this.addDebugEvent('fp-setup', `FairPlay setup seq=1 mode=${mode} response sent`, { method, path, statusCode: 200 });
         return {
           statusCode: 200,
           headers: { 'Content-Type': 'application/octet-stream' },
-          body: airPlay2FairPlaySetup1Mode3Response,
+          body: responseBody,
         };
       }
 
@@ -3489,7 +4010,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       this.airPlay2EncryptedControlState = {
         controlReadKey: state.controlReadKey,
         controlWriteKey: state.controlWriteKey,
+        keyLabel: 'pair-verify-shared-secret',
       };
+      this.airPlay2EncryptedControlCandidates = [];
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/octet-stream' },
@@ -4169,12 +4692,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private addDebugEvent(
     action: string,
     message: string | null,
-    details: Partial<Pick<ConnectReceiverDebugEvent, 'method' | 'path' | 'statusCode'>> = {},
+    details: Partial<Pick<ConnectReceiverDebugEvent, 'method' | 'path' | 'statusCode' | 'remoteAddress'>> = {},
   ): void {
     const event: ConnectReceiverDebugEvent = {
       id: `${this.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
       at: new Date(this.now()).toISOString(),
-      remoteAddress: this.status.currentClient?.address ?? null,
+      remoteAddress: details.remoteAddress ?? this.status.currentClient?.address ?? null,
       method: details.method ?? 'RAOP',
       path: details.path ?? '/airplay/receiver',
       action,
@@ -4188,6 +4711,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     };
     if (!highVolumeDebugActions.has(action)) {
       this.emit('status', this.getStatus());
+    }
+    if ((event.statusCode !== null && event.statusCode >= 400) || action.endsWith('error')) {
+      console.warn('[AirPlayReceiver]', `${event.method} ${event.path} ${event.statusCode ?? '-'} #${action}`, message ?? '');
     }
   }
 

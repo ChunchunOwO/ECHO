@@ -533,6 +533,8 @@ export class TaskbarPlaybackIntegration {
       }
     }
 
+    title ??= formatTitlePart(status.currentTrackTitle);
+    artist ??= formatTitlePart(status.currentTrackArtist) ?? formatTitlePart(status.currentTrackAlbumArtist);
     title ??= status.currentFilePath ? basename(status.currentFilePath) : null;
 
     if (!title) {

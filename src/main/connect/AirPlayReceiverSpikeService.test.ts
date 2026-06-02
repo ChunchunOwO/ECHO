@@ -242,7 +242,7 @@ const createSrpClientProof = (
   salt: Buffer,
   serverPublicKey: Buffer,
   clientPrivateKey: bigint,
-): { clientPublicKey: Buffer; clientProof: Buffer; serverProof: Buffer; sessionKey: Buffer } => {
+): { clientPublicKey: Buffer; clientProof: Buffer; serverProof: Buffer; sessionKey: Buffer; sessionSecret: Buffer } => {
   const clientPublic = modPow(testSrpGenerator, clientPrivateKey, testSrpModulus);
   const clientPublicKey = bigintToBuffer(clientPublic);
   const x = hashBigint(salt, sha512(Buffer.from(`${testSrpUsername}:${testSrpPassword}`, 'utf8')));
@@ -251,14 +251,15 @@ const createSrpClientProof = (
   const verifierTerm = (testSrpMultiplier * modPow(testSrpGenerator, x, testSrpModulus)) % testSrpModulus;
   const base = ((serverPublic - verifierTerm) % testSrpModulus + testSrpModulus) % testSrpModulus;
   const sessionSecret = modPow(base, clientPrivateKey + (scramblingParameter * x), testSrpModulus);
-  const sessionKey = sha512(bigintToBuffer(sessionSecret));
+  const sessionSecretBuffer = bigintToBuffer(sessionSecret);
+  const sessionKey = sha512(sessionSecretBuffer);
   const modulusHash = sha512(bigintToBuffer(testSrpModulus));
   const generatorHash = sha512(bigintToMinimalBuffer(testSrpGenerator));
   const groupHash = Buffer.from(modulusHash.map((value, index) => value ^ generatorHash[index]));
   const usernameHash = sha512(Buffer.from(testSrpUsername, 'utf8'));
   const clientProof = sha512(groupHash, usernameHash, salt, clientPublicKey, serverPublicKey, sessionKey);
   const serverProof = sha512(clientPublicKey, clientProof, sessionKey);
-  return { clientPublicKey, clientProof, serverProof, sessionKey };
+  return { clientPublicKey, clientProof, serverProof, sessionKey, sessionSecret: sessionSecretBuffer };
 };
 
 const airPlay2Nonce = (label: string): Buffer => Buffer.concat([Buffer.alloc(4), Buffer.from(label, 'utf8')]);
@@ -284,9 +285,12 @@ const encryptPairVerifyPayload = (key: Buffer, label: string, body: Buffer): Buf
 
 const encryptControlFrame = (key: Buffer, counter: number, payload: Buffer): Buffer => {
   const cipher = createCipheriv('chacha20-poly1305', key, airPlay2CounterNonce(counter), { authTagLength: 16 });
+  const header = Buffer.alloc(2);
+  header.writeUInt16LE(payload.length, 0);
+  cipher.setAAD(header, { plaintextLength: payload.length });
   const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
   const frame = Buffer.alloc(2 + encrypted.length + 16);
-  frame.writeUInt16LE(payload.length, 0);
+  header.copy(frame, 0);
   encrypted.copy(frame, 2);
   cipher.getAuthTag().copy(frame, 2 + encrypted.length);
   return frame;
@@ -295,6 +299,7 @@ const encryptControlFrame = (key: Buffer, counter: number, payload: Buffer): Buf
 const decryptControlFrame = (key: Buffer, counter: number, frame: Buffer): Buffer => {
   const length = frame.readUInt16LE(0);
   const decipher = createDecipheriv('chacha20-poly1305', key, airPlay2CounterNonce(counter), { authTagLength: 16 });
+  decipher.setAAD(frame.subarray(0, 2), { plaintextLength: length });
   decipher.setAuthTag(frame.subarray(2 + length));
   return Buffer.concat([decipher.update(frame.subarray(2, 2 + length)), decipher.final()]);
 };
@@ -360,6 +365,10 @@ const rawRequest = (
     body,
   ]);
 
+type TestBplistSet = {
+  __testBplistSet: TestBplistValue[];
+};
+
 type TestBplistValue =
   | null
   | boolean
@@ -367,14 +376,27 @@ type TestBplistValue =
   | string
   | Buffer
   | TestBplistValue[]
+  | TestBplistSet
   | { [key: string]: TestBplistValue };
 
 type TestBplistRecord = {
   value: TestBplistValue;
   arrayRefs?: number[];
+  setRefs?: number[];
   dictKeyRefs?: number[];
   dictValueRefs?: number[];
 };
+
+const testBplistSet = (items: TestBplistValue[]): TestBplistSet => ({ __testBplistSet: items });
+
+const isTestBplistSet = (value: TestBplistValue): value is TestBplistSet =>
+  Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !Buffer.isBuffer(value) &&
+    Object.prototype.hasOwnProperty.call(value, '__testBplistSet'),
+  );
 
 const testBplistIntByteLength = (value: number): 1 | 2 | 4 | 8 => {
   if (value >= 0 && value <= 0xff) return 1;
@@ -407,7 +429,9 @@ const collectTestBplistObjects = (value: TestBplistValue, objects: TestBplistRec
   const index = objects.length;
   const record: TestBplistRecord = { value };
   objects.push(record);
-  if (Array.isArray(value)) {
+  if (isTestBplistSet(value)) {
+    record.setRefs = value.__testBplistSet.map((item) => collectTestBplistObjects(item, objects));
+  } else if (Array.isArray(value)) {
     record.arrayRefs = value.map((item) => collectTestBplistObjects(item, objects));
   } else if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
     const entries = Object.entries(value);
@@ -433,6 +457,12 @@ const encodeTestBplistObject = (record: TestBplistRecord, refSize: number): Buff
     return Buffer.concat([
       encodeTestBplistLength(0xa0, value.length),
       ...(record.arrayRefs ?? []).map((ref) => writeTestBplistUint(ref, refSize)),
+    ]);
+  }
+  if (isTestBplistSet(value)) {
+    return Buffer.concat([
+      encodeTestBplistLength(0xc0, value.__testBplistSet.length),
+      ...(record.setRefs ?? []).map((ref) => writeTestBplistUint(ref, refSize)),
     ]);
   }
 
@@ -715,7 +745,7 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(response.headers.get('content-type')).toContain('text/x-apple-plist+xml');
     expect(body).toContain('<key>sourceVersion</key>');
     expect(body).toContain('366.0');
-    expect(body).toContain('<integer>495880824111616</integer>');
+    expect(body).toContain('<integer>496155702053376</integer>');
     expect(body).toContain('<key>audioFormats</key>');
     expect(body).toContain('<integer>1572860</integer>');
     expect(body).not.toContain('<integer>67108860</integer>');
@@ -879,7 +909,9 @@ describe('AirPlayReceiverSpikeService', () => {
     await service.setEnabled(false);
   });
 
-  it('enables encrypted control frames after transient AirPlay 2 Pair-Setup M1-M4', async () => {
+  it('enables encrypted control frames after transient AirPlay 2 Pair-Setup M1-M4 with the fallback cipher', async () => {
+    const previousFallback = process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK;
+    process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK = '1';
     const mdnsStarts: Array<{ airPlayPort?: number | null }> = [];
     const service = new AirPlayReceiverSpikeService({
       audioSession: new FakeAudioSession() as never,
@@ -939,8 +971,8 @@ describe('AirPlayReceiverSpikeService', () => {
       expect(tlvValue(m4Fields, 6).readUInt8(0)).toBe(4);
       expect(tlvValue(m4Fields, 4)).toEqual(srpClient.serverProof);
 
-      const controlWriteKey = deriveControlKey(srpClient.sessionKey, 'Control-Write-Encryption-Key');
-      const controlReadKey = deriveControlKey(srpClient.sessionKey, 'Control-Read-Encryption-Key');
+      const controlWriteKey = deriveControlKey(srpClient.sessionSecret, 'Control-Write-Encryption-Key');
+      const controlReadKey = deriveControlKey(srpClient.sessionSecret, 'Control-Read-Encryption-Key');
       socket.write(encryptControlFrame(controlWriteKey, 0, rawRequest(
         'OPTIONS',
         '*',
@@ -952,12 +984,36 @@ describe('AirPlayReceiverSpikeService', () => {
       expect(plaintextResponse.toString('utf8')).toContain('RTSP/1.0 200 OK');
       expect(plaintextResponse.toString('utf8')).toContain('CSeq: 33');
       expect(plaintextResponse.toString('utf8')).toContain('Public: ANNOUNCE, SETUP');
+      const splitRequest = rawRequest(
+        'POST',
+        '/feedback',
+        Buffer.alloc(1100, 0x66),
+        ['CSeq: 34'],
+        'application/octet-stream',
+      );
+      socket.write(encryptControlFrame(controlWriteKey, 1, splitRequest.subarray(0, 1024)));
+      socket.write(encryptControlFrame(controlWriteKey, 2, splitRequest.subarray(1024)));
+      const encryptedSplitResponse = await readUntil(socket, hasCompleteControlFrame);
+      const plaintextSplitResponse = decryptControlFrame(controlReadKey, 1, encryptedSplitResponse);
+      expect(plaintextSplitResponse.toString('utf8')).toContain('RTSP/1.0 200 OK');
+      expect(plaintextSplitResponse.toString('utf8')).toContain('CSeq: 34');
       expect(service.getStatus().debugEvents.some((event) =>
         event.action === 'pair-setup' && event.message?.includes('transient control channel ready'),
+      )).toBe(true);
+      expect(service.getStatus().debugEvents.some((event) =>
+        event.action === 'crypto' && event.message?.includes('key=srp-shared-secret-padded'),
+      )).toBe(true);
+      expect(service.getStatus().debugEvents.some((event) =>
+        event.action === 'crypto' && event.message?.includes('provider=fallback'),
       )).toBe(true);
     } finally {
       socket.destroy();
       await service.setEnabled(false);
+      if (previousFallback === undefined) {
+        Reflect.deleteProperty(process.env, 'ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK');
+      } else {
+        process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK = previousFallback;
+      }
     }
   });
 
@@ -986,17 +1042,21 @@ describe('AirPlayReceiverSpikeService', () => {
     const airPlayPort = mdnsStarts[0]!.airPlayPort;
     expect(airPlayPort).toEqual(expect.any(Number));
 
-    const setup1 = Buffer.from('46504c590301010000000004020003bb', 'hex');
-    const setup1Response = await fetch(`http://127.0.0.1:${airPlayPort}/fp-setup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: new Uint8Array(setup1),
-    });
-    const setup1Body = Buffer.from(await setup1Response.arrayBuffer());
-    expect(setup1Response.status).toBe(200);
-    expect(setup1Response.headers.get('content-type')).toContain('application/octet-stream');
-    expect(setup1Body).toHaveLength(142);
-    expect(setup1Body.subarray(0, 12).toString('hex')).toBe('46504c590301020000000082');
+    for (const mode of [0, 1, 2, 3]) {
+      const setup1 = Buffer.from('46504c590301010000000004020000bb', 'hex');
+      setup1[14] = mode;
+      const setup1Response = await fetch(`http://127.0.0.1:${airPlayPort}/fp-setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(setup1),
+      });
+      const setup1Body = Buffer.from(await setup1Response.arrayBuffer());
+      expect(setup1Response.status).toBe(200);
+      expect(setup1Response.headers.get('content-type')).toContain('application/octet-stream');
+      expect(setup1Body).toHaveLength(142);
+      expect(setup1Body.subarray(0, 12).toString('hex')).toBe('46504c590301020000000082');
+      expect(setup1Body[13]).toBe(mode);
+    }
 
     const setup2Suffix = Buffer.from('5c604c516704846d5f14fd5a916348cce7df54a4', 'hex');
     const setup2 = Buffer.concat([
@@ -1103,7 +1163,9 @@ describe('AirPlayReceiverSpikeService', () => {
     await service.setEnabled(false);
   });
 
-  it('decrypts AirPlay 2 control frames after Pair-Verify on an RTSP connection', async () => {
+  it('decrypts AirPlay 2 control/RTP frames after Pair-Verify with the fallback cipher', async () => {
+    const previousFallback = process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK;
+    process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK = '1';
     const mdnsStarts: Array<{ airPlayPort?: number | null }> = [];
     const audio = new FakeAudioSession();
     const alacDecodeFrame = vi.fn(() => Buffer.from([
@@ -1330,7 +1392,7 @@ describe('AirPlayReceiverSpikeService', () => {
         'SETUP',
         `rtsp://127.0.0.1/${Date.now()}`,
         encodeTestBplist({
-          streams: [
+          streams: testBplistSet([
             {
               type: 96,
               ct: 1,
@@ -1338,7 +1400,7 @@ describe('AirPlayReceiverSpikeService', () => {
               spf: 352,
               shk: setupSharedKey,
             },
-          ],
+          ]),
         }),
         ['CSeq: 18'],
       )));
@@ -1678,6 +1740,11 @@ describe('AirPlayReceiverSpikeService', () => {
     } finally {
       socket.destroy();
       await service.setEnabled(false);
+      if (previousFallback === undefined) {
+        Reflect.deleteProperty(process.env, 'ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK');
+      } else {
+        process.env.ECHO_FORCE_AIRPLAY2_CHACHA_FALLBACK = previousFallback;
+      }
     }
   });
 

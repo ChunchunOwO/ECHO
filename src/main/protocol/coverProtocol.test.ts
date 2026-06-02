@@ -132,6 +132,18 @@ describe('echo-wallpaper protocol', () => {
     expect(await response.text()).toBe('app-wallpaper');
   });
 
+  it('serves the configured portrait app wallpaper separately', async () => {
+    const wallpaperPath = join(wallpaperDirectory, 'portrait-wallpaper.webp');
+    writeFileSync(wallpaperPath, 'portrait-wallpaper');
+    getAppSettingsMock.mockReturnValue({ appCustomWallpaperPath: null, appPortraitWallpaperPath: wallpaperPath });
+
+    const response = await getWallpaperHandler()(new Request('echo-wallpaper://app-portrait/custom'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/webp');
+    expect(await response.text()).toBe('portrait-wallpaper');
+  });
+
   it('serves the configured app video wallpaper with a video content type', async () => {
     const wallpaperPath = join(wallpaperDirectory, 'motion.mp4');
     writeFileSync(wallpaperPath, 'video-wallpaper');
@@ -142,6 +154,21 @@ describe('echo-wallpaper protocol', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('video/mp4');
     expect(await response.text()).toBe('video-wallpaper');
+  });
+
+  it('serves portrait app video wallpaper byte ranges for stable looping playback', async () => {
+    const wallpaperPath = join(wallpaperDirectory, 'portrait-motion.webm');
+    writeFileSync(wallpaperPath, 'portrait-video-wallpaper');
+    getAppSettingsMock.mockReturnValue({ appPortraitWallpaperPath: wallpaperPath });
+
+    const response = await getWallpaperHandler()(new Request('echo-wallpaper://app-portrait/custom', { headers: { Range: 'bytes=0-7' } }));
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get('Accept-Ranges')).toBe('bytes');
+    expect(response.headers.get('Content-Range')).toBe('bytes 0-7/24');
+    expect(response.headers.get('Content-Length')).toBe('8');
+    expect(response.headers.get('Content-Type')).toBe('video/webm');
+    expect(await response.text()).toBe('portrait');
   });
 
   it('serves app video wallpaper byte ranges for stable looping playback', async () => {

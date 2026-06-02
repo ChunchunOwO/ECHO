@@ -180,7 +180,8 @@ export const registerAppLifecycle = (): void => {
     app.setAppUserModelId('app.echo.next');
   }
 
-  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  const allowParallelInstance = process.env.ECHO_ALLOW_PARALLEL_INSTANCE === '1';
+  const hasSingleInstanceLock = allowParallelInstance || app.requestSingleInstanceLock();
   if (!hasSingleInstanceLock) {
     app.quit();
     return;

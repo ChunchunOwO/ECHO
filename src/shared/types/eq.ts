@@ -10,7 +10,7 @@ export const eqMaxFrequencyHz = 20000;
 export const eqMinQ = 0.1;
 export const eqMaxQ = 12;
 
-export const eqFilterTypes = ['peaking', 'lowShelf', 'highShelf'] as const;
+export const eqFilterTypes = ['peaking', 'lowShelf', 'highShelf', 'lowPass', 'highPass', 'notch'] as const;
 
 export type EqFilterType = (typeof eqFilterTypes)[number];
 

@@ -47,6 +47,7 @@ const validThemePresets: AppThemePreset[] = [
   'matsuriLantern',
   'ginzaNoir',
   'frostJazz',
+  'FINAL',
 ];
 const themeTransitionMs = 140;
 const defaultScheduleDarkAt = '19:00';

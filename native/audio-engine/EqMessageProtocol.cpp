@@ -43,6 +43,15 @@ EqFilterType parseEqFilterType(const std::string& value, EqFilterType fallback)
     if (value == "highShelf")
         return EqFilterType::HighShelf;
 
+    if (value == "lowPass")
+        return EqFilterType::LowPass;
+
+    if (value == "highPass")
+        return EqFilterType::HighPass;
+
+    if (value == "notch")
+        return EqFilterType::Notch;
+
     if (value == "peaking")
         return EqFilterType::Peaking;
 
@@ -51,7 +60,8 @@ EqFilterType parseEqFilterType(const std::string& value, EqFilterType fallback)
 
 bool isEqFilterTypeText(const std::string& value)
 {
-    return value == "peaking" || value == "lowShelf" || value == "highShelf";
+    return value == "peaking" || value == "lowShelf" || value == "highShelf"
+        || value == "lowPass" || value == "highPass" || value == "notch";
 }
 
 std::string eqFilterTypeText(EqFilterType value)
@@ -60,6 +70,9 @@ std::string eqFilterTypeText(EqFilterType value)
     {
         case EqFilterType::LowShelf: return "lowShelf";
         case EqFilterType::HighShelf: return "highShelf";
+        case EqFilterType::LowPass: return "lowPass";
+        case EqFilterType::HighPass: return "highPass";
+        case EqFilterType::Notch: return "notch";
         case EqFilterType::Peaking:
         default: return "peaking";
     }

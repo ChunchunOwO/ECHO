@@ -22,6 +22,9 @@ enum class EqFilterType : int
     Peaking = 0,
     LowShelf = 1,
     HighShelf = 2,
+    LowPass = 3,
+    HighPass = 4,
+    Notch = 5,
 };
 
 using EqGainArray = std::array<float, eqBandCount>;
@@ -165,6 +168,12 @@ inline EqFilterType normalizeEqFilterType(int value)
             return EqFilterType::LowShelf;
         case EqFilterType::HighShelf:
             return EqFilterType::HighShelf;
+        case EqFilterType::LowPass:
+            return EqFilterType::LowPass;
+        case EqFilterType::HighPass:
+            return EqFilterType::HighPass;
+        case EqFilterType::Notch:
+            return EqFilterType::Notch;
         case EqFilterType::Peaking:
         default:
             return EqFilterType::Peaking;

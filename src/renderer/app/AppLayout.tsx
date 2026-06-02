@@ -103,7 +103,9 @@ const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
 type AppWallpaperSettings = Pick<
   AppSettings,
   | 'appCustomWallpaperPath'
+  | 'appPortraitWallpaperPath'
   | 'appWallpaperMediaType'
+  | 'appPortraitWallpaperMediaType'
   | 'appWallpaperScalePercent'
   | 'appWallpaperBlurPx'
   | 'appWallpaperBrightnessPercent'
@@ -127,7 +129,9 @@ type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sideb
 
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
+  appPortraitWallpaperPath: null,
   appWallpaperMediaType: 'image',
+  appPortraitWallpaperMediaType: 'image',
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
   appWallpaperBrightnessPercent: 100,
@@ -176,9 +180,16 @@ const accountProviderLabelKeys: Record<AccountProvider, TranslationKey> = {
 const isSpotifyPlaybackSetupError = (message: string): boolean =>
   /spotify/iu.test(message) && /(SDK|DRM\/Widevine|keysystem|playback device|Connect device|official player)/iu.test(message);
 
+const inferAppWallpaperMediaType = (filePath: string | null | undefined): NonNullable<AppSettings['appWallpaperMediaType']> =>
+  filePath && /\.(?:mp4|m4v|webm)$/iu.test(filePath.trim()) ? 'video' : 'image';
+
+const isPortraitViewport = (): boolean => window.innerHeight > window.innerWidth;
+
 const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings => ({
   appCustomWallpaperPath: settings.appCustomWallpaperPath,
+  appPortraitWallpaperPath: settings.appPortraitWallpaperPath ?? null,
   appWallpaperMediaType: settings.appWallpaperMediaType ?? 'image',
+  appPortraitWallpaperMediaType: settings.appPortraitWallpaperMediaType ?? inferAppWallpaperMediaType(settings.appPortraitWallpaperPath),
   appWallpaperScalePercent: settings.appWallpaperScalePercent,
   appWallpaperBlurPx: settings.appWallpaperBlurPx,
   appWallpaperBrightnessPercent: settings.appWallpaperBrightnessPercent,
@@ -382,6 +393,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [loadedAppWallpaperKey, setLoadedAppWallpaperKey] = useState<string | null>(null);
   const [isAppWallpaperDocumentHidden, setIsAppWallpaperDocumentHidden] = useState(() => document.visibilityState === 'hidden');
   const [isAppWallpaperBlurPaused, setIsAppWallpaperBlurPaused] = useState(false);
+  const [isAppWallpaperPortraitViewport, setIsAppWallpaperPortraitViewport] = useState(() => isPortraitViewport());
   const appWallpaperVideoRef = useRef<HTMLVideoElement | null>(null);
   const appWallpaperBlurTimerRef = useRef<number | null>(null);
   const fullscreenTransitionTimerRef = useRef<number | null>(null);
@@ -504,13 +516,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode,
     lyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent,
   ]);
-  const appWallpaperUrl = appWallpaperSettings.appCustomWallpaperPath
-    ? `echo-wallpaper://app/custom?path=${encodeURIComponent(appWallpaperSettings.appCustomWallpaperPath)}`
+  const activeAppWallpaperPath = isAppWallpaperPortraitViewport
+    ? appWallpaperSettings.appPortraitWallpaperPath ?? null
+    : appWallpaperSettings.appCustomWallpaperPath;
+  const activeAppWallpaperMediaType = isAppWallpaperPortraitViewport
+    ? appWallpaperSettings.appPortraitWallpaperMediaType ?? inferAppWallpaperMediaType(activeAppWallpaperPath)
+    : appWallpaperSettings.appWallpaperMediaType ?? inferAppWallpaperMediaType(activeAppWallpaperPath);
+  const activeAppWallpaperOrientation = isAppWallpaperPortraitViewport ? 'portrait' : 'landscape';
+  const appWallpaperUrl = activeAppWallpaperPath
+    ? `echo-wallpaper://${isAppWallpaperPortraitViewport ? 'app-portrait' : 'app'}/custom?path=${encodeURIComponent(activeAppWallpaperPath)}`
     : null;
   const shouldShowAppWallpaperVisual = Boolean(appWallpaperUrl && !isLyricsRoute);
-  const isAppWallpaperVideo = appWallpaperSettings.appWallpaperMediaType === 'video';
+  const isAppWallpaperVideo = activeAppWallpaperMediaType === 'video';
   const appWallpaperKey = appWallpaperUrl
-    ? `${appWallpaperSettings.appWallpaperMediaType ?? 'image'}:${appWallpaperUrl}`
+    ? `${activeAppWallpaperOrientation}:${activeAppWallpaperMediaType}:${appWallpaperUrl}`
     : null;
   const isAppWallpaperReady = Boolean(appWallpaperKey && loadedAppWallpaperKey === appWallpaperKey);
   const shouldPauseAppWallpaperVideo = Boolean(
@@ -757,6 +776,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     return () => {
       cancelled = true;
       window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncWallpaperOrientation = (): void => {
+      setIsAppWallpaperPortraitViewport(isPortraitViewport());
+    };
+
+    syncWallpaperOrientation();
+    window.addEventListener('resize', syncWallpaperOrientation);
+    window.visualViewport?.addEventListener('resize', syncWallpaperOrientation);
+
+    return () => {
+      window.removeEventListener('resize', syncWallpaperOrientation);
+      window.visualViewport?.removeEventListener('resize', syncWallpaperOrientation);
     };
   }, []);
 
@@ -1390,7 +1424,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       if (
         patch &&
         ('appCustomWallpaperPath' in patch ||
+          'appPortraitWallpaperPath' in patch ||
           'appWallpaperMediaType' in patch ||
+          'appPortraitWallpaperMediaType' in patch ||
           'appWallpaperScalePercent' in patch ||
           'appWallpaperBlurPx' in patch ||
           'appWallpaperBrightnessPercent' in patch ||
@@ -1401,9 +1437,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       ) {
         setAppWallpaperSettings((current) => ({
           appCustomWallpaperPath: 'appCustomWallpaperPath' in patch ? (patch.appCustomWallpaperPath ?? null) : current.appCustomWallpaperPath,
+          appPortraitWallpaperPath: 'appPortraitWallpaperPath' in patch
+            ? (patch.appPortraitWallpaperPath ?? null)
+            : current.appPortraitWallpaperPath,
           appWallpaperMediaType: 'appWallpaperMediaType' in patch
             ? (patch.appWallpaperMediaType ?? defaultAppWallpaperSettings.appWallpaperMediaType)
             : current.appWallpaperMediaType,
+          appPortraitWallpaperMediaType: 'appPortraitWallpaperMediaType' in patch
+            ? (patch.appPortraitWallpaperMediaType ?? defaultAppWallpaperSettings.appPortraitWallpaperMediaType)
+            : current.appPortraitWallpaperMediaType,
           appWallpaperScalePercent: 'appWallpaperScalePercent' in patch
             ? (patch.appWallpaperScalePercent ?? defaultAppWallpaperSettings.appWallpaperScalePercent)
             : current.appWallpaperScalePercent,
@@ -1928,6 +1970,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
       data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
+      data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={
         (windowFullscreenTransitionTarget ?? isWindowFullscreen) ? 'true' : 'false'

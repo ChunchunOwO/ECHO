@@ -164,6 +164,111 @@ inline BiquadCoefficients makeHighShelfCoefficients(
     };
 }
 
+inline BiquadCoefficients makeLowPassCoefficients(
+    double sampleRate,
+    float frequencyHz,
+    float q)
+{
+    if (sampleRate <= 0.0)
+        return {};
+
+    constexpr double pi = 3.14159265358979323846;
+    const double safeFrequency = std::clamp<double>(frequencyHz, 10.0, sampleRate * 0.45);
+    const double safeQ = std::max(0.1, static_cast<double>(q));
+    const double omega = 2.0 * pi * safeFrequency / sampleRate;
+    const double sinOmega = std::sin(omega);
+    const double cosOmega = std::cos(omega);
+    const double alpha = sinOmega / (2.0 * safeQ);
+
+    const double b0 = (1.0 - cosOmega) / 2.0;
+    const double b1 = 1.0 - cosOmega;
+    const double b2 = (1.0 - cosOmega) / 2.0;
+    const double a0 = 1.0 + alpha;
+    const double a1 = -2.0 * cosOmega;
+    const double a2 = 1.0 - alpha;
+
+    if (std::abs(a0) < 1.0e-12)
+        return {};
+
+    return {
+        static_cast<float>(b0 / a0),
+        static_cast<float>(b1 / a0),
+        static_cast<float>(b2 / a0),
+        static_cast<float>(a1 / a0),
+        static_cast<float>(a2 / a0),
+    };
+}
+
+inline BiquadCoefficients makeHighPassCoefficients(
+    double sampleRate,
+    float frequencyHz,
+    float q)
+{
+    if (sampleRate <= 0.0)
+        return {};
+
+    constexpr double pi = 3.14159265358979323846;
+    const double safeFrequency = std::clamp<double>(frequencyHz, 10.0, sampleRate * 0.45);
+    const double safeQ = std::max(0.1, static_cast<double>(q));
+    const double omega = 2.0 * pi * safeFrequency / sampleRate;
+    const double sinOmega = std::sin(omega);
+    const double cosOmega = std::cos(omega);
+    const double alpha = sinOmega / (2.0 * safeQ);
+
+    const double b0 = (1.0 + cosOmega) / 2.0;
+    const double b1 = -(1.0 + cosOmega);
+    const double b2 = (1.0 + cosOmega) / 2.0;
+    const double a0 = 1.0 + alpha;
+    const double a1 = -2.0 * cosOmega;
+    const double a2 = 1.0 - alpha;
+
+    if (std::abs(a0) < 1.0e-12)
+        return {};
+
+    return {
+        static_cast<float>(b0 / a0),
+        static_cast<float>(b1 / a0),
+        static_cast<float>(b2 / a0),
+        static_cast<float>(a1 / a0),
+        static_cast<float>(a2 / a0),
+    };
+}
+
+inline BiquadCoefficients makeNotchCoefficients(
+    double sampleRate,
+    float frequencyHz,
+    float q)
+{
+    if (sampleRate <= 0.0)
+        return {};
+
+    constexpr double pi = 3.14159265358979323846;
+    const double safeFrequency = std::clamp<double>(frequencyHz, 10.0, sampleRate * 0.45);
+    const double safeQ = std::max(0.1, static_cast<double>(q));
+    const double omega = 2.0 * pi * safeFrequency / sampleRate;
+    const double sinOmega = std::sin(omega);
+    const double cosOmega = std::cos(omega);
+    const double alpha = sinOmega / (2.0 * safeQ);
+
+    const double b0 = 1.0;
+    const double b1 = -2.0 * cosOmega;
+    const double b2 = 1.0;
+    const double a0 = 1.0 + alpha;
+    const double a1 = -2.0 * cosOmega;
+    const double a2 = 1.0 - alpha;
+
+    if (std::abs(a0) < 1.0e-12)
+        return {};
+
+    return {
+        static_cast<float>(b0 / a0),
+        static_cast<float>(b1 / a0),
+        static_cast<float>(b2 / a0),
+        static_cast<float>(a1 / a0),
+        static_cast<float>(a2 / a0),
+    };
+}
+
 inline BiquadCoefficients makeEqCoefficients(
     double sampleRate,
     float frequencyHz,
@@ -181,6 +286,12 @@ inline BiquadCoefficients makeEqCoefficients(
             return makeLowShelfCoefficients(sampleRate, frequencyHz, gainDb, q);
         case EqFilterType::HighShelf:
             return makeHighShelfCoefficients(sampleRate, frequencyHz, gainDb, q);
+        case EqFilterType::LowPass:
+            return makeLowPassCoefficients(sampleRate, frequencyHz, q);
+        case EqFilterType::HighPass:
+            return makeHighPassCoefficients(sampleRate, frequencyHz, q);
+        case EqFilterType::Notch:
+            return makeNotchCoefficients(sampleRate, frequencyHz, q);
         case EqFilterType::Peaking:
         default:
             return makePeakingCoefficients(sampleRate, frequencyHz, gainDb, q);

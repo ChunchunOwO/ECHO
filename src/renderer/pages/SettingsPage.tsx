@@ -1716,6 +1716,13 @@ const themePresetOptions: Array<{
     preview: 'linear-gradient(135deg, #eaf2fb 0%, #aac2df 48%, #d4c0dc 100%)',
     swatches: ['#eaf2fb', '#245f9e', '#7f3e70'],
   },
+  {
+    preset: 'FINAL',
+    labelKey: 'settings.appearance.themePreset.FINAL',
+    descriptionKey: 'settings.appearance.themePreset.FINAL.description',
+    preview: 'linear-gradient(135deg, #f8f5ef 0%, #e8dccb 48%, #fffaf2 100%)',
+    swatches: ['#f8f5ef', '#b88a4a', '#2f2b26', '#d7c3a2'],
+  },
 ];
 
 type ThemeTone = 'light' | 'dark';
@@ -3015,6 +3022,56 @@ const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, Partial<Them
       panelOpacityPercent: 88,
       glassPercent: 24,
       shadowPercent: 100,
+    },
+  },
+  FINAL: {
+    light: {
+      appBg: '#f8f5ef',
+      appBg2: '#e8dccb',
+      appBg3: '#fffaf2',
+      panel: '#fffdf8',
+      panelSoft: '#eee5d7',
+      accent: '#b88a4a',
+      accentStrong: '#6f542f',
+      secondary: '#8f7a5d',
+      heading: '#2f2b26',
+      text: '#484038',
+      muted: '#786c5f',
+      border: '#c3aa82',
+      onAccent: '#fffaf2',
+      buttonText: '#484038',
+      panelOpacityPercent: 82,
+      glassPercent: 12,
+      shadowPercent: 62,
+      cornerRadiusPx: 8,
+      panelBlurPx: 10,
+      saturationPercent: 96,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 64,
+    },
+    dark: {
+      appBg: '#151310',
+      appBg2: '#252017',
+      appBg3: '#191713',
+      panel: '#2b261e',
+      panelSoft: '#1f1b16',
+      accent: '#d5ad72',
+      accentStrong: '#f4ddb8',
+      secondary: '#a99573',
+      heading: '#fff4e0',
+      text: '#eadfce',
+      muted: '#c9b79e',
+      border: '#c8a86f',
+      onAccent: '#211607',
+      buttonText: '#eadfce',
+      panelOpacityPercent: 90,
+      glassPercent: 18,
+      shadowPercent: 92,
+      cornerRadiusPx: 8,
+      panelBlurPx: 12,
+      saturationPercent: 96,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 64,
     },
   },
 };
@@ -7100,6 +7157,36 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleAppWallpaperClear = (): void => {
     patchAppSettings({ appCustomWallpaperPath: null, appWallpaperMediaType: 'image' });
+  };
+
+  const handleAppPortraitWallpaperChoose = async (): Promise<void> => {
+    const app = getAppBridge();
+
+    if (!app?.chooseAppWallpaper) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose app wallpaper.');
+      return;
+    }
+
+    try {
+      const wallpaperPath = await app.chooseAppWallpaper();
+      if (!wallpaperPath) {
+        return;
+      }
+
+      const mediaType = inferAppWallpaperMediaType(wallpaperPath);
+      patchAppSettings({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: mediaType,
+        ...(mediaType === 'video' ? { appVideoWallpaperPauseMode: 'never' } : {}),
+      });
+      setError(null);
+    } catch (wallpaperError) {
+      setError(wallpaperError instanceof Error ? wallpaperError.message : String(wallpaperError));
+    }
+  };
+
+  const handleAppPortraitWallpaperClear = (): void => {
+    patchAppSettings({ appPortraitWallpaperPath: null, appPortraitWallpaperMediaType: 'image' });
   };
 
   const handleDiscordPresenceToggle = async (): Promise<void> => {
@@ -11990,22 +12077,43 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.appearance.wallpaper.title')}
                 description={t('settings.appearance.wallpaper.description')}
               >
-                {appSettings?.appCustomWallpaperPath ? (
+                {appSettings?.appCustomWallpaperPath || appSettings?.appPortraitWallpaperPath ? (
                   <div className="settings-cache-panel settings-cache-panel--app-wallpaper">
                     <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                       <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppWallpaperChoose()}>
                         <FolderOpen size={15} />
                         {t('settings.appearance.wallpaper.choose')}
                       </button>
-                      <button className="settings-danger-button" type="button" onClick={handleAppWallpaperClear}>
-                        <Trash2 size={15} />
-                        {t('settings.appearance.wallpaper.clear')}
+                      <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppPortraitWallpaperChoose()}>
+                        <FolderOpen size={15} />
+                        {t('settings.appearance.wallpaper.portraitChoose')}
                       </button>
+                      {appSettings.appCustomWallpaperPath ? (
+                        <button className="settings-danger-button" type="button" onClick={handleAppWallpaperClear}>
+                          <Trash2 size={15} />
+                          {t('settings.appearance.wallpaper.clear')}
+                        </button>
+                      ) : null}
+                      {appSettings.appPortraitWallpaperPath ? (
+                        <button className="settings-danger-button" type="button" onClick={handleAppPortraitWallpaperClear}>
+                          <Trash2 size={15} />
+                          {t('settings.appearance.wallpaper.portraitClear')}
+                        </button>
+                      ) : null}
                     </div>
-                    <p className="settings-wallpaper-path" title={appSettings.appCustomWallpaperPath}>
-                      {appSettings.appCustomWallpaperPath}
-                    </p>
-                    {appSettings.appWallpaperMediaType === 'video' ? (
+                    {appSettings.appCustomWallpaperPath ? (
+                      <p className="settings-wallpaper-path" title={appSettings.appCustomWallpaperPath}>
+                        <span>{t('settings.appearance.wallpaper.landscapePath')}</span>
+                        {appSettings.appCustomWallpaperPath}
+                      </p>
+                    ) : null}
+                    {appSettings.appPortraitWallpaperPath ? (
+                      <p className="settings-wallpaper-path" title={appSettings.appPortraitWallpaperPath}>
+                        <span>{t('settings.appearance.wallpaper.portraitPath')}</span>
+                        {appSettings.appPortraitWallpaperPath}
+                      </p>
+                    ) : null}
+                    {appSettings.appWallpaperMediaType === 'video' || appSettings.appPortraitWallpaperMediaType === 'video' ? (
                       <div className="settings-chip-row settings-chip-row--left">
                         <StatusText tone="good">{t('settings.appearance.wallpaper.videoStatus')}</StatusText>
                         {appVideoWallpaperPauseModes.map((mode) => (
@@ -12093,6 +12201,10 @@ export const SettingsPage = (): JSX.Element => {
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppWallpaperChoose()}>
                       <FolderOpen size={15} />
                       {t('settings.appearance.wallpaper.choose')}
+                    </button>
+                    <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppPortraitWallpaperChoose()}>
+                      <FolderOpen size={15} />
+                      {t('settings.appearance.wallpaper.portraitChoose')}
                     </button>
                   </div>
                 )}

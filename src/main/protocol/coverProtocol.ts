@@ -387,10 +387,12 @@ export const registerCoverProtocolHandler = (): void => {
         ? settings.lyricsCustomWallpaperPath
         : url.hostname === 'app'
           ? settings.appCustomWallpaperPath
+          : url.hostname === 'app-portrait'
+            ? settings.appPortraitWallpaperPath ?? null
           : null;
       const wallpaperDirectory = url.hostname === 'lyrics'
         ? getLyricsWallpaperDirectory()
-        : url.hostname === 'app'
+        : url.hostname === 'app' || url.hostname === 'app-portrait'
           ? getAppWallpaperDirectory()
           : null;
 

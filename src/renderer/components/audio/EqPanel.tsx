@@ -16,6 +16,7 @@ import {
   captureEqSnapshot,
   clampChannelBalancePatch,
   computeEffectiveChannelGains,
+  computeAutoGainPreamp,
   computeEstimatedPeakGain,
   computeLoudnessMatchedPreamp,
   computeMaxBandGainDb,
@@ -24,7 +25,11 @@ import {
   describePreset,
   formatDb,
   formatFrequencyLabel,
+  isEqFilterGainEditable,
   resolveBandFrequency,
+  eqAutoGainManualHoldMs,
+  type EqAutoGainStatus,
+  type EqAnalyzerMode,
   type EqSnapshot,
 } from './eqPanelUtils';
 
@@ -36,12 +41,39 @@ type EqPanelProps = {
 type EqUiMode = 'simple' | 'pro';
 
 const eqUiModeStorageKey = 'echo-next.eq.uiMode';
+const eqAnalyzerStorageKey = 'echo-next.eq.spectrumAnalyzer';
+const eqAnalyzerModeStorageKey = 'echo-next.eq.analyzerMode';
+const eqAutoGainStorageKey = 'echo-next.eq.autoGainEnabled';
 
 const readEqUiMode = (): EqUiMode => {
   try {
     return window.localStorage.getItem(eqUiModeStorageKey) === 'pro' ? 'pro' : 'simple';
   } catch {
     return 'simple';
+  }
+};
+
+const readEqAnalyzerEnabled = (): boolean => {
+  try {
+    return window.localStorage.getItem(eqAnalyzerStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const readEqAnalyzerMode = (): EqAnalyzerMode => {
+  try {
+    return window.localStorage.getItem(eqAnalyzerModeStorageKey) === 'postEq' ? 'postEq' : 'input';
+  } catch {
+    return 'input';
+  }
+};
+
+const readEqAutoGainEnabled = (): boolean => {
+  try {
+    return window.localStorage.getItem(eqAutoGainStorageKey) === 'true';
+  } catch {
+    return false;
   }
 };
 
@@ -87,6 +119,24 @@ const eqFilterLabelKeys: Record<EqFilterType, TranslationKey> = {
   peaking: 'settings.eq.filter.peaking',
   lowShelf: 'settings.eq.filter.lowShelf',
   highShelf: 'settings.eq.filter.highShelf',
+  lowPass: 'settings.eq.filter.lowPass',
+  highPass: 'settings.eq.filter.highPass',
+  notch: 'settings.eq.filter.notch',
+};
+const eqQPresetValues: Record<EqFilterType, { wide: number; normal: number; narrow: number }> = {
+  peaking: { wide: 0.7, normal: 1.4, narrow: 4 },
+  lowShelf: { wide: 0.5, normal: 0.7, narrow: 1.2 },
+  highShelf: { wide: 0.5, normal: 0.7, narrow: 1.2 },
+  lowPass: { wide: 0.5, normal: 0.7, narrow: 1.2 },
+  highPass: { wide: 0.5, normal: 0.7, narrow: 1.2 },
+  notch: { wide: 3, normal: 6, narrow: 10 },
+};
+const eqAutoGainStatusKeys: Record<EqAutoGainStatus, TranslationKey> = {
+  idle: 'settings.eq.autoGain.status.idle',
+  reducing: 'settings.eq.autoGain.status.reducing',
+  recovering: 'settings.eq.autoGain.status.recovering',
+  holding: 'settings.eq.autoGain.status.holding',
+  clipping: 'settings.eq.autoGain.status.clipping',
 };
 
 const formatLevelDb = (value: number | null | undefined): string => {
@@ -125,9 +175,18 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [loudnessMatchedAb, setLoudnessMatchedAb] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
   const [eqUiMode, setEqUiMode] = useState<EqUiMode>(readEqUiMode);
+  const [spectrumAnalyzerEnabled, setSpectrumAnalyzerEnabled] = useState(readEqAnalyzerEnabled);
+  const [analyzerMode, setAnalyzerMode] = useState<EqAnalyzerMode>(readEqAnalyzerMode);
+  const [autoGainEnabled, setAutoGainEnabled] = useState(readEqAutoGainEnabled);
+  const [autoGainStatus, setAutoGainStatus] = useState<EqAutoGainStatus>('idle');
+  const [autoGainAdjustmentDb, setAutoGainAdjustmentDb] = useState(0);
   const debounceTimers = useRef<Record<number, number>>({});
   const frequencyDebounceTimers = useRef<Record<number, number>>({});
   const editStartSnapshot = useRef<EqSnapshot | null>(null);
+  const autoGainBaselinePreampDb = useRef<number | null>(null);
+  const autoGainLastAdjustmentAtMs = useRef(0);
+  const autoGainManualHoldUntilMs = useRef(0);
+  const autoGainApplying = useRef(false);
   const showAdvancedTools = eqUiMode === 'pro';
 
   const selectedPreset = presets.find((preset) => preset.id === state.presetId);
@@ -136,6 +195,23 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const canOverwritePreset = Boolean(selectedPreset && !selectedPreset.readonly);
   const frequencyEditUnlocked = showAdvancedTools && frequencyUnlocked;
   const audioLevels = audioStatus?.audioLevels ?? null;
+  const visualSpectrumBins = Array.isArray(audioLevels?.visualSpectrum) ? audioLevels.visualSpectrum : [];
+  const visualSpectrumHasSignal = visualSpectrumBins.some((value) => Number.isFinite(value) && value > 0.01);
+  const visualSpectrumReady = visualSpectrumBins.length > 0 && audioLevels?.visualTelemetryState !== 'fallback' && visualSpectrumHasSignal;
+  const analyzerStatusState = !spectrumAnalyzerEnabled
+    ? 'off'
+    : audioLevels?.visualTelemetryState === 'priming'
+      ? 'priming'
+      : visualSpectrumReady
+        ? 'live'
+        : 'noSignal';
+  const analyzerStatusKey: TranslationKey = analyzerStatusState === 'live'
+    ? 'settings.eq.analyzer.status.live'
+    : analyzerStatusState === 'priming'
+      ? 'settings.eq.analyzer.status.priming'
+      : analyzerStatusState === 'noSignal'
+        ? 'settings.eq.analyzer.status.noSignal'
+        : 'settings.eq.analyzer.status.off';
   const estimatedOutputPeakDb = audioLevels?.estimatedOutputPeakDb ?? null;
   const realtimeLevelClippingRisk = estimatedOutputPeakDb !== null && estimatedOutputPeakDb >= 0;
   const realtimeLevelClipped = (audioLevels?.clipCount ?? 0) > 0;
@@ -148,11 +224,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const canAutoPreamp = Math.abs(state.preampDb - recommendedPreampDb) > 0.05;
   const selectedBand = state.bands[selectedBandIndex] ?? state.bands[0];
   const selectedBandFilterType = selectedBand?.filterType ?? 'peaking';
+  const selectedBandGainEditable = isEqFilterGainEditable(selectedBandFilterType);
+  const selectedBandQPresets = eqQPresetValues[selectedBandFilterType];
   const selectedBandEnabled = selectedBand?.enabled !== false;
   const activeBandCount = state.bands.filter((band) => band.enabled !== false).length;
   const selectedBandMode = frequencyEditUnlocked ? t('settings.eq.band.modeFree') : t('settings.eq.band.modeStandard');
   const selectedPresetMetadata = describePreset(state.presetId);
   const needsSafePreamp = estimatedPeakGainDb > 0 || clippingRisk;
+  const autoGainActive = autoGainEnabled && (autoGainStatus === 'reducing' || autoGainStatus === 'recovering' || autoGainStatus === 'clipping');
   const currentOutputTarget: EqProfileBindingTarget = {
     outputMode: audioStatus?.outputMode ?? 'shared',
     outputBackend: audioStatus?.outputBackend ?? null,
@@ -214,6 +293,30 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   }, [eqUiMode]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(eqAnalyzerStorageKey, spectrumAnalyzerEnabled ? 'true' : 'false');
+    } catch {
+      // Analyzer visibility is UI-only; audio telemetry continues independently.
+    }
+  }, [spectrumAnalyzerEnabled]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(eqAnalyzerModeStorageKey, analyzerMode);
+    } catch {
+      // Analyzer mode is UI-only and can fall back to Input at any time.
+    }
+  }, [analyzerMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(eqAutoGainStorageKey, autoGainEnabled ? 'true' : 'false');
+    } catch {
+      // Auto Gain is UI-driven safety automation; persistence can fall back to off.
+    }
+  }, [autoGainEnabled]);
+
+  useEffect(() => {
     const profile = profiles.find((item) => item.id === selectedProfileId);
     if (profile && !profileName) {
       setProfileName(profile.name);
@@ -235,6 +338,71 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     },
     [onAudioStatusRefresh],
   );
+
+  useEffect(() => {
+    if (!autoGainEnabled) {
+      autoGainBaselinePreampDb.current = null;
+      autoGainLastAdjustmentAtMs.current = 0;
+      setAutoGainStatus('idle');
+      setAutoGainAdjustmentDb(0);
+      return;
+    }
+
+    if (autoGainBaselinePreampDb.current === null) {
+      autoGainBaselinePreampDb.current = state.preampDb;
+    }
+
+    if (autoGainApplying.current) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (nowMs < autoGainManualHoldUntilMs.current) {
+      setAutoGainStatus('holding');
+      setAutoGainAdjustmentDb(Math.round((state.preampDb - (autoGainBaselinePreampDb.current ?? state.preampDb)) * 10) / 10);
+      return;
+    }
+
+    const result = computeAutoGainPreamp({
+      eqState: state,
+      audioLevels,
+      baselinePreampDb: autoGainBaselinePreampDb.current,
+      nowMs,
+      lastAdjustmentAtMs: autoGainLastAdjustmentAtMs.current,
+      clippingRisk,
+    });
+
+    setAutoGainStatus(result.status);
+    setAutoGainAdjustmentDb(result.adjustmentDb);
+
+    if (result.targetPreampDb === null || Math.abs(result.targetPreampDb - state.preampDb) <= 0.05) {
+      return;
+    }
+
+    const eq = getEqBridge();
+    if (!eq) {
+      setError(t('settings.eq.error.bridgeControlEq'));
+      return;
+    }
+
+    autoGainApplying.current = true;
+    autoGainLastAdjustmentAtMs.current = nowMs;
+    setState((current) => ({
+      ...current,
+      preampDb: result.targetPreampDb ?? current.preampDb,
+      presetId: 'custom',
+      presetName: 'Custom',
+    }));
+
+    void eq.setPreamp(result.targetPreampDb).then((nextState) => {
+      autoGainApplying.current = false;
+      commitState(nextState);
+      setError(null);
+    }).catch((autoGainError: unknown) => {
+      autoGainApplying.current = false;
+      setError(autoGainError instanceof Error ? autoGainError.message : String(autoGainError));
+    });
+  }, [audioLevels, autoGainEnabled, clippingRisk, commitState, state, t]);
 
   const pushUndoSnapshot = useCallback((snapshot: EqSnapshot): void => {
     setUndoStack((current) => [...current, snapshot].slice(-maxHistoryLength));
@@ -286,6 +454,16 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     });
   };
 
+  const toggleAutoGain = (): void => {
+    const enabled = !autoGainEnabled;
+    autoGainBaselinePreampDb.current = enabled ? state.preampDb : null;
+    autoGainLastAdjustmentAtMs.current = 0;
+    autoGainManualHoldUntilMs.current = 0;
+    setAutoGainStatus('idle');
+    setAutoGainAdjustmentDb(0);
+    setAutoGainEnabled(enabled);
+  };
+
   const sendBandGain = useCallback(
     (band: number, gainDb: number): void => {
       const eq = getEqBridge();
@@ -303,6 +481,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const handleBandChange = (band: number, gainDb: number): void => {
+    if (!isEqFilterGainEditable(state.bands[band]?.filterType)) {
+      return;
+    }
+
     beginEqEdit();
     setSelectedBandIndex(band);
     setState((current) => ({
@@ -317,6 +499,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handleBandCommit = (band: number, gainDb: number): void => {
+    if (!isEqFilterGainEditable(state.bands[band]?.filterType)) {
+      return;
+    }
+
     commitEqEdit();
     setSelectedBandIndex(band);
     clearGainDebounce(band);
@@ -403,15 +589,26 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     sendBandQ(band, safeQ);
   };
 
+  const handleBandQPresetCommit = (band: number, q: number): void => {
+    handleBandQCommit(band, q);
+  };
+
   const handleBandFilterTypeChange = (band: number, filterType: EqFilterType): void => {
     const eq = getEqBridge();
+    const gainEditable = isEqFilterGainEditable(filterType);
     pushUndoSnapshot(createEqHistorySnapshot(state));
     setSelectedBandIndex(band);
+    const nextState: EqState = {
+      ...state,
+      presetId: 'custom',
+      presetName: 'Custom',
+      bands: state.bands.map((item, index) => (index === band ? { ...item, filterType, gainDb: gainEditable ? item.gainDb : 0 } : item)),
+    };
     setState((current) => ({
       ...current,
       presetId: 'custom',
       presetName: 'Custom',
-      bands: current.bands.map((item, index) => (index === band ? { ...item, filterType } : item)),
+      bands: current.bands.map((item, index) => (index === band ? { ...item, filterType, gainDb: gainEditable ? item.gainDb : 0 } : item)),
     }));
 
     if (!eq) {
@@ -419,9 +616,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       return;
     }
 
-    void eq.setBandFilterType({ band, filterType }).then(commitState).catch((bandError: unknown) => {
-      setError(bandError instanceof Error ? bandError.message : String(bandError));
-    });
+    void Promise.all([
+      eq.setBandFilterType({ band, filterType }),
+      ...(gainEditable ? [] : [eq.setBandGain({ band, gainDb: 0 })]),
+    ])
+      .then(() => commitState(nextState))
+      .catch((bandError: unknown) => {
+        setError(bandError instanceof Error ? bandError.message : String(bandError));
+      });
   };
 
   const toggleBandEnabled = (band: number, enabled: boolean): void => {
@@ -445,9 +647,20 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     });
   };
 
+  const markAutoGainUserBaseline = (preampDb: number): void => {
+    autoGainBaselinePreampDb.current = preampDb;
+    autoGainManualHoldUntilMs.current = Date.now() + eqAutoGainManualHoldMs;
+    autoGainLastAdjustmentAtMs.current = 0;
+    if (autoGainEnabled) {
+      setAutoGainStatus('holding');
+      setAutoGainAdjustmentDb(0);
+    }
+  };
+
   const handlePreampChange = (preampDb: number): void => {
     const eq = getEqBridge();
     pushUndoSnapshot(createEqHistorySnapshot(state));
+    markAutoGainUserBaseline(preampDb);
     setState((current) => ({ ...current, preampDb, presetId: 'custom', presetName: 'Custom' }));
 
     if (!eq) {
@@ -619,6 +832,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const adjustSelectedGain = (deltaDb: number): void => {
+    if (!selectedBandGainEditable) {
+      return;
+    }
+
     const nextGainDb = Math.round(Math.max(-12, Math.min(12, (selectedBand?.gainDb ?? 0) + deltaDb)) * 10) / 10;
     pushUndoSnapshot(createEqHistorySnapshot(state));
     handleBandCommit(selectedBandIndex, nextGainDb);
@@ -646,6 +863,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     pushUndoSnapshot(createEqHistorySnapshot(state));
     const preset = presets.find((item) => item.id === presetId);
     if (preset) {
+      markAutoGainUserBaseline(preset.preampDb);
       setState((current) => ({
         ...current,
         preampDb: preset.preampDb,
@@ -672,6 +890,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     pushUndoSnapshot(createEqHistorySnapshot(state));
     clearAllGainDebounces();
     clearAllFrequencyDebounces();
+    markAutoGainUserBaseline(fallbackState.preampDb);
     setState({
       ...fallbackState,
       enabled: state.enabled,
@@ -1150,7 +1369,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
       <div className="eq-workbench">
         <div className="eq-curve-column">
-          <div className="eq-preamp-bar">
+          <div className="eq-preamp-bar" data-auto-gain={autoGainActive}>
             <div>
               <span>{t('settings.eq.preamp.inputSafety')}</span>
               <strong>{formatDb(state.preampDb)}</strong>
@@ -1197,12 +1416,59 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <button className="eq-soft-button" data-risk={needsSafePreamp} type="button" disabled={!canAutoPreamp && !needsSafePreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
               {needsSafePreamp ? t('settings.eq.action.applySafePreamp') : t('settings.eq.action.autoPreamp', { value: formatDb(recommendedPreampDb) })}
             </button>
+            <div className="eq-auto-gain-controls">
+              <button
+                className="eq-soft-button eq-auto-gain-toggle"
+                data-active={autoGainEnabled}
+                data-state={autoGainStatus}
+                type="button"
+                onClick={toggleAutoGain}
+              >
+                <Gauge size={14} aria-hidden="true" />
+                {t('settings.eq.autoGain.toggle')}
+              </button>
+              <span className="eq-auto-gain-status" data-state={autoGainStatus}>
+                <span>{t('settings.eq.autoGain.status')}</span>
+                <strong>{t(eqAutoGainStatusKeys[autoGainStatus])}</strong>
+                <em>{t('settings.eq.autoGain.adjustment', { value: formatDb(autoGainAdjustmentDb) })}</em>
+              </span>
+            </div>
+            {showAdvancedTools ? (
+              <div className="eq-analyzer-controls">
+                <button
+                  className="eq-soft-button eq-analyzer-toggle"
+                  data-active={spectrumAnalyzerEnabled}
+                  data-live={visualSpectrumReady}
+                  type="button"
+                  onClick={() => setSpectrumAnalyzerEnabled((current) => !current)}
+                >
+                  <Activity size={14} aria-hidden="true" />
+                  {t('settings.eq.analyzer.toggle')}
+                </button>
+                <div className="eq-analyzer-mode" role="group" aria-label={t('settings.eq.analyzer.mode')}>
+                  <button className="eq-soft-button" data-active={analyzerMode === 'input'} type="button" onClick={() => setAnalyzerMode('input')}>
+                    {t('settings.eq.analyzer.input')}
+                  </button>
+                  <button className="eq-soft-button" data-active={analyzerMode === 'postEq'} type="button" onClick={() => setAnalyzerMode('postEq')}>
+                    {t('settings.eq.analyzer.postEq')}
+                  </button>
+                </div>
+                <span className="eq-analyzer-status" data-state={analyzerStatusState}>
+                  <span>{t('settings.eq.analyzer.status')}</span>
+                  <strong>{t(analyzerStatusKey)}</strong>
+                </span>
+              </div>
+            ) : null}
           </div>
           <EqCurveView
             bands={state.bands}
             enabled={state.enabled}
             frequencyUnlocked={frequencyEditUnlocked}
             selectedBandIndex={selectedBandIndex}
+            spectrumEnabled={showAdvancedTools && spectrumAnalyzerEnabled}
+            analyzerMode={analyzerMode}
+            visualSpectrum={audioLevels?.visualSpectrum}
+            visualTelemetryState={audioLevels?.visualTelemetryState}
             onBandSelect={setSelectedBandIndex}
             onBandChange={handleBandChange}
             onBandCommit={handleBandCommit}
@@ -1229,7 +1495,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </span>
               <span>
                 <em>{t('settings.eq.band.gain')}</em>
-                <strong>{formatDb(selectedBand?.gainDb ?? 0)}</strong>
+                <strong>{formatDb(selectedBandGainEditable ? selectedBand?.gainDb ?? 0 : 0)}</strong>
               </span>
               <span>
                 <em>{t('settings.eq.band.q')}</em>
@@ -1276,10 +1542,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                       min="-12"
                       max="12"
                       step="0.1"
-                      value={selectedBand?.gainDb ?? 0}
+                      value={selectedBandGainEditable ? selectedBand?.gainDb ?? 0 : 0}
+                      disabled={!selectedBandGainEditable}
                       onChange={(event) => handleBandChange(selectedBandIndex, Number(event.currentTarget.value))}
                       onBlur={(event) => handleBandCommit(selectedBandIndex, Number(event.currentTarget.value))}
                     />
+                    {!selectedBandGainEditable ? <em>{t('settings.eq.band.gainFixed')}</em> : null}
                   </label>
                   <label>
                     <span>{t('settings.eq.band.q')}</span>
@@ -1335,10 +1603,21 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   </button>
                 </div>
                 <div className="eq-stepper-group" aria-label={t('settings.eq.band.gainStepper')}>
-                  <button className="eq-soft-button" type="button" onClick={() => adjustSelectedGain(-0.5)}>-0.5</button>
-                  <button className="eq-soft-button" type="button" onClick={() => adjustSelectedGain(-0.1)}>-0.1</button>
-                  <button className="eq-soft-button" type="button" onClick={() => adjustSelectedGain(0.1)}>+0.1</button>
-                  <button className="eq-soft-button" type="button" onClick={() => adjustSelectedGain(0.5)}>+0.5</button>
+                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.5)}>-0.5</button>
+                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.1)}>-0.1</button>
+                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(0.1)}>+0.1</button>
+                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(0.5)}>+0.5</button>
+                </div>
+                <div className="eq-stepper-group eq-q-preset-group" aria-label={t('settings.eq.band.qPresets')}>
+                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.wide)}>
+                    {t('settings.eq.band.qPresetWide')}
+                  </button>
+                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.normal)}>
+                    {t('settings.eq.band.qPresetNormal')}
+                  </button>
+                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.narrow)}>
+                    {t('settings.eq.band.qPresetNarrow')}
+                  </button>
                 </div>
                 <div className="eq-stepper-group" aria-label={t('settings.eq.band.frequencyStepper')}>
                   <button className="eq-soft-button" type="button" disabled={!frequencyEditUnlocked} onClick={() => adjustSelectedFrequency(-1, false)}>
@@ -1428,7 +1707,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   <span className="eq-band-chip-index">{String(index + 1).padStart(2, '0')}</span>
                   <span className="eq-band-chip-type">{t(eqFilterLabelKeys[band.filterType ?? 'peaking'])}</span>
                   <span className="eq-band-chip-frequency">{formatFrequencyLabel(band.frequencyHz)}</span>
-                  <strong>{band.enabled === false ? t('settings.eq.band.bypassed') : formatDb(band.gainDb)}</strong>
+                  <strong>{band.enabled === false ? t('settings.eq.band.bypassed') : formatDb(isEqFilterGainEditable(band.filterType) ? band.gainDb : 0)}</strong>
                   <span className="eq-band-chip-q">{`Q ${Number(band.q ?? 1).toFixed(1)}`}</span>
                 </button>
               ))}

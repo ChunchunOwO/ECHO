@@ -395,6 +395,7 @@ describe('ConnectPage HQPlayer controls', () => {
   afterEach(() => {
     cleanup();
     Reflect.deleteProperty(window, 'echo');
+    Reflect.deleteProperty(navigator, 'clipboard');
   });
 
   it('shows HQPlayer as a Connect output device and routes connection through Connect', async () => {
@@ -418,6 +419,48 @@ describe('ConnectPage HQPlayer controls', () => {
       }),
     ));
     expect(bridge.hqPlayer.sendLastPlaybackControl).not.toHaveBeenCalled();
+  });
+
+  it('copies AirPlay debug events from the receiver panel', async () => {
+    const bridge = installEchoBridge(hqStatus('available'));
+    bridge.connect.getAirPlayReceiverStatus.mockResolvedValue({
+      enabled: true,
+      state: 'ready',
+      advertisedName: 'ECHO Next (AirPlay)',
+      nativeAvailable: true,
+      currentSourceId: null,
+      currentClient: null,
+      metadata: null,
+      currentLyricLine: null,
+      artworkUrl: null,
+      positionSeconds: 0,
+      durationSeconds: 0,
+      volume: 100,
+      error: null,
+      debugEvents: [{
+        id: 'airplay-debug-1',
+        at: '2026-05-21T01:00:01.000Z',
+        remoteAddress: '192.168.1.10:53124',
+        method: 'ENC',
+        path: '/airplay2',
+        action: 'probe-error',
+        statusCode: 400,
+        message: 'control frame decrypt failed cipher=chacha20-poly1305',
+      }],
+      updatedAt: '2026-05-21T01:00:01.000Z',
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderConnectPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy AirPlay Debug' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('control frame decrypt failed')));
+    expect(writeText.mock.calls[0]?.[0]).toContain('192.168.1.10:53124 ENC /airplay2 #probe-error 400');
   });
 
   it('saves and plays a manual internet radio stream from Connect', async () => {

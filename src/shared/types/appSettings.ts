@@ -72,7 +72,8 @@ export type AppThemePreset =
   | 'fujiSnow'
   | 'matsuriLantern'
   | 'ginzaNoir'
-  | 'frostJazz';
+  | 'frostJazz'
+  | 'FINAL';
 
 export type AppThemeToneOverride = {
   appBg?: string;
@@ -237,7 +238,9 @@ export type AppSettings = {
   rememberWindowSizeEnabled?: boolean;
   rememberedWindowSize?: RememberedWindowSize | null;
   appCustomWallpaperPath: string | null;
+  appPortraitWallpaperPath?: string | null;
   appWallpaperMediaType?: AppWallpaperMediaType;
+  appPortraitWallpaperMediaType?: AppWallpaperMediaType;
   appWallpaperScalePercent: number;
   appWallpaperBlurPx: number;
   appWallpaperBrightnessPercent: number;

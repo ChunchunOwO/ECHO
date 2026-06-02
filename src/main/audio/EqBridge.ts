@@ -68,11 +68,23 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
+const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
+  createBands().map((band, index) => ({
+    ...band,
+    ...(overrides[index] ?? {}),
+    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
+    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
+    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
+    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
+    enabled: overrides[index]?.enabled ?? band.enabled,
+  }));
+
 type BuiltInPresetDefinition = {
   id: string;
   name: string;
   preampDb: number;
-  gains: number[];
+  gains?: number[];
+  bands?: EqBand[];
 };
 
 const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
@@ -94,13 +106,77 @@ const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
   { id: 'classic-smiley', name: 'Classic Smiley', preampDb: -8, gains: [7, 6, 3, -2.8, -4.5, -3.2, 1, 4, 6.2, 7] },
   { id: 'vinyl-warmth', name: 'Vinyl Warmth', preampDb: -6, gains: [5, 4.4, 2.8, 1, 0, -0.7, -1.6, -2.8, -4, -5.2] },
   { id: 'broadcast-voice', name: 'Broadcast Voice', preampDb: -6, gains: [-8, -6.5, -3.4, 1.5, 4, 5.5, 4.4, 1.5, -2.5, -5.5] },
+  {
+    id: 'sub-cleanup',
+    name: 'Sub Cleanup',
+    preampDb: -2,
+    bands: createParametricBands({
+      0: { frequencyHz: 28, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
+      3: { frequencyHz: 240, gainDb: -2.5, q: 1.1, filterType: 'peaking' },
+    }),
+  },
+  {
+    id: 'vocal-de-ess',
+    name: 'Vocal De-ess',
+    preampDb: -3,
+    bands: createParametricBands({
+      2: { frequencyHz: 180, gainDb: -1.5, q: 1.0, filterType: 'peaking' },
+      6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9, filterType: 'peaking' },
+      8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2, filterType: 'peaking' },
+      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
+    }),
+  },
+  {
+    id: 'headphone-notch',
+    name: 'Headphone Notch',
+    preampDb: -3,
+    bands: createParametricBands({
+      0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
+      5: { frequencyHz: 2800, gainDb: -2, q: 1.4, filterType: 'peaking' },
+      7: { frequencyHz: 6200, gainDb: 0, q: 7.5, filterType: 'notch' },
+      8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2, filterType: 'peaking' },
+    }),
+  },
+  {
+    id: 'subsonic-filter',
+    name: 'Subsonic Filter',
+    preampDb: -2,
+    bands: createParametricBands({
+      0: { frequencyHz: 24, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' },
+    }),
+  },
+  {
+    id: 'sibilance-tamer',
+    name: 'Sibilance Tamer',
+    preampDb: -4,
+    bands: createParametricBands({
+      2: { frequencyHz: 180, gainDb: -1.2, q: 1.0, filterType: 'peaking' },
+      7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5, filterType: 'peaking' },
+      8: { frequencyHz: 8200, gainDb: 0, q: 6.0, filterType: 'notch' },
+      9: { frequencyHz: 12500, gainDb: -1.0, q: 0.8, filterType: 'highShelf' },
+    }),
+  },
+  {
+    id: 'bluetooth-speaker-cleanup',
+    name: 'Bluetooth Speaker Cleanup',
+    preampDb: -3,
+    bands: createParametricBands({
+      0: { frequencyHz: 55, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 120, gainDb: -2.0, q: 0.8, filterType: 'lowShelf' },
+      3: { frequencyHz: 420, gainDb: -2.0, q: 1.2, filterType: 'peaking' },
+      7: { frequencyHz: 8500, gainDb: 2.0, q: 0.8, filterType: 'highShelf' },
+      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
+    }),
+  },
 ];
 
 const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
   id: preset.id,
   name: preset.name,
   preampDb: preset.preampDb,
-  bands: createBands(preset.gains),
+  bands: preset.bands?.map((band) => ({ ...band })) ?? createBands(preset.gains),
   createdAt: 'built-in',
   updatedAt: 'built-in',
   readonly: true,

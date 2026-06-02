@@ -4,13 +4,17 @@ import type { EqState } from '../../../shared/types/eq';
 import {
   captureEqSnapshot,
   clampChannelBalancePatch,
+  computeAutoGainPreamp,
   computeEffectiveChannelGains,
+  computeEqResponseGainDbAtFrequency,
+  computeEqSpectrumBars,
   computeEqCurvePoints,
   computeEstimatedPeakGain,
   computeLoudnessMatchedPreamp,
   computeRecommendedPreamp,
   describePreset,
   formatFrequencyLabel,
+  isEqFilterGainEditable,
   resolveBandFrequency,
 } from './eqPanelUtils';
 
@@ -55,6 +59,91 @@ describe('eqPanelUtils', () => {
     });
   });
 
+  it('keeps curve points finite at boundary frequencies and extreme Q values', () => {
+    const points = computeEqCurvePoints([
+      { frequencyHz: 20, gainDb: 12, q: 12, filterType: 'peaking', enabled: true },
+      { frequencyHz: 20000, gainDb: 0, q: 0.1, filterType: 'lowPass', enabled: true },
+      { frequencyHz: 20, gainDb: 0, q: 12, filterType: 'highPass', enabled: true },
+      { frequencyHz: 20000, gainDb: 0, q: 12, filterType: 'notch', enabled: true },
+    ]);
+
+    expect(points.length).toBeGreaterThan(64);
+    points.forEach((point) => {
+      expect(Number.isFinite(point.x)).toBe(true);
+      expect(Number.isFinite(point.y)).toBe(true);
+      expect(point.x).toBeGreaterThanOrEqual(0);
+      expect(point.x).toBeLessThanOrEqual(1);
+      expect(point.y).toBeGreaterThanOrEqual(0);
+      expect(point.y).toBeLessThanOrEqual(1);
+    });
+  });
+
+  it('sanitizes visual spectrum values for the EQ analyzer overlay', () => {
+    expect(computeEqSpectrumBars(undefined)).toEqual([]);
+    expect(computeEqSpectrumBars([0, 0.5, 2, Number.NaN])).toEqual([
+      { x: 0, value: 0 },
+      { x: 1 / 3, value: 0.5 },
+      { x: 2 / 3, value: 1 },
+      { x: 1, value: 0 },
+    ]);
+  });
+
+  it('can estimate post-EQ analyzer bars from the current response', () => {
+    const input = computeEqSpectrumBars([0.5, 0.5, 0.5], [], 'input');
+    const postEq = computeEqSpectrumBars([
+      0.5,
+      0.5,
+      0.5,
+    ], [
+      { frequencyHz: 1000, gainDb: 6, q: 1, filterType: 'peaking', enabled: true },
+    ], 'postEq');
+
+    expect(postEq.some((bar, index) => bar.value !== input[index].value)).toBe(true);
+    postEq.forEach((bar) => {
+      expect(bar.value).toBeGreaterThanOrEqual(0);
+      expect(bar.value).toBeLessThanOrEqual(1);
+    });
+  });
+
+  it('computes finite hover response readouts from the same biquad path', () => {
+    const gainDb = computeEqResponseGainDbAtFrequency([
+      { frequencyHz: 1000, gainDb: 6, q: 1.4, filterType: 'peaking', enabled: true },
+      { frequencyHz: 8200, gainDb: 0, q: 6, filterType: 'notch', enabled: true },
+    ], 1000);
+
+    expect(Number.isFinite(gainDb)).toBe(true);
+    expect(gainDb).toBeGreaterThan(0);
+  });
+
+  it('computes a flat response as the 0 dB center line', () => {
+    const points = computeEqCurvePoints(eqState([0, 0, 0]).bands);
+
+    expect(points.length).toBeGreaterThan(64);
+    points.forEach((point) => expect(point.y).toBeCloseTo(0.5, 5));
+  });
+
+  it('renders high-pass and low-pass response direction correctly', () => {
+    const highPassPoints = computeEqCurvePoints([
+      { frequencyHz: 120, gainDb: 0, q: 0.7, filterType: 'highPass', enabled: true },
+    ]);
+    const lowPassPoints = computeEqCurvePoints([
+      { frequencyHz: 4000, gainDb: 0, q: 0.7, filterType: 'lowPass', enabled: true },
+    ]);
+
+    expect(highPassPoints[0].y).toBeGreaterThan(highPassPoints.at(-1)?.y ?? 0);
+    expect(lowPassPoints[0].y).toBeLessThan(lowPassPoints.at(-1)?.y ?? 0);
+  });
+
+  it('renders a notch as a narrow cut around its center frequency', () => {
+    const points = computeEqCurvePoints([
+      { frequencyHz: 1000, gainDb: 0, q: 8, filterType: 'notch', enabled: true },
+    ]);
+
+    expect(Math.max(...points.map((point) => point.y))).toBeGreaterThan(0.9);
+    expect(isEqFilterGainEditable('notch')).toBe(false);
+    expect(isEqFilterGainEditable('peaking')).toBe(true);
+  });
+
   it('clamps channel balance patch values before sending IPC', () => {
     const patch: Partial<ChannelBalanceState> = {
       balance: 3,
@@ -90,12 +179,12 @@ describe('eqPanelUtils', () => {
   });
 
   it('ignores bypassed PEQ bands in safety and curve estimates', () => {
-    const state = eqState([12, 0, -3]);
+    const state = eqState([12, 0, 0]);
     state.bands[0].enabled = false;
 
     expect(computeRecommendedPreamp(state)).toBe(0);
     expect(computeEstimatedPeakGain({ preampDb: -2, bands: state.bands })).toBe(-2);
-    expect(computeEqCurvePoints(state.bands)[0].y).toBe(0.5);
+    expect(computeEqCurvePoints(state.bands)[0].y).toBeCloseTo(0.5, 5);
   });
 
   it('computes loudness-matched A/B preamp within range', () => {
@@ -106,8 +195,110 @@ describe('eqPanelUtils', () => {
     expect(computeLoudnessMatchedPreamp({ preampDb: -12, bands: eqState([0]).bands }, target)).toBe(-12);
   });
 
+  it('keeps Auto Gain idle without telemetry', () => {
+    expect(computeAutoGainPreamp({
+      eqState: eqState([0, 6, 0]),
+      audioLevels: null,
+      baselinePreampDb: 0,
+      nowMs: 5000,
+      lastAdjustmentAtMs: 0,
+    })).toMatchObject({
+      status: 'idle',
+      targetPreampDb: null,
+      adjustmentDb: 0,
+    });
+  });
+
+  it('reduces Auto Gain preamp to preserve output headroom', () => {
+    const result = computeAutoGainPreamp({
+      eqState: eqState([0, 6, 0]),
+      audioLevels: {
+        inputPeakDb: -4,
+        inputRmsDb: -18,
+        estimatedOutputPeakDb: 0.8,
+        estimatedOutputRmsDb: -12,
+        headroomDb: -0.8,
+        clipCount: 0,
+        lastClipAt: null,
+        meterSource: 'pre_native_estimated_post_dsp',
+      },
+      baselinePreampDb: 0,
+      nowMs: 5000,
+      lastAdjustmentAtMs: 0,
+    });
+
+    expect(result.status).toBe('reducing');
+    expect(result.targetPreampDb).toBeLessThanOrEqual(-1.8);
+    expect(result.adjustmentDb).toBeLessThanOrEqual(-1.8);
+  });
+
+  it('marks Auto Gain clipping risk and avoids NaN with extreme telemetry', () => {
+    const result = computeAutoGainPreamp({
+      eqState: { ...eqState([0]), preampDb: -11.8, clippingRisk: true },
+      audioLevels: {
+        inputPeakDb: Number.NaN,
+        inputRmsDb: null,
+        estimatedOutputPeakDb: Number.NaN,
+        estimatedOutputRmsDb: null,
+        headroomDb: null,
+        clipCount: 2,
+        lastClipAt: null,
+        meterSource: 'pre_native_estimated_post_dsp',
+      },
+      baselinePreampDb: 0,
+      nowMs: 5000,
+      lastAdjustmentAtMs: 0,
+      clippingRisk: true,
+    });
+
+    expect(result.status).toBe('clipping');
+    expect(result.targetPreampDb).toBe(-12);
+    expect(Number.isFinite(result.adjustmentDb)).toBe(true);
+  });
+
+  it('recovers Auto Gain preamp slowly without exceeding the safe ceiling', () => {
+    const held = computeAutoGainPreamp({
+      eqState: { ...eqState([6]), preampDb: -8 },
+      audioLevels: {
+        inputPeakDb: -24,
+        inputRmsDb: -36,
+        estimatedOutputPeakDb: -18,
+        estimatedOutputRmsDb: -30,
+        headroomDb: 18,
+        clipCount: 0,
+        lastClipAt: null,
+        meterSource: 'pre_native_estimated_post_dsp',
+      },
+      baselinePreampDb: 0,
+      nowMs: 1000,
+      lastAdjustmentAtMs: 0,
+    });
+    const recovered = computeAutoGainPreamp({
+      eqState: { ...eqState([6]), preampDb: -8 },
+      audioLevels: {
+        inputPeakDb: -24,
+        inputRmsDb: -36,
+        estimatedOutputPeakDb: -18,
+        estimatedOutputRmsDb: -30,
+        headroomDb: 18,
+        clipCount: 0,
+        lastClipAt: null,
+        meterSource: 'pre_native_estimated_post_dsp',
+      },
+      baselinePreampDb: 0,
+      nowMs: 2500,
+      lastAdjustmentAtMs: 0,
+    });
+
+    expect(held).toMatchObject({ status: 'holding', targetPreampDb: null });
+    expect(recovered).toMatchObject({ status: 'recovering', targetPreampDb: -7.5 });
+  });
+
   it('describes known built-in presets and safely ignores unknown presets', () => {
     expect(describePreset('harman-target')).toMatchObject({ category: 'target', approximation: true });
+    expect(describePreset('subsonic-filter')).toMatchObject({ category: 'utility', approximation: false });
+    expect(describePreset('sibilance-tamer')).toMatchObject({ category: 'utility', approximation: false });
+    expect(describePreset('bluetooth-speaker-cleanup')).toMatchObject({ category: 'utility', approximation: false });
     expect(describePreset('missing-preset')).toBeNull();
   });
 

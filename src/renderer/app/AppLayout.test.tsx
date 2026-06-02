@@ -83,6 +83,11 @@ const routesWithQueue: AppRoute[] = [
   },
 ];
 
+const setViewportSize = (width: number, height: number): void => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+};
+
 const SharedStatusProbe = (): JSX.Element => {
   useSharedPlaybackStatus();
   return <div>Standalone lyrics page</div>;
@@ -99,6 +104,7 @@ afterEach(() => {
   window.sessionStorage.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  setViewportSize(1024, 768);
   (window as unknown as { echo?: Window['echo'] }).echo = undefined;
 });
 
@@ -1410,6 +1416,109 @@ describe('AppLayout standalone routes', () => {
     const wallpaperLayer = container.querySelector('.app-wallpaper-layer') as HTMLElement | null;
     expect(wallpaperLayer).toBeTruthy();
     expect(wallpaperLayer?.dataset.hidden).toBe('true');
+  });
+
+  it('applies the portrait app wallpaper only while the viewport is portrait', async () => {
+    setViewportSize(1280, 720);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\landscape.png',
+          appPortraitWallpaperPath: 'D:\\Echo\\app-wallpapers\\portrait.webp',
+          appWallpaperMediaType: 'image',
+          appPortraitWallpaperMediaType: 'image',
+          appWallpaperScalePercent: 100,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 100,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const landscapeImage = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer img') as HTMLImageElement | null;
+      expect(element?.getAttribute('src')).toContain('echo-wallpaper://app/custom');
+      return element as HTMLImageElement;
+    });
+    expect(landscapeImage.getAttribute('src')).toContain(encodeURIComponent('D:\\Echo\\app-wallpapers\\landscape.png'));
+    expect((container.querySelector('.app-shell') as HTMLElement | null)?.dataset.wallpaperOrientation).toBe('landscape');
+
+    act(() => {
+      setViewportSize(390, 844);
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    const portraitImage = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer img') as HTMLImageElement | null;
+      expect(element?.getAttribute('src')).toContain('echo-wallpaper://app-portrait/custom');
+      return element as HTMLImageElement;
+    });
+    expect(portraitImage.getAttribute('src')).toContain(encodeURIComponent('D:\\Echo\\app-wallpapers\\portrait.webp'));
+    expect((container.querySelector('.app-shell') as HTMLElement | null)?.dataset.wallpaperOrientation).toBe('portrait');
+  });
+
+  it('renders portrait app video wallpaper only while the viewport is portrait', async () => {
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    setViewportSize(1280, 720);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appCustomWallpaperPath: 'D:\\Echo\\app-wallpapers\\landscape.png',
+          appPortraitWallpaperPath: 'D:\\Echo\\app-wallpapers\\portrait-motion.webm',
+          appWallpaperMediaType: 'image',
+          appPortraitWallpaperMediaType: 'video',
+          appVideoWallpaperPauseMode: 'never',
+          appWallpaperScalePercent: 100,
+          appWallpaperBlurPx: 0,
+          appWallpaperBrightnessPercent: 100,
+          appWallpaperUiOpacityPercent: 100,
+          appWallpaperVisualProtectionEnabled: true,
+          appWallpaperUnifiedOpacityEnabled: false,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer img') as HTMLImageElement | null;
+      expect(element?.getAttribute('src')).toContain('echo-wallpaper://app/custom');
+    });
+    expect(container.querySelector('.app-wallpaper-layer video')).toBeNull();
+
+    act(() => {
+      setViewportSize(390, 844);
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('.app-wallpaper-layer video') as HTMLVideoElement | null;
+      expect(element?.getAttribute('src')).toContain('echo-wallpaper://app-portrait/custom');
+      return element as HTMLVideoElement;
+    });
+    expect(video.muted).toBe(true);
+    expect(video.loop).toBe(true);
+    expect(video.getAttribute('src')).toContain(encodeURIComponent('D:\\Echo\\app-wallpapers\\portrait-motion.webm'));
+    expect((container.querySelector('.app-shell') as HTMLElement | null)?.dataset.wallpaperOrientation).toBe('portrait');
+    fireEvent.loadedData(video);
+    await waitFor(() => expect(playSpy).toHaveBeenCalled());
+    playSpy.mockRestore();
   });
 
   it('lets wallpaper opacity pass through without visual protection forcing full transparency', async () => {

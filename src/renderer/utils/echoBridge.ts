@@ -87,6 +87,17 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
+const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
+  createBands().map((band, index) => ({
+    ...band,
+    ...(overrides[index] ?? {}),
+    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
+    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
+    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
+    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
+    enabled: overrides[index]?.enabled ?? band.enabled,
+  }));
+
 const browserBuiltInPresets: EqPreset[] = [
   { id: 'flat', name: 'Flat', preampDb: 0, bands: createBands(), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'bass-boost', name: 'Bass Boost', preampDb: -8, bands: createBands([7.5, 6.8, 5, 2.3, 0.5, -0.4, -1, -1.6, -2.2, -2.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
@@ -94,6 +105,12 @@ const browserBuiltInPresets: EqPreset[] = [
   { id: 'treble-sparkle', name: 'Treble Sparkle', preampDb: -7, bands: createBands([-3, -2.5, -1.8, -0.8, 0, 0.8, 2.8, 4.8, 6.2, 5.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'rock', name: 'Rock', preampDb: -6, bands: createBands([5.5, 4.6, 1.8, -2, -3, -0.6, 2.2, 4.5, 3.8, 2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'harman-target', name: 'Harman Target', preampDb: -6, bands: createBands([6, 5.8, 4.5, 2, 0.5, 0, 2.5, 3.5, 2, 0.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'sub-cleanup', name: 'Sub Cleanup', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 28, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 240, gainDb: -2.5, q: 1.1 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'vocal-de-ess', name: 'Vocal De-ess', preampDb: -3, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.5 }, 6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9 }, 8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2 }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'headphone-notch', name: 'Headphone Notch', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 5: { frequencyHz: 2800, gainDb: -2, q: 1.4 }, 7: { frequencyHz: 6200, q: 7.5, filterType: 'notch' }, 8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'subsonic-filter', name: 'Subsonic Filter', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 24, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'sibilance-tamer', name: 'Sibilance Tamer', preampDb: -4, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.2 }, 7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5 }, 8: { frequencyHz: 8200, q: 6, filterType: 'notch' }, 9: { frequencyHz: 12500, gainDb: -1, q: 0.8, filterType: 'highShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'bluetooth-speaker-cleanup', name: 'Bluetooth Speaker Cleanup', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 55, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 120, gainDb: -2, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 420, gainDb: -2, q: 1.2 }, 7: { frequencyHz: 8500, gainDb: 2, q: 0.8, filterType: 'highShelf' }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
 ];
 
 const defaultBrowserEqState = (): EqState => ({

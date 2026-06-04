@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { RemoteStreamUrlResult } from '../../../shared/types/remoteSources';
 import type { RemoteSourceAdapter, RemoteSourceSecret } from './remoteTypes';
 import { normalizeRemotePath } from './remoteIdentity';
@@ -16,8 +17,26 @@ type TokenRecord = {
 
 const defaultTokenTtlMs = 6 * 60 * 60 * 1000;
 const playbackTokenTtlMs = 24 * 60 * 60 * 1000;
+const upstreamResponseTimeoutMs = 15_000;
 
 const safeHeader = (value: string | string[] | undefined): string | undefined => (typeof value === 'string' ? value : undefined);
+const abortError = (): Error => {
+  const error = new Error('Remote stream upstream request timed out');
+  error.name = 'AbortError';
+  return error;
+};
+
+const timeoutSignal = (timeoutMs: number): { signal: AbortSignal; abort: () => void; clear: () => void } => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(abortError()), timeoutMs);
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    abort: () => controller.abort(),
+    clear: () => clearTimeout(timer),
+  };
+};
+
 const contentTypeFor = (filePath: string): string => {
   const lower = filePath.toLowerCase();
   if (lower.endsWith('.flac')) return 'audio/flac';
@@ -35,7 +54,10 @@ export class RemoteStreamProxyService {
   private port: number | null = null;
   private readonly tokens = new Map<string, TokenRecord>();
 
-  constructor(private readonly getAdapter: (provider: string) => RemoteSourceAdapter) {}
+  constructor(
+    private readonly getAdapter: (provider: string) => RemoteSourceAdapter,
+    private readonly options: { upstreamResponseTimeoutMs?: number } = {},
+  ) {}
 
   async createStreamUrl(source: RemoteSourceSecret, remotePath: string, stableKey?: string | null, expiresInSeconds?: number): Promise<RemoteStreamUrlResult> {
     await this.ensureStarted();
@@ -166,10 +188,33 @@ export class RemoteStreamProxyService {
       headers.Range = range;
     }
 
-    const upstream = await fetch(proxyRequest.url, {
-      method: request.method,
-      headers,
-    });
+    const timeout = timeoutSignal(this.options.upstreamResponseTimeoutMs ?? upstreamResponseTimeoutMs);
+    let responseClosed = false;
+    const abortOnClose = (): void => {
+      responseClosed = true;
+      if (!response.writableEnded) {
+        timeout.clear();
+        timeout.abort();
+      }
+    };
+    response.once('close', abortOnClose);
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(proxyRequest.url, {
+        method: request.method,
+        headers,
+        signal: timeout.signal,
+      }).finally(timeout.clear);
+    } catch (error) {
+      response.off('close', abortOnClose);
+      throw error;
+    }
+    if (responseClosed || response.destroyed) {
+      upstream.body?.cancel().catch(() => undefined);
+      response.off('close', abortOnClose);
+      return;
+    }
 
     const status = upstream.status === 416 ? 416 : upstream.status === 206 ? 206 : upstream.ok ? 200 : upstream.status;
     const acceptRanges = upstream.headers.get('accept-ranges') ?? (upstream.status === 206 || upstream.headers.has('content-range') ? 'bytes' : 'none');
@@ -194,10 +239,15 @@ export class RemoteStreamProxyService {
     response.writeHead(status, responseHeaders);
     if (request.method === 'HEAD' || !upstream.body) {
       response.end();
+      response.off('close', abortOnClose);
       return;
     }
 
-    Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]).pipe(response);
+    try {
+      await pipeline(Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]), response);
+    } finally {
+      response.off('close', abortOnClose);
+    }
   }
 
   private async forwardFile(filePath: string, request: IncomingMessage, response: ServerResponse): Promise<void> {

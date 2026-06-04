@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Headphones, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronRight, Clock3, Headphones, RefreshCw, Search, Star, X } from 'lucide-react';
 import type { EqState } from '../../../shared/types/eq';
 import type {
   OpraHeadphoneCorrectionBrowseResult,
@@ -14,6 +14,14 @@ type HeadphoneCorrectionPanelProps = {
   eqState: EqState;
   onApplied?: (state: EqState) => void;
   onAppliedStatusRefresh?: () => Promise<void> | void;
+};
+
+type StoredHeadphoneProduct = {
+  productId: string;
+  productName: string;
+  vendorId: string;
+  vendorName: string;
+  assetUrl: string | null;
 };
 
 const formatDb = (value: number): string => `${value > 0 ? '+' : ''}${Math.round(value * 10) / 10} dB`;
@@ -48,6 +56,67 @@ const createVendorInitials = (name: string): string =>
     .slice(0, 3)
     .toUpperCase();
 
+const opraFavoriteProductsStorageKey = 'echo-next.opra.favoriteProducts';
+const opraRecentProductsStorageKey = 'echo-next.opra.recentProducts';
+const maxStoredProducts = 8;
+
+const readStoredProducts = (key: string): StoredHeadphoneProduct[] => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? '[]') as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((value): StoredHeadphoneProduct | null => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          return null;
+        }
+
+        const input = value as Partial<StoredHeadphoneProduct>;
+        if (!input.productId || !input.productName || !input.vendorId || !input.vendorName) {
+          return null;
+        }
+
+        return {
+          productId: String(input.productId),
+          productName: String(input.productName),
+          vendorId: String(input.vendorId),
+          vendorName: String(input.vendorName),
+          assetUrl: typeof input.assetUrl === 'string' ? input.assetUrl : null,
+        };
+      })
+      .filter((value): value is StoredHeadphoneProduct => Boolean(value))
+      .slice(0, maxStoredProducts);
+  } catch {
+    return [];
+  }
+};
+
+const writeStoredProducts = (key: string, products: StoredHeadphoneProduct[]): void => {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(products.slice(0, maxStoredProducts)));
+  } catch {
+    // OPRA history/favorites are UI conveniences; failing to persist should not block correction.
+  }
+};
+
+const productToStoredProduct = (product: OpraHeadphoneCorrectionProductResult): StoredHeadphoneProduct => ({
+  productId: product.productId,
+  productName: product.productName,
+  vendorId: product.vendorId,
+  vendorName: product.vendorName,
+  assetUrl: product.assetUrl,
+});
+
+const previewToStoredProduct = (preview: OpraHeadphoneCorrectionPreview): StoredHeadphoneProduct => ({
+  productId: preview.productId,
+  productName: preview.productName,
+  vendorId: preview.vendorId,
+  vendorName: preview.vendorName,
+  assetUrl: null,
+});
+
 export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRefresh }: HeadphoneCorrectionPanelProps): JSX.Element => {
   const [query, setQuery] = useState('');
   const [browse, setBrowse] = useState<OpraHeadphoneCorrectionBrowseResult | null>(null);
@@ -56,6 +125,8 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
   const [selectedEqId, setSelectedEqId] = useState('');
   const [busy, setBusy] = useState<'browse' | 'refresh' | 'apply' | 'toggle' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [favoriteProducts, setFavoriteProducts] = useState<StoredHeadphoneProduct[]>(() => readStoredProducts(opraFavoriteProductsStorageKey));
+  const [recentProducts, setRecentProducts] = useState<StoredHeadphoneProduct[]>(() => readStoredProducts(opraRecentProductsStorageKey));
 
   const selectedProduct = useMemo<OpraHeadphoneCorrectionProductResult | null>(() => {
     if (!browse) {
@@ -71,6 +142,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
   const previewPath = createPreviewPath(selectedPreview);
   const selectedPreviewActiveFilterCount = selectedPreview?.preset.bands.filter((band) => band.enabled !== false).length ?? 0;
   const status = browse?.status;
+  const selectedProductFavorited = Boolean(selectedProduct && favoriteProducts.some((product) => product.productId === selectedProduct.productId));
   const hasAppliedHeadphoneCorrection = eqState.presetName.startsWith('耳机校正 -');
   const headphoneCorrectionEnabled = hasAppliedHeadphoneCorrection && eqState.enabled;
   const controlDetail = hasAppliedHeadphoneCorrection
@@ -139,6 +211,38 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
     setSelectedEqId(product.eqs[0]?.eqId ?? '');
   };
 
+  const openStoredProduct = (product: StoredHeadphoneProduct): void => {
+    setQuery('');
+    setSelectedVendorId(product.vendorId);
+    setSelectedProductId(product.productId);
+    setSelectedEqId('');
+    void loadBrowse({ vendorId: product.vendorId, productId: product.productId, query: '' });
+  };
+
+  const rememberRecentProduct = useCallback((product: StoredHeadphoneProduct): void => {
+    setRecentProducts((current) => {
+      const next = [product, ...current.filter((item) => item.productId !== product.productId)].slice(0, maxStoredProducts);
+      writeStoredProducts(opraRecentProductsStorageKey, next);
+      return next;
+    });
+  }, []);
+
+  const toggleFavoriteProduct = (): void => {
+    if (!selectedProduct) {
+      return;
+    }
+
+    const stored = productToStoredProduct(selectedProduct);
+    setFavoriteProducts((current) => {
+      const exists = current.some((product) => product.productId === stored.productId);
+      const next = exists
+        ? current.filter((product) => product.productId !== stored.productId)
+        : [stored, ...current].slice(0, maxStoredProducts);
+      writeStoredProducts(opraFavoriteProductsStorageKey, next);
+      return next;
+    });
+  };
+
   const applyCorrection = useCallback(async (preview: OpraHeadphoneCorrectionPreview | null): Promise<void> => {
     if (!preview) {
       return;
@@ -156,13 +260,14 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
       const result = await eq.applyHeadphoneCorrection({ eqId: preview.eqId, enableEq: true });
       onApplied?.(result.state);
       await onAppliedStatusRefresh?.();
+      rememberRecentProduct(previewToStoredProduct(result.preview));
       setMessage(`已应用 ${result.preview.vendorName} ${result.preview.productName}`);
     } catch (applyError) {
       setMessage(applyError instanceof Error ? applyError.message : String(applyError));
     } finally {
       setBusy(null);
     }
-  }, [onApplied, onAppliedStatusRefresh]);
+  }, [onApplied, onAppliedStatusRefresh, rememberRecentProduct]);
 
   const toggleHeadphoneCorrection = useCallback(async (): Promise<void> => {
     const eq = getEqBridge();
@@ -265,6 +370,43 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
           ) : null}
         </div>
 
+        {favoriteProducts.length > 0 || recentProducts.length > 0 ? (
+          <div className="opra-shortcuts">
+            {favoriteProducts.length > 0 ? (
+              <section aria-label="收藏型号">
+                <header>
+                  <Star size={14} aria-hidden="true" />
+                  <span>收藏型号</span>
+                </header>
+                <div>
+                  {favoriteProducts.map((product) => (
+                    <button type="button" key={product.productId} onClick={() => openStoredProduct(product)}>
+                      <strong>{product.productName}</strong>
+                      <small>{product.vendorName}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {recentProducts.length > 0 ? (
+              <section aria-label="最近使用">
+                <header>
+                  <Clock3 size={14} aria-hidden="true" />
+                  <span>最近使用</span>
+                </header>
+                <div>
+                  {recentProducts.map((product) => (
+                    <button type="button" key={product.productId} onClick={() => openStoredProduct(product)}>
+                      <strong>{product.productName}</strong>
+                      <small>{product.vendorName}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
+
         {status ? (
           <div className="opra-browser-status">
             <span>{status.vendorCount} 个品牌</span>
@@ -333,6 +475,15 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
                   <small>{selectedProduct.vendorName}</small>
                   <strong>{selectedProduct.productName}</strong>
                 </span>
+                <button
+                  className="opra-favorite-button"
+                  type="button"
+                  aria-label={selectedProductFavorited ? '取消收藏型号' : '收藏型号'}
+                  data-active={selectedProductFavorited}
+                  onClick={toggleFavoriteProduct}
+                >
+                  <Star size={15} aria-hidden="true" />
+                </button>
               </div>
               <div className="opra-preset-list">
                 {selectedProduct.eqs.map((preview) => (

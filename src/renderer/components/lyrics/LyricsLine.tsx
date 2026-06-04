@@ -286,8 +286,14 @@ export const LyricsLine = ({
       data-secondary-lines={visibleSecondaryLines}
       data-word-highlight={hasWordHighlight}
       type="button"
-      onClick={() => {
+      onMouseDown={(event) => {
         if (seekable) {
+          event.preventDefault();
+        }
+      }}
+      onClick={(event) => {
+        if (seekable) {
+          event.currentTarget.blur();
           onSeek(line.timeMs);
         }
       }}

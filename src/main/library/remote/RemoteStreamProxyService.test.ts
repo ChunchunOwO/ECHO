@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebDavRemoteSourceAdapter } from './adapters/WebDavRemoteSourceAdapter';
 import { RemoteStreamProxyService } from './RemoteStreamProxyService';
-import type { RemoteSourceSecret } from './remoteTypes';
+import type { RemoteSourceAdapter, RemoteSourceSecret } from './remoteTypes';
 
 const audioBytes = Buffer.from('0123456789abcdef');
 
@@ -142,5 +142,25 @@ describe('RemoteStreamProxyService', () => {
 
     const response = await fetch(stream.url);
     expect(response.status).toBe(401);
+  });
+
+  it('times out stalled upstream streams instead of leaving playback waiting forever', async () => {
+    await proxy.close();
+    await close(backend);
+
+    backend = createServer(() => {
+      // Keep the socket open without sending headers to simulate a wedged Subsonic stream.
+    });
+    backendPort = await listen(backend);
+    const adapter = {
+      provider: 'webdav',
+      createProxyRequest: () => ({ url: `http://127.0.0.1:${backendPort}/dav/song.mp3` }),
+    } as unknown as RemoteSourceAdapter;
+    proxy = new RemoteStreamProxyService(() => adapter, { upstreamResponseTimeoutMs: 20 });
+
+    const stream = await proxy.createStreamUrl(source(), '/song.mp3', 'stable-1');
+    const response = await fetch(stream.url);
+
+    expect(response.status).toBe(502);
   });
 });

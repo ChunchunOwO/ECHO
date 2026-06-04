@@ -8,7 +8,9 @@ html[data-theme-transition="true"] .player-bar-host,
 html[data-theme-transition="true"] .settings-section,
 html[data-theme-transition="true"] .setting-row,
 html[data-theme-transition="true"] .settings-theme-preset-card,
+html[data-theme-transition="true"] .settings-theme-custom-summary,
 html[data-theme-transition="true"] .settings-theme-custom-panel,
+html[data-theme-transition="true"] .settings-theme-custom-details,
 html[data-theme-transition="true"] .settings-theme-custom-color-card,
 html[data-theme-transition="true"] .settings-theme-custom-sliders,
 html[data-theme-transition="true"] .settings-action-button,
@@ -34,7 +36,9 @@ html[data-theme-transition="true"] .chip-button {
   html[data-theme-transition="true"] .settings-section,
   html[data-theme-transition="true"] .setting-row,
   html[data-theme-transition="true"] .settings-theme-preset-card,
+  html[data-theme-transition="true"] .settings-theme-custom-summary,
   html[data-theme-transition="true"] .settings-theme-custom-panel,
+  html[data-theme-transition="true"] .settings-theme-custom-details,
   html[data-theme-transition="true"] .settings-theme-custom-color-card,
   html[data-theme-transition="true"] .settings-theme-custom-sliders,
   html[data-theme-transition="true"] .settings-action-button,
@@ -1886,6 +1890,8 @@ html[data-theme-preset="FINAL"] :is(
   .setting-row,
   .settings-theme-preset-card,
   .settings-theme-custom-panel,
+  .settings-theme-custom-summary,
+  .settings-theme-custom-details,
   .settings-theme-custom-color-card,
   .album-card,
   .artist-card,
@@ -1922,6 +1928,8 @@ html[data-theme="dark"][data-theme-preset="FINAL"] :is(
   .setting-row,
   .settings-theme-preset-card,
   .settings-theme-custom-panel,
+  .settings-theme-custom-summary,
+  .settings-theme-custom-details,
   .settings-theme-custom-color-card,
   .album-card,
   .artist-card,
@@ -2130,6 +2138,8 @@ html[data-theme-preset="FINAL"] :is(
   .settings-page .settings-theme-preset-card,
   .settings-page .settings-theme-preset-preview,
   .settings-page .settings-theme-custom-panel,
+  .settings-page .settings-theme-custom-summary,
+  .settings-page .settings-theme-custom-details,
   .settings-page .settings-theme-custom-color-card,
   .settings-page .settings-theme-custom-sliders,
   .settings-page .settings-cache-panel,
@@ -2203,6 +2213,8 @@ html[data-theme-preset="FINAL"] .settings-page :is(
   .settings-account-row,
   .settings-sidebar-layout-panel,
   .settings-theme-custom-panel,
+  .settings-theme-custom-summary,
+  .settings-theme-custom-details,
   .settings-theme-custom-color-card,
   .settings-theme-custom-sliders
 ) {
@@ -2267,6 +2279,8 @@ html[data-theme-preset="FINAL"] .settings-page :is(
   .settings-theme-preset-summary,
   .settings-theme-preset-card,
   .settings-theme-custom-panel,
+  .settings-theme-custom-summary,
+  .settings-theme-custom-details,
   .settings-theme-custom-color-card,
   .settings-status-grid span,
   .settings-wallpaper-path,
@@ -5076,6 +5090,7 @@ html[data-theme-preset="darkSideMoon"] .lyrics-drawer-range input[type="range"]:
 }
 
 html[data-theme-preset="darkSideMoon"] .settings-theme-custom-panel,
+html[data-theme-preset="darkSideMoon"] .settings-theme-custom-details,
 html[data-theme-preset="darkSideMoon"] .settings-theme-custom-color-card,
 html[data-theme-preset="darkSideMoon"] .settings-theme-custom-gradient-card,
 html[data-theme-preset="darkSideMoon"] .settings-theme-custom-sliders {
@@ -5728,6 +5743,71 @@ html[data-theme-preset="darkSideMoon"] .app-shell--lyrics-player-drawer .lyrics-
   display: grid;
   gap: 12px;
   min-width: 0;
+}
+
+.settings-theme-custom-summary {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: var(--theme-panel-bg);
+  box-shadow: var(--theme-shadow-panel);
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-theme-custom-summary:hover {
+  border-color: var(--theme-panel-border-strong);
+  background: var(--theme-panel-bg-strong);
+}
+
+.settings-theme-custom-summary-preview {
+  display: block;
+  width: 52px;
+  height: 34px;
+  border-radius: 7px;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.42),
+    0 6px 14px rgb(30 25 24 / 0.1);
+}
+
+.settings-theme-custom-summary > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-theme-custom-summary strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-custom-summary em {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 720;
+}
+
+.settings-theme-custom-summary > svg {
+  color: var(--theme-muted-text);
+  transition: transform 160ms ease;
+}
+
+.settings-theme-custom-summary[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.settings-theme-custom-details {
   padding: 12px;
   border: 1px solid var(--theme-panel-border);
   border-radius: 8px;

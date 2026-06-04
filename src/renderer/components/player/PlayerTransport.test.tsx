@@ -14,7 +14,6 @@ const defaultProps = {
   onNext: vi.fn(),
   onToggleShuffle: vi.fn(),
   onCycleRepeatMode: vi.fn(),
-  onOpenQueue: vi.fn(),
   onOpenLyrics: vi.fn(),
   onOpenMv: vi.fn(),
 };

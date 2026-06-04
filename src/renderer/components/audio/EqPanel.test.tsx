@@ -304,6 +304,38 @@ describe('EqPanel', () => {
     await waitFor(() => expect(window.echo.eq.setEnabled).toHaveBeenCalledWith(true));
   });
 
+  it('locks OPRA headphone correction until converted and only A/B bypasses EQ', async () => {
+    const opraState = eqState({
+      enabled: true,
+      presetId: 'opra-sennheiser-hd650',
+      presetName: '耳机校正 - Sennheiser / HD 650 / AutoEQ',
+      preampDb: -5.2,
+    });
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(opraState);
+    window.echo.eq.setEnabled = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ ...opraState, enabled }));
+    renderEqPanel();
+
+    expect(await screen.findByLabelText('Headphone correction EQ lock')).toBeTruthy();
+    expect(screen.getAllByText('Managed by headphone correction').length).toBeGreaterThan(0);
+    expect((screen.getByLabelText('Quick EQ preamp') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /Bass lift/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compare original' }));
+    await waitFor(() => expect(window.echo.eq.setEnabled).toHaveBeenCalledWith(false));
+    expect(window.echo.eq.setRoomCorrectionEnabled).not.toHaveBeenCalled();
+    expect(window.echo.eq.setChannelBalanceState).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert to custom EQ' }));
+    await waitFor(() =>
+      expect(window.echo.eq.savePreset).toHaveBeenCalledWith(expect.objectContaining({
+        id: expect.stringMatching(/^custom-opra-sennheiser-hd650-/),
+        name: 'Custom EQ - Sennheiser / HD 650 / AutoEQ',
+        preampDb: -5.2,
+      })),
+    );
+    await waitFor(() => expect(window.echo.eq.listPresets).toHaveBeenCalled());
+  });
+
   it('shows readable DSP comfort guidance in Simple mode', async () => {
     renderEqPanel();
 

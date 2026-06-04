@@ -361,6 +361,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [desktopLyricsLocked, setDesktopLyricsLocked] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
+  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(false);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
@@ -774,6 +775,47 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
 
       setAudioIssueDiagnosticsWindowEnabled(settings.audioIssueDiagnosticsWindowEnabled === true);
+    };
+
+    const refreshSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            applySettings(settings);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        applySettings(event.detail as Partial<AppSettings> | null | undefined);
+        return;
+      }
+
+      if (!cancelled) {
+        refreshSettings();
+      }
+    };
+
+    refreshSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'signalPathControlEnabled')) {
+        return;
+      }
+
+      setSignalPathControlEnabled(settings.signalPathControlEnabled === true);
     };
 
     const refreshSettings = (): void => {
@@ -2245,6 +2287,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             hasDesktopLyricsBridge={hasDesktopLyricsBridge}
             onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
             onOpenQueue={isLyricsRoute ? handleOpenLyricsQueueDrawer : handleOpenShellQueue}
+            showQueueButton={true}
+            showSignalPathControl={!isLyricsRoute && signalPathControlEnabled}
             onToggleDesktopLyrics={handleToggleDesktopLyrics}
             onUnlockDesktopLyrics={handleUnlockDesktopLyrics}
           />

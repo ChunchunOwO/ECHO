@@ -902,6 +902,8 @@ const sidebarSettingsCopy = {
   mainGroupKey: 'settings.appearance.sidebar.mainGroup',
   utilityGroupKey: 'settings.appearance.sidebar.utilityGroup',
   resetKey: 'settings.appearance.sidebar.reset',
+  expandKey: 'settings.appearance.sidebar.expand',
+  collapseKey: 'settings.appearance.sidebar.collapse',
   visibleKey: 'settings.appearance.sidebar.visible',
   hiddenKey: 'settings.appearance.sidebar.hidden',
   fixedKey: 'settings.appearance.sidebar.fixed',
@@ -9835,6 +9837,8 @@ export const SettingsPage = (): JSX.Element => {
     mainGroup: t(sidebarSettingsCopy.mainGroupKey),
     utilityGroup: t(sidebarSettingsCopy.utilityGroupKey),
     reset: t(sidebarSettingsCopy.resetKey),
+    expand: t(sidebarSettingsCopy.expandKey),
+    collapse: t(sidebarSettingsCopy.collapseKey),
     visible: t(sidebarSettingsCopy.visibleKey),
     hidden: t(sidebarSettingsCopy.hiddenKey),
     fixed: t(sidebarSettingsCopy.fixedKey),
@@ -10054,6 +10058,22 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       playerWaveformProgressEnabled: !(appSettings?.playerWaveformProgressEnabled ?? false),
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-signal-path-control"
+                highlighted={highlightedSettingId === 'settings-row-signal-path-control'}
+                title="底栏信号路径"
+                description="在底部播放栏显示 Signal Path 入口。默认关闭，歌词页始终隐藏。"
+              >
+                <ToggleButton
+                  active={appSettings?.signalPathControlEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? false),
                     })
                   }
                 />

@@ -181,6 +181,8 @@ export type AppSettings = {
   appearanceCustomThemes?: AppThemeCustomTheme[];
   appearanceThemeCustomId?: string | null;
   appearanceThemePresetsExpanded?: boolean;
+  appearanceThemeCustomExpanded?: boolean;
+  appearanceSidebarLayoutExpanded?: boolean;
   appearancePreferences?: AppearancePreferences;
   sidebarRouteOrder?: SidebarRouteId[];
   sidebarHiddenRouteIds?: SidebarRouteId[];
@@ -357,6 +359,7 @@ export type AppSettings = {
   lowLoadPlaybackEnhancementsEnabled?: boolean;
   homeRandomHeroTitleEnabled?: boolean;
   playerWaveformProgressEnabled?: boolean;
+  signalPathControlEnabled?: boolean;
   fixedVolumeEnabled?: boolean;
   gaplessPlaybackEnabled?: boolean;
   audioTransportFadeEnabled?: boolean;

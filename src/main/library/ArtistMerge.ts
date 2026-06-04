@@ -16,7 +16,7 @@ const defaultStrategy: ArtistMergeStrategy = 'standard';
 const zeroWidthPattern = /[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/gu;
 const combiningMarkPattern = /[\u0300-\u036f]/gu;
 const punctuationAndSpacePattern = /[\p{P}\p{Z}\p{S}]/gu;
-const artistNameSeparatorPattern = /\s*(?:\/|,|;|；|×)\s*|(?<!\s)&(?!\s)|\s+\b(?:feat\.?|ft\.?|featuring|with|x)\b\s+/iu;
+const artistNameSeparatorPattern = /\s*(?:\/|,|;|；|×)\s*|(?<!\s)&(?!\s)|\s+(?:feat\.?|ft\.?|featuring|with|x)\s+/iu;
 const trailingAsciiNoisePattern = /[\s._\-~!'"`]+$/u;
 const standardSuffixPatterns: RegExp[] = [
   /\s*(?:\+|\uff0b)\s*(?:81|86|886|852|853|1|44)$/iu,

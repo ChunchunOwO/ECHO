@@ -24,9 +24,10 @@ type PlayerTransportProps = {
   onNext: () => void;
   onToggleShuffle: () => void;
   onCycleRepeatMode: () => void;
-  onOpenQueue: () => void;
+  onOpenQueue?: () => void;
   onOpenLyrics: () => void;
   onOpenMv: () => void;
+  showQueueButton?: boolean;
   isCurrentTrackLiked?: boolean;
   canLikeCurrentTrack?: boolean;
   onToggleCurrentTrackLiked?: () => void;
@@ -46,6 +47,7 @@ export const PlayerTransport = ({
   onOpenQueue,
   onOpenLyrics,
   onOpenMv,
+  showQueueButton = false,
   isCurrentTrackLiked = false,
   canLikeCurrentTrack = false,
   onToggleCurrentTrackLiked,
@@ -62,9 +64,11 @@ export const PlayerTransport = ({
     >
       <Heart size={17} fill={isCurrentTrackLiked ? 'currentColor' : 'none'} />
     </button>
-    <button className="icon-button" type="button" aria-label="Playback queue" title="Playback queue" onClick={onOpenQueue}>
-      <ListMusic size={17} />
-    </button>
+    {showQueueButton ? (
+      <button className="icon-button" type="button" aria-label="Playback queue" title="Playback queue" onClick={onOpenQueue}>
+        <ListMusic size={17} />
+      </button>
+    ) : null}
     <button
       className={`icon-button ${isShuffleEnabled ? 'is-soft-active' : ''}`}
       type="button"

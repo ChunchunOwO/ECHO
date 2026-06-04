@@ -59,6 +59,8 @@ describe('app settings normalization', () => {
     expect(settings.appearanceCustomThemes).toEqual([]);
     expect(settings.appearanceThemeCustomId).toBeNull();
     expect(settings.appearanceThemePresetsExpanded).toBe(false);
+    expect(settings.appearanceThemeCustomExpanded).toBe(false);
+    expect(settings.appearanceSidebarLayoutExpanded).toBe(false);
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
@@ -1584,6 +1586,14 @@ describe('app settings normalization', () => {
 
     expect(settings.lyricsEnabledProviders).toEqual(['local', 'amll-ttml']);
     expect(settings.lyricsProviderOrder).toEqual(['local', 'amll-ttml', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
+  });
+
+  it('keeps the bottom signal path control opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: true }).signalPathControlEnabled).toBe(true);
+    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(false);
   });
 
   it('normalizes channel balance settings for old and malformed settings files', async () => {

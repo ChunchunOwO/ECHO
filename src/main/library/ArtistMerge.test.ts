@@ -28,6 +28,8 @@ describe('ArtistMerge', () => {
     expect(splitArtistCreditParts('MYTH \uff06 ROID')).toEqual(['MYTH \uff06 ROID']);
     expect(splitArtistCreditParts('Afterglow,FLOW')).toEqual(['Afterglow', 'FLOW']);
     expect(splitArtistCreditParts('2PM/\u5c39\u6069\u60e0')).toEqual(['2PM', '\u5c39\u6069\u60e0']);
+    expect(splitArtistCreditParts('Aimer feat. milet')).toEqual(['Aimer', 'milet']);
+    expect(splitArtistCreditParts('Aimer ft. milet')).toEqual(['Aimer', 'milet']);
     expect(splitArtistCreditParts('Aimer featuring milet')).toEqual(['Aimer', 'milet']);
   });
 

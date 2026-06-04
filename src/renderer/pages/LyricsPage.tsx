@@ -184,8 +184,11 @@ const lyricsCandidateSourceMemoryKey = "echo:lyrics:candidate-source";
 const maxInterpolatedStatusGapSeconds = 1.6;
 const maxStaleStatusRegressionSeconds = 2.5;
 const seekAnchorMaxAgeSeconds = 3;
+const seekAnchorStalledBridgeMaxAgeSeconds = 30;
+const seekAnchorSourceAdvanceReleaseSeconds = 0.75;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const albumNavigationTransitionMs = 180;
+const lyricSeekPreviewMaxMs = 1200;
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
@@ -1291,8 +1294,13 @@ const useLyricsDisplayPosition = (
         const isStaleStatusAfterSeek =
           elapsedSeconds < seekAnchorMaxAgeSeconds &&
           Math.abs(nextPositionSeconds - expectedSeekPosition) > 2;
+        const sourceStillParkedNearSeekTarget =
+          state === "playing" &&
+          elapsedSeconds < seekAnchorStalledBridgeMaxAgeSeconds &&
+          boundedSourcePosition <= seekAnchor.positionSeconds + seekAnchorSourceAdvanceReleaseSeconds;
+        const shouldBridgeSeekAnchor = isStaleStatusAfterSeek || sourceStillParkedNearSeekTarget;
 
-        if (isStaleStatusAfterSeek) {
+        if (shouldBridgeSeekAnchor) {
           nextPositionSeconds = expectedSeekPosition;
         } else {
           seekAnchorRef.current = null;
@@ -1484,6 +1492,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   const smtcLyricsProgressKeyRef = useRef<string | null>(null);
   const albumNavigationTimeoutRef = useRef<number | null>(null);
   const copyNoticeTimerRef = useRef<number | null>(null);
+  const seekPreviewTimerRef = useRef<number | null>(null);
   const noteSourceQualityMemoryChanged = useCallback((): void => {
     setSourceQualityMemoryVersion((version) => (version + 1) % 1000000);
   }, []);
@@ -1518,6 +1527,25 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     },
     [clearCopyNotice],
   );
+  const clearSeekPreview = useCallback((): void => {
+    if (seekPreviewTimerRef.current !== null) {
+      window.clearTimeout(seekPreviewTimerRef.current);
+      seekPreviewTimerRef.current = null;
+    }
+
+    setSeekPreviewSeconds(null);
+  }, []);
+  const showSeekPreview = useCallback((positionSeconds: number): void => {
+    if (seekPreviewTimerRef.current !== null) {
+      window.clearTimeout(seekPreviewTimerRef.current);
+    }
+
+    setSeekPreviewSeconds(positionSeconds);
+    seekPreviewTimerRef.current = window.setTimeout(() => {
+      seekPreviewTimerRef.current = null;
+      setSeekPreviewSeconds(null);
+    }, lyricSeekPreviewMaxMs);
+  }, []);
   const writeClipboardText = useCallback(
     async (text: string, successMessage: string): Promise<void> => {
       if (!navigator.clipboard?.writeText) {
@@ -1538,6 +1566,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     () => () => {
       if (copyNoticeTimerRef.current !== null) {
         window.clearTimeout(copyNoticeTimerRef.current);
+      }
+      if (seekPreviewTimerRef.current !== null) {
+        window.clearTimeout(seekPreviewTimerRef.current);
       }
     },
     [],
@@ -3419,7 +3450,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         source: "lyrics-line",
       });
       try {
-        setSeekPreviewSeconds(nextSeconds);
+        showSeekPreview(nextSeconds);
         const status = await playback.seek(nextSeconds);
         const nextStatus = {
           ...status,
@@ -3440,6 +3471,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         );
         beginPlaybackSeekSnapshot(nextStatus);
         dispatchPlaybackSeeked(nextSeconds, status.currentTrackId ?? trackId ?? null);
+        clearSeekPreview();
         logLyricsConsole("page.seek-committed", {
           trackId: status.currentTrackId ?? trackId ?? null,
           state: status.state,
@@ -3447,8 +3479,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           statusPositionMs: nextStatus.positionMs,
           durationMs: nextStatus.durationMs,
         });
-        await refreshStatus();
+        void refreshStatus();
       } catch (seekError) {
+        clearSeekPreview();
         logLyricsConsole("page.seek-failed", {
           trackId,
           targetPositionMs: Math.round(nextSeconds * 1000),
@@ -3457,11 +3490,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         setError(
           seekError instanceof Error ? seekError.message : String(seekError),
         );
-      } finally {
-        setSeekPreviewSeconds(null);
       }
     },
-    [lyricsPositionSeconds, refreshStatus, trackId],
+    [clearSeekPreview, lyricsPositionSeconds, refreshStatus, showSeekPreview, trackId],
   );
 
   const handleLyricsOffsetChange = useCallback(

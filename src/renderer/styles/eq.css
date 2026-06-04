@@ -360,7 +360,7 @@
 
 .eq-quick-strip {
   display: grid;
-  grid-template-columns: minmax(108px, 0.7fr) minmax(112px, 0.72fr) minmax(132px, 0.9fr) minmax(220px, 1.3fr) repeat(3, minmax(112px, 0.72fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
   align-items: stretch;
   padding: 8px;
@@ -447,6 +447,60 @@
 .eq-quick-slider input {
   min-width: 90px;
   accent-color: var(--theme-legacy-accent-text);
+}
+
+.eq-headphone-lock {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: #43566a;
+  border: 1px solid rgba(31, 93, 102, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(232, 244, 243, 0.86), rgba(248, 251, 252, 0.92)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.eq-headphone-lock__icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--theme-legacy-accent-text);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.eq-headphone-lock div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.eq-headphone-lock strong,
+.eq-headphone-lock small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-headphone-lock strong {
+  color: var(--theme-legacy-heading-text);
+  font-size: 13px;
+  font-weight: 920;
+}
+
+.eq-headphone-lock small {
+  color: var(--theme-legacy-muted-text);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.eq-workbench[data-managed="true"] .eq-curve-node-group {
+  cursor: not-allowed;
 }
 
 .eq-simple-tones {
@@ -3914,6 +3968,7 @@ html[data-theme="dark"] .eq-import-report,
 html[data-theme="dark"] .eq-import-report > div,
 html[data-theme="dark"] .eq-import-report > span,
 html[data-theme="dark"] .eq-soft-button,
+html[data-theme="dark"] .eq-headphone-lock,
 html[data-theme="dark"] .eq-band-chip,
 html[data-theme="dark"] .eq-preset-search,
 html[data-theme="dark"] .eq-preset-filter,
@@ -3969,6 +4024,19 @@ html[data-theme="dark"] .eq-headphone-correction-apply {
   color: #c8f1df;
   border-color: rgba(95, 194, 150, 0.24);
   background: rgba(33, 62, 52, 0.72);
+}
+
+html[data-theme="dark"] .eq-headphone-lock__icon {
+  color: #b8c2ff;
+  background: rgba(45, 56, 76, 0.72);
+}
+
+html[data-theme="dark"] .eq-headphone-lock strong {
+  color: #f1f5ff;
+}
+
+html[data-theme="dark"] .eq-headphone-lock small {
+  color: rgba(220, 229, 247, 0.68);
 }
 
 html[data-theme="dark"] .eq-workbench,

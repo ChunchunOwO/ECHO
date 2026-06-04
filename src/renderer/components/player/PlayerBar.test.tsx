@@ -10,6 +10,7 @@ import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { setPlaybackStatusSnapshot } from '../../stores/playbackStatusStore';
+import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlaybackCommandController } from './PlaybackCommandController';
 import { PlayerBar } from './PlayerBar';
 
@@ -127,7 +128,7 @@ const emitAudioStatus = (handlers: Array<(status: AudioStatus) => void>, status:
   handlers.forEach((handler) => handler(status));
 };
 
-const QueueSeed = ({ tracks }: { tracks: LibraryTrack[] }): JSX.Element => {
+const QueueSeed = ({ showSignalPathControl, tracks }: { showSignalPathControl?: boolean; tracks: LibraryTrack[] }): JSX.Element => {
   const { setCurrentTrackId, replaceQueue } = usePlaybackQueue();
 
   useEffect(() => {
@@ -135,7 +136,7 @@ const QueueSeed = ({ tracks }: { tracks: LibraryTrack[] }): JSX.Element => {
     setCurrentTrackId(tracks[0]?.id ?? null);
   }, [replaceQueue, setCurrentTrackId, tracks]);
 
-  return <PlayerBar />;
+  return <PlayerBar showSignalPathControl={showSignalPathControl} />;
 };
 
 const ExternalPlaySeed = ({ track }: { track: LibraryTrack }): JSX.Element => {
@@ -247,6 +248,128 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(connectPlay).toHaveBeenCalledTimes(1));
     expect(localPlay).not.toHaveBeenCalled();
     expect(localPause).not.toHaveBeenCalled();
+  });
+
+  it('opens the bottom signal path popover with the current audio chain', async () => {
+    const track = makeTrack(33, { title: 'Signal Path Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
+    const status = {
+      ...audioStatus(track),
+      bitDepth: 24,
+      fileSampleRate: 96000,
+      decoderOutputSampleRate: 96000,
+      requestedOutputSampleRate: 96000,
+      actualDeviceSampleRate: 96000,
+      bitPerfectCandidate: true,
+    };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 8000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(null),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(status),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed showSignalPathControl={true} tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Signal Path Track');
+    const signalPathButton = screen.getByRole('button', { name: '打开音频链路：纯净候选，FLAC / 96k / 24b' });
+    expect(signalPathButton.textContent).toBe('');
+    expect(signalPathButton.getAttribute('title')).toBe('打开音频链路：纯净候选，FLAC / 96k / 24b');
+
+    fireEvent.click(signalPathButton);
+
+    const dialog = await screen.findByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('信号路径: 无损');
+    expect(dialog.textContent).toContain('数据源');
+    expect(dialog.textContent).toContain('FLAC 96kHz 24bit');
+    expect(dialog.textContent).toContain('输出');
+  });
+
+  it('shows enhanced signal path nodes when EQ is enabled', () => {
+    const track = makeTrack(34, { title: 'EQ Signal Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
+    const status = {
+      ...audioStatus(track),
+      bitDepth: 24,
+      eqEnabled: true,
+      dspActive: true,
+      eqPresetName: 'Custom',
+      nativeOutputFormat: 'pcm32',
+    };
+
+    render(
+      <>
+        <AudioSignalPathControl isOpen={true} status={status} track={track} onClick={vi.fn()} />
+        <AudioSignalPathPopover isOpen={true} status={status} track={track} onClose={vi.fn()} />
+      </>,
+    );
+
+    expect(screen.getByRole('button', { name: '打开音频链路：已强化，FLAC / 96k / 24b' }).textContent).toBe('');
+    const dialog = screen.getByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('信号路径: 已强化');
+    expect(dialog.textContent).toContain('参数化 EQ');
+    expect(dialog.textContent).toContain('5 个频段');
+    expect(dialog.textContent).toContain('比特位深转换');
+    expect(dialog.textContent).toContain('64bit Float 至 32bit');
+  });
+
+  it('shows the source and output rates when playback is resampled', () => {
+    const track = makeTrack(35, { title: 'Resampled Signal Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
+    const status = {
+      ...audioStatus(track),
+      decoderOutputSampleRate: 48000,
+      requestedOutputSampleRate: 48000,
+      actualDeviceSampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      resampling: true,
+    };
+
+    render(
+      <>
+        <AudioSignalPathControl isOpen={true} status={status} track={track} onClick={vi.fn()} />
+        <AudioSignalPathPopover isOpen={true} status={status} track={track} onClose={vi.fn()} />
+      </>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('信号路径: 重采样');
+    expect(dialog.textContent).toContain('重采样');
+    expect(dialog.textContent).toContain('96kHz -> 48kHz');
   });
 
   it('routes global play/pause to the active DLNA Connect session instead of local playback', async () => {

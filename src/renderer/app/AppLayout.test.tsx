@@ -962,10 +962,35 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
 
     await waitFor(() => expect(screen.getByText('Full queue page')).toBeTruthy());
     expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+  });
+
+  it('shows the shell signal path button only when the app setting enables it', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ signalPathControlEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithQueue} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByRole('button', { name: /打开音频链路/u })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Playback queue' })).toBeTruthy();
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Playback queue' })).toBeTruthy();
   });
 
   it('opens the lightweight queue drawer from the lyrics player bar', async () => {
@@ -980,6 +1005,7 @@ describe('AppLayout standalone routes', () => {
 
     await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
     expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
 

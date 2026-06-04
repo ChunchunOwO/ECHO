@@ -1599,6 +1599,72 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(seek).toHaveBeenCalledWith(10));
   });
 
+  it("does not keep a clicked lyric line focused after seeking", async () => {
+    const track = makeTrack();
+    const { seek } = mockEcho(track, 0);
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    const line = await screen.findByText("Second line");
+    fireEvent.mouseDown(line);
+    fireEvent.click(line);
+
+    await waitFor(() => expect(seek).toHaveBeenCalledWith(10));
+    expect(document.activeElement?.closest(".lyrics-line")).toBeNull();
+  });
+
+  it("keeps lyrics advancing after a line seek when the status refresh hangs", async () => {
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const flushRaf = (now: number): void => {
+      const callbacks = rafCallbacks.splice(0);
+      callbacks.forEach((callback) => callback(now));
+    };
+    const track = makeTrack();
+    const { seek } = mockEcho(track, 0);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("First line");
+    window.echo.playback.getStatus = vi.fn().mockImplementation(() => new Promise(() => undefined));
+    window.echo.audio.getStatus = vi.fn().mockImplementation(() => new Promise(() => undefined));
+
+    fireEvent.click(screen.getByText("Second line"));
+
+    await waitFor(() => expect(seek).toHaveBeenCalledWith(10));
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+
+    performanceNow.mockReturnValue(11000);
+    act(() => {
+      flushRaf(11000);
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Third line"),
+    );
+  });
+
   it("uses album artwork as the MV fallback and shows a default visual without cover art", async () => {
     window.sessionStorage.setItem("echo:lyrics:view-mode", "mv");
     const track = makeTrack();

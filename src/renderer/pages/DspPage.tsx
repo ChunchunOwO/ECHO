@@ -548,6 +548,29 @@ const getRecommendedHeadroomDb = (audioStatus: AudioStatus | null, currentHeadro
 
 type HeadroomTone = 'good' | 'warn' | 'risk';
 
+const hasObservedDspClippingRisk = (
+  audioStatus: AudioStatus | null,
+  eqState: EqState,
+  roomCorrection: RoomCorrectionState,
+  channelBalance: ChannelBalanceState,
+  clipCount = audioStatus?.audioLevels?.clipCount ?? 0,
+): boolean =>
+  clipCount > 0 ||
+  audioStatus?.dspClippingRisk === true ||
+  audioStatus?.dspLimiterProtecting === true ||
+  eqState.clippingRisk ||
+  roomCorrection.clippingRisk ||
+  channelBalance.clippingRisk === true;
+
+const hasHeadroomWarning = (
+  audioStatus: AudioStatus | null,
+  outputPeakDb: number | null,
+  liveHeadroomDb: number | null,
+): boolean =>
+  audioStatus?.clippingRisk === true ||
+  (outputPeakDb !== null && outputPeakDb >= -1) ||
+  (liveHeadroomDb !== null && liveHeadroomDb <= 1);
+
 type ModulePanelProps = {
   audioStatus: AudioStatus | null;
   eqState: EqState;
@@ -581,8 +604,9 @@ const HeadroomPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, b
   const liveHeadroomDb = finiteLevel(audioStatus?.audioLevels?.headroomDb);
   const outputPeakDb = finiteLevel(audioStatus?.audioLevels?.estimatedOutputPeakDb);
   const inputPeakDb = finiteLevel(audioStatus?.audioLevels?.inputPeakDb);
-  const clippingRisk = audioStatus?.clippingRisk === true || eqState.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk === true;
   const clipCount = audioStatus?.audioLevels?.clipCount ?? 0;
+  const clippingRisk = hasObservedDspClippingRisk(audioStatus, eqState, roomCorrection, channelBalance, clipCount);
+  const headroomWarning = hasHeadroomWarning(audioStatus, outputPeakDb, liveHeadroomDb);
   const lastClipAt = audioStatus?.audioLevels?.lastClipAt ?? null;
   const headroomArmed = Math.abs(headroomDb) > 0.05;
   const headroomActive = dspPathActive && headroomArmed;
@@ -590,14 +614,14 @@ const HeadroomPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, b
     headroomActive ? 'dsp.panel.headroom.guardActive' :
     headroomArmed ? 'dsp.panel.headroom.guardStandby' :
     'dsp.panel.headroom.guardDirect';
-  const statusTone: HeadroomTone = !dspPathActive ? 'good' : clippingRisk || clipCount > 0 ? 'risk' : liveHeadroomDb !== null && liveHeadroomDb <= 1 ? 'warn' : 'good';
+  const statusTone: HeadroomTone = !dspPathActive ? 'good' : clippingRisk ? 'risk' : headroomWarning ? 'warn' : 'good';
   const statusKey: string =
     statusTone === 'risk' ? 'dsp.panel.headroom.statusRisk' :
     statusTone === 'warn' ? 'dsp.panel.headroom.statusClose' :
     'dsp.panel.headroom.statusSafe';
   const reasonKey: string =
     !dspPathActive ? 'dsp.panel.headroom.reasonDirect' :
-    clipCount > 0 || audioStatus?.clippingRisk ? 'dsp.panel.headroom.reasonClipping' :
+    clipCount > 0 || audioStatus?.dspClippingRisk || audioStatus?.dspLimiterProtecting ? 'dsp.panel.headroom.reasonClipping' :
     eqState.clippingRisk ? 'dsp.panel.headroom.reasonEq' :
     roomCorrection.clippingRisk ? 'dsp.panel.headroom.reasonRoom' :
     channelBalance.clippingRisk ? 'dsp.panel.headroom.reasonChannel' :
@@ -1443,26 +1467,27 @@ const ChannelPanel = ({ channelBalance, busyKey, onChannelPatch, onChannelReset 
 const SafetyPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, onRefresh }: ModulePanelProps): JSX.Element => {
   const { t } = useDspI18n();
   const dspActive = audioStatus?.dspActive === true;
-  const clippingRisk = audioStatus?.clippingRisk === true || eqState.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk === true;
   const limiterProtecting = audioStatus?.dspLimiterProtecting === true;
   const liveHeadroomDb = finiteLevel(audioStatus?.audioLevels?.headroomDb);
   const outputPeakDb = finiteLevel(audioStatus?.audioLevels?.estimatedOutputPeakDb);
   const clipCount = audioStatus?.audioLevels?.clipCount ?? 0;
-  const routeTone: HeadroomTone = clippingRisk || limiterProtecting ? 'risk' : dspActive ? 'good' : 'warn';
+  const clippingRisk = hasObservedDspClippingRisk(audioStatus, eqState, roomCorrection, channelBalance, clipCount);
+  const headroomWarning = hasHeadroomWarning(audioStatus, outputPeakDb, liveHeadroomDb);
+  const routeTone: HeadroomTone = clippingRisk ? 'risk' : headroomWarning ? 'warn' : dspActive ? 'good' : 'warn';
   const heroTitleKey: string =
-    clippingRisk || limiterProtecting ? 'dsp.panel.safety.heroRiskTitle' :
+    clippingRisk ? 'dsp.panel.safety.heroRiskTitle' :
     dspActive ? 'dsp.panel.safety.heroProtectedTitle' :
     'dsp.panel.safety.heroDirectTitle';
   const heroDetailKey: string =
-    clippingRisk || limiterProtecting ? 'dsp.panel.safety.heroRiskDetail' :
+    clippingRisk ? 'dsp.panel.safety.heroRiskDetail' :
     dspActive ? 'dsp.panel.safety.heroProtectedDetail' :
     'dsp.panel.safety.heroDirectDetail';
   const nextTitleKey: string =
-    clippingRisk || limiterProtecting ? 'dsp.panel.safety.nextRisk' :
+    clippingRisk ? 'dsp.panel.safety.nextRisk' :
     dspActive ? 'dsp.panel.safety.nextProtected' :
     'dsp.panel.safety.nextDirect';
   const nextDetailKey: string =
-    clippingRisk || limiterProtecting ? 'dsp.panel.safety.nextRiskDetail' :
+    clippingRisk ? 'dsp.panel.safety.nextRiskDetail' :
     dspActive ? 'dsp.panel.safety.nextProtectedDetail' :
     'dsp.panel.safety.nextDirectDetail';
   const activeProcessModules = [
@@ -1757,7 +1782,11 @@ export const DspPage = (): JSX.Element => {
   const activeEqPresetName = audioStatus?.eqPresetName || eqState.presetName || '';
   const headphoneCorrectionActive = eqEnabled && activeEqPresetName.startsWith('耳机校正 -');
   const channelBalanceEnabled = audioStatus?.channelBalanceEnabled ?? channelBalance.enabled;
-  const clippingRisk = audioStatus?.clippingRisk === true || eqState.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk === true;
+  const outputPeakDb = finiteLevel(audioStatus?.audioLevels?.estimatedOutputPeakDb);
+  const liveHeadroomDb = finiteLevel(audioStatus?.audioLevels?.headroomDb);
+  const clipCount = audioStatus?.audioLevels?.clipCount ?? 0;
+  const clippingRisk = hasObservedDspClippingRisk(audioStatus, eqState, roomCorrection, channelBalance, clipCount);
+  const headroomWarning = hasHeadroomWarning(audioStatus, outputPeakDb, liveHeadroomDb);
   const dspHeadroomDb = eqState.dspHeadroomDb ?? 0;
   const outputName = audioStatus?.outputDeviceName || t('dsp.status.systemOutput');
   const sampleRate = audioStatus?.actualDeviceSampleRate ?? audioStatus?.requestedOutputSampleRate ?? audioStatus?.fileSampleRate ?? null;
@@ -1818,14 +1847,14 @@ export const DspPage = (): JSX.Element => {
         id: 'safety',
         stageKey: 'dsp.stage.output',
         title: t('dsp.module.safety.title'),
-        subtitle: clippingRisk ? t('dsp.status.riskDetected') : t('dsp.status.limiterArmed'),
+        subtitle: clippingRisk ? t('dsp.status.riskDetected') : headroomWarning ? t('dsp.status.headroomRisk') : t('dsp.status.limiterArmed'),
         description: t('dsp.module.safety.description'),
         icon: ShieldCheck,
-        enabled: clippingRisk || dspActive,
-        accent: clippingRisk ? 'amber' : 'green',
+        enabled: clippingRisk || headroomWarning || dspActive,
+        accent: clippingRisk || headroomWarning ? 'amber' : 'green',
       },
     ],
-    [activeEqPresetName, channelBalanceEnabled, clippingRisk, dspActive, dspHeadroomDb, eqEnabled, eqState.presetName, headphoneCorrectionActive, roomCorrection.enabled, roomCorrection.irName, t],
+    [activeEqPresetName, channelBalanceEnabled, clippingRisk, dspActive, dspHeadroomDb, eqEnabled, eqState.presetName, headroomWarning, headphoneCorrectionActive, roomCorrection.enabled, roomCorrection.irName, t],
   );
 
   const activeCount = modules.filter((module) => module.enabled).length;
@@ -1933,7 +1962,7 @@ export const DspPage = (): JSX.Element => {
               </span>
               <span data-risk={clippingRisk}>
                 <AudioWaveform size={14} aria-hidden="true" />
-                {clippingRisk ? t('dsp.status.headroomRisk') : t('dsp.status.signalProtected')}
+                {clippingRisk || headroomWarning ? t('dsp.status.headroomRisk') : t('dsp.status.signalProtected')}
               </span>
             </div>
           </header>

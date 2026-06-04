@@ -1892,7 +1892,9 @@ export type TranslationKey =
   | 'settings.appearance.wallpaper.videoStatus'
   | 'settings.appearance.wallpaper.visualProtection'
   | 'settings.appearance.sidebar.count'
+  | 'settings.appearance.sidebar.collapse'
   | 'settings.appearance.sidebar.description'
+  | 'settings.appearance.sidebar.expand'
   | 'settings.appearance.sidebar.fixed'
   | 'settings.appearance.sidebar.hidden'
   | 'settings.appearance.sidebar.hideAria'
@@ -1997,6 +1999,8 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.action.save'
   | 'settings.appearance.themeCustom.advanced.hide'
   | 'settings.appearance.themeCustom.advanced.show'
+  | 'settings.appearance.themeCustom.collapse'
+  | 'settings.appearance.themeCustom.expand'
   | 'settings.appearance.themeCustom.description'
   | 'settings.appearance.themeCustom.field.accent'
   | 'settings.appearance.themeCustom.field.accent.description'
@@ -2609,6 +2613,15 @@ export type TranslationKey =
   | 'settings.eq.filter.lowPass'
   | 'settings.eq.filter.notch'
   | 'settings.eq.filter.peaking'
+  | 'settings.eq.headphoneCorrection.ab'
+  | 'settings.eq.headphoneCorrection.compareCorrected'
+  | 'settings.eq.headphoneCorrection.compareOriginal'
+  | 'settings.eq.headphoneCorrection.convert'
+  | 'settings.eq.headphoneCorrection.customName'
+  | 'settings.eq.headphoneCorrection.lockAria'
+  | 'settings.eq.headphoneCorrection.lockDetail'
+  | 'settings.eq.headphoneCorrection.lockedError'
+  | 'settings.eq.headphoneCorrection.managed'
   | 'settings.eq.level.clips'
   | 'settings.eq.level.estimatedOutputPeak'
   | 'settings.eq.level.headroom'
@@ -4949,6 +4962,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
+  'settings.appearance.sidebar.expand': '展开左侧栏布局',
+  'settings.appearance.sidebar.collapse': '收起左侧栏布局',
   'settings.appearance.sidebar.mainGroup': '主导航',
   'settings.appearance.sidebar.utilityGroup': '底部入口',
   'settings.appearance.sidebar.reset': '恢复默认',
@@ -5073,6 +5088,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.action.import': '导入参数',
   'settings.appearance.themeCustom.action.reset': '重置当前自定义',
   'settings.appearance.themeCustom.action.save': '保存自定义',
+  'settings.appearance.themeCustom.expand': '展开我的主题',
+  'settings.appearance.themeCustom.collapse': '收起我的主题',
   'settings.appearance.themeCustom.advanced.show': '展开高级设置',
   'settings.appearance.themeCustom.advanced.hide': '收起高级设置',
   'settings.appearance.themeCustom.field.appBg': '底色',
@@ -5685,6 +5702,15 @@ const zhCN: TranslationMap = {
   'settings.eq.filter.lowPass': '低通',
   'settings.eq.filter.notch': '陷波',
   'settings.eq.filter.peaking': '峰值',
+  'settings.eq.headphoneCorrection.ab': '耳机校正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '校正后',
+  'settings.eq.headphoneCorrection.compareOriginal': '对比原声',
+  'settings.eq.headphoneCorrection.convert': '转为自定义 EQ',
+  'settings.eq.headphoneCorrection.customName': '自定义 EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': '耳机校正 EQ 锁定提示',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} 由耳机校正管理。要手动改参数，先转为自定义 EQ。',
+  'settings.eq.headphoneCorrection.lockedError': '这个 OPRA preset 由耳机校正管理。请先点“转为自定义 EQ”再修改参数。',
+  'settings.eq.headphoneCorrection.managed': '由耳机校正管理',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
   'settings.eq.level.headroom': '余量',
@@ -8183,6 +8209,15 @@ const zhTW: TranslationMap = {
   'settings.eq.import.sourceEcho': 'ECHO JSON',
   'settings.eq.import.updateAudition': '更新試聽',
   'settings.eq.import.useSafePreamp': '使用建議餘量',
+  'settings.eq.headphoneCorrection.ab': '耳機校正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '校正後',
+  'settings.eq.headphoneCorrection.compareOriginal': '對比原聲',
+  'settings.eq.headphoneCorrection.convert': '轉為自訂 EQ',
+  'settings.eq.headphoneCorrection.customName': '自訂 EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': '耳機校正 EQ 鎖定提示',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} 由耳機校正管理。要手動改參數，先轉為自訂 EQ。',
+  'settings.eq.headphoneCorrection.lockedError': '這個 OPRA preset 由耳機校正管理。請先點「轉為自訂 EQ」再修改參數。',
+  'settings.eq.headphoneCorrection.managed': '由耳機校正管理',
   'settings.eq.preamp.inputSafety': 'Headroom 管理',
   'settings.eq.preamp.safeHeadroom': '安全餘量',
   'settings.eq.preset.readonly': '內建預設為唯讀。',
@@ -8675,6 +8710,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': '關閉後仍使用上面的手動主題模式。',
   'settings.appearance.sidebar.title': '側邊欄',
   'settings.appearance.sidebar.description': '調整側邊入口的順序與顯示狀態，不會改動頁面或播放鏈路。',
+  'settings.appearance.sidebar.expand': '展開側邊欄佈局',
+  'settings.appearance.sidebar.collapse': '收起側邊欄佈局',
   'settings.appearance.sidebar.mainGroup': '主導覽',
   'settings.appearance.sidebar.utilityGroup': '底部入口',
   'settings.appearance.sidebar.reset': '恢復預設',
@@ -8786,6 +8823,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.action.import': '匯入參數',
   'settings.appearance.themeCustom.action.reset': '重置目前自訂',
   'settings.appearance.themeCustom.action.save': '儲存自訂',
+  'settings.appearance.themeCustom.expand': '展開我的主題',
+  'settings.appearance.themeCustom.collapse': '收起我的主題',
   'settings.appearance.themeCustom.advanced.show': '展開進階設定',
   'settings.appearance.themeCustom.advanced.hide': '收起進階設定',
   'settings.appearance.themeCustom.field.appBg': '底色',
@@ -10844,6 +10883,15 @@ const jaJP: TranslationMap = {
   'settings.eq.filter.lowPass': 'ローパス',
   'settings.eq.filter.notch': 'ノッチ',
   'settings.eq.filter.peaking': 'ピーキング',
+  'settings.eq.headphoneCorrection.ab': 'ヘッドホン補正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '補正後',
+  'settings.eq.headphoneCorrection.compareOriginal': '原音と比較',
+  'settings.eq.headphoneCorrection.convert': 'カスタム EQ に変換',
+  'settings.eq.headphoneCorrection.customName': 'カスタム EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': 'ヘッドホン補正 EQ ロック',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} はヘッドホン補正で管理されています。手動調整するには、先にカスタム EQ に変換してください。',
+  'settings.eq.headphoneCorrection.lockedError': 'この OPRA preset はヘッドホン補正で管理されています。先に「カスタム EQ に変換」を押してから調整してください。',
+  'settings.eq.headphoneCorrection.managed': 'ヘッドホン補正が管理中',
   'settings.eq.error.bridgeChannelBalance': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でチャンネルバランスを操作してください。',
   'settings.eq.error.bridgeControlEq': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ を操作してください。',
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
@@ -11536,6 +11584,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': 'オフのときは上の手動テーマ設定をそのまま使います。',
   'settings.appearance.sidebar.title': 'サイドバー',
   'settings.appearance.sidebar.description': 'サイドバー項目の順序と表示状態を調整します。ページ内容や再生経路は変更しません。',
+  'settings.appearance.sidebar.expand': 'サイドバー配置を展開',
+  'settings.appearance.sidebar.collapse': 'サイドバー配置を閉じる',
   'settings.appearance.sidebar.mainGroup': 'メインナビ',
   'settings.appearance.sidebar.utilityGroup': '下部項目',
   'settings.appearance.sidebar.reset': '初期状態に戻す',
@@ -11647,6 +11697,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.expand': 'Expand My Theme',
+  'settings.appearance.themeCustom.collapse': 'Collapse My Theme',
   'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
   'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',
@@ -13914,6 +13966,15 @@ const enUS: TranslationMap = {
   'settings.eq.filter.lowPass': 'Low pass',
   'settings.eq.filter.notch': 'Notch',
   'settings.eq.filter.peaking': 'Peaking',
+  'settings.eq.headphoneCorrection.ab': 'Headphone correction A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': 'Corrected',
+  'settings.eq.headphoneCorrection.compareOriginal': 'Compare original',
+  'settings.eq.headphoneCorrection.convert': 'Convert to custom EQ',
+  'settings.eq.headphoneCorrection.customName': 'Custom EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': 'Headphone correction EQ lock',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} is managed by headphone correction. Convert to a custom EQ before editing parameters.',
+  'settings.eq.headphoneCorrection.lockedError': 'This OPRA preset is managed by headphone correction. Convert it to a custom EQ before editing parameters.',
+  'settings.eq.headphoneCorrection.managed': 'Managed by headphone correction',
   'settings.eq.level.clips': 'Clips {count}',
   'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
   'settings.eq.level.headroom': 'Headroom',
@@ -14587,6 +14648,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': 'When disabled, the manual theme mode above stays in effect.',
   'settings.appearance.sidebar.title': 'Sidebar',
   'settings.appearance.sidebar.description': 'Adjust the order and visibility of sidebar entries without affecting pages or playback.',
+  'settings.appearance.sidebar.expand': 'Expand sidebar layout',
+  'settings.appearance.sidebar.collapse': 'Collapse sidebar layout',
   'settings.appearance.sidebar.mainGroup': 'Main Navigation',
   'settings.appearance.sidebar.utilityGroup': 'Bottom Entries',
   'settings.appearance.sidebar.reset': 'Reset',
@@ -14698,6 +14761,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.expand': 'Expand My Theme',
+  'settings.appearance.themeCustom.collapse': 'Collapse My Theme',
   'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
   'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',

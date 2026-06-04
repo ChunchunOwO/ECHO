@@ -821,6 +821,68 @@
   color: #7a4d19;
 }
 
+.opra-shortcuts {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.opra-shortcuts section {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.opra-shortcuts header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(75, 84, 100, 0.68);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.opra-shortcuts section > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.opra-shortcuts button {
+  display: grid;
+  min-width: 118px;
+  max-width: 210px;
+  gap: 1px;
+  padding: 7px 9px;
+  color: #263449;
+  border: 1px solid rgba(32, 42, 56, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  cursor: pointer;
+  text-align: left;
+}
+
+.opra-shortcuts button strong,
+.opra-shortcuts button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opra-shortcuts button strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.opra-shortcuts button small {
+  color: rgba(75, 84, 100, 0.66);
+  font-size: 11px;
+  font-weight: 760;
+}
+
 .opra-vendor-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1037,7 +1099,7 @@
 
 .opra-selected-product {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
+  grid-template-columns: 54px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-width: 0;
@@ -1049,6 +1111,29 @@
   height: 48px;
   object-fit: contain;
   color: #6470d6;
+}
+
+.opra-favorite-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: rgba(75, 84, 100, 0.62);
+  border: 1px solid rgba(32, 42, 56, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  cursor: pointer;
+}
+
+.opra-favorite-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.opra-favorite-button[data-active="true"] {
+  color: #9a6b09;
+  border-color: rgba(202, 148, 36, 0.32);
+  background: rgba(255, 247, 221, 0.92);
 }
 
 .opra-preset-list {
@@ -3267,6 +3352,8 @@ html[data-theme="dark"] .opra-browser-control small,
 html[data-theme="dark"] .opra-browser-intro span,
 html[data-theme="dark"] .opra-browser-crumbs,
 html[data-theme="dark"] .opra-browser-status span,
+html[data-theme="dark"] .opra-shortcuts header,
+html[data-theme="dark"] .opra-shortcuts button small,
 html[data-theme="dark"] .opra-product-list em,
 html[data-theme="dark"] .opra-preset-panel small,
 html[data-theme="dark"] .opra-preset-metrics em {
@@ -3276,8 +3363,10 @@ html[data-theme="dark"] .opra-preset-metrics em {
 html[data-theme="dark"] .opra-browser-search,
 html[data-theme="dark"] .opra-browser-search button,
 html[data-theme="dark"] .opra-browser-status span,
+html[data-theme="dark"] .opra-shortcuts button,
 html[data-theme="dark"] .opra-vendor-grid button,
 html[data-theme="dark"] .opra-enable-switch,
+html[data-theme="dark"] .opra-favorite-button,
 html[data-theme="dark"] .opra-preset-list button,
 html[data-theme="dark"] .opra-preset-metrics span {
   color: #dfe7f7;
@@ -3289,6 +3378,16 @@ html[data-theme="dark"] .opra-enable-switch[data-active="true"] {
   color: #dfe3ff;
   border-color: rgba(142, 149, 255, 0.28);
   background: rgba(61, 68, 107, 0.9);
+}
+
+html[data-theme="dark"] .opra-shortcuts button strong {
+  color: #f1f5ff;
+}
+
+html[data-theme="dark"] .opra-favorite-button[data-active="true"] {
+  color: #ffe49a;
+  border-color: rgba(255, 216, 114, 0.32);
+  background: rgba(91, 70, 28, 0.74);
 }
 
 html[data-theme="dark"] .opra-enable-switch > span {

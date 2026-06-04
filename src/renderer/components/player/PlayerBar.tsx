@@ -24,6 +24,7 @@ import { isActiveConnectPlaybackStatus, playbackStatusFromConnectStatus } from '
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
 import { PlayerProgress } from './PlayerProgress';
+import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
 import { PlayerStatusChips } from './PlayerStatusChips';
 import { PlayerTransport } from './PlayerTransport';
@@ -38,6 +39,8 @@ type PlayerBarProps = {
   hasDesktopLyricsBridge?: boolean;
   onOpenAudioSettings?: () => void;
   onOpenQueue?: () => void;
+  showQueueButton?: boolean;
+  showSignalPathControl?: boolean;
   onToggleDesktopLyrics?: () => void;
   onUnlockDesktopLyrics?: () => void;
 };
@@ -571,6 +574,8 @@ export const PlayerBar = ({
   hasDesktopLyricsBridge = false,
   onOpenAudioSettings,
   onOpenQueue,
+  showQueueButton = false,
+  showSignalPathControl = false,
   onToggleDesktopLyrics,
   onUnlockDesktopLyrics,
 }: PlayerBarProps): JSX.Element => {
@@ -585,7 +590,7 @@ export const PlayerBar = ({
   const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
-  const [openPopover, setOpenPopover] = useState<'volume' | 'speed' | null>(null);
+  const [openPopover, setOpenPopover] = useState<'signal' | 'volume' | 'speed' | null>(null);
   const [isCurrentTrackLiked, setIsCurrentTrackLiked] = useState(false);
   const [smtcEnabled, setSmtcEnabled] = useState(true);
   const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
@@ -602,6 +607,7 @@ export const PlayerBar = ({
   const [streamingDownloadJobId, setStreamingDownloadJobId] = useState<string | null>(null);
   const [streamingDownloadNotice, setStreamingDownloadNotice] = useState<PlayerDownloadNotice | null>(null);
   const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
+  const signalPathAnchorRef = useRef<HTMLDivElement | null>(null);
   const handledEndedTrackRef = useRef<string | null>(null);
   const hydratedTrackIdsRef = useRef(new Set<string>());
   const bpmAnalysisJobIdsRef = useRef(new Map<string, string | 'done'>());
@@ -2061,6 +2067,34 @@ export const PlayerBar = ({
     void runPlaybackAction(queue.playPrevious);
   }, [queue.playPrevious, runPlaybackAction]);
 
+  useEffect(() => {
+    if (openPopover !== 'signal') {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (target instanceof Node && signalPathAnchorRef.current?.contains(target)) {
+        return;
+      }
+
+      setOpenPopover(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setOpenPopover(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openPopover]);
+
   const handleNext = useCallback((): void => {
     void runPlaybackAction(queue.playNext);
   }, [queue.playNext, runPlaybackAction]);
@@ -2376,24 +2410,44 @@ export const PlayerBar = ({
       </div>
 
       <div className="player-center">
-        <PlayerTransport
-          canGoNext={queue.canGoNext}
-          canGoPrevious={queue.canGoPrevious}
-          isPlaying={isPlaying}
-          isShuffleEnabled={queue.isShuffleEnabled}
-          repeatMode={queue.repeatMode}
-          onNext={handleNext}
-          onPlayPause={() => void handlePlayPause()}
-          onPrevious={handlePrevious}
-          onCycleRepeatMode={handleCycleRepeatMode}
-          onOpenQueue={handleOpenQueue}
-          onOpenLyrics={handleOpenLyrics}
-          onOpenMv={handleOpenMv}
-          onToggleShuffle={queue.toggleShuffle}
-          isCurrentTrackLiked={isCurrentTrackLiked}
-          canLikeCurrentTrack={Boolean(trackId && (isLibraryCurrentTrack || isProviderLikedStreamingTrack))}
-          onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
-        />
+        <div className="player-transport-shell">
+          {showSignalPathControl ? (
+            <div className="signal-path-anchor" ref={signalPathAnchorRef}>
+              <AudioSignalPathControl
+                isOpen={openPopover === 'signal'}
+                status={audioStatus}
+                track={currentTrack}
+                onClick={() => setOpenPopover((current) => current === 'signal' ? null : 'signal')}
+              />
+              <AudioSignalPathPopover
+                isOpen={openPopover === 'signal'}
+                status={audioStatus}
+                track={currentTrack}
+                onClose={() => setOpenPopover(null)}
+                onOpenAudioSettings={onOpenAudioSettings}
+              />
+            </div>
+          ) : null}
+          <PlayerTransport
+            canGoNext={queue.canGoNext}
+            canGoPrevious={queue.canGoPrevious}
+            isPlaying={isPlaying}
+            isShuffleEnabled={queue.isShuffleEnabled}
+            repeatMode={queue.repeatMode}
+            onNext={handleNext}
+            onPlayPause={() => void handlePlayPause()}
+            onPrevious={handlePrevious}
+            onCycleRepeatMode={handleCycleRepeatMode}
+            onOpenQueue={handleOpenQueue}
+            onOpenLyrics={handleOpenLyrics}
+            onOpenMv={handleOpenMv}
+            showQueueButton={showQueueButton}
+            onToggleShuffle={queue.toggleShuffle}
+            isCurrentTrackLiked={isCurrentTrackLiked}
+            canLikeCurrentTrack={Boolean(trackId && (isLibraryCurrentTrack || isProviderLikedStreamingTrack))}
+            onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
+          />
+        </div>
         <PlayerProgress
           disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
           durationSeconds={durationSeconds}

@@ -499,6 +499,7 @@ describe('StreamingSearchPage download visibility', () => {
         title: 'Album Track 1',
         album: qqArtistAlbum.title,
         outputSubdirectory: `${qqArtistAlbum.artist} - ${qqArtistAlbum.title}`,
+        deferImportToLibrary: true,
         streamingProvider: 'qqmusic',
         streamingProviderTrackId: 'song-mid-1',
         downloadAuthorizationToken: 'download-token-song-mid-1',

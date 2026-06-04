@@ -1141,7 +1141,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleShowChromeNotice = (event: Event): void => {
       const message = (event as CustomEvent<string>).detail;
       if (typeof message === 'string' && message.trim()) {
-        setChromeNotice(message);
+        setChromeNotice((current) => (current === message ? current : message));
       }
     };
 

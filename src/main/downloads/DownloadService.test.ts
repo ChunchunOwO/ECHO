@@ -6,6 +6,17 @@ import { zipSync } from 'fflate';
 import { DownloadService } from './DownloadService';
 import { createDownloadAuthorizationToken, protectedMusicDownloadBlockedMessage } from './DownloadAuthorization';
 
+let playbackState: 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' = 'idle';
+
+vi.mock('../audio/AudioSession', () => ({
+  getAudioSession: () => ({
+    getStatus: () => ({
+      state: playbackState,
+      currentFilePath: null,
+    }),
+  }),
+}));
+
 const tempRoots: string[] = [];
 
 const makeTempRoot = (): string => {
@@ -70,6 +81,8 @@ const waitForJob = async (service: DownloadService, jobId: string): Promise<Retu
 };
 
 afterEach(() => {
+  vi.useRealTimers();
+  playbackState = 'idle';
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
@@ -1470,6 +1483,75 @@ describe('DownloadService', () => {
       }),
     );
     expect(bindMvUrl).not.toHaveBeenCalled();
+  });
+
+  it('defers library import for album download jobs until the background import queue runs', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const importAudioFile = vi.fn(async () => ({ id: 'track-deferred' }));
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => ytDlpPath,
+      {
+        fetch: vi.fn(async () => {
+          return new Response(new Uint8Array([1, 2, 3, 4]), {
+            status: 200,
+            headers: { 'content-type': 'audio/mpeg' },
+          });
+        }) as unknown as typeof fetch,
+        importAudioFile,
+        getAccountCredentials: (provider) => ({ provider }),
+        writeEmbeddedTrackTags: vi.fn(async () => undefined),
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: true, bindMvAfterImport: false });
+
+    const job = service.createUrlJob('https://m801.music.126.net/audio.mp3', {
+      title: 'Streaming Song',
+      artist: 'Artist',
+      album: 'Streaming Album',
+      albumArtist: 'Artist',
+      webpageUrl: 'https://music.163.com/#/song?id=123',
+      directAudio: true,
+      directAudioMimeType: 'audio/mpeg',
+      directAudioExtension: 'mp3',
+      streamingProvider: 'netease',
+      streamingProviderTrackId: '123',
+      downloadAuthorizationToken: makeDownloadAuthorizationToken('netease', '123', 'https://m801.music.126.net/audio.mp3'),
+      deferImportToLibrary: true,
+    });
+
+    const completedJob = await waitForJob(service, job.id);
+    expect(completedJob?.status).toBe('completed');
+    expect(completedJob?.importedTrackId).toBeNull();
+    expect(importAudioFile).not.toHaveBeenCalled();
+
+    const internals = service as unknown as {
+      deferredImportTimer: NodeJS.Timeout | null;
+      runDeferredImportQueue: () => Promise<void>;
+    };
+    if (internals.deferredImportTimer) {
+      clearTimeout(internals.deferredImportTimer);
+      internals.deferredImportTimer = null;
+    }
+    await internals.runDeferredImportQueue();
+
+    expect(importAudioFile).toHaveBeenCalledWith(
+      completedJob?.outputPath,
+      expect.objectContaining({
+        folderPath: outputDirectory,
+        metadata: {
+          title: 'Streaming Song',
+          artist: 'Artist',
+          album: 'Streaming Album',
+          albumArtist: 'Artist',
+        },
+      }),
+    );
+    expect(service.getJobs().find((item) => item.id === job.id)?.importedTrackId).toBe('track-deferred');
   });
 
   it('links imported direct streaming audio back to matching playlist entries', async () => {

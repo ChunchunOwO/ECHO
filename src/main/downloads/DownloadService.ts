@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { app } from 'electron';
 import type {
@@ -186,10 +186,12 @@ type DownloadJobOptions = Required<Pick<DownloadSettings, 'importToLibrary' | 'b
   streamingProviderTrackId: string | null;
   streamingStableKey: string | null;
   downloadAuthorizationToken: string | null;
+  deferImportToLibrary: boolean;
 };
 
-type PersistedDownloadJobOptions = Omit<DownloadJobOptions, 'suggestedCoverData'> & {
+type PersistedDownloadJobOptions = Omit<DownloadJobOptions, 'suggestedCoverData' | 'deferImportToLibrary'> & {
   suggestedCoverData: null;
+  deferImportToLibrary?: boolean;
 };
 
 type PersistedDownloadState = {
@@ -626,6 +628,12 @@ export class DownloadService extends EventEmitter {
 
   private jobOptions = new Map<string, DownloadJobOptions>();
 
+  private deferredImportJobIds: string[] = [];
+
+  private deferredImportTimer: NodeJS.Timeout | null = null;
+
+  private deferredImportRunning = false;
+
   constructor(
     private readonly commandRunner: CommandRunner = runCommand,
     private readonly ytDlpPathResolver: ToolResolver = resolveBundledYtDlpPath,
@@ -732,6 +740,7 @@ export class DownloadService extends EventEmitter {
       streamingProviderTrackId,
       streamingStableKey,
       downloadAuthorizationToken,
+      deferImportToLibrary: options.deferImportToLibrary === true,
     });
     this.jobs = [job, ...this.jobs];
     this.queuedJobIds.push(job.id);
@@ -1277,6 +1286,7 @@ export class DownloadService extends EventEmitter {
           ...options,
           requestHeaders: sanitizeRequestHeaders(options.requestHeaders),
           suggestedCoverData: null,
+          deferImportToLibrary: options.deferImportToLibrary === true,
         });
       }
     }
@@ -1291,6 +1301,79 @@ export class DownloadService extends EventEmitter {
     if (this.queuedJobIds.length > 0) {
       queueMicrotask(() => this.startNextJob());
     }
+    for (const job of restoredJobs) {
+      const options = this.jobOptions.get(job.id);
+      if (job.status === 'completed' && !job.importedTrackId && options?.importToLibrary && options.deferImportToLibrary) {
+        this.queueDeferredImport(job.id, 10_000);
+      }
+    }
+  }
+
+  private queueDeferredImport(jobId: string, delayMs = 2500): void {
+    if (!this.deferredImportJobIds.includes(jobId)) {
+      this.deferredImportJobIds.push(jobId);
+    }
+    this.scheduleDeferredImport(delayMs);
+  }
+
+  private scheduleDeferredImport(delayMs = 2500): void {
+    if (this.deferredImportTimer || this.deferredImportRunning) {
+      return;
+    }
+
+    this.deferredImportTimer = setTimeout(() => {
+      void this.runDeferredImportQueue();
+    }, delayMs);
+    this.deferredImportTimer.unref?.();
+  }
+
+  private async shouldDelayDeferredImportForPlayback(): Promise<boolean> {
+    try {
+      const { getAudioSession } = await import('../audio/AudioSession');
+      const state = getAudioSession().getStatus().state;
+      return state === 'loading' || state === 'playing';
+    } catch {
+      return false;
+    }
+  }
+
+  private async runDeferredImportQueue(): Promise<void> {
+    this.deferredImportTimer = null;
+    if (this.deferredImportRunning || this.deferredImportJobIds.length === 0) {
+      return;
+    }
+
+    if (await this.shouldDelayDeferredImportForPlayback()) {
+      this.scheduleDeferredImport(15_000);
+      return;
+    }
+
+    const jobId = this.deferredImportJobIds.shift();
+    if (!jobId) {
+      return;
+    }
+
+    this.deferredImportRunning = true;
+    try {
+      await this.importAndBind(jobId);
+      this.updateJob(jobId, {
+        status: 'completed',
+        progress: 100,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const job = this.jobs.find((item) => item.id === jobId);
+      if (job && job.status === 'completed' && !job.importedTrackId) {
+        this.updateJob(jobId, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } finally {
+      this.deferredImportRunning = false;
+      if (this.deferredImportJobIds.length > 0) {
+        this.scheduleDeferredImport(1500);
+      }
+    }
   }
 
   private async runJob(jobId: string): Promise<void> {
@@ -1303,7 +1386,11 @@ export class DownloadService extends EventEmitter {
       }
       await this.download(jobId);
       await this.writeDownloadedEmbeddedTags(jobId);
-      await this.importAndBind(jobId);
+      if (options?.importToLibrary && options.deferImportToLibrary) {
+        this.queueDeferredImport(jobId);
+      } else {
+        await this.importAndBind(jobId);
+      }
       this.updateJob(jobId, {
         status: 'completed',
         progress: 100,

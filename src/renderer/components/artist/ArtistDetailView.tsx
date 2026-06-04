@@ -1296,6 +1296,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
           webpageUrl,
           outputSubdirectory: albumSubdirectory,
           bindMvAfterImport: false,
+          deferImportToLibrary: true,
           requestHeaders: source.headers,
           directAudio: true,
           directAudioMimeType: source.mimeType,

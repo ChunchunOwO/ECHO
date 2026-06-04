@@ -830,6 +830,7 @@ describe('ArtistDetailView', () => {
         title: 'Streaming Album Track 1',
         album: album.title,
         outputSubdirectory: `${album.artist} - ${album.title}`,
+        deferImportToLibrary: true,
         streamingProvider: 'netease',
         streamingProviderTrackId: 'track-1',
         downloadAuthorizationToken: 'download-token-track-1',

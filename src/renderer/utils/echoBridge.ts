@@ -8,6 +8,13 @@ import {
   channelBalanceMinGainDb,
 } from '../../shared/types/audio';
 import type {
+  OpraHeadphoneCorrectionApplyResult,
+  OpraHeadphoneCorrectionBrowseRequest,
+  OpraHeadphoneCorrectionBrowseResult,
+  OpraHeadphoneCorrectionSearchRequest,
+  OpraHeadphoneCorrectionSearchResult,
+} from '../../shared/types/opra';
+import type {
   EqBand,
   EqFilterType,
   EqPreset,
@@ -43,6 +50,7 @@ import {
   eqMinPreampDb,
   eqMinQ,
 } from '../../shared/types/eq';
+import { builtInEqPresetDefinitions } from '../../shared/audio/eqBuiltInPresets';
 import { formatEqualizerApoGraphicEqPreset, formatEqualizerApoPreset, parseEqualizerApoPreset } from '../../shared/utils/equalizerApoPreset';
 import type {
   StreamingFavoriteCollectionDeleteResult,
@@ -98,38 +106,15 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
-const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
-  createBands().map((band, index) => ({
-    ...band,
-    ...(overrides[index] ?? {}),
-    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
-    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
-    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
-    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
-    enabled: overrides[index]?.enabled ?? band.enabled,
-  }));
-
-const browserBuiltInPresets: EqPreset[] = [
-  { id: 'flat', name: '原音如初', preampDb: 0, bands: createBands(), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bass-boost', name: '深海低频', preampDb: -8, bands: createBands([4.8, 5.5, 6.4, 7.2, 7.5, 7.2, 6.6, 5.5, 4.1, 2.8, 1.5, 0.6, 0, -0.3, -0.6, -0.8, -1, -1.1, -1.2, -1.4, -1.5, -1.6, -1.8, -2, -2.2, -2.4, -2.6, -2.8, -3, -3.2, -3.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'vocal-clear', name: '人声如绸', preampDb: -6, bands: createBands([-6.5, -6.2, -5.8, -5.2, -4.7, -4.2, -3.5, -2.8, -2, -1.2, -0.4, 0.5, 1.4, 2.3, 3.2, 4.1, 4.8, 5.2, 5, 4.5, 3.8, 3, 2.1, 1.2, 0.2, -0.8, -1.6, -2.2, -2.8, -3.2, -3.6]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'treble-sparkle', name: '银砂高频', preampDb: -7, bands: createBands([-3.2, -3, -2.8, -2.5, -2.2, -1.8, -1.4, -1, -0.7, -0.4, -0.2, 0, 0.3, 0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.2, 3.8, 4.4, 5, 5.6, 6.1, 6.4, 6.2, 5.8, 5.2, 4.6, 3.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'rock', name: '黑曜摇滚', preampDb: -6, bands: createBands([4.2, 4.8, 5.3, 5.5, 5.2, 4.6, 3.8, 2.6, 1.2, -0.5, -1.8, -2.7, -3.2, -3, -2.3, -1.4, -0.4, 0.8, 1.8, 2.8, 3.6, 4.4, 4.9, 4.7, 4.2, 3.6, 3, 2.4, 2, 1.6, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'harman-target', name: '暖场哈曼', preampDb: -6, bands: createBands([5.5, 5.9, 6.2, 6.1, 5.7, 5.2, 4.6, 3.8, 3, 2.2, 1.4, 0.8, 0.4, 0.1, 0, -0.1, 0.2, 0.6, 1.1, 1.8, 2.5, 3.1, 3.6, 3.8, 3.5, 3, 2.4, 1.8, 1.2, 0.7, 0.3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'city-pop', name: '霓虹夜航', preampDb: -6, bands: createBands([3, 3.4, 3.6, 3.4, 3, 2.4, 1.5, 0.5, -0.5, -1.2, -1.8, -2, -1.8, -1.3, -0.6, 0.2, 1, 1.8, 2.6, 3.5, 4.3, 4.9, 5.2, 5, 4.5, 3.8, 3.2, 2.7, 2.2, 1.6, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'acoustic-silk', name: '弦木柔光', preampDb: -4, bands: createBands([1.8, 2, 2.2, 2.1, 1.9, 1.6, 1.2, 0.8, 0.3, 0, -0.2, 0, 0.4, 0.9, 1.4, 1.8, 2.1, 2.3, 2.1, 1.8, 1.5, 1.1, 0.8, 0.4, 0, -0.6, -1.2, -1.8, -2.3, -2.8, -3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'piano-room', name: '琴房微光', preampDb: -5, bands: createBands([0.8, 1, 1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.3, -0.2, -0.6, -0.8, -0.6, -0.2, 0.4, 1, 1.6, 2.2, 2.8, 3.3, 3.8, 4.1, 4, 3.5, 2.8, 2.1, 1.3, 0.4, -0.4, -1.1, -1.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'lofi-dusk', name: '雨窗低保真', preampDb: -4, bands: createBands([3, 3.2, 3.3, 3.1, 2.8, 2.4, 1.8, 1.2, 0.6, 0.1, -0.4, -0.8, -1, -1.2, -1.2, -1, -0.8, -0.6, -0.5, -0.6, -0.8, -1.2, -1.8, -2.6, -3.5, -4.4, -5.2, -5.8, -6.3, -6.8, -7]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'cinema-orchestra', name: '银幕纵深', preampDb: -7, bands: createBands([5, 5.5, 5.9, 6.2, 6, 5.6, 5, 4.2, 3.2, 2.1, 1, 0.2, -0.3, -0.5, -0.4, 0, 0.6, 1.4, 2.3, 3.2, 4, 4.7, 5.2, 5.5, 5.4, 5, 4.5, 3.8, 3, 2.1, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'live-house', name: '小馆现场', preampDb: -6, bands: createBands([4, 4.5, 4.8, 4.6, 4, 3.2, 2.2, 1.1, -0.2, -1.4, -2.4, -3, -3.2, -2.8, -2, -1, 0.2, 1.4, 2.6, 3.8, 4.8, 5.4, 5.6, 5.2, 4.6, 3.8, 3, 2.3, 1.8, 1.2, 0.7]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'female-vocal-air', name: '清露女声', preampDb: -6, bands: createBands([-5, -4.8, -4.5, -4.1, -3.6, -3, -2.3, -1.6, -0.8, 0, 0.8, 1.8, 2.8, 3.8, 4.8, 5.5, 5.8, 5.6, 5, 4.3, 3.6, 3.1, 3, 3.2, 3.6, 4, 4.2, 3.8, 3, 2, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'sub-cleanup', name: '潜波净化', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 28, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 240, gainDb: -2.5, q: 1.1 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'vocal-de-ess', name: '雪绒去齿', preampDb: -3, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.5 }, 6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9 }, 8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2 }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'headphone-notch', name: '耳峰细修', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 5: { frequencyHz: 2800, gainDb: -2, q: 1.4 }, 7: { frequencyHz: 6200, q: 7.5, filterType: 'notch' }, 8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'subsonic-filter', name: '暗涌滤波', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 24, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'sibilance-tamer', name: '齿音柔化', preampDb: -4, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.2 }, 7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5 }, 8: { frequencyHz: 8200, q: 6, filterType: 'notch' }, 9: { frequencyHz: 12500, gainDb: -1, q: 0.8, filterType: 'highShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bluetooth-speaker-cleanup', name: '蓝牙清场', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 55, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 120, gainDb: -2, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 420, gainDb: -2, q: 1.2 }, 7: { frequencyHz: 8500, gainDb: 2, q: 0.8, filterType: 'highShelf' }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-];
+const browserBuiltInPresets: EqPreset[] = builtInEqPresetDefinitions.map((preset) => ({
+  id: preset.id,
+  name: preset.name,
+  preampDb: preset.preampDb,
+  bands: createBands(preset.gains),
+  createdAt: 'built-in',
+  updatedAt: 'built-in',
+  readonly: true,
+}));
 
 const defaultBrowserEqState = (): EqState => ({
   enabled: false,
@@ -137,7 +122,7 @@ const defaultBrowserEqState = (): EqState => ({
   dspHeadroomDb: 0,
   bands: createBands(),
   presetId: 'flat',
-  presetName: '原音如初',
+  presetName: 'Flat',
   clippingRisk: false,
 });
 
@@ -240,7 +225,7 @@ const normalizeState = (value: unknown): EqState => {
     dspHeadroomDb: Number.isFinite(dspHeadroomDb) ? clamp(dspHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb) : 0,
     bands: normalizeBands(input.bands),
     presetId: typeof input.presetId === 'string' && input.presetId ? input.presetId : 'flat',
-    presetName: typeof input.presetName === 'string' && input.presetName ? input.presetName : '原音如初',
+    presetName: typeof input.presetName === 'string' && input.presetName ? input.presetName : 'Flat',
     clippingRisk: Boolean(input.clippingRisk),
   };
 };
@@ -764,6 +749,42 @@ class BrowserEqBridge implements EqBridgeApi {
     this.storage.userPresets = this.storage.userPresets.filter((preset) => preset.id !== presetId);
     this.writeStorage();
     return this.listPresets();
+  }
+
+  async browseHeadphoneCorrections(request: OpraHeadphoneCorrectionBrowseRequest): Promise<OpraHeadphoneCorrectionBrowseResult> {
+    return {
+      query: request.query ?? '',
+      vendorId: request.vendorId ?? null,
+      productId: request.productId ?? null,
+      vendors: [],
+      products: [],
+      selectedProduct: null,
+      status: {
+        source: 'empty',
+        fetchedAt: null,
+        vendorCount: 0,
+        productCount: 0,
+        eqCount: 0,
+      },
+    };
+  }
+
+  async searchHeadphoneCorrections(request: OpraHeadphoneCorrectionSearchRequest): Promise<OpraHeadphoneCorrectionSearchResult> {
+    return {
+      query: request.query,
+      results: [],
+      status: {
+        source: 'empty',
+        fetchedAt: null,
+        vendorCount: 0,
+        productCount: 0,
+        eqCount: 0,
+      },
+    };
+  }
+
+  async applyHeadphoneCorrection(): Promise<OpraHeadphoneCorrectionApplyResult> {
+    throw new Error('opra_bridge_unavailable');
   }
 
   async listProfiles(): Promise<EqProfile[]> {

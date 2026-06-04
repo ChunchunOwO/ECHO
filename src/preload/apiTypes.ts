@@ -23,6 +23,14 @@ import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBr
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type {
+  OpraHeadphoneCorrectionApplyRequest,
+  OpraHeadphoneCorrectionApplyResult,
+  OpraHeadphoneCorrectionBrowseRequest,
+  OpraHeadphoneCorrectionBrowseResult,
+  OpraHeadphoneCorrectionSearchRequest,
+  OpraHeadphoneCorrectionSearchResult,
+} from '../shared/types/opra';
+import type {
   EqBindProfileRequest,
   EqPreset,
   EqPresetImportPreviewResult,
@@ -796,6 +804,9 @@ export type EchoApi = {
     previewImportPreset: () => Promise<EqPresetImportPreviewResult | null>;
     importPreset: () => Promise<EqPresetImportResult | null>;
     deletePreset: (presetId: string) => Promise<EqPreset[]>;
+    browseHeadphoneCorrections: (request: OpraHeadphoneCorrectionBrowseRequest) => Promise<OpraHeadphoneCorrectionBrowseResult>;
+    searchHeadphoneCorrections: (request: OpraHeadphoneCorrectionSearchRequest) => Promise<OpraHeadphoneCorrectionSearchResult>;
+    applyHeadphoneCorrection: (request: OpraHeadphoneCorrectionApplyRequest) => Promise<OpraHeadphoneCorrectionApplyResult>;
     listProfiles: () => Promise<EqProfile[]>;
     saveProfile: (request: EqSaveProfileRequest) => Promise<EqProfile>;
     applyProfile: (profileId: string) => Promise<EqState>;

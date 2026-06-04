@@ -6,6 +6,7 @@ export type AudioPlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'st
 export type PlaybackSpeedMode = 'nightcore' | 'daycore' | 'speed';
 export type AudioLatencyProfile = 'stable' | 'balanced' | 'lowLatency';
 export type ChannelBalanceMonoMode = 'off' | 'sum' | 'left' | 'right';
+export type ChannelBalanceBandId = 'low' | 'mid' | 'high';
 export type SharedStabilityTier = 'standard' | 'recovery' | 'emergency';
 export type AsioCompatibilityProfile = 'asio4all';
 export type AudioResamplerEngine = 'default' | 'soxr';
@@ -58,6 +59,10 @@ export type ChannelBalanceState = {
   balance: number;
   leftGainDb: number;
   rightGainDb: number;
+  bandGains?: Record<ChannelBalanceBandId, {
+    leftGainDb: number;
+    rightGainDb: number;
+  }>;
   leftDelayMs?: number;
   rightDelayMs?: number;
   swapLeftRight: boolean;
@@ -90,6 +95,9 @@ export const channelBalanceMinBalance = -1;
 export const channelBalanceMaxBalance = 1;
 export const channelBalanceMinGainDb = -12;
 export const channelBalanceMaxGainDb = 6;
+export const channelBalanceBandIds = ['low', 'mid', 'high'] as const;
+export const channelBalanceBandMinGainDb = -6;
+export const channelBalanceBandMaxGainDb = 3;
 export const channelBalanceMinDelayMs = 0;
 export const channelBalanceMaxDelayMs = 10;
 

@@ -754,9 +754,13 @@ const connectSystemAudioGraph = (): void => {
   systemAudioSplitterNode.connect(systemAudioMonoLeftGainNode, 0);
   systemAudioSplitterNode.connect(systemAudioMonoRightGainNode, 1);
   systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 0);
-  systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 1);
-  systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 0);
   systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+
+  if (systemChannelBalanceMonoMode === 'sum') {
+    systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+    systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 0);
+  }
+
   systemAudioMonoMergerNode.connect(systemAudioGainNode);
   systemAudioGainNode.connect(systemAudioContext.destination);
 };
@@ -2352,6 +2356,9 @@ const echoApi: EchoApi = {
     previewImportPreset: () => ipcRenderer.invoke(IpcChannels.EqPreviewImportPreset),
     importPreset: () => ipcRenderer.invoke(IpcChannels.EqImportPreset),
     deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
+    browseHeadphoneCorrections: (request) => ipcRenderer.invoke(IpcChannels.EqBrowseHeadphoneCorrections, request),
+    searchHeadphoneCorrections: (request) => ipcRenderer.invoke(IpcChannels.EqSearchHeadphoneCorrections, request),
+    applyHeadphoneCorrection: (request) => ipcRenderer.invoke(IpcChannels.EqApplyHeadphoneCorrection, request),
     listProfiles: () => ipcRenderer.invoke(IpcChannels.EqListProfiles),
     saveProfile: (request) => ipcRenderer.invoke(IpcChannels.EqSaveProfile, request),
     applyProfile: (profileId) => ipcRenderer.invoke(IpcChannels.EqApplyProfile, profileId),

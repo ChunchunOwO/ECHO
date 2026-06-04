@@ -23,6 +23,16 @@ const expectedBuiltInPresetIds = [
   'harman-in-ear',
   'diffuse-field',
   'bk-room-curve',
+  'harman-over-ear-2013',
+  'harman-over-ear-2015',
+  'harman-over-ear-2018-no-bass',
+  'harman-in-ear-2016',
+  'harman-in-ear-2017',
+  'harman-in-ear-2019-no-bass',
+  'harman-speaker-room-2013',
+  'diffuse-field-iso-11904-1',
+  'diffuse-field-gras-kemar',
+  'diffuse-field-5128',
 ];
 
 afterEach(() => {
@@ -452,6 +462,14 @@ describe('EqBridge protocol validation', () => {
     });
     expect(harman?.bands[0].gainDb).toBe(2.3);
     expect(harman?.bands[23].gainDb).toBe(1.8);
+    expect(presets.find((preset) => preset.id === 'harman-over-ear-2015')).toMatchObject({
+      name: 'Harman OE 2015',
+      preampDb: -10,
+      readonly: true,
+      bands: expect.arrayContaining([
+        expect.objectContaining({ frequencyHz: 3150, gainDb: 10 }),
+      ]),
+    });
 
     await bridge.setPreset('harman-target');
 
@@ -462,20 +480,21 @@ describe('EqBridge protocol validation', () => {
     });
   });
 
-  it('keeps every built-in preset locked to listenable curve guardrails', () => {
+  it('keeps every built-in preset locked to safe curve guardrails', () => {
     const bridge = createBridge();
     const builtInPresets = bridge.listPresets().filter((preset) => preset.readonly);
 
     expect(builtInPresets.map((preset) => preset.id)).toEqual(expectedBuiltInPresetIds);
     for (const preset of builtInPresets) {
       expect(preset.bands).toHaveLength(eqBandCount);
-      expect(preset.preampDb, preset.name).toBeGreaterThanOrEqual(-3);
+      expect(preset.preampDb, preset.name).toBeGreaterThanOrEqual(-12);
       expect(preset.preampDb, preset.name).toBeLessThanOrEqual(0);
       expect(preset.bands.every((band) => band.filterType !== 'lowPass' && band.filterType !== 'highPass' && band.filterType !== 'notch'), preset.name).toBe(true);
 
       const gains = preset.bands.map((band) => band.gainDb);
-      expect(Math.max(...gains), preset.name).toBeLessThanOrEqual(3);
-      expect(Math.min(...gains), preset.name).toBeGreaterThanOrEqual(-3);
+      expect(Math.max(...gains), preset.name).toBeLessThanOrEqual(12);
+      expect(Math.min(...gains), preset.name).toBeGreaterThanOrEqual(-12);
+      expect(preset.preampDb + Math.max(...gains), preset.name).toBeLessThanOrEqual(0);
 
       if (preset.id === 'flat') {
         expect(gains.every((gainDb) => gainDb === 0), preset.name).toBe(true);

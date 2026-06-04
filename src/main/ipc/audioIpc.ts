@@ -19,6 +19,14 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import type {
+  OpraHeadphoneCorrectionApplyRequest,
+  OpraHeadphoneCorrectionApplyResult,
+  OpraHeadphoneCorrectionBrowseRequest,
+  OpraHeadphoneCorrectionBrowseResult,
+  OpraHeadphoneCorrectionSearchRequest,
+  OpraHeadphoneCorrectionSearchResult,
+} from '../../shared/types/opra';
+import type {
   EqBindProfileRequest,
   EqPreset,
   EqPresetImportMetadata,
@@ -38,6 +46,7 @@ import type {
 import { getAudioSession } from '../audio/AudioSession';
 import { exportAudioFile } from '../audio/AudioExportService';
 import { getEqBridge } from '../audio/EqBridge';
+import { getOpraService } from '../audio/OpraService';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { createSystemAudioStreamUrl } from '../protocol/audioProtocol';
@@ -700,6 +709,15 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqPreviewImportPreset, () => previewImportEqPreset());
   ipcMain.handle(IpcChannels.EqImportPreset, () => importEqPreset());
   ipcMain.handle(IpcChannels.EqDeletePreset, (_event, presetId: unknown) => getEqBridge().deletePreset(String(presetId)));
+  ipcMain.handle(IpcChannels.EqBrowseHeadphoneCorrections, (_event, request: OpraHeadphoneCorrectionBrowseRequest): Promise<OpraHeadphoneCorrectionBrowseResult> =>
+    getOpraService().browse(request),
+  );
+  ipcMain.handle(IpcChannels.EqSearchHeadphoneCorrections, (_event, request: OpraHeadphoneCorrectionSearchRequest): Promise<OpraHeadphoneCorrectionSearchResult> =>
+    getOpraService().search(request),
+  );
+  ipcMain.handle(IpcChannels.EqApplyHeadphoneCorrection, (_event, request: OpraHeadphoneCorrectionApplyRequest): Promise<OpraHeadphoneCorrectionApplyResult> =>
+    getOpraService().apply(request),
+  );
   ipcMain.handle(IpcChannels.EqListProfiles, () => getEqBridge().listProfiles());
   ipcMain.handle(IpcChannels.EqSaveProfile, (_event, request: EqSaveProfileRequest) => getEqBridge().saveProfile(request));
   ipcMain.handle(IpcChannels.EqApplyProfile, (_event, profileId: unknown) => getEqBridge().applyProfile(String(profileId)));

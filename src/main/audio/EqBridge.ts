@@ -7,6 +7,9 @@ import electron from 'electron';
 import type { ChannelBalanceMonoMode, ChannelBalanceState } from '../../shared/types/audio';
 import {
   channelBalanceMaxBalance,
+  channelBalanceBandIds,
+  channelBalanceBandMaxGainDb,
+  channelBalanceBandMinGainDb,
   channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
@@ -51,6 +54,7 @@ import {
   roomCorrectionMaxTrimDb,
   roomCorrectionMinTrimDb,
 } from '../../shared/types/eq';
+import { builtInEqPresetDefinitions } from '../../shared/audio/eqBuiltInPresets';
 import { defaultChannelBalanceSettings, getAppSettings, setAppSettings } from '../app/appSettings';
 
 type PendingRequest = {
@@ -133,38 +137,11 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
-const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
-  createBands().map((band, index) => ({
-    ...band,
-    ...(overrides[index] ?? {}),
-    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
-    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
-    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
-    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
-    enabled: overrides[index]?.enabled ?? band.enabled,
-  }));
-
-type BuiltInPresetDefinition = {
-  id: string;
-  name: string;
-  preampDb: number;
-  gains?: number[];
-  bands?: EqBand[];
-};
-
-const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
-  { id: 'flat', name: 'Flat', preampDb: 0, gains: [] },
-  { id: 'harman-target', name: 'Harman 2018', preampDb: -3, gains: [2.3, 2.5, 2.6, 2.6, 2.4, 2.1, 1.8, 1.4, 1, 0.6, 0.3, 0.1, 0, 0, 0, 0, 0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 1.7, 1.8, 1.7, 1.5, 1.2, 0.9, 0.6, 0.3, 0.1] },
-  { id: 'harman-in-ear', name: 'Harman IE 2019', preampDb: -3, gains: [2.6, 2.8, 3, 2.9, 2.7, 2.4, 2, 1.5, 1, 0.5, 0.2, 0, -0.1, -0.1, 0, 0.2, 0.5, 0.9, 1.2, 1.5, 1.7, 1.8, 1.7, 1.5, 1.3, 1.1, 0.9, 0.6, 0.4, 0.2, 0] },
-  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -3, gains: [-1.6, -1.5, -1.4, -1.2, -1, -0.8, -0.5, -0.2, 0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.6, 2.7, 2.6, 2.4, 2.1, 1.7, 1.3, 0.9, 0.5, 0.2, 0, -0.2, -0.4, -0.6] },
-  { id: 'bk-room-curve', name: 'B&K Room', preampDb: -2, gains: [2, 1.9, 1.8, 1.7, 1.5, 1.3, 1.1, 0.9, 0.6, 0.4, 0.2, 0, -0.2, -0.4, -0.6, -0.8, -1, -1.1, -1.2, -1.3, -1.4, -1.5, -1.6, -1.7, -1.8, -1.8, -1.9, -1.9, -2, -2, -2] },
-];
-
-const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
+const builtInPresets: EqPreset[] = builtInEqPresetDefinitions.map((preset) => ({
   id: preset.id,
   name: preset.name,
   preampDb: preset.preampDb,
-  bands: preset.bands?.map((band) => ({ ...band })) ?? createBands(preset.gains),
+  bands: createBands(preset.gains),
   createdAt: 'built-in',
   updatedAt: 'built-in',
   readonly: true,
@@ -222,12 +199,30 @@ const normalizeChannelBalancePatch = (
   const leftDelayMs = Number(patch.leftDelayMs ?? fallback.leftDelayMs ?? 0);
   const rightDelayMs = Number(patch.rightDelayMs ?? fallback.rightDelayMs ?? 0);
   const monoMode = typeof patch.monoMode === 'string' && monoModes.has(patch.monoMode) ? patch.monoMode : fallback.monoMode;
+  const rawBandGains = patch.bandGains && typeof patch.bandGains === 'object' && !Array.isArray(patch.bandGains)
+    ? patch.bandGains
+    : fallback.bandGains;
+  const bandGains = channelBalanceBandIds.reduce<NonNullable<ChannelBalanceState['bandGains']>>((next, bandId) => {
+    const band = rawBandGains?.[bandId];
+    const leftBandGainDb = Number(band?.leftGainDb);
+    const rightBandGainDb = Number(band?.rightGainDb);
+    next[bandId] = {
+      leftGainDb: Number.isFinite(leftBandGainDb) ? clamp(leftBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+      rightGainDb: Number.isFinite(rightBandGainDb) ? clamp(rightBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+    };
+    return next;
+  }, {
+    low: { leftGainDb: 0, rightGainDb: 0 },
+    mid: { leftGainDb: 0, rightGainDb: 0 },
+    high: { leftGainDb: 0, rightGainDb: 0 },
+  });
 
   return {
     enabled: typeof patch.enabled === 'boolean' ? patch.enabled : fallback.enabled,
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : fallback.balance,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.leftGainDb,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.rightGainDb,
+    bandGains,
     leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.leftDelayMs ?? 0,
     rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.rightDelayMs ?? 0,
     swapLeftRight: typeof patch.swapLeftRight === 'boolean' ? patch.swapLeftRight : fallback.swapLeftRight,
@@ -245,6 +240,10 @@ const isDefaultChannelBalanceState = (state: ChannelBalanceState): boolean => {
     state.balance === fallback.balance &&
     state.leftGainDb === fallback.leftGainDb &&
     state.rightGainDb === fallback.rightGainDb &&
+    channelBalanceBandIds.every((bandId) => (
+      (state.bandGains?.[bandId]?.leftGainDb ?? 0) === (fallback.bandGains?.[bandId]?.leftGainDb ?? 0) &&
+      (state.bandGains?.[bandId]?.rightGainDb ?? 0) === (fallback.bandGains?.[bandId]?.rightGainDb ?? 0)
+    )) &&
     (state.leftDelayMs ?? 0) === (fallback.leftDelayMs ?? 0) &&
     (state.rightDelayMs ?? 0) === (fallback.rightDelayMs ?? 0) &&
     state.swapLeftRight === fallback.swapLeftRight &&

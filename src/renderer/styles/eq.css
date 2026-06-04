@@ -1446,6 +1446,11 @@
   stroke: rgba(52, 66, 82, 0.18);
 }
 
+.eq-grid-line--frequency {
+  stroke: rgba(52, 66, 82, 0.08);
+  stroke-dasharray: 2 7;
+}
+
 .eq-zero-line {
   stroke: rgba(28, 47, 67, 0.36);
   stroke-width: 1.2;
@@ -1497,6 +1502,18 @@
   text-anchor: middle;
 }
 
+.eq-curve-view[data-parametric="true"] .eq-x-label {
+  font-size: 9px;
+  font-weight: 760;
+  opacity: 0.72;
+}
+
+.eq-curve-view[data-parametric="true"] .eq-x-label--axis {
+  font-size: 10px;
+  font-weight: 820;
+  opacity: 0.82;
+}
+
 .eq-y-label {
   fill: #526275;
   text-anchor: start;
@@ -1543,6 +1560,11 @@
   font-weight: 950;
   pointer-events: none;
   text-anchor: middle;
+}
+
+.eq-curve-view[data-parametric="true"] .eq-curve-node-type {
+  fill: #405163;
+  font-size: 6.5px;
 }
 
 .eq-curve-node-number {
@@ -2986,6 +3008,249 @@
   font-weight: 760;
 }
 
+.eq-headphone-correction {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  color: var(--theme-legacy-heading-text);
+  border: 1px solid rgba(31, 93, 102, 0.14);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(245, 249, 252, 0.86), rgba(255, 255, 255, 0.62)),
+    rgba(247, 250, 252, 0.74);
+}
+
+.eq-headphone-correction-header,
+.eq-headphone-correction-search,
+.eq-headphone-correction-status,
+.eq-headphone-correction-body,
+.eq-headphone-correction-metrics {
+  min-width: 0;
+}
+
+.eq-headphone-correction-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.eq-headphone-correction-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.eq-headphone-correction-header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.eq-headphone-correction-header strong {
+  overflow: hidden;
+  color: var(--theme-legacy-heading-text);
+  font-size: 16px;
+  font-weight: 920;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-headphone-correction-header small,
+.eq-headphone-correction-message,
+.eq-headphone-correction-preview p {
+  color: var(--theme-legacy-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.eq-headphone-correction-header small {
+  max-width: 420px;
+  text-align: right;
+}
+
+.eq-headphone-correction-search {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+}
+
+.eq-headphone-correction-search input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 11px;
+  color: var(--theme-legacy-heading-text);
+  border: 1px solid rgba(28, 47, 67, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.eq-headphone-correction-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.eq-headphone-correction-status span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 9px;
+  color: var(--theme-legacy-muted-text);
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.eq-headphone-correction-message {
+  margin: 0;
+}
+
+.eq-headphone-correction-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.1fr) minmax(240px, 0.9fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.eq-headphone-correction-results {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.eq-headphone-product {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.eq-headphone-product > img,
+.eq-headphone-product > svg {
+  width: 50px;
+  height: 42px;
+  align-self: start;
+  object-fit: contain;
+  color: var(--theme-legacy-accent-text);
+}
+
+.eq-headphone-product > div,
+.eq-headphone-product-eqs {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.eq-headphone-product span,
+.eq-headphone-product small,
+.eq-headphone-correction-preview span,
+.eq-headphone-correction-preview small,
+.eq-headphone-correction-metrics em {
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.eq-headphone-product strong,
+.eq-headphone-correction-preview strong {
+  overflow: hidden;
+  color: var(--theme-legacy-heading-text);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-headphone-product-eqs {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  padding-top: 4px;
+}
+
+.eq-headphone-product-eqs button {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 7px 8px;
+  text-align: left;
+  color: var(--theme-legacy-heading-text);
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  cursor: pointer;
+  font: inherit;
+}
+
+.eq-headphone-product-eqs button[data-active="true"] {
+  border-color: rgba(31, 93, 102, 0.28);
+  background: rgba(232, 244, 243, 0.76);
+}
+
+.eq-headphone-product-eqs button span,
+.eq-headphone-product-eqs button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-headphone-correction-preview {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(31, 93, 102, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.eq-headphone-correction-preview > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.eq-headphone-correction-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.eq-headphone-correction-metrics span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(247, 250, 252, 0.76);
+}
+
+.eq-headphone-correction-preview p {
+  margin: 0;
+}
+
+.eq-headphone-correction-apply {
+  color: var(--theme-legacy-accent-text);
+  border-color: rgba(31, 93, 102, 0.22);
+  background: rgba(232, 244, 243, 0.8);
+}
+
 .eq-apo-paste {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto;
@@ -3633,6 +3898,13 @@ html[data-theme="dark"] .eq-preset-console,
 html[data-theme="dark"] .eq-preset-tools input,
 html[data-theme="dark"] .eq-preset-tools button,
 html[data-theme="dark"] .eq-preset-state-badge,
+html[data-theme="dark"] .eq-headphone-correction,
+html[data-theme="dark"] .eq-headphone-correction-search input,
+html[data-theme="dark"] .eq-headphone-correction-status span,
+html[data-theme="dark"] .eq-headphone-product,
+html[data-theme="dark"] .eq-headphone-product-eqs button,
+html[data-theme="dark"] .eq-headphone-correction-preview,
+html[data-theme="dark"] .eq-headphone-correction-metrics span,
 html[data-theme="dark"] .eq-import-preview,
 html[data-theme="dark"] .eq-import-preview > div,
 html[data-theme="dark"] .eq-import-preview > span,
@@ -3690,6 +3962,13 @@ html[data-theme="dark"] .channel-balance-readout span {
   border-color: rgba(150, 168, 190, 0.16);
   background: rgba(18, 25, 35, 0.82);
   box-shadow: none;
+}
+
+html[data-theme="dark"] .eq-headphone-product-eqs button[data-active="true"],
+html[data-theme="dark"] .eq-headphone-correction-apply {
+  color: #c8f1df;
+  border-color: rgba(95, 194, 150, 0.24);
+  background: rgba(33, 62, 52, 0.72);
 }
 
 html[data-theme="dark"] .eq-workbench,
@@ -3936,6 +4215,7 @@ html[data-theme="dark"] .eq-curve-node {
 }
 
 html[data-theme="dark"] .eq-curve-node-number,
+html[data-theme="dark"] .eq-curve-view[data-parametric="true"] .eq-curve-node-type,
 html[data-theme="dark"] .eq-selected-readout text,
 html[data-theme="dark"] .eq-hover-readout text {
   fill: rgba(231, 241, 252, 0.94);
@@ -4136,6 +4416,10 @@ html[data-theme="dark"] .eq-simple-safety[data-risk="true"] .eq-simple-safety__i
 }
 
 @media (max-width: 1040px) {
+  .eq-headphone-correction-body {
+    grid-template-columns: 1fr;
+  }
+
   .eq-header,
   .eq-signal-strip,
   .channel-balance-header {
@@ -4223,6 +4507,24 @@ html[data-theme="dark"] .eq-simple-safety[data-risk="true"] .eq-simple-safety__i
 }
 
 @media (max-width: 680px) {
+  .eq-headphone-correction-header {
+    display: grid;
+  }
+
+  .eq-headphone-correction-header small {
+    max-width: none;
+    text-align: left;
+  }
+
+  .eq-headphone-correction-search,
+  .eq-headphone-correction-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .eq-headphone-product {
+    grid-template-columns: 1fr;
+  }
+
   .eq-header-actions,
   .eq-preset-browser,
   .eq-mode-toggle,

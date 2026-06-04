@@ -23,6 +23,19 @@ bool getBool(const juce::DynamicObject& object, const juce::Identifier& key, boo
     return value.isBool() ? static_cast<bool>(value) : fallback;
 }
 
+float readBandGainDb(const juce::DynamicObject* bandsObject, const char* bandId, const char* sideKey, float fallback)
+{
+    if (bandsObject == nullptr)
+        return fallback;
+
+    const auto bandValue = bandsObject->getProperty(bandId);
+    const auto* bandObject = bandValue.getDynamicObject();
+    if (bandObject == nullptr)
+        return fallback;
+
+    return clampChannelBandGainDb(getNumber(*bandObject, sideKey, fallback));
+}
+
 int getInt(const juce::DynamicObject& object, const juce::Identifier& key, int fallback)
 {
     const auto value = object.getProperty(key);
@@ -114,6 +127,14 @@ ChannelBalanceState readChannelBalanceState(const juce::DynamicObject& object, c
     state.balance = clampChannelBalance(getNumber(object, "balance", state.balance));
     state.leftGainDb = clampChannelGainDb(getNumber(object, "leftGainDb", state.leftGainDb));
     state.rightGainDb = clampChannelGainDb(getNumber(object, "rightGainDb", state.rightGainDb));
+    const auto bandsValue = object.getProperty("bandGains");
+    const auto* bandsObject = bandsValue.getDynamicObject();
+    state.leftBandGainsDb[0] = readBandGainDb(bandsObject, "low", "leftGainDb", state.leftBandGainsDb[0]);
+    state.rightBandGainsDb[0] = readBandGainDb(bandsObject, "low", "rightGainDb", state.rightBandGainsDb[0]);
+    state.leftBandGainsDb[1] = readBandGainDb(bandsObject, "mid", "leftGainDb", state.leftBandGainsDb[1]);
+    state.rightBandGainsDb[1] = readBandGainDb(bandsObject, "mid", "rightGainDb", state.rightBandGainsDb[1]);
+    state.leftBandGainsDb[2] = readBandGainDb(bandsObject, "high", "leftGainDb", state.leftBandGainsDb[2]);
+    state.rightBandGainsDb[2] = readBandGainDb(bandsObject, "high", "rightGainDb", state.rightBandGainsDb[2]);
     state.leftDelayMs = clampChannelDelayMs(getNumber(object, "leftDelayMs", state.leftDelayMs));
     state.rightDelayMs = clampChannelDelayMs(getNumber(object, "rightDelayMs", state.rightDelayMs));
     state.swapLeftRight = getBool(object, "swapLeftRight", state.swapLeftRight);
@@ -164,6 +185,10 @@ std::string EqMessageProtocol::createChannelBalanceStateMessage(const ChannelBal
            << "\"balance\":" << state.balance << ','
            << "\"leftGainDb\":" << state.leftGainDb << ','
            << "\"rightGainDb\":" << state.rightGainDb << ','
+           << "\"bandGains\":{"
+           << "\"low\":{\"leftGainDb\":" << state.leftBandGainsDb[0] << ",\"rightGainDb\":" << state.rightBandGainsDb[0] << "},"
+           << "\"mid\":{\"leftGainDb\":" << state.leftBandGainsDb[1] << ",\"rightGainDb\":" << state.rightBandGainsDb[1] << "},"
+           << "\"high\":{\"leftGainDb\":" << state.leftBandGainsDb[2] << ",\"rightGainDb\":" << state.rightBandGainsDb[2] << "}},"
            << "\"leftDelayMs\":" << state.leftDelayMs << ','
            << "\"rightDelayMs\":" << state.rightDelayMs << ','
            << "\"swapLeftRight\":" << boolText(state.swapLeftRight) << ','

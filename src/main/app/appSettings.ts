@@ -47,6 +47,9 @@ import {
 } from '../../shared/types/globalShortcuts';
 import {
   channelBalanceMaxBalance,
+  channelBalanceBandIds,
+  channelBalanceBandMaxGainDb,
+  channelBalanceBandMinGainDb,
   channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
@@ -304,6 +307,11 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  bandGains: {
+    low: { leftGainDb: 0, rightGainDb: 0 },
+    mid: { leftGainDb: 0, rightGainDb: 0 },
+    high: { leftGainDb: 0, rightGainDb: 0 },
+  },
   leftDelayMs: 0,
   rightDelayMs: 0,
   swapLeftRight: false,
@@ -1393,6 +1401,23 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
   const rightGainDb = Number(input.rightGainDb);
   const leftDelayMs = Number(input.leftDelayMs);
   const rightDelayMs = Number(input.rightDelayMs);
+  const rawBandGains = input.bandGains && typeof input.bandGains === 'object' && !Array.isArray(input.bandGains)
+    ? input.bandGains as Partial<NonNullable<ChannelBalanceState['bandGains']>>
+    : {};
+  const bandGains = channelBalanceBandIds.reduce<NonNullable<ChannelBalanceState['bandGains']>>((next, bandId) => {
+    const band = rawBandGains[bandId];
+    const leftBandGainDb = Number(band?.leftGainDb);
+    const rightBandGainDb = Number(band?.rightGainDb);
+    next[bandId] = {
+      leftGainDb: Number.isFinite(leftBandGainDb) ? clamp(leftBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+      rightGainDb: Number.isFinite(rightBandGainDb) ? clamp(rightBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+    };
+    return next;
+  }, {
+    low: { leftGainDb: 0, rightGainDb: 0 },
+    mid: { leftGainDb: 0, rightGainDb: 0 },
+    high: { leftGainDb: 0, rightGainDb: 0 },
+  });
   const monoMode: ChannelBalanceMonoMode =
     input.monoMode === 'sum' || input.monoMode === 'left' || input.monoMode === 'right' || input.monoMode === 'off'
       ? input.monoMode
@@ -1403,6 +1428,7 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : 0,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
+    bandGains,
     leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
     rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
     swapLeftRight: input.swapLeftRight === true,

@@ -48,6 +48,11 @@ type HoverReadout = {
   bandGainDb: number;
 };
 
+type DisplayBandEntry = {
+  band: EqBand;
+  index: number;
+};
+
 const width = 920;
 const height = 360;
 const paddingLeft = 62;
@@ -59,6 +64,7 @@ const plotHeight = height - paddingTop - paddingBottom;
 const responsePointCount = 180;
 const defaultAxisLimitDb = 12;
 const axisLimitStepsDb = [12, 18, 24, 36];
+const axisFrequenciesHz = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
 const eqFilterLabelKeys: Record<EqFilterType, TranslationKey> = {
   peaking: 'settings.eq.filter.peaking',
   lowShelf: 'settings.eq.filter.lowShelf',
@@ -126,6 +132,13 @@ const frequencyAtNormalizedX = (normalized: number): number => {
   return 10 ** (minLog + clamp(normalized, 0, 1) * (maxLog - minLog));
 };
 
+const frequencyToSvgX = (frequencyHz: number): number => {
+  const minLog = Math.log10(eqMinFrequencyHz);
+  const maxLog = Math.log10(eqMaxFrequencyHz);
+  const normalized = (Math.log10(clamp(frequencyHz, eqMinFrequencyHz, eqMaxFrequencyHz)) - minLog) / (maxLog - minLog);
+  return paddingLeft + normalized * plotWidth;
+};
+
 const gainToY = (gainDb: number, axisLimitDb = defaultAxisLimitDb): number => {
   const minGainDb = -axisLimitDb;
   const maxGainDb = axisLimitDb;
@@ -147,6 +160,58 @@ const xToFrequency = (x: number): number => {
   const frequencyHz = 10 ** (minLog + normalized * (maxLog - minLog));
 
   return frequencyHz < 1000 ? Math.round(frequencyHz) : Math.round(frequencyHz / 10) * 10;
+};
+
+const isStandardFrequencySlot = (band: EqBand, index: number): boolean => {
+  const standardFrequency = eqFrequenciesHz[index];
+  if (!standardFrequency) {
+    return false;
+  }
+
+  return Math.abs(Math.log2(band.frequencyHz / standardFrequency)) < 0.025;
+};
+
+const isAudibleCurveBand = (band: EqBand): boolean => {
+  if (band.enabled === false) {
+    return false;
+  }
+
+  const filterType = band.filterType ?? 'peaking';
+  return !isEqFilterGainEditable(filterType) || Math.abs(band.gainDb) > 0.05;
+};
+
+const buildXAxisLabelEntries = (
+  entries: DisplayBandEntry[],
+  axisLimitDb: number,
+  selectedBandIndex: number,
+  activeBand: number | null,
+  hoverBand: number | null,
+): Array<DisplayBandEntry & { x: number; y: number }> => {
+  const candidates = entries.map((entry) => ({
+    ...entry,
+    ...bandToSvgPoint(entry.band, axisLimitDb),
+  }));
+  const prioritized = [...candidates].sort((left, right) => {
+    const leftSelected = left.index === selectedBandIndex || left.index === activeBand || left.index === hoverBand;
+    const rightSelected = right.index === selectedBandIndex || right.index === activeBand || right.index === hoverBand;
+    if (leftSelected !== rightSelected) {
+      return leftSelected ? -1 : 1;
+    }
+
+    const leftGain = isEqFilterGainEditable(left.band.filterType) ? Math.abs(left.band.gainDb) : defaultAxisLimitDb;
+    const rightGain = isEqFilterGainEditable(right.band.filterType) ? Math.abs(right.band.gainDb) : defaultAxisLimitDb;
+    return rightGain - leftGain || left.x - right.x;
+  });
+  const kept: Array<DisplayBandEntry & { x: number; y: number }> = [];
+  const minimumDistance = 42;
+
+  for (const candidate of prioritized) {
+    if (kept.every((entry) => Math.abs(entry.x - candidate.x) >= minimumDistance)) {
+      kept.push(candidate);
+    }
+  }
+
+  return kept.sort((left, right) => left.x - right.x);
 };
 
 const clientPointToSvgPoint = (
@@ -234,6 +299,14 @@ export const EqCurveView = ({
     () => (dragPreview ? bands.map((band, index) => (index === dragPreview.index ? dragPreview.band : band)) : bands),
     [bands, dragPreview],
   );
+  const displayBandEntries = useMemo<DisplayBandEntry[]>(
+    () => displayBands.map((band, index) => ({ band, index })),
+    [displayBands],
+  );
+  const hasParametricLayout = useMemo(
+    () => displayBandEntries.some(({ band, index }) => band.enabled !== false && !isStandardFrequencySlot(band, index)),
+    [displayBandEntries],
+  );
   const responsePoints = useMemo(
     () => Array.from({ length: responsePointCount }, (_unused, index) => {
       const normalized = index / (responsePointCount - 1);
@@ -265,6 +338,24 @@ export const EqCurveView = ({
   const readoutBandIndex = activeBand ?? hoverBand ?? selectedBandIndex;
   const selectedBand = displayBands[readoutBandIndex];
   const selectedPoint = selectedBand ? bandToSvgPoint(selectedBand, axisLimitDb) : null;
+  const curveNodeEntries = useMemo(
+    () => (hasParametricLayout
+      ? displayBandEntries.filter(({ band, index }) => (
+        isAudibleCurveBand(band) || index === selectedBandIndex || index === activeBand || index === hoverBand
+      ))
+      : displayBandEntries),
+    [activeBand, displayBandEntries, hasParametricLayout, hoverBand, selectedBandIndex],
+  );
+  const xAxisLabelEntries = useMemo(
+    () => buildXAxisLabelEntries(
+      hasParametricLayout ? curveNodeEntries : displayBandEntries,
+      axisLimitDb,
+      selectedBandIndex,
+      activeBand,
+      hoverBand,
+    ),
+    [activeBand, axisLimitDb, curveNodeEntries, displayBandEntries, hasParametricLayout, hoverBand, selectedBandIndex],
+  );
   const selectedBandPath = useMemo(
     () => {
       if (!selectedBand) {
@@ -436,6 +527,7 @@ export const EqCurveView = ({
     <div className="eq-curve-shell" data-enabled={enabled}>
       <svg
         className="eq-curve-view"
+        data-parametric={hasParametricLayout}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={t('settings.eq.curve.aria')}
@@ -469,6 +561,22 @@ export const EqCurveView = ({
           );
         })}
 
+        {hasParametricLayout ? (
+          <g className="eq-frequency-axis" aria-hidden="true">
+            {axisFrequenciesHz.map((frequencyHz) => {
+              const x = frequencyToSvgX(frequencyHz);
+              return (
+                <g key={frequencyHz}>
+                  <line className="eq-grid-line eq-grid-line--frequency" x1={x} x2={x} y1={paddingTop} y2={paddingTop + plotHeight} />
+                  <text className="eq-x-label eq-x-label--axis" x={x} y={height - 14}>
+                    {formatFrequencyLabel(frequencyHz)}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        ) : null}
+
         <line className="eq-zero-line" x1={paddingLeft} x2={paddingLeft + plotWidth} y1={zeroY} y2={zeroY} />
         {spectrumEnabled ? (
           <g className="eq-spectrum-overlay" data-state={visualTelemetryState ?? 'fallback'} aria-label={t('settings.eq.analyzer.overlayAria')}>
@@ -495,7 +603,7 @@ export const EqCurveView = ({
         <path className="eq-curve-stroke" d={path} />
         <path className="eq-curve-hit-area" d={path} />
 
-        {displayBands.map((band, index) => {
+        {curveNodeEntries.map(({ band, index }) => {
           const point = bandToSvgPoint(band, axisLimitDb);
           const selected = selectedBandIndex === index;
           return (
@@ -521,21 +629,22 @@ export const EqCurveView = ({
                 {`${t(eqFilterLabelKeys[band.filterType ?? 'peaking'])} / ${formatFrequencyLabel(band.frequencyHz)} / ${isEqFilterGainEditable(band.filterType) ? formatDb(band.gainDb) : t('settings.eq.band.gainFixed')} / Q ${Number(band.q ?? 1).toFixed(1)}`}
               </title>
               <circle className="eq-curve-node-hit" r="16" />
-              <circle className="eq-curve-node" r={selected ? 9 : 7.5} />
-              <text className="eq-curve-node-type" y="-10">
+              <circle className="eq-curve-node" r={hasParametricLayout ? (selected ? 7 : 5.8) : (selected ? 9 : 7.5)} />
+              <text className="eq-curve-node-type" y={hasParametricLayout ? 3 : -10}>
                 {filterNodeGlyphs[band.filterType ?? 'peaking']}
               </text>
-              <text className="eq-curve-node-number" y="3.5">
-                {formatFrequencyLabel(band.frequencyHz)}
-              </text>
+              {!hasParametricLayout ? (
+                <text className="eq-curve-node-number" y="3.5">
+                  {formatFrequencyLabel(band.frequencyHz)}
+                </text>
+              ) : null}
             </g>
           );
         })}
 
-        {displayBands.map((band, index) => {
-          const point = bandToSvgPoint(band, axisLimitDb);
+        {!hasParametricLayout && xAxisLabelEntries.map(({ band, index, x }) => {
           return (
-            <text className="eq-x-label" x={point.x} y={height - 14} key={`${band.frequencyHz}-${index}-label`}>
+            <text className="eq-x-label" x={x} y={height - 14} key={`${band.frequencyHz}-${index}-label`}>
               {formatFrequencyLabel(band.frequencyHz)}
             </text>
           );

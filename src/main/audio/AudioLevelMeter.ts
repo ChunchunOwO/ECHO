@@ -219,18 +219,22 @@ const linearGainToDb = (value: number): number => {
 
 const computeChannelBalanceGainDb = (state: ChannelBalanceState): number => {
   const balance = Math.max(-1, Math.min(1, state.balance));
+  const bandGainDb = Math.max(
+    0,
+    ...Object.values(state.bandGains ?? {}).flatMap((band) => [band.leftGainDb, band.rightGainDb]),
+  );
 
   if (!state.constantPower) {
     const left = state.leftGainDb + linearGainToDb(balance > 0 ? 1 - balance : 1);
     const right = state.rightGainDb + linearGainToDb(balance < 0 ? 1 + balance : 1);
-    return Math.max(0, left, right);
+    return Math.max(0, left, right, bandGainDb);
   }
 
   const pan = (balance + 1) * Math.PI * 0.25;
   const compensation = Math.sqrt(2);
   const left = state.leftGainDb + linearGainToDb(Math.min(1, Math.cos(pan) * compensation));
   const right = state.rightGainDb + linearGainToDb(Math.min(1, Math.sin(pan) * compensation));
-  return Math.max(0, left, right);
+  return Math.max(0, left, right, bandGainDb);
 };
 
 export const computeDspEstimatedGainDb = (eqState: EqState, channelBalanceState: ChannelBalanceState, dspModuleActive = eqState.enabled || channelBalanceState.enabled): number => {

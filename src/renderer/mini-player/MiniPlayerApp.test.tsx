@@ -202,6 +202,26 @@ describe('MiniPlayerApp', () => {
     await waitFor(() => expect(window.echo?.playback?.seek).toHaveBeenCalledWith(90));
   });
 
+  it('keeps mini progress anchored after a backward seek returns stale status', async () => {
+    const track = makeTrack();
+    installEchoMock(track);
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track} />
+      </PlaybackQueueProvider>,
+    );
+
+    const slider = await screen.findByRole('slider', { name: '播放进度' }) as HTMLInputElement;
+    await waitFor(() => expect(Number(slider.value)).toBe(42));
+
+    fireEvent.change(slider, { target: { value: '0' } });
+    fireEvent.pointerUp(slider);
+
+    await waitFor(() => expect(window.echo?.playback?.seek).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(Number(slider.value)).toBeLessThan(1));
+  });
+
   it('commits volume changes from the mini player slider', async () => {
     const track = makeTrack();
     installEchoMock(track, {

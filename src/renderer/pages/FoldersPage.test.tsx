@@ -198,6 +198,7 @@ let libraryMock: {
   chooseFolder: ReturnType<typeof vi.fn>;
   addFolder: ReturnType<typeof vi.fn>;
   scanFolder: ReturnType<typeof vi.fn>;
+  scanFolderChanges: ReturnType<typeof vi.fn>;
   removeFolder: ReturnType<typeof vi.fn>;
   getScanStatus: ReturnType<typeof vi.fn>;
 };
@@ -226,6 +227,7 @@ beforeEach(() => {
     chooseFolder: vi.fn().mockResolvedValue(null),
     addFolder: vi.fn(),
     scanFolder: vi.fn(),
+    scanFolderChanges: vi.fn(),
     removeFolder: vi.fn(),
     getScanStatus: vi.fn().mockResolvedValue(scanStatus()),
   };
@@ -651,6 +653,18 @@ describe('FoldersPage', () => {
     } finally {
       window.removeEventListener('library:changed', changedHandler);
     }
+  });
+
+  it('starts a changes-only scan from the selected root management panel', async () => {
+    libraryMock.scanFolderChanges.mockResolvedValue(scanStatus({ folderId: 'folder-1' }));
+
+    renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: 'Scan changes' }));
+
+    await waitFor(() => expect(libraryMock.scanFolderChanges).toHaveBeenCalledWith('folder-1'));
+    expect(libraryMock.scanFolder).not.toHaveBeenCalled();
   });
 
   it('refreshes folder overviews once for each terminal scan job', async () => {

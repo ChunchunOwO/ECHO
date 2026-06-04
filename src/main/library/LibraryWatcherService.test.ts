@@ -309,10 +309,11 @@ describe('LibraryWatcherService', () => {
     vi.useRealTimers();
   });
 
-  it('does not rescan unlink delete rename or unknown events', async () => {
+  it('marks deleted audio paths missing, rescans stable rename events, and ignores unknown events', async () => {
     vi.useFakeTimers();
     const adapter = new FakeWatcherAdapter();
     const rescanPaths = vi.fn();
+    const markMissingPaths = vi.fn();
     const service = new LibraryWatcherService({
       enabled: true,
       autoRescanEnabled: true,
@@ -322,19 +323,90 @@ describe('LibraryWatcherService', () => {
       stabilityPollMs: 5,
       rescanDebounceMs: 10,
       statFile: () => ({ sizeBytes: 64, mtimeMs: 1000 }),
-      rescanCoordinator: { rescanPaths },
+      rescanCoordinator: { rescanPaths, markMissingPaths },
     });
     service.start();
 
     adapter.emit({ folderId: 'folder-1', eventType: 'unlink', path: 'D:\\Music\\deleted.flac' });
     adapter.emit({ folderId: 'folder-1', eventType: 'rename', path: 'D:\\Music\\renamed.flac' });
     adapter.emit({ folderId: 'folder-1', eventType: 'unknown', path: 'D:\\Music\\mystery.flac' });
-    await vi.advanceTimersByTimeAsync(20);
+    await flushStableAutoRescanTimers();
 
+    expect(rescanPaths).toHaveBeenCalledWith('folder-1', ['D:\\Music\\renamed.flac']);
+    expect(markMissingPaths).toHaveBeenCalledWith('folder-1', ['D:\\Music\\deleted.flac']);
+    expect(service.getDiagnostics().skippedDeleteEventCount).toBe(0);
+    expect(service.getDiagnostics().skippedRenameEventCount).toBe(0);
+    expect(service.getDiagnostics().triggeredRescanCount).toBe(2);
+    expect(service.getDiagnostics().recentEvents.map((event) => event.eventType)).toEqual(['unlink', 'unknown', 'add']);
+
+    service.stop();
+    vi.useRealTimers();
+  });
+
+  it('waits for rename-created files to appear before queuing a rescan', async () => {
+    vi.useFakeTimers();
+    const adapter = new FakeWatcherAdapter();
+    const rescanPaths = vi.fn();
+    const statFile = vi
+      .fn()
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ sizeBytes: 64, mtimeMs: 1000 })
+      .mockReturnValueOnce({ sizeBytes: 64, mtimeMs: 1000 });
+    const service = new LibraryWatcherService({
+      enabled: true,
+      autoRescanEnabled: true,
+      readFolders: () => [createFolder()],
+      adapter,
+      debounceMs: 5,
+      stabilityPollMs: 5,
+      rescanDebounceMs: 10,
+      statFile,
+      rescanCoordinator: { rescanPaths },
+    });
+    service.start();
+
+    adapter.emit({ folderId: 'folder-1', eventType: 'rename', path: 'D:\\Music\\late.flac' });
+    await vi.advanceTimersByTimeAsync(5);
     expect(rescanPaths).not.toHaveBeenCalled();
-    expect(service.getDiagnostics().skippedDeleteEventCount).toBe(1);
-    expect(service.getDiagnostics().skippedRenameEventCount).toBe(1);
-    expect(service.getDiagnostics().recentEvents.map((event) => event.eventType)).toEqual(['unlink', 'rename', 'unknown']);
+
+    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(rescanPaths).toHaveBeenCalledTimes(1);
+    expect(rescanPaths).toHaveBeenCalledWith('folder-1', ['D:\\Music\\late.flac']);
+    expect(service.getDiagnostics().recentEvents.map((event) => event.eventType)).toEqual(['add']);
+
+    service.stop();
+    vi.useRealTimers();
+  });
+
+  it('treats rapid remove and re-add for the same path as an add when the file is present', async () => {
+    vi.useFakeTimers();
+    const adapter = new FakeWatcherAdapter();
+    const rescanPaths = vi.fn();
+    const markMissingPaths = vi.fn();
+    const service = new LibraryWatcherService({
+      enabled: true,
+      autoRescanEnabled: true,
+      readFolders: () => [createFolder()],
+      adapter,
+      debounceMs: 5,
+      stabilityPollMs: 5,
+      rescanDebounceMs: 10,
+      statFile: () => ({ sizeBytes: 64, mtimeMs: 1000 }),
+      rescanCoordinator: { rescanPaths, markMissingPaths },
+    });
+    service.start();
+
+    adapter.emit({ folderId: 'folder-1', eventType: 'unlink', path: 'D:\\Music\\bounce.flac' });
+    adapter.emit({ folderId: 'folder-1', eventType: 'add', path: 'D:\\Music\\bounce.flac' });
+    await flushStableAutoRescanTimers();
+
+    expect(markMissingPaths).not.toHaveBeenCalled();
+    expect(rescanPaths).toHaveBeenCalledTimes(1);
+    expect(rescanPaths).toHaveBeenCalledWith('folder-1', ['D:\\Music\\bounce.flac']);
+    expect(service.getDiagnostics().recentEvents.map((event) => event.eventType)).toEqual(['add']);
 
     service.stop();
     vi.useRealTimers();
@@ -571,6 +643,54 @@ describe('LibraryWatcherService', () => {
 
     expect(rescanPaths).toHaveBeenCalledTimes(1);
     expect(rescanPaths).toHaveBeenCalledWith('folder-1', ['D:\\Music\\new.flac']);
+    expect(service.getDiagnostics().pendingPathCount).toBe(0);
+
+    service.stop();
+    vi.useRealTimers();
+  });
+
+  it('previews large batches and rescans them in small chunks', async () => {
+    vi.useFakeTimers();
+    const adapter = new FakeWatcherAdapter();
+    const rescanPaths = vi.fn();
+    const previewRescanPaths = vi.fn();
+    const service = new LibraryWatcherService({
+      enabled: true,
+      autoRescanEnabled: true,
+      readFolders: () => [createFolder()],
+      adapter,
+      debounceMs: 5,
+      stabilityPollMs: 5,
+      rescanDebounceMs: 10,
+      maxRescanBatchSize: 4,
+      statFile: () => ({ sizeBytes: 64, mtimeMs: 1000 }),
+      rescanCoordinator: {
+        rescanPaths,
+        previewRescanPaths,
+      },
+    });
+    service.start();
+
+    const paths = Array.from({ length: 10 }, (_, index) => `D:\\Music\\batch-${index + 1}.flac`);
+    for (const path of paths) {
+      adapter.emit({ folderId: 'folder-1', eventType: 'add', path });
+    }
+    await flushStableAutoRescanTimers();
+
+    expect(previewRescanPaths).toHaveBeenCalledTimes(1);
+    expect(previewRescanPaths).toHaveBeenCalledWith('folder-1', paths);
+    expect(rescanPaths).toHaveBeenCalledTimes(1);
+    expect(rescanPaths).toHaveBeenCalledWith('folder-1', paths.slice(0, 4));
+    expect(service.getDiagnostics().pendingPathCount).toBe(6);
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(rescanPaths).toHaveBeenCalledTimes(2);
+    expect(rescanPaths).toHaveBeenLastCalledWith('folder-1', paths.slice(4, 8));
+    expect(service.getDiagnostics().pendingPathCount).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(rescanPaths).toHaveBeenCalledTimes(3);
+    expect(rescanPaths).toHaveBeenLastCalledWith('folder-1', paths.slice(8));
     expect(service.getDiagnostics().pendingPathCount).toBe(0);
 
     service.stop();

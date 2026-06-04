@@ -1652,6 +1652,7 @@ const echoApi: EchoApi = {
     openLibraryFolderPath: (request) => ipcRenderer.invoke(IpcChannels.LibraryOpenLibraryFolderPath, request),
     removeFolder: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryRemoveFolder, folderId),
     scanFolder: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryScanFolder, folderId),
+    scanFolderChanges: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryScanFolderChanges, folderId),
     rescanEmbeddedTags: (mode) => ipcRenderer.invoke(IpcChannels.LibraryRescanEmbeddedTags, mode),
     getScanStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetScanStatus, jobId),
     cancelScan: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryCancelScan, jobId),

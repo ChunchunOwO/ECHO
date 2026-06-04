@@ -634,6 +634,37 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('removing one folder keeps album indexes for remaining folders', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor({ sourceHash: 'remove-folder-cover' }) });
+    const firstTrack = writeAudioFile(harness.folder, 'First Folder Song.flac');
+    const secondFolder = join(harness.root, 'second-music');
+    mkdirSync(secondFolder, { recursive: true });
+    const secondTrack = writeAudioFile(secondFolder, 'Second Folder Song.flac');
+    harness.metadataService.overrides.set(firstTrack, baseMetadata({ title: 'First Song', artist: 'First Artist', album: 'First Album' }));
+    harness.metadataService.overrides.set(secondTrack, baseMetadata({ title: 'Second Song', artist: 'Second Artist', album: 'Second Album' }));
+    const firstFolder = harness.addFolder();
+    const secondLibraryFolder = harness.service.addFolder(secondFolder);
+
+    await harness.scanFolder();
+    const secondScan = harness.service.scanFolder(secondLibraryFolder.id);
+    await harness.service.waitForScan(secondScan.id);
+
+    expect(harness.service.getAlbums({ pageSize: 10 }).total).toBe(2);
+
+    await harness.service.removeFolder(firstFolder.id);
+
+    const immediateAlbums = harness.service.getAlbums({ pageSize: 10 });
+    expect(immediateAlbums.total).toBeGreaterThan(0);
+
+    await (harness.service as unknown as { runScheduledGroupingRefresh(): Promise<void> }).runScheduledGroupingRefresh();
+
+    const albums = harness.service.getAlbums({ pageSize: 10 });
+    expect(albums.total).toBe(1);
+    expect(albums.items[0].title).toBe('Second Album');
+    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(1);
+    harness.cleanup();
+  });
+
   it('addFolder persists across service restart', () => {
     const harness = createHarness();
     harness.addFolder();
@@ -826,6 +857,27 @@ describe('Library Core', () => {
     expect(afterReimport.sourceItemId).toBe(rebuiltTrack.path);
     expect(afterReimport.track?.id).toBe(rebuiltTrack.id);
     expect(afterReimport.unavailable).toBe(false);
+    harness.cleanup();
+  }, 20000);
+
+  it('watcher preview immediately updates song and album counts before metadata backfill', async () => {
+    const harness = createHarness();
+    const filePath = writeAudioFile(harness.folder, 'Watcher Preview Count.flac');
+    const folder = harness.addFolder();
+    const previewService = harness.service as unknown as {
+      previewRescanPathsFromWatcher(folderId: string, paths: string[]): Promise<number>;
+    };
+
+    const changed = await previewService.previewRescanPathsFromWatcher(folder.id, [filePath]);
+
+    expect(changed).toBe(1);
+    expect(harness.service.getSummary().songCount).toBe(1);
+    expect(harness.service.getAlbums({ pageSize: 10 }).total).toBe(1);
+    expect(harness.service.getTracks({ pageSize: 10 }).items[0]).toMatchObject({
+      title: 'Watcher Preview Count',
+      album: 'Unknown Album',
+      metadataStatus: 'fallback',
+    });
     harness.cleanup();
   }, 20000);
 
@@ -1113,6 +1165,42 @@ describe('Library Core', () => {
     expect(secondScan.skippedFiles).toBe(1);
     harness.cleanup();
   });
+
+  it('large scans seed album indexes for every discovered album before deferred refresh', async () => {
+    const trackCount = 2001;
+    const files: ScannedFile[] = [];
+    const fileScanner = new FakeFileScanner(files);
+    const harness = createHarness({
+      fileScanner,
+      coverExtractor: new FakeCoverExtractor({ sourceHash: 'large-scan-shared-cover' }),
+    });
+    for (let index = 0; index < trackCount; index += 1) {
+      const filePath = join(harness.folder, `Large ${index}.flac`);
+      files.push({
+        path: filePath,
+        sizeBytes: 100 + index,
+        mtimeMs: 1704067200000 + index,
+      });
+      harness.metadataService.overrides.set(
+        filePath,
+        baseMetadata({
+          title: `Large ${index}`,
+          artist: `Artist ${index}`,
+          album: `Album ${index}`,
+          albumArtist: `Artist ${index}`,
+        }),
+      );
+    }
+    harness.addFolder();
+
+    const status = await harness.scanFolder();
+
+    expect(status.status).toBe('completed');
+    expect(status.totalFiles).toBe(trackCount);
+    expect(harness.service.getTracks({ pageSize: 1 }).total).toBe(trackCount);
+    expect(harness.service.getAlbums({ pageSize: 1 }).total).toBe(trackCount);
+    harness.cleanup();
+  }, 30000);
 
   it('scan writes identity observation fields without changing path-centric track behavior', async () => {
     const harness = createHarness();
@@ -1494,7 +1582,7 @@ describe('Library Core', () => {
     expect(status.processedFiles).toBe(2);
     expect(status.errorCount).toBe(1);
     expect(status.errors[0]).toContain('metadata boom');
-    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(1);
+    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(2);
     harness.cleanup();
   });
 
@@ -2796,9 +2884,12 @@ describe('Library Core', () => {
     latestDate.setMinutes(latestDate.getMinutes() - 1);
     const database = createDatabase(harness.databasePath);
     const moveHistoryEntry = database.prepare('UPDATE playback_history SET started_at = ?, ended_at = ?, created_at = ? WHERE id = ?');
+    const moveHistoryStats = database.prepare('UPDATE playback_history_stats SET last_started_at = ?, last_ended_at = ?, updated_at = ? WHERE track_id = ?');
     moveHistoryEntry.run(olderDate.toISOString(), olderDate.toISOString(), olderDate.toISOString(), frequentFirst.historyId);
     moveHistoryEntry.run(middleDate.toISOString(), middleDate.toISOString(), middleDate.toISOString(), frequentSecond.historyId);
     moveHistoryEntry.run(latestDate.toISOString(), latestDate.toISOString(), latestDate.toISOString(), freshOnly.historyId);
+    moveHistoryStats.run(middleDate.toISOString(), middleDate.toISOString(), middleDate.toISOString(), frequent.id);
+    moveHistoryStats.run(latestDate.toISOString(), latestDate.toISOString(), latestDate.toISOString(), fresh.id);
     database.close();
 
     const byPlays = harness.service.getPlaybackHistory({ pageSize: 10 });
@@ -3295,7 +3386,7 @@ describe('Library Core', () => {
   });
 
   it('getArtists representative album cover selection is stable across reads', async () => {
-    const coverExtractor = new FakeCoverExtractor();
+    const coverExtractor = new FakeCoverExtractor({ source: 'embedded' });
     const harness = createHarness({ coverExtractor });
     const first = writeAudioFile(harness.folder, 'Stable A.flac');
     const second = writeAudioFile(harness.folder, 'Stable B.flac');

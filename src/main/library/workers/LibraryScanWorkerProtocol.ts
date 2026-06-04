@@ -1,3 +1,4 @@
+import type { FileIdentityObservation } from '../FileIdentityService';
 import type { CoverCacheRepairOptions, CoverExtractOptions, CoverResult, MetadataResult } from '../libraryTypes';
 
 export type LibraryScanWorkerRequest =
@@ -16,9 +17,14 @@ export type LibraryScanWorkerRequest =
       requestId: number;
       type: 'cover:repair';
       options: CoverCacheRepairOptions;
+    }
+  | {
+      requestId: number;
+      type: 'identity:observe';
+      filePath: string;
     };
 
-export type LibraryScanWorkerResult = MetadataResult | CoverResult;
+export type LibraryScanWorkerResult = MetadataResult | CoverResult | FileIdentityObservation;
 
 export type LibraryScanWorkerResponse =
   | {
@@ -38,4 +44,4 @@ export type LibraryScanWorkerRequestForType<Type extends LibraryScanWorkerReques
 >;
 
 export type LibraryScanWorkerResultForType<Type extends LibraryScanWorkerRequest['type']> =
-  Type extends 'metadata:read' ? MetadataResult : CoverResult;
+  Type extends 'metadata:read' ? MetadataResult : Type extends 'identity:observe' ? FileIdentityObservation : CoverResult;

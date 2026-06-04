@@ -135,6 +135,7 @@ export const IpcChannels = {
   LibraryOpenLibraryFolderPath: 'library:open-library-folder-path',
   LibraryRemoveFolder: 'library:remove-folder',
   LibraryScanFolder: 'library:scan-folder',
+  LibraryScanFolderChanges: 'library:scan-folder-changes',
   LibraryRescanEmbeddedTags: 'library:rescan-embedded-tags',
   LibraryGetScanStatus: 'library:get-scan-status',
   LibraryCancelScan: 'library:cancel-scan',

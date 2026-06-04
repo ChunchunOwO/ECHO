@@ -1928,6 +1928,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [navigateRoute, notifyLibraryChanged, playbackQueue, t]);
 
   useEffect(() => {
+    const handleAppImportFile = (): void => {
+      void handleImportFile();
+    };
+
+    window.addEventListener('app:import-file', handleAppImportFile);
+    return () => window.removeEventListener('app:import-file', handleAppImportFile);
+  }, [handleImportFile]);
+
+  useEffect(() => {
     const unsubscribe = window.echo?.playback?.onLocalAudioFilesOpened?.((paths) => {
       if (paths.length === 0) {
         return;

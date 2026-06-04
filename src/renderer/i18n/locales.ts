@@ -1004,6 +1004,7 @@ export type TranslationKey =
   | 'folders.action.refresh'
   | 'folders.action.remove'
   | 'folders.action.scan'
+  | 'folders.action.scanChanges'
   | 'folders.confirm.deleteTrack'
   | 'folders.confirm.removeRoot'
   | 'folders.count.tracks'
@@ -1040,6 +1041,7 @@ export type TranslationKey =
   | 'folders.message.noPlayableTracks'
   | 'folders.message.queuedTracks'
   | 'folders.message.scanCancelled'
+  | 'folders.message.incrementalScanStarted'
   | 'folders.message.scanStarted'
   | 'folders.metrics.duration'
   | 'folders.metrics.label'
@@ -4023,6 +4025,7 @@ const zhCN: TranslationMap = {
   'folders.action.refresh': '刷新文件夹',
   'folders.action.remove': '移除',
   'folders.action.scan': '扫描',
+  'folders.action.scanChanges': '增量扫描',
   'folders.confirm.deleteTrack': '删除这个音乐文件？\n{title}',
   'folders.confirm.removeRoot': '从曲库索引中移除“{name}”？音乐文件会保留在磁盘上。',
   'folders.count.tracks': '{count} 首',
@@ -4059,6 +4062,7 @@ const zhCN: TranslationMap = {
   'folders.message.noPlayableTracks': '这个文件夹里没有可播放歌曲。',
   'folders.message.queuedTracks': '已加入队列 {count} 首。',
   'folders.message.scanCancelled': '扫描已取消。',
+  'folders.message.incrementalScanStarted': '增量扫描已开始，只处理新增和移除。',
   'folders.message.scanStarted': '扫描已开始。',
   'folders.metrics.duration': '时长',
   'folders.metrics.label': '文件夹指标',
@@ -7119,6 +7123,7 @@ const zhTW: TranslationMap = {
   'folders.action.refresh': '重新整理資料夾',
   'folders.action.remove': '移除',
   'folders.action.scan': '掃描',
+  'folders.action.scanChanges': '增量掃描',
   'folders.confirm.deleteTrack': '刪除這個音樂檔？\n{title}',
   'folders.confirm.removeRoot': '從曲庫索引中移除「{name}」？音樂檔會保留在磁碟上。',
   'folders.count.tracks': '{count} 首',
@@ -7155,6 +7160,7 @@ const zhTW: TranslationMap = {
   'folders.message.noPlayableTracks': '這個資料夾裡沒有可播放歌曲。',
   'folders.message.queuedTracks': '已加入佇列 {count} 首。',
   'folders.message.scanCancelled': '掃描已取消。',
+  'folders.message.incrementalScanStarted': '增量掃描已開始，只處理新增和移除。',
   'folders.message.scanStarted': '掃描已開始。',
   'folders.metrics.duration': '長度',
   'folders.metrics.label': '資料夾指標',
@@ -9948,6 +9954,7 @@ const jaJP: TranslationMap = {
   'folders.action.refresh': 'フォルダーを更新',
   'folders.action.remove': '削除',
   'folders.action.scan': 'スキャン',
+  'folders.action.scanChanges': '差分スキャン',
   'folders.confirm.deleteTrack': 'この音楽ファイルを削除しますか？\n{title}',
   'folders.confirm.removeRoot': '「{name}」をライブラリインデックスから削除しますか？音楽ファイルはディスク上に残ります。',
   'folders.count.tracks': '{count} 曲',
@@ -9984,6 +9991,7 @@ const jaJP: TranslationMap = {
   'folders.message.noPlayableTracks': 'このフォルダーには再生可能な曲がありません。',
   'folders.message.queuedTracks': '{count} 曲をキューに追加しました。',
   'folders.message.scanCancelled': 'スキャンをキャンセルしました。',
+  'folders.message.incrementalScanStarted': '差分スキャンを開始しました。追加と削除だけを処理します。',
   'folders.message.scanStarted': 'スキャンを開始しました。',
   'folders.metrics.duration': '再生時間',
   'folders.metrics.label': 'フォルダー指標',
@@ -12866,6 +12874,7 @@ const enUS: TranslationMap = {
   'folders.action.refresh': 'Refresh folders',
   'folders.action.remove': 'Remove',
   'folders.action.scan': 'Scan',
+  'folders.action.scanChanges': 'Scan changes',
   'folders.confirm.deleteTrack': 'Delete the music file?\n{title}',
   'folders.confirm.removeRoot': 'Remove "{name}" from the library index? Music files stay on disk.',
   'folders.count.tracks': '{count} tracks',
@@ -12902,6 +12911,7 @@ const enUS: TranslationMap = {
   'folders.message.noPlayableTracks': 'No playable tracks in this folder.',
   'folders.message.queuedTracks': 'Queued {count} tracks.',
   'folders.message.scanCancelled': 'Scan cancelled.',
+  'folders.message.incrementalScanStarted': 'Incremental scan started. Only additions and removals will be processed.',
   'folders.message.scanStarted': 'Scan started.',
   'folders.metrics.duration': 'Duration',
   'folders.metrics.label': 'Folder metrics',

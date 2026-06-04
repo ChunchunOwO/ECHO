@@ -1685,6 +1685,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryScanFolder, (_event, folderId: unknown) =>
     getLibraryService().scanFolder(requireText(folderId, 'folderId')),
   );
+  ipcMain.handle(IpcChannels.LibraryScanFolderChanges, (_event, folderId: unknown) =>
+    getLibraryService().scanFolderChanges(requireText(folderId, 'folderId')),
+  );
   ipcMain.handle(IpcChannels.LibraryRescanEmbeddedTags, (_event, mode: unknown) =>
     getLibraryService().rescanEmbeddedTags(normalizeEmbeddedTagRescanMode(mode)),
   );

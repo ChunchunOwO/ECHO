@@ -1,6 +1,7 @@
 import { cpus } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import type { WorkerOptions } from 'node:worker_threads';
+import { FileIdentityService, type FileIdentityObservation } from '../FileIdentityService';
 import type { CoverCacheRepairOptions, CoverExtractOptions, CoverResult, MetadataResult } from '../libraryTypes';
 import type { CoverExtractor } from './CoverExtractor';
 import type { MetadataReader } from './MetadataReader';
@@ -55,6 +56,8 @@ const normalizeWorkerCount = (value: unknown): number => {
   return Math.max(1, Math.min(4, Math.floor(cpus().length / 2) || 1));
 };
 
+const toError = (error: unknown): Error => error instanceof Error ? error : new Error(String(error));
+
 class LibraryScanWorkerPool {
   private readonly workerCount: number;
   private readonly taskTimeoutMs: number;
@@ -65,6 +68,7 @@ class LibraryScanWorkerPool {
   private nextRequestId = 1;
   private started = false;
   private closed = false;
+  private startupError: Error | null = null;
 
   constructor(options: WorkerBackedLibraryScanOptions = {}) {
     this.workerCount = normalizeWorkerCount(options.workerCount);
@@ -76,9 +80,13 @@ class LibraryScanWorkerPool {
   run(request: Omit<Extract<LibraryScanWorkerRequest, { type: 'metadata:read' }>, 'requestId'>): Promise<MetadataResult>;
   run(request: Omit<Extract<LibraryScanWorkerRequest, { type: 'cover:extract' }>, 'requestId'>): Promise<CoverResult>;
   run(request: Omit<Extract<LibraryScanWorkerRequest, { type: 'cover:repair' }>, 'requestId'>): Promise<CoverResult>;
+  run(request: Omit<Extract<LibraryScanWorkerRequest, { type: 'identity:observe' }>, 'requestId'>): Promise<FileIdentityObservation>;
   run(request: Omit<LibraryScanWorkerRequest, 'requestId'>): Promise<LibraryScanWorkerResult> {
     if (this.closed) {
       return Promise.reject(new Error('Library scan worker pool is closed'));
+    }
+    if (this.startupError) {
+      return Promise.reject(this.startupError);
     }
 
     return new Promise((resolve, reject) => {
@@ -112,15 +120,27 @@ class LibraryScanWorkerPool {
     }
   }
 
-  private ensureStarted(): void {
+  private ensureStarted(): boolean {
     if (this.started || this.closed) {
-      return;
+      return this.workers.length > 0;
     }
 
     this.started = true;
     while (this.workers.length < this.workerCount) {
-      this.createWorker();
+      try {
+        this.createWorker();
+      } catch (error) {
+        const startupError = toError(error);
+        if (this.workers.length === 0) {
+          this.startupError = startupError;
+          for (const task of this.queue.splice(0)) {
+            task.reject(startupError);
+          }
+        }
+        break;
+      }
     }
+    return this.workers.length > 0;
   }
 
   private createWorker(): void {
@@ -136,7 +156,7 @@ class LibraryScanWorkerPool {
     slot.worker.on('message', (message) => this.handleWorkerMessage(slot, message));
     slot.worker.on('error', (error) => this.retireWorker(slot, error));
     slot.worker.on('exit', (code) => {
-      if (!this.closed && !slot.retired && code !== 0) {
+      if (!this.closed && !slot.retired) {
         this.retireWorker(slot, new Error(`Library scan worker exited with code ${code}`));
       }
     });
@@ -163,7 +183,11 @@ class LibraryScanWorkerPool {
         this.retireWorker(slot, new Error(`Library scan worker task timed out after ${this.taskTimeoutMs}ms`));
       }, this.taskTimeoutMs);
       task.timeout.unref?.();
-      slot.worker.postMessage(task.request);
+      try {
+        slot.worker.postMessage(task.request);
+      } catch (error) {
+        this.retireWorker(slot, toError(error));
+      }
     }
   }
 
@@ -239,10 +263,18 @@ export class WorkerBackedMetadataReader implements MetadataReader {
 
   async read(filePath: string): Promise<MetadataResult> {
     try {
-      return await this.pool.run({
+      const result = await this.pool.run({
         type: 'metadata:read',
         filePath,
       });
+      if (result.status === 'error') {
+        const fallbackResult = await this.fallback.read(filePath);
+        if (fallbackResult.status !== 'error') {
+          this.logger.warn('metadata:read:error-result', result.errors[0] ?? 'worker returned metadata error');
+          return fallbackResult;
+        }
+      }
+      return result;
     } catch (error) {
       this.logger.warn('metadata:read', error);
       return this.fallback.read(filePath);
@@ -284,9 +316,31 @@ export class WorkerBackedCoverExtractor implements CoverExtractor {
   }
 }
 
+export class WorkerBackedFileIdentityService {
+  private readonly fallback = new FileIdentityService();
+
+  constructor(
+    private readonly pool: LibraryScanWorkerPool,
+    private readonly logger: FallbackOnceLogger,
+  ) {}
+
+  async observe(filePath: string): Promise<FileIdentityObservation> {
+    try {
+      return await this.pool.run({
+        type: 'identity:observe',
+        filePath,
+      });
+    } catch (error) {
+      this.logger.warn('identity:observe', error);
+      return this.fallback.observe(filePath);
+    }
+  }
+}
+
 export type WorkerBackedLibraryScanWorkers = {
   metadataReader: MetadataReader;
   coverExtractor: CoverExtractor;
+  fileIdentityService: { observe(filePath: string): FileIdentityObservation | Promise<FileIdentityObservation> };
   close: () => void;
 };
 
@@ -298,6 +352,7 @@ export const createWorkerBackedLibraryScanWorkers = (
   return {
     metadataReader: new WorkerBackedMetadataReader(pool, logger),
     coverExtractor: new WorkerBackedCoverExtractor(pool, logger),
+    fileIdentityService: new WorkerBackedFileIdentityService(pool, logger),
     close: () => pool.close(),
   };
 };

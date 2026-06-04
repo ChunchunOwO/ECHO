@@ -367,6 +367,7 @@ export type EchoApi = {
     openLibraryFolderPath: (request: LibraryFolderPathRequest) => Promise<void>;
     removeFolder: (folderId: string) => Promise<void>;
     scanFolder: (folderId: string) => Promise<LibraryScanStatus>;
+    scanFolderChanges: (folderId: string) => Promise<LibraryScanStatus>;
     rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>) => Promise<LibraryScanStatus[]>;
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;

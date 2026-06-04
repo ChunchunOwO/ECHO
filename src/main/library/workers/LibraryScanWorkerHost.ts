@@ -1,10 +1,12 @@
 import { parentPort } from 'node:worker_threads';
+import { FileIdentityService } from '../FileIdentityService';
 import { TsCoverExtractor } from './TsCoverExtractor';
 import { TsMetadataReader } from './TsMetadataReader';
 import type { LibraryScanWorkerRequest, LibraryScanWorkerResponse } from './LibraryScanWorkerProtocol';
 
 const metadataReader = new TsMetadataReader();
 const coverExtractor = new TsCoverExtractor();
+const fileIdentityService = new FileIdentityService();
 
 const runRequest = async (request: LibraryScanWorkerRequest): Promise<LibraryScanWorkerResponse> => {
   try {
@@ -21,6 +23,14 @@ const runRequest = async (request: LibraryScanWorkerRequest): Promise<LibrarySca
         requestId: request.requestId,
         ok: true,
         result: await coverExtractor.extract(request.filePath, request.options),
+      };
+    }
+
+    if (request.type === 'identity:observe') {
+      return {
+        requestId: request.requestId,
+        ok: true,
+        result: fileIdentityService.observe(request.filePath),
       };
     }
 

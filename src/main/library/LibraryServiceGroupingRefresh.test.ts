@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { LibraryService } from './LibraryService';
 import type { LibraryDiagnostics } from './libraryTypes';
 
@@ -29,6 +32,8 @@ class FakeStore {
   refreshAlbumsCalls = 0;
   refreshArtistsCalls = 0;
   markMissingCalls = 0;
+  removeFolderCalls = 0;
+  addedFolders: string[] = [];
   shouldThrowRefresh = false;
 
   transaction<T>(work: () => T): T {
@@ -56,9 +61,22 @@ class FakeStore {
     };
   }
 
+  getPlaceholderMetadataTrackCount(): number {
+    return 0;
+  }
+
   markTracksMissingByPaths(): number {
     this.markMissingCalls += 1;
     return 1;
+  }
+
+  async removeFolder(): Promise<void> {
+    this.removeFolderCalls += 1;
+  }
+
+  addFolder(folderPath: string): { id: string; path: string; status: 'active' } {
+    this.addedFolders.push(folderPath);
+    return { id: `folder-${this.addedFolders.length}`, path: folderPath, status: 'active' };
   }
 
   getDiagnostics(): LibraryDiagnostics {
@@ -84,7 +102,7 @@ class FakeStore {
   }
 }
 
-const createService = (store = new FakeStore()): LibraryService =>
+const createService = (store = new FakeStore(), liveLibraryUpdatesEnabled = false): LibraryService =>
   new LibraryService(
     store as never,
     { hasRunningJobs: () => false } as never,
@@ -109,6 +127,7 @@ const createService = (store = new FakeStore()): LibraryService =>
     () =>
       ({
         albumMergeStrategy: 'standard',
+        liveLibraryUpdatesEnabled,
         liveLibraryAutoHideDeletedEnabled: true,
         autoFetchArtistImages: false,
         audioAnalysisEnabled: true,
@@ -120,6 +139,33 @@ const createService = (store = new FakeStore()): LibraryService =>
       coverConcurrency: 1,
     },
   );
+
+const createFakeWatcher = () => ({
+  setEnabled: vi.fn(),
+  setAutoRescanEnabled: vi.fn(),
+  isRunning: vi.fn(() => true),
+  restart: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+  getDiagnostics: vi.fn(() => ({
+    enabled: true,
+    autoRescanEnabled: true,
+    watchedFolderCount: 1,
+    totalEventCount: 0,
+    recentEvents: [],
+    eventStormCount: 0,
+    pendingPathCount: 0,
+    droppedPathCount: 0,
+    triggeredRescanCount: 0,
+    skippedDeleteEventCount: 0,
+    skippedRenameEventCount: 0,
+    lastError: null,
+    lastTriggeredRescanAt: null,
+    lastRescanError: null,
+    startedAt: null,
+    stoppedAt: null,
+  })),
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -193,6 +239,62 @@ describe('LibraryService grouping refresh scheduling', () => {
     expect(store.refreshAlbumsCalls).toBe(1);
     expect(webContents.send).toHaveBeenCalledWith('library:changed');
     scheduled.close();
+  });
+
+  it('removing a folder queues grouping refresh instead of rebuilding immediately during playback', async () => {
+    const store = new FakeStore();
+    const webContents = { send: vi.fn() };
+    electronWindows.push({ webContents });
+    const service = createService(store);
+
+    playbackState = 'playing';
+    await service.removeFolder('folder-1');
+
+    expect(store.removeFolderCalls).toBe(1);
+    expect(store.refreshAlbumsCalls).toBe(0);
+    expect(store.refreshArtistsCalls).toBe(0);
+    expect(service.getDiagnostics().groupingRefreshQueued).toBe(true);
+    expect(webContents.send).toHaveBeenCalledWith('library:changed');
+    service.close();
+  });
+
+  it('refreshes live watcher subscriptions after adding a library folder', () => {
+    const root = join(tmpdir(), `echo-next-live-watcher-add-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    mkdirSync(root, { recursive: true });
+    const store = new FakeStore();
+    const service = createService(store, true);
+    const watcher = createFakeWatcher();
+    (service as unknown as { watcherService: typeof watcher }).watcherService = watcher;
+
+    try {
+      const folder = service.addFolder(root);
+
+      expect(folder.path).toBe(root);
+      expect(store.addedFolders).toEqual([root]);
+      expect(watcher.setEnabled).toHaveBeenCalledWith(true);
+      expect(watcher.setAutoRescanEnabled).toHaveBeenCalledWith(true);
+      expect(watcher.restart).toHaveBeenCalledTimes(1);
+      expect(watcher.start).not.toHaveBeenCalled();
+    } finally {
+      service.close();
+      rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    }
+  });
+
+  it('refreshes live watcher subscriptions after removing a library folder', async () => {
+    const store = new FakeStore();
+    const service = createService(store, true);
+    const watcher = createFakeWatcher();
+    (service as unknown as { watcherService: typeof watcher }).watcherService = watcher;
+
+    await service.removeFolder('folder-1');
+
+    expect(store.removeFolderCalls).toBe(1);
+    expect(watcher.setEnabled).toHaveBeenCalledWith(true);
+    expect(watcher.setAutoRescanEnabled).toHaveBeenCalledWith(true);
+    expect(watcher.restart).toHaveBeenCalledTimes(1);
+    expect(watcher.start).not.toHaveBeenCalled();
+    service.close();
   });
 
   it('records grouping refresh errors in diagnostics', async () => {

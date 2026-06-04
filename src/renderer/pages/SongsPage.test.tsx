@@ -472,6 +472,18 @@ describe('SongsPage', () => {
     window.removeEventListener('app:navigate:import-folder', navigate);
   });
 
+  it('dispatches file import from the import file toolbar button', async () => {
+    installEcho();
+    const importFile = vi.fn();
+    window.addEventListener('app:import-file', importFile);
+
+    await renderSongsPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Import File' }));
+
+    await waitFor(() => expect(importFile).toHaveBeenCalledTimes(1));
+    window.removeEventListener('app:import-file', importFile);
+  });
+
   it('plays a local file from TrackRow and exposes queue currentTrackId to TrackList', async () => {
     const track = makeTrack();
     const { playLocalFile } = installEcho([track]);

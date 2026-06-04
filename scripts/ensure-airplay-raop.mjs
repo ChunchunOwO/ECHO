@@ -10,12 +10,14 @@ const require = createRequire(import.meta.url);
 const packageName = '@lox-audioserver/node-libraop';
 
 const executable = (name) => (process.platform === 'win32' ? `${name}.cmd` : name);
+const quoteShellArg = (value) => `"${String(value).replace(/"/g, '\\"')}"`;
 
 const run = (command, args) => {
-  const result = spawnSync(command, args, {
+  const useCmdShell = process.platform === 'win32' && command.endsWith('.cmd');
+  const result = spawnSync(useCmdShell ? [command, ...args].map(quoteShellArg).join(' ') : command, useCmdShell ? [] : args, {
     cwd: projectRoot,
     stdio: 'inherit',
-    shell: false,
+    shell: useCmdShell,
   });
 
   if (result.error) {

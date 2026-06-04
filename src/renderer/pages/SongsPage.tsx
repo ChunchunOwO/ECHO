@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, Download, FilePlus2, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
 import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTags, LibraryPlaylist, LibraryScanStatus, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import type { RemoteSource } from '../../shared/types/remoteSources';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
@@ -661,6 +661,10 @@ export const SongsPage = (): JSX.Element => {
 
   const handleImportFolder = (): void => {
     window.dispatchEvent(new Event('app:navigate:import-folder'));
+  };
+
+  const handleImportFile = (): void => {
+    window.dispatchEvent(new Event('app:import-file'));
   };
 
   const handleOpenTrackArtist = useCallback(async (track: LibraryTrack): Promise<void> => {
@@ -1415,6 +1419,9 @@ export const SongsPage = (): JSX.Element => {
         <div className="songs-tools" aria-label="歌曲工具">
           <button className="tool-button" type="button" aria-label="导入文件夹" title="导入文件夹" onClick={handleImportFolder}>
             <FolderPlus size={17} />
+          </button>
+          <button className="tool-button" type="button" aria-label={t('route.importFile.label')} title={t('route.importFile.label')} onClick={handleImportFile}>
+            <FilePlus2 size={17} />
           </button>
           <button
             className="tool-button"

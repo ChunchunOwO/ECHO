@@ -1,5 +1,6 @@
 import { watch as watchFileSystem, statSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
+import { stat as statFile } from 'node:fs/promises';
 import { basename, extname, resolve } from 'node:path';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 
@@ -64,6 +65,8 @@ type FileStatSnapshot = {
   mtimeMs: number;
 };
 
+type MaybePromise<T> = T | Promise<T>;
+
 type PendingEvent = {
   folderId: string;
   path: string;
@@ -77,6 +80,7 @@ type PendingEvent = {
 
 export type LibraryWatcherRescanCoordinator = {
   rescanPaths: (folderId: string, paths: string[]) => unknown;
+  markMissingPaths?: (folderId: string, paths: string[]) => unknown;
   previewRescanPaths?: (folderId: string, paths: string[]) => unknown;
   hasRunningJobs?: () => boolean;
   shouldDelayRescan?: () => boolean | Promise<boolean>;
@@ -88,18 +92,20 @@ type LibraryWatcherServiceOptions = {
   readFolders: () => LibraryWatcherFolder[];
   rescanCoordinator?: LibraryWatcherRescanCoordinator;
   adapter?: FileSystemWatcherAdapter;
-  statFile?: (filePath: string) => FileStatSnapshot | null;
+  statFile?: (filePath: string) => MaybePromise<FileStatSnapshot | null>;
   now?: () => number;
   debounceMs?: number;
   rescanDebounceMs?: number;
   stabilityPollMs?: number;
   maxStabilityChecks?: number;
   maxPendingPathCount?: number;
+  maxRescanBatchSize?: number;
   stormWindowMs?: number;
   stormThreshold?: number;
 };
 
 const recentEventLimit = 100;
+const defaultMaxRescanBatchSize = 4;
 export const LIBRARY_WATCHER_FEATURE_FLAG = 'ECHO_LIBRARY_WATCHER';
 export const LIBRARY_WATCHER_AUTO_RESCAN_FEATURE_FLAG = 'ECHO_LIBRARY_WATCHER_AUTO_RESCAN';
 const temporaryExtensions = new Set(['.tmp', '.temp', '.part', '.partial', '.download', '.crdownload', '.swp']);
@@ -138,9 +144,6 @@ const createEmptyDiagnostics = (enabled: boolean, autoRescanEnabled: boolean): L
 const toIso = (timestampMs: number): string => new Date(timestampMs).toISOString();
 
 const coalescedEventType = (eventTypes: Set<LibraryWatcherEventType>): LibraryWatcherEventType => {
-  if (eventTypes.has('unlink')) {
-    return 'unlink';
-  }
   if (eventTypes.has('add')) {
     return 'add';
   }
@@ -150,10 +153,29 @@ const coalescedEventType = (eventTypes: Set<LibraryWatcherEventType>): LibraryWa
   if (eventTypes.has('rename')) {
     return 'rename';
   }
+  if (eventTypes.has('unlink')) {
+    return 'unlink';
+  }
   return 'unknown';
 };
 
-const defaultStatFile = (filePath: string): FileStatSnapshot | null => {
+const defaultStatFile = async (filePath: string): Promise<FileStatSnapshot | null> => {
+  try {
+    const stats = await statFile(filePath);
+    if (!stats.isFile()) {
+      return null;
+    }
+
+    return {
+      sizeBytes: stats.size,
+      mtimeMs: stats.mtimeMs,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const defaultStatFileSync = (filePath: string): FileStatSnapshot | null => {
   try {
     const stats = statSync(filePath);
     if (!stats.isFile()) {
@@ -206,7 +228,19 @@ export const classifyNodeWatcherEvent = (eventType: string, filePath: string): L
   }
 
   if (eventType === 'rename') {
-    return defaultStatFile(filePath) ? 'add' : 'unlink';
+    return defaultStatFileSync(filePath) ? 'add' : 'unlink';
+  }
+
+  return 'unknown';
+};
+
+const classifyNodeWatcherEventAsync = async (eventType: string, filePath: string): Promise<LibraryWatcherEventType> => {
+  if (eventType === 'change') {
+    return 'change';
+  }
+
+  if (eventType === 'rename') {
+    return 'rename';
   }
 
   return 'unknown';
@@ -227,11 +261,15 @@ export class NodeFileSystemWatcherAdapter implements FileSystemWatcherAdapter {
         }
 
         const fullPath = resolve(folder.path, String(fileName));
-        onEvent({
-          folderId: folder.id,
-          eventType: classifyNodeWatcherEvent(eventType, fullPath),
-          path: fullPath,
-        });
+        void classifyNodeWatcherEventAsync(eventType, fullPath)
+          .then((classifiedEventType) => {
+            onEvent({
+              folderId: folder.id,
+              eventType: classifiedEventType,
+              path: fullPath,
+            });
+          })
+          .catch(onError);
       });
       watcher.on('error', onError);
     } catch (error) {
@@ -248,7 +286,7 @@ export class NodeFileSystemWatcherAdapter implements FileSystemWatcherAdapter {
 
 export class LibraryWatcherService {
   private readonly adapter: FileSystemWatcherAdapter;
-  private readonly statFile: (filePath: string) => FileStatSnapshot | null;
+  private readonly statFile: (filePath: string) => MaybePromise<FileStatSnapshot | null>;
   private readonly rescanCoordinator: LibraryWatcherRescanCoordinator | null;
   private readonly now: () => number;
   private readonly debounceMs: number;
@@ -256,6 +294,7 @@ export class LibraryWatcherService {
   private readonly stabilityPollMs: number;
   private readonly maxStabilityChecks: number;
   private readonly maxPendingPathCount: number;
+  private readonly maxRescanBatchSize: number;
   private readonly stormWindowMs: number;
   private readonly stormThreshold: number;
   private readonly readFolders: () => LibraryWatcherFolder[];
@@ -280,6 +319,7 @@ export class LibraryWatcherService {
     this.stabilityPollMs = options.stabilityPollMs ?? 300;
     this.maxStabilityChecks = options.maxStabilityChecks ?? 3;
     this.maxPendingPathCount = options.maxPendingPathCount ?? 1000;
+    this.maxRescanBatchSize = Math.max(1, Math.floor(options.maxRescanBatchSize ?? defaultMaxRescanBatchSize));
     this.stormWindowMs = options.stormWindowMs ?? 1000;
     this.stormThreshold = options.stormThreshold ?? 200;
     this.readFolders = options.readFolders;
@@ -391,12 +431,16 @@ export class LibraryWatcherService {
       if (pending.debounceTimer) {
         clearTimeout(pending.debounceTimer);
       }
-      pending.debounceTimer = setTimeout(() => this.confirmPendingEvent(key), this.debounceMs);
+      pending.debounceTimer = setTimeout(() => {
+        void this.confirmPendingEvent(key);
+      }, this.debounceMs);
       pending.debounceTimer.unref?.();
       return;
     }
 
-    const debounceTimer = setTimeout(() => this.confirmPendingEvent(key), this.debounceMs);
+    const debounceTimer = setTimeout(() => {
+      void this.confirmPendingEvent(key);
+    }, this.debounceMs);
     debounceTimer.unref?.();
     const next: PendingEvent = {
       folderId: event.folderId,
@@ -411,7 +455,7 @@ export class LibraryWatcherService {
     this.pendingEvents.set(key, next);
   }
 
-  private confirmPendingEvent(key: string): void {
+  private async confirmPendingEvent(key: string): Promise<void> {
     const pending = this.pendingEvents.get(key);
     if (!pending) {
       return;
@@ -420,48 +464,83 @@ export class LibraryWatcherService {
     pending.debounceTimer = null;
     const eventType = coalescedEventType(pending.eventTypes);
     if (eventType === 'unlink') {
-      this.recordRecentEvent(pending, eventType, null);
-      this.diagnostics.skippedDeleteEventCount += 1;
+      this.markPendingPathMissing(pending, eventType);
       this.pendingEvents.delete(key);
       return;
     }
 
-    if (eventType === 'rename' || eventType === 'unknown') {
+    if (eventType === 'unknown') {
       this.recordRecentEvent(pending, eventType, null);
-      if (eventType === 'rename') {
-        this.diagnostics.skippedRenameEventCount += 1;
-      }
       this.pendingEvents.delete(key);
       return;
     }
 
-    const firstSnapshot = this.statFile(pending.path);
+    const firstSnapshot = await Promise.resolve(this.statFile(pending.path));
     if (!firstSnapshot) {
-      this.recordRecentEvent(pending, eventType, null);
-      this.pendingEvents.delete(key);
+      pending.checks += 1;
+      if (pending.checks >= this.maxStabilityChecks) {
+        if (eventType === 'rename') {
+          this.markPendingPathMissing(pending, 'unlink');
+        } else {
+          this.recordRecentEvent(pending, eventType, null);
+        }
+        this.pendingEvents.delete(key);
+        return;
+      }
+
+      this.schedulePendingRecheck(key, pending);
       return;
     }
 
     pending.checks += 1;
     pending.stabilityTimer = setTimeout(() => {
-      pending.stabilityTimer = null;
-      const secondSnapshot = this.statFile(pending.path);
-      if (isSameSnapshot(firstSnapshot, secondSnapshot)) {
-        this.recordRecentEvent(pending, eventType, secondSnapshot);
-        this.enqueueAutoRescan(pending.folderId, pending.path, eventType, secondSnapshot);
-        this.pendingEvents.delete(key);
-        return;
-      }
+      void (async () => {
+        pending.stabilityTimer = null;
+        const secondSnapshot = await Promise.resolve(this.statFile(pending.path));
+        if (isSameSnapshot(firstSnapshot, secondSnapshot)) {
+          const stableEventType = eventType === 'rename' ? 'add' : eventType;
+          this.recordRecentEvent(pending, stableEventType, secondSnapshot);
+          this.enqueueAutoRescan(pending.folderId, pending.path, stableEventType, secondSnapshot);
+          this.pendingEvents.delete(key);
+          return;
+        }
 
-      if (pending.checks >= this.maxStabilityChecks) {
-        this.recordRecentEvent(pending, eventType, null);
-        this.pendingEvents.delete(key);
-        return;
-      }
+        if (pending.checks >= this.maxStabilityChecks) {
+          this.recordRecentEvent(pending, eventType, null);
+          this.pendingEvents.delete(key);
+          return;
+        }
 
-      this.confirmPendingEvent(key);
+        await this.confirmPendingEvent(key);
+      })();
     }, this.stabilityPollMs);
     pending.stabilityTimer.unref?.();
+  }
+
+  private schedulePendingRecheck(key: string, pending: PendingEvent): void {
+    pending.stabilityTimer = setTimeout(() => {
+      void this.confirmPendingEvent(key);
+    }, this.stabilityPollMs);
+    pending.stabilityTimer.unref?.();
+  }
+
+  private markPendingPathMissing(pending: PendingEvent, eventType: LibraryWatcherEventType): void {
+    this.recordRecentEvent(pending, eventType, null);
+    if (this.diagnostics.autoRescanEnabled && this.rescanCoordinator?.markMissingPaths) {
+      try {
+        const result = this.rescanCoordinator.markMissingPaths(pending.folderId, [pending.path]);
+        this.diagnostics.triggeredRescanCount += 1;
+        this.diagnostics.lastTriggeredRescanAt = toIso(this.now());
+        this.diagnostics.lastRescanError = null;
+        void Promise.resolve(result).catch((error) => {
+          this.diagnostics.lastRescanError = error instanceof Error ? error.message : String(error);
+        });
+      } catch (error) {
+        this.diagnostics.lastRescanError = error instanceof Error ? error.message : String(error);
+      }
+    } else {
+      this.diagnostics.skippedDeleteEventCount += 1;
+    }
   }
 
   private recordRecentEvent(pending: PendingEvent, eventType: LibraryWatcherEventType, snapshot: FileStatSnapshot | null): void {
@@ -550,9 +629,27 @@ export class LibraryWatcherService {
       return;
     }
 
-    const batch = Array.from(paths);
-    this.pendingRescanPaths.delete(folderId);
-    this.previewedRescanPaths.delete(folderId);
+    const allPaths = Array.from(paths);
+    if (allPaths.length > this.maxRescanBatchSize) {
+      await this.previewDelayedRescanPaths(folderId, paths);
+    }
+
+    const batch = allPaths.slice(0, this.maxRescanBatchSize);
+    for (const filePath of batch) {
+      paths.delete(filePath);
+    }
+    if (paths.size === 0) {
+      this.pendingRescanPaths.delete(folderId);
+    }
+    const previewed = this.previewedRescanPaths.get(folderId);
+    if (previewed) {
+      for (const filePath of batch) {
+        previewed.delete(filePath);
+      }
+      if (previewed.size === 0) {
+        this.previewedRescanPaths.delete(folderId);
+      }
+    }
     this.updatePendingPathCount();
     this.folderRescansInFlight.add(folderId);
 

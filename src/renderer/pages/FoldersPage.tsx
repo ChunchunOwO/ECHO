@@ -726,6 +726,7 @@ export const FoldersPage = (): JSX.Element => {
   );
   const selectedScan = selected ? scanStatuses[selected.folderId] ?? selectedOverview?.recentScan ?? null : null;
   const isSelectedScanning = selectedScan ? runningStatuses.has(selectedScan.status) : false;
+  const isSelectedRoot = Boolean(selected && selectedOverview && isSameLocalPath(selected.path, selectedOverview.path));
   const selectedRemoteSource = useMemo(
     () => remoteSources.find((source) => source.id === selectedRemote?.sourceId) ?? null,
     [remoteSources, selectedRemote],
@@ -1594,6 +1595,26 @@ export const FoldersPage = (): JSX.Element => {
       setError(formatFolderError(scanError, t));
     }
   }, [selected, t]);
+
+  const handleScanSelectedChanges = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!selected || !selectedOverview || !isSameLocalPath(selected.path, selectedOverview.path) || !library?.scanFolderChanges) {
+      return;
+    }
+
+    const current = getLibraryScanStatuses()[selected.folderId];
+    if (current && runningStatuses.has(current.status)) {
+      setMessage(t('folders.message.alreadyScanning'));
+      return;
+    }
+
+    try {
+      rememberLibraryScanStatus(await library.scanFolderChanges(selectedOverview.id));
+      setMessage(t('folders.message.incrementalScanStarted'));
+    } catch (scanError) {
+      setError(formatFolderError(scanError, t));
+    }
+  }, [selected, selectedOverview, t]);
 
   const handleCancelScan = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -2614,6 +2635,10 @@ export const FoldersPage = (): JSX.Element => {
             <button type="button" disabled={!selected || isSelectedScanning} onClick={() => void handleScanSelected()}>
               <RotateCw size={16} />
               {t('folders.action.scan')}
+            </button>
+            <button type="button" disabled={!isSelectedRoot || isSelectedScanning} onClick={() => void handleScanSelectedChanges()}>
+              <RefreshCw size={16} />
+              {t('folders.action.scanChanges')}
             </button>
             <button type="button" disabled={!isSelectedScanning} onClick={() => void handleCancelScan()}>
               <XCircle size={16} />

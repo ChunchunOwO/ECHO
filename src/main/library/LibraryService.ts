@@ -290,7 +290,9 @@ export class LibraryService {
       throw new Error(`Library folder path is not a directory: ${normalizedPath}`);
     }
 
-    return this.store.addFolder(normalizedPath);
+    const folder = this.store.addFolder(normalizedPath);
+    this.syncLiveLibraryWatcherFromSettings();
+    return folder;
   }
 
   getFolders(): LibraryFolder[] {
@@ -313,8 +315,11 @@ export class LibraryService {
     return this.store.resolveLibraryFolderPath(request);
   }
 
-  removeFolder(folderId: string): void {
-    this.store.removeFolder(folderId);
+  async removeFolder(folderId: string): Promise<void> {
+    await this.store.removeFolder(folderId);
+    this.syncLiveLibraryWatcherFromSettings();
+    this.scheduleGroupingRefresh();
+    this.notifyLibraryChanged();
   }
 
   scanFolder(folderId: string, options: LibraryScanOptions = {}): LibraryScanStatus {
@@ -334,6 +339,19 @@ export class LibraryService {
     }
 
     return job;
+  }
+
+  scanFolderChanges(folderId: string): LibraryScanStatus {
+    const folder = this.store.getFolder(folderId);
+
+    if (!folder) {
+      throw new Error(`Unknown library folder ${folderId}`);
+    }
+
+    return this.scanJobQueue.scanFolder(folder, {
+      changesOnly: true,
+      reduceScanPressure: true,
+    });
   }
 
   rescanPaths(folderId: string, paths: string[], options: LibraryScanOptions = {}): LibraryScanStatus {
@@ -856,7 +874,11 @@ export class LibraryService {
     watcher.setAutoRescanEnabled(autoRescanEnabled);
 
     if (enabled) {
-      watcher.start();
+      if (watcher.isRunning()) {
+        watcher.restart();
+      } else {
+        watcher.start();
+      }
     } else {
       watcher.stop();
     }
@@ -1111,6 +1133,9 @@ export class LibraryService {
           this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
         }
 
+        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+        this.store.refreshArtists();
+
         return track;
       });
       this.scheduleGroupingRefresh();
@@ -1335,7 +1360,7 @@ export class LibraryService {
     }
 
     const metadata = await this.metadataReader.read(currentTrack.path);
-    const fileStat = statSync(currentTrack.path);
+    const fileStat = await statFile(currentTrack.path);
     let coverId = currentTrack.coverId;
 
     if (metadata.embeddedCover) {
@@ -1416,7 +1441,7 @@ export class LibraryService {
       coverData = await readCoverImageFromUrl(coverUrl, request.coverMimeType ?? null).catch(() => null);
     }
 
-    const fileStat = statSync(currentTrack.path);
+    const fileStat = await statFile(currentTrack.path);
     const fieldSources = {
       ...currentTrack.fieldSources,
       title: 'manual',
@@ -1504,7 +1529,7 @@ export class LibraryService {
     }> = [];
 
     for (const track of tracks) {
-      const fileStat = statSync(track.path);
+      const fileStat = await statFile(track.path);
       const fieldSources = {
         ...track.fieldSources,
         album: 'manual',
@@ -2195,34 +2220,51 @@ export class LibraryService {
     this.scheduleSearchIndexBackfill(0, { allowDuringPlayback: true });
   }
 
-  private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {
+  private async previewRescanPathsFromWatcher(folderId: string, paths: string[]): Promise<number> {
     const folder = this.store.getFolder(folderId);
     if (!folder) {
       return 0;
     }
 
     const timestamp = new Date().toISOString();
-    let changed = 0;
+    const previewTracks: Array<{
+      normalizedPath: string;
+      extension: string;
+      sizeBytes: number;
+      mtimeMs: number;
+    }> = [];
 
-    this.store.transaction(() => {
-      for (const filePath of paths) {
-        const normalizedPath = resolve(filePath);
-        const extension = extname(normalizedPath).toLocaleLowerCase();
-        if (!SCANNABLE_AUDIO_EXTENSIONS.has(extension) || this.store.getTrackByPath(normalizedPath)) {
-          continue;
-        }
+    for (const filePath of paths) {
+      const normalizedPath = resolve(filePath);
+      const extension = extname(normalizedPath).toLocaleLowerCase();
+      if (!SCANNABLE_AUDIO_EXTENSIONS.has(extension) || this.store.getTrackByPath(normalizedPath)) {
+        continue;
+      }
 
-        let fileStat;
-        try {
-          fileStat = statSync(normalizedPath);
-        } catch {
-          continue;
-        }
-
+      try {
+        const fileStat = await statFile(normalizedPath);
         if (!fileStat.isFile()) {
           continue;
         }
 
+        previewTracks.push({
+          normalizedPath,
+          extension,
+          sizeBytes: fileStat.size,
+          mtimeMs: Math.round(fileStat.mtimeMs),
+        });
+      } catch {
+        continue;
+      }
+
+      await yieldToMainLoop();
+    }
+
+    let changed = 0;
+    const changedTrackIds: string[] = [];
+
+    this.store.transaction(() => {
+      for (const { normalizedPath, extension, sizeBytes, mtimeMs } of previewTracks) {
         const title = basename(normalizedPath, extension) || basename(normalizedPath);
         const artist = 'Unknown Artist';
         const fieldSources: FieldSources = {
@@ -2244,8 +2286,8 @@ export class LibraryService {
         this.store.upsertTrack({
           path: normalizedPath,
           folderId: folder.id,
-          sizeBytes: fileStat.size,
-          mtimeMs: Math.round(fileStat.mtimeMs),
+          sizeBytes,
+          mtimeMs,
           title,
           artist,
           album: 'Unknown Album',
@@ -2269,11 +2311,16 @@ export class LibraryService {
           errors: [],
           updatedAt: timestamp,
         });
+        const track = this.store.getTrackByPath(normalizedPath);
+        if (track) {
+          changedTrackIds.push(track.id);
+        }
         changed += 1;
       }
     });
 
     if (changed > 0) {
+      this.store.seedAlbumsForTracks(changedTrackIds, this.albumService, timestamp, this.albumRefreshOptions());
       this.notifyLibraryChanged();
     }
 
@@ -2299,13 +2346,16 @@ export class LibraryService {
             this.lastWatcherRescanFinishedAt = null;
             this.lastWatcherRescanPathCount = paths.length;
             this.lastMetadataBackfillCount = metadataBackfillCount;
-            const job = this.rescanPaths(folderId, paths, { deferGroupingRefresh: true });
+            const job = this.rescanPaths(folderId, paths, {
+              deferGroupingRefresh: true,
+              skipDeferredGroupingRefresh: true,
+              reduceScanPressure: true,
+            });
             void this.scanJobQueue.waitForIdle(job.id)
               .then(() => {
                 const status = this.store.getScanJob(job.id);
                 this.lastWatcherRescanFinishedAt = new Date().toISOString();
                 this.lastSkippedByCacheCount = status?.skippedFiles ?? 0;
-                this.scheduleGroupingRefresh();
                 this.notifyLibraryChanged();
               })
               .catch((error) => {
@@ -2313,6 +2363,13 @@ export class LibraryService {
                 console.warn(`Library watcher rescan did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`);
               });
             return job;
+          },
+          markMissingPaths: (folderId, paths) => {
+            const changed = this.store.markTracksMissingByPaths(folderId, paths);
+            if (changed > 0) {
+              this.notifyLibraryChanged();
+            }
+            return changed;
           },
           previewRescanPaths: (folderId, paths) => this.previewRescanPathsFromWatcher(folderId, paths),
           hasRunningJobs: () => this.scanJobQueue.hasRunningJobs(),
@@ -2325,11 +2382,6 @@ export class LibraryService {
   }
 
   private async shouldDelayWatcherRescanForLowLoadPlayback(): Promise<boolean> {
-    const settings = this.readAppSettings();
-    if (settings.lowLoadPlaybackModeEnabled !== true || settings.lowLoadPlaybackEnhancementsEnabled !== true) {
-      return false;
-    }
-
     try {
       const { getAudioSession } = await import('../audio/AudioSession');
       const state = getAudioSession().getStatus().state;
@@ -2495,7 +2547,7 @@ export class LibraryService {
       return;
     }
 
-    const fileStat = statSync(track.path);
+    const fileStat = await statFile(track.path);
     const tagUpdate = {
       title: track.title,
       artist: track.artist,
@@ -2599,6 +2651,7 @@ export const createLibraryService = (
     coverCacheDir,
     metadataConcurrency: scanConcurrency.metadataConcurrency,
     coverConcurrency: scanConcurrency.coverConcurrency,
+    fileIdentityService: workerBackedScanWorkers?.fileIdentityService,
     getAlbumMergeStrategy: () => readSettings().albumMergeStrategy,
     shouldReduceScanPressure: shouldDelayGroupingRefreshForAudio,
     shouldDeferGroupingRefresh: shouldDelayGroupingRefreshForAudio,
@@ -2609,7 +2662,7 @@ export const createLibraryService = (
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
     createDatabaseScanGuard: (scanStatus) =>
-      getAppSettings().dataProtectionDisabled === true
+      readSettings().dataProtectionDisabled === true
         ? null
         : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
@@ -2622,7 +2675,7 @@ export const createLibraryService = (
         return;
       }
 
-      if (getAppSettings().dataProtectionDisabled === true) {
+      if (readSettings().dataProtectionDisabled === true) {
         return;
       }
 

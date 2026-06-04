@@ -7,7 +7,7 @@ import type { MiniPlayerState } from '../../shared/types/miniPlayer';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import { isSpotifyTrack, pauseSpotifyPlayback, resumeSpotifyPlayback, seekSpotifyPlayback, setSpotifyVolume } from '../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
-import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
+import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { formatPercent, formatTime, titleFromPath } from '../components/player/playerFormat';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 
@@ -37,6 +37,8 @@ const progressRenderIntervalMs = 500;
 const enhancedLowLoadProgressRenderIntervalMs = 1500;
 const forwardedSystemStatusMaxAgeMs = 30_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
+const seekAnchorMaxAgeSeconds = 3;
+const seekAnchorSettleToleranceSeconds = 0.25;
 const activeStates = new Set<AudioPlaybackState>(['loading', 'playing']);
 const restartStates = new Set<AudioPlaybackState>(['idle', 'stopped', 'ended']);
 
@@ -150,6 +152,7 @@ export const MiniPlayerApp = (): JSX.Element => {
   const [error, setError] = useState<string | null>(null);
   const volumeInteractingRef = useRef(false);
   const pendingVolumeRef = useRef<number | null>(null);
+  const seekAnchorRef = useRef<{ positionSeconds: number; trackKey: string | null; updatedAtMs: number } | null>(null);
   const clockRef = useRef<MiniPlaybackClock>({
     durationSeconds: 0,
     playbackRate: 1,
@@ -360,8 +363,30 @@ export const MiniPlayerApp = (): JSX.Element => {
     const samePlayback = previous.trackKey === progressTrackKey;
     const boundedSourcePosition = durationSeconds > 0 ? clamp(sourcePositionSeconds, 0, durationSeconds) : Math.max(0, sourcePositionSeconds);
     let nextPositionSeconds = boundedSourcePosition;
+    const seekAnchor = seekAnchorRef.current;
 
-    if (samePlayback && previous.state === 'playing' && visualState === 'playing') {
+    if (seekAnchor) {
+      if (seekAnchor.trackKey && progressTrackKey && seekAnchor.trackKey !== progressTrackKey) {
+        seekAnchorRef.current = null;
+      } else {
+        const elapsedSeconds = Math.max(0, (now - seekAnchor.updatedAtMs) / 1000);
+        const expectedSeekPosition = durationSeconds > 0
+          ? clamp(seekAnchor.positionSeconds + (visualState === 'playing' ? elapsedSeconds * playbackRate : 0), 0, durationSeconds)
+          : Math.max(0, seekAnchor.positionSeconds + (visualState === 'playing' ? elapsedSeconds * playbackRate : 0));
+        const sourceReachedSeekTarget = boundedSourcePosition >= seekAnchor.positionSeconds;
+        const isStaleStatusAfterSeek =
+          elapsedSeconds < seekAnchorMaxAgeSeconds &&
+          (!sourceReachedSeekTarget || Math.abs(boundedSourcePosition - expectedSeekPosition) > seekAnchorSettleToleranceSeconds);
+
+        if (isStaleStatusAfterSeek) {
+          nextPositionSeconds = expectedSeekPosition;
+        } else {
+          seekAnchorRef.current = null;
+        }
+      }
+    }
+
+    if (!seekAnchorRef.current && samePlayback && previous.state === 'playing' && visualState === 'playing') {
       const estimatedPositionSeconds = previous.positionSeconds + ((now - previous.updatedAtMs) / 1000) * previous.playbackRate;
       const boundedEstimate = durationSeconds > 0 ? clamp(estimatedPositionSeconds, 0, durationSeconds) : Math.max(0, estimatedPositionSeconds);
       if (boundedSourcePosition + 1.25 < boundedEstimate) {
@@ -410,18 +435,27 @@ export const MiniPlayerApp = (): JSX.Element => {
     };
   }, [isQueueOpen]);
 
-  const runPlaybackAction = useCallback(async (action: () => Promise<PlaybackStatus | null | void>): Promise<void> => {
+  const runPlaybackAction = useCallback(async (
+    action: () => Promise<PlaybackStatus | null | void>,
+    options: { applyStatusSnapshot?: (status: PlaybackStatus) => void } = {},
+  ): Promise<boolean> => {
     try {
       setError(null);
       const status = await action();
       if (status) {
-        setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
+        if (options.applyStatusSnapshot) {
+          options.applyStatusSnapshot(status);
+        } else {
+          setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
+        }
       }
       void refreshPlaybackStatus();
+      return true;
     } catch (actionError) {
       const message = actionError instanceof Error ? actionError.message : String(actionError);
       setError(message);
       setPlaybackStatusSnapshot({ error: message });
+      return false;
     }
   }, []);
 
@@ -478,10 +512,30 @@ export const MiniPlayerApp = (): JSX.Element => {
   const commitSeek = useCallback(
     async (nextPositionSeconds: number): Promise<void> => {
       const safePositionSeconds = durationSeconds > 0 ? clamp(nextPositionSeconds, 0, durationSeconds) : Math.max(0, nextPositionSeconds);
+      const previousPositionSeconds = durationSeconds > 0 ? clamp(sourcePositionSeconds, 0, durationSeconds) : Math.max(0, sourcePositionSeconds);
+      const now = performance.now();
+      seekAnchorRef.current = {
+        positionSeconds: safePositionSeconds,
+        trackKey: progressTrackKey,
+        updatedAtMs: now,
+      };
+      clockRef.current = {
+        durationSeconds,
+        playbackRate,
+        positionSeconds: safePositionSeconds,
+        sourcePositionSeconds: safePositionSeconds,
+        state: visualState,
+        trackKey: progressTrackKey,
+        updatedAtMs: now,
+      };
+      setSeekPreviewSeconds(safePositionSeconds);
+      setRealtimePositionSeconds(safePositionSeconds);
 
-      await runPlaybackAction(async () => {
+      const succeeded = await runPlaybackAction(async () => {
+        const targetPositionMs = Math.round(safePositionSeconds * 1000);
         if (isSpotifyCurrentTrack && currentTrack) {
-          return seekSpotifyPlayback(currentTrack, safePositionSeconds);
+          const status = await seekSpotifyPlayback(currentTrack, safePositionSeconds);
+          return { ...status, positionMs: targetPositionMs };
         }
 
         if (queue.hqPlayerTakeoverEnabled) {
@@ -490,19 +544,29 @@ export const MiniPlayerApp = (): JSX.Element => {
             return {
               state: connectStatus.state === 'playing' ? 'playing' : connectStatus.state === 'paused' ? 'paused' : 'loading',
               currentTrackId: connectStatus.currentTrackId ?? trackId,
-              positionMs: Math.round(Math.max(0, connectStatus.positionSeconds) * 1000),
+              positionMs: targetPositionMs,
               durationMs: Math.round(Math.max(0, connectStatus.durationSeconds) * 1000),
               filePath,
             };
           }
         }
 
-        return window.echo?.playback?.seek?.(safePositionSeconds);
-      });
-      setRealtimePositionSeconds(safePositionSeconds);
+        const status = await window.echo?.playback?.seek?.(safePositionSeconds);
+        return status ? { ...status, positionMs: targetPositionMs } : status;
+      }, { applyStatusSnapshot: beginPlaybackSeekSnapshot });
+      if (!succeeded) {
+        seekAnchorRef.current = null;
+        clockRef.current = {
+          ...clockRef.current,
+          positionSeconds: previousPositionSeconds,
+          sourcePositionSeconds: previousPositionSeconds,
+          updatedAtMs: performance.now(),
+        };
+        setRealtimePositionSeconds(previousPositionSeconds);
+      }
       setSeekPreviewSeconds(null);
     },
-    [currentTrack, durationSeconds, filePath, isSpotifyCurrentTrack, queue.hqPlayerTakeoverEnabled, runPlaybackAction, trackId],
+    [currentTrack, durationSeconds, filePath, isSpotifyCurrentTrack, playbackRate, progressTrackKey, queue.hqPlayerTakeoverEnabled, runPlaybackAction, sourcePositionSeconds, trackId, visualState],
   );
 
   const handleProgressChange = (event: ChangeEvent<HTMLInputElement>): void => {

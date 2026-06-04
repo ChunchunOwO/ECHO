@@ -1571,17 +1571,35 @@ export class LibraryStore {
     return this.resolveFolderScopedPath(this.requireFolder(request.folderId), request.path);
   }
 
-  removeFolder(folderId: string): void {
+  async removeFolder(folderId: string): Promise<void> {
+    const timestamp = nowIso();
     this.transaction(() => {
-      const timestamp = nowIso();
       this.run('UPDATE folders SET status = ?, enabled = ?, updated_at = ? WHERE id = ?', 'removed', 0, timestamp, folderId);
-      this.run('DELETE FROM tracks WHERE folder_id = ?', folderId);
       this.run('DELETE FROM scan_jobs WHERE folder_id = ?', folderId);
       this.run('DELETE FROM scan_directory_snapshots WHERE folder_id = ?', folderId);
-      this.run('DELETE FROM album_tracks');
-      this.run('DELETE FROM albums');
-      this.refreshArtists();
     });
+
+    const deleteBatchSize = 500;
+    while (true) {
+      const rows = this.allRows(
+        `SELECT id
+         FROM tracks
+         WHERE folder_id = ?
+         LIMIT ?`,
+        folderId,
+        deleteBatchSize,
+      );
+      const trackIds = rows.map((row) => textOrNull(row.id)).filter((trackId): trackId is string => Boolean(trackId));
+      if (trackIds.length === 0) {
+        break;
+      }
+
+      const placeholders = trackIds.map(() => '?').join(', ');
+      this.run(`DELETE FROM tracks WHERE id IN (${placeholders})`, ...trackIds);
+      await yieldToMainLoop();
+    }
+
+    this.run('DELETE FROM album_tracks WHERE track_id NOT IN (SELECT id FROM tracks)');
   }
 
   createScanJob(folderId: string): LibraryScanStatus {

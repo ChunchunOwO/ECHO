@@ -9,6 +9,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          libraryScanWorkerHost: resolve(__dirname, 'src/main/library/workers/LibraryScanWorkerHost.ts'),
         },
         output: {
           footer: '\nimport "node:module";\n',

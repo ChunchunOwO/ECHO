@@ -149,6 +149,7 @@ import type { MetadataReader } from './workers/MetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
+import { createWorkerBackedLibraryScanWorkers } from './workers/WorkerBackedLibraryScan';
 import { getRemoteSourceService } from './remote/RemoteSourceService';
 import { writeEmbeddedTrackTags } from './TagWriter';
 import { backupPlaylistIfEnabled, type PlaylistBackupReason } from './PlaylistBackup';
@@ -264,6 +265,7 @@ export class LibraryService {
     private readonly albumOnlineInfoService: AlbumOnlineInfoService | null = null,
     private readonly artistOnlineInfoService: ArtistOnlineInfoService | null = null,
     private readonly artistEventsService: ArtistEventsService | null = null,
+    private readonly closeWorkerResources: () => void = () => undefined,
   ) {
     this.moveCandidateService = new LibraryMoveCandidateService(this.database);
     this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
@@ -2038,6 +2040,7 @@ export class LibraryService {
       this.searchIndexBackfillTimer = null;
     }
     (this.scanJobQueue as { dispose?: () => void }).dispose?.();
+    this.closeWorkerResources();
 
     this.closeDatabase();
   }
@@ -2557,6 +2560,25 @@ export const createLibraryService = (
     remoteAlbumMergeStrategy: readSettings().remoteAlbumMergeStrategy ?? 'conservative',
   }));
   const fileScanner = dependencies.fileScanner ?? new TsFileScanner();
+  const coverCacheDir = dependencies.coverCacheDir
+    ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
+    : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
+  const albumService = new AlbumService();
+  const appSettings = readSettings();
+  const recommendedScanConcurrency = getRecommendedScanConcurrency({
+    mode: appSettings.scanPerformanceMode ?? 'balanced',
+  });
+  const scanConcurrency: ScanConcurrencyRecommendation = {
+    ...recommendedScanConcurrency,
+    metadataConcurrency: dependencies.metadataConcurrency ?? recommendedScanConcurrency.metadataConcurrency,
+    coverConcurrency: dependencies.coverConcurrency ?? recommendedScanConcurrency.coverConcurrency,
+  };
+  const workerBackedScanWorkers =
+    dependencies.metadataReader || dependencies.coverExtractor || dependencies.metadataService
+      ? null
+      : createWorkerBackedLibraryScanWorkers({
+          workerCount: Math.max(scanConcurrency.metadataConcurrency, scanConcurrency.coverConcurrency),
+        });
   const metadataReader =
     dependencies.metadataReader ??
     (dependencies.metadataService
@@ -2571,21 +2593,8 @@ export const createLibraryService = (
               }),
             ),
         }
-      : new TsMetadataReader());
-  const coverExtractor = dependencies.coverExtractor ?? new TsCoverExtractor();
-  const coverCacheDir = dependencies.coverCacheDir
-    ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
-    : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
-  const albumService = new AlbumService();
-  const appSettings = readSettings();
-  const recommendedScanConcurrency = getRecommendedScanConcurrency({
-    mode: appSettings.scanPerformanceMode ?? 'balanced',
-  });
-  const scanConcurrency: ScanConcurrencyRecommendation = {
-    ...recommendedScanConcurrency,
-    metadataConcurrency: dependencies.metadataConcurrency ?? recommendedScanConcurrency.metadataConcurrency,
-    coverConcurrency: dependencies.coverConcurrency ?? recommendedScanConcurrency.coverConcurrency,
-  };
+      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader());
+  const coverExtractor = dependencies.coverExtractor ?? workerBackedScanWorkers?.coverExtractor ?? new TsCoverExtractor();
   const scanJobQueue = new ScanJobQueue(store, fileScanner, metadataReader, coverExtractor, albumService, {
     coverCacheDir,
     metadataConcurrency: scanConcurrency.metadataConcurrency,
@@ -2715,6 +2724,7 @@ export const createLibraryService = (
     albumOnlineInfoService,
     artistOnlineInfoService,
     artistEventsService,
+    () => workerBackedScanWorkers?.close(),
   );
 };
 

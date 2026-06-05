@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
-import { artistOnlineInfoSources, artistStreamingAlbumProviders, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
+import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
   ArtistOnlineInfoSource,
@@ -17,6 +17,7 @@ import type {
   AppVideoWallpaperPauseMode,
   AppWallpaperMediaType,
   AppSettings,
+  AutoUpdateSource,
   AudioTransportFadeCurve,
   DataBackupIntervalDays,
   DesktopLyricsColorMode,
@@ -402,6 +403,8 @@ export const defaultSettings: AppSettings = {
   fastStartupEnabled: false,
   dataProtectionDisabled: false,
   autoUpdateEnabled: true,
+  autoUpdateSource: 'official',
+  autoUpdateCustomUrl: null,
   autoAccountCheckOnStartup: true,
   suppressAccountExpiryNotices: true,
   spotifyAutoLaunchOfficialPlayer: true,
@@ -1301,6 +1304,30 @@ const normalizeMvMaxQuality = (value: unknown): MvSettings['maxQuality'] =>
 const normalizeMvSyncMode = (value: unknown): MvSettings['syncMode'] =>
   value === 'stable' || value === 'precise' || value === 'balanced' ? value : defaultSettings.mvSyncMode;
 
+const normalizeAutoUpdateSource = (value: unknown): AutoUpdateSource =>
+  autoUpdateSources.includes(value as AutoUpdateSource) ? (value as AutoUpdateSource) : defaultSettings.autoUpdateSource ?? 'official';
+
+const normalizeAutoUpdateCustomUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.replace(/[\r\n]/g, '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+    return url.toString().replace(/\/+$/u, '');
+  } catch {
+    return null;
+  }
+};
+
 const normalizeWallpaperPath = (value: unknown, directory: string, allowedExtensions: Set<string>): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -1619,6 +1646,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     fastStartupEnabled: settings.fastStartupEnabled === true,
     dataProtectionDisabled: settings.dataProtectionDisabled === true,
     autoUpdateEnabled: settings.autoUpdateEnabled !== false,
+    autoUpdateSource: normalizeAutoUpdateSource(settings.autoUpdateSource),
+    autoUpdateCustomUrl: normalizeAutoUpdateCustomUrl(settings.autoUpdateCustomUrl),
     autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
     suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices !== false,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,

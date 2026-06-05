@@ -17,6 +17,7 @@ import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './
 import { AutomixAnalyzer } from './AutomixAnalyzer';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
 import { noteDataProtectionPlaybackActivity } from '../app/dataProtection';
+import { buildNetworkProxyEnv } from '../network/proxyEnv';
 import { markPlaybackBreadcrumb, runPlaybackPerformanceStep, runPlaybackPerformanceStepSync } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../../shared/utils/replayGain';
 import { normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
@@ -1552,7 +1553,10 @@ export class AudioSession extends EventEmitter {
     this.logger = dependencies.logger ?? defaultLogger;
     this.verboseLogger = dependencies.logger ?? (verboseAudioLogsEnabled ? defaultLogger : noopLogger);
     this.platform = dependencies.platform ?? process.platform;
-    this.decoder = dependencies.decoder ?? new DecoderPipeline({ logger: this.logger });
+    this.decoder = dependencies.decoder ?? new DecoderPipeline({
+      logger: this.logger,
+      getSpawnEnv: () => buildNetworkProxyEnv(getAppSettings()),
+    });
     this.juceDecoder = dependencies.juceDecoder ?? new JuceDecodePipeline({ logger: this.logger });
     this.automixAnalyzer = dependencies.automixAnalyzer ?? new AutomixAnalyzer({ logger: this.logger });
     this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger, platform: this.platform });

@@ -20,7 +20,7 @@ import type { UpdateStatus } from '../../shared/types/updates';
 import type { FontFileAsset } from '../../preload/apiTypes';
 import { defaultSettings, getAppSettings, getAppWallpaperDirectory, getLyricsWallpaperDirectory, normalizeSettings, setAppSettings } from '../app/appSettings';
 import { getAppCacheInventory as collectAppCacheInventory } from '../app/cacheInventory';
-import { checkForUpdates, getUpdateStatus, setAutoUpdateEnabled } from '../app/autoUpdater';
+import { checkForUpdates, getUpdateStatus, reconfigureAutoUpdateFeed, setAutoUpdateEnabled } from '../app/autoUpdater';
 import { refreshBackgroundSpaceRegistration, validateGlobalShortcut } from '../app/backgroundPlaybackShortcuts';
 import {
   getDataBackupStatus,
@@ -269,10 +269,15 @@ const applyAppSettingsPatch = async (
   let settings = setAppSettings(settingsPatch);
   ensureTray();
 
-  if (typeof settingsPatch.autoUpdateEnabled === 'boolean') {
+  const autoUpdateSourceChanged =
+    typeof settingsPatch.autoUpdateSource === 'string' ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'autoUpdateCustomUrl');
+
+  if (typeof settingsPatch.autoUpdateEnabled === 'boolean' || autoUpdateSourceChanged) {
     const autoUpdateEnabled = settings.autoUpdateEnabled !== false;
     setAutoUpdateEnabled(autoUpdateEnabled);
     if (autoUpdateEnabled) {
+      reconfigureAutoUpdateFeed();
       void checkForUpdates();
     }
   }

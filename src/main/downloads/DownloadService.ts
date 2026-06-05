@@ -31,6 +31,8 @@ import { importOsuArchiveAsMp3Queued } from '../library/OsuArchiveImport';
 import { writeEmbeddedCoverArt, writeEmbeddedTrackTags } from '../library/TagWriter';
 import { getMvService } from '../mv/MvService';
 import { getAppSettings } from '../app/appSettings';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
+import { buildNetworkProxyEnv, buildYtDlpProxyArgs } from '../network/proxyEnv';
 import {
   isProtectedMusicDownloadProvider,
   protectedMusicDownloadBlockedMessage,
@@ -223,7 +225,10 @@ type DownloadServiceDependencies = {
   saveSettings?: (settings: DownloadSettings) => void;
   loadJobs?: () => PersistedDownloadState | null;
   saveJobs?: (state: PersistedDownloadState) => void;
-  loadAppSettings?: () => Pick<AppSettings, 'downloadsFeatureUnlocked'> | null;
+  loadAppSettings?: () => Pick<
+    AppSettings,
+    'downloadsFeatureUnlocked' | 'networkProxyMode' | 'networkProxyUrl' | 'networkProxyBypassRules'
+  > | null;
   getAccountCredentials?: (provider: AccountProvider) => AccountCredentials;
   writeEmbeddedCoverArt?: typeof writeEmbeddedCoverArt;
   writeEmbeddedTrackTags?: typeof writeEmbeddedTrackTags;
@@ -541,7 +546,9 @@ const savePersistedDownloadState = (state: PersistedDownloadState): void => {
 const runCommand: CommandRunner = (command, args) => runStreamingCommand(command, args, {});
 
 const runStreamingCommand: StreamingCommandRunner = (command, args, listeners) => {
+  const env = buildNetworkProxyEnv(getAppSettings());
   const child = spawn(command, args, {
+    ...(env ? { env } : {}),
     windowsHide: true,
     shell: false,
   });
@@ -924,6 +931,7 @@ export class DownloadService extends EventEmitter {
 
   private runSearchCommand(ytDlpPath: string, searchUrl: string, limitPerProvider: number, accountArgs: string[]): Promise<CommandResult> {
     return this.commandRunner(ytDlpPath, [
+      ...this.ytDlpProxyArgs(),
       '--simulate',
       '--flat-playlist',
       '--dump-single-json',
@@ -1000,7 +1008,7 @@ export class DownloadService extends EventEmitter {
   }
 
   private async searchBilibiliApi(query: string, limitPerProvider: number): Promise<DownloadSearchResult[]> {
-    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
     if (!fetchRunner) {
       return [];
     }
@@ -1460,6 +1468,18 @@ export class DownloadService extends EventEmitter {
     }
   }
 
+  private getNetworkProxySettings(): Pick<AppSettings, 'networkProxyMode' | 'networkProxyUrl' | 'networkProxyBypassRules'> {
+    try {
+      return this.dependencies.loadAppSettings?.() ?? getAppSettings();
+    } catch {
+      return {};
+    }
+  }
+
+  private ytDlpProxyArgs(): string[] {
+    return buildYtDlpProxyArgs(this.getNetworkProxySettings());
+  }
+
   private async probe(jobId: string): Promise<void> {
     this.updateJob(jobId, { status: 'probing', progress: 0 });
 
@@ -1471,6 +1491,7 @@ export class DownloadService extends EventEmitter {
     const job = this.requireJob(jobId);
     const options = this.jobOptions.get(jobId);
     const command = this.commandRunner(ytDlpPath, [
+      ...this.ytDlpProxyArgs(),
       ...this.headerArgs(this.ytDlpRequestHeaders(job, options?.requestHeaders ?? {})),
       '--dump-json',
       '--no-playlist',
@@ -1539,6 +1560,7 @@ export class DownloadService extends EventEmitter {
       '--no-playlist',
       '--no-mtime',
       '--continue',
+      ...this.ytDlpProxyArgs(),
       ...this.headerArgs(this.ytDlpRequestHeaders(job, this.jobOptions.get(jobId)?.requestHeaders ?? {})),
       '-f',
       'bestaudio/best',
@@ -1598,7 +1620,7 @@ export class DownloadService extends EventEmitter {
   private async downloadOsuBeatmapAudio(jobId: string): Promise<void> {
     const job = this.requireJob(jobId);
     const outputDirectory = this.getJobOutputDirectory(jobId);
-    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
     const beatmapsetId = parseOsuBeatmapsetId(job.sourceUrl);
 
     if (!outputDirectory) {
@@ -1737,7 +1759,7 @@ export class DownloadService extends EventEmitter {
   private async downloadDirectAudio(jobId: string, options: DownloadJobOptions): Promise<void> {
     const job = this.requireJob(jobId);
     const outputDirectory = this.getJobOutputDirectory(jobId);
-    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
     const requestHeaders = this.directAudioRequestHeaders(job, options);
 
     if (!outputDirectory) {
@@ -1852,7 +1874,7 @@ export class DownloadService extends EventEmitter {
   }
 
   private async readDownloadCoverImage(url: string): Promise<{ data: Uint8Array; mimeType: string }> {
-    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    const fetchRunner = this.dependencies.fetch ?? fetchWithNetworkProxy;
     if (!fetchRunner) {
       throw new Error('fetch is not available for cover downloads');
     }

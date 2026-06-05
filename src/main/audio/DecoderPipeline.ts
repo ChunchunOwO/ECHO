@@ -52,6 +52,7 @@ export type DecoderPipelineDependencies = {
   existsSync?: FfmpegToolchainDependencies['existsSync'];
   execFileSync?: FfmpegToolchainDependencies['execFileSync'];
   spawn?: DecoderSpawner;
+  getSpawnEnv?: () => NodeJS.ProcessEnv | undefined;
   logger?: (message: string) => void;
   requireHealthyFfmpeg?: boolean;
 };
@@ -313,6 +314,7 @@ export class DecoderPipeline {
   private readonly ffmpegPath: string;
   private readonly toolchainInfo: FfmpegToolchainInfo;
   private readonly spawn: DecoderSpawner;
+  private readonly getSpawnEnv: () => NodeJS.ProcessEnv | undefined;
   private readonly logger: (message: string) => void;
   private readonly probeCache = new Map<string, ProbeCacheEntry>();
 
@@ -323,6 +325,7 @@ export class DecoderPipeline {
     });
     this.ffmpegPath = this.toolchainInfo.path;
     this.spawn = dependencies.spawn ?? (nodeSpawn as DecoderSpawner);
+    this.getSpawnEnv = dependencies.getSpawnEnv ?? (() => undefined);
     this.logger = dependencies.logger ?? defaultLogger;
     if (verboseAudioLogsEnabled) {
       this.logger(
@@ -701,7 +704,9 @@ export class DecoderPipeline {
       if (verboseAudioLogsEnabled) {
         this.logger(`[DecoderPipeline] spawn: ${this.ffmpegPath} ${redactFfmpegArgs(args).join(' ')}`);
       }
+      const env = this.getSpawnEnv();
       return this.spawn(this.ffmpegPath, args, {
+        ...(env ? { env } : {}),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });

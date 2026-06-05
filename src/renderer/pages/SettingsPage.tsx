@@ -70,6 +70,7 @@ import type {
   AppThemePreset,
   AppThemePresetOverrides,
   AppThemeToneOverride,
+  AutoUpdateSource,
   NetworkProxyMode,
   NetworkProxyTestResult,
 } from '../../shared/types/appSettings';
@@ -384,6 +385,13 @@ const tidalDeveloperDashboardUrl = 'https://developer.tidal.com/dashboard';
 const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers';
 const officialWebsiteUrl = 'https://echonagi.com';
 const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
+const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
+  { source: 'official', label: 'GitHub', description: '官方直连' },
+  { source: 'ghfast', label: 'ghfast.top', description: '实测可读 latest.yml' },
+  { source: 'ghproxyVip', label: 'ghproxy.vip', description: '实测可读 API 和文件' },
+  { source: 'ghproxyCxkpro', label: 'cxkpro', description: '实测可读 latest.yml' },
+  { source: 'custom', label: 'Custom', description: '自定义 generic 源' },
+];
 const playbackAdvancedPanelExpandedStorageKey = 'echo:settings:playback:advanced-panel-expanded';
 const integrationsAccountPanelExpandedStorageKey = 'echo:settings:integrations:account-panel-expanded';
 const integrationsCredentialPanelExpandedStorageKey = 'echo:settings:integrations:credential-panel-expanded';
@@ -4059,6 +4067,7 @@ export const SettingsPage = (): JSX.Element => {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [deferredAboutReleaseNotes, setDeferredAboutReleaseNotes] = useState<string | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [autoUpdateCustomUrlDraft, setAutoUpdateCustomUrlDraft] = useState('');
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
@@ -5281,6 +5290,7 @@ export const SettingsPage = (): JSX.Element => {
       setThemeCustomThemes(customThemes);
       setActiveThemeCustomId(customThemeId);
       setSelectedThemePreset(basePreset);
+      setAutoUpdateCustomUrlDraft(settings.autoUpdateCustomUrl ?? '');
       updateThemePreferences(
         settings.appearanceTheme ?? defaultThemeMode,
         basePreset,
@@ -6728,6 +6738,9 @@ export const SettingsPage = (): JSX.Element => {
       .setSettings(patch)
       .then((settings) => {
         setAppSettings(settings);
+        if (Object.prototype.hasOwnProperty.call(patch, 'autoUpdateCustomUrl')) {
+          setAutoUpdateCustomUrlDraft(settings.autoUpdateCustomUrl ?? '');
+        }
         if (Object.prototype.hasOwnProperty.call(patch, 'taskbarPlaybackControlsEnabled')) {
           void refreshTaskbarPlaybackStatus();
         }
@@ -7334,6 +7347,20 @@ export const SettingsPage = (): JSX.Element => {
     } finally {
       setUpdateBusy(false);
     }
+  };
+
+  const handleAutoUpdateSourceSelect = (source: AutoUpdateSource): void => {
+    patchAppSettings({
+      autoUpdateSource: source,
+      autoUpdateCustomUrl: source === 'custom' ? autoUpdateCustomUrlDraft.trim() || null : appSettings?.autoUpdateCustomUrl ?? null,
+    });
+  };
+
+  const handleAutoUpdateCustomUrlSave = (): void => {
+    patchAppSettings({
+      autoUpdateSource: 'custom',
+      autoUpdateCustomUrl: autoUpdateCustomUrlDraft.trim() || null,
+    });
   };
 
   const handleOpenRepository = async (): Promise<void> => {
@@ -7951,6 +7978,7 @@ export const SettingsPage = (): JSX.Element => {
       ? `${formatUpdateBytes(updateStatus.transferredBytes)} / ${formatUpdateBytes(updateStatus.totalBytes)}`
       : formatUpdateBytes(updateStatus?.totalBytes);
   const updateDownloadSpeedLabel = updateStatus?.bytesPerSecond ? `${formatUpdateBytes(updateStatus.bytesPerSecond)}/s` : 'n/a';
+  const currentAutoUpdateSource = appSettings?.autoUpdateSource ?? 'official';
   const artistImageHasSummary = Boolean(artistImageProgress);
   const artistImageSummary = artistImageProgress?.summary ?? emptyArtistImageSummary;
   const artistImageQueuedTotal = artistImageProgress?.lastQueued.queued ?? 0;
@@ -13605,6 +13633,37 @@ export const SettingsPage = (): JSX.Element => {
                         onClick={() => patchAppSettings({ autoUpdateEnabled: !(appSettings?.autoUpdateEnabled ?? true) })}
                       />
                     </div>
+                    <div className="settings-update-source-picker">
+                      <span>下载源</span>
+                      <StyledSelect
+                        ariaLabel="更新下载源"
+                        className="settings-update-source-select"
+                        disabled={!appSettings}
+                        options={autoUpdateSourceOptions.map((option) => ({
+                          value: option.source,
+                          label: `${option.label} · ${option.description}`,
+                        }))}
+                        showFilterIcon={false}
+                        value={currentAutoUpdateSource}
+                        onChange={handleAutoUpdateSourceSelect}
+                      />
+                    </div>
+                    {currentAutoUpdateSource === 'custom' ? (
+                      <div className="settings-update-custom-source">
+                        <span>自定义 generic 源</span>
+                        <input
+                          disabled={!appSettings}
+                          placeholder="https://example.com/echo/releases/latest/download"
+                          type="url"
+                          value={autoUpdateCustomUrlDraft}
+                          onChange={(event) => setAutoUpdateCustomUrlDraft(event.target.value)}
+                        />
+                        <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleAutoUpdateCustomUrlSave}>
+                          <Save size={15} />
+                          保存
+                        </button>
+                      </div>
+                    ) : null}
                     <button
                       className="settings-action-button"
                       type="button"

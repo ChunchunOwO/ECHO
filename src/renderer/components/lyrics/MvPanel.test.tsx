@@ -946,6 +946,7 @@ describe('MvPanel', () => {
     expect(frame.getAttribute('src')).toContain('controls=0');
     expect(frame.getAttribute('src')).toContain('disablekb=1');
     expect(frame.getAttribute('src')).toContain('fs=0');
+    expect(frame.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
     expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-immersive-active')).toBe('true');
 
     const backgroundFrame = container.querySelector('iframe.lyrics-mv-background-video--youtube') as HTMLIFrameElement | null;
@@ -953,6 +954,7 @@ describe('MvPanel', () => {
     expect(backgroundFrame?.getAttribute('src')).toContain('controls=0');
     expect(backgroundFrame?.getAttribute('src')).toContain('loop=1');
     expect(backgroundFrame?.getAttribute('src')).toContain('playlist=abc123DEF45');
+    expect(backgroundFrame?.getAttribute('referrerpolicy')).toBe('strict-origin-when-cross-origin');
   });
 
   it('keeps the MV diagnostics report hidden while a YouTube iframe is visible', async () => {

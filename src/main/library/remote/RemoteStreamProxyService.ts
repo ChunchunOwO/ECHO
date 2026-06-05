@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { RemoteStreamUrlResult } from '../../../shared/types/remoteSources';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type { RemoteSourceAdapter, RemoteSourceSecret } from './remoteTypes';
 import { normalizeRemotePath } from './remoteIdentity';
 
@@ -56,7 +57,7 @@ export class RemoteStreamProxyService {
 
   constructor(
     private readonly getAdapter: (provider: string) => RemoteSourceAdapter,
-    private readonly options: { upstreamResponseTimeoutMs?: number } = {},
+    private readonly options: { upstreamResponseTimeoutMs?: number; fetch?: typeof fetch } = {},
   ) {}
 
   async createStreamUrl(source: RemoteSourceSecret, remotePath: string, stableKey?: string | null, expiresInSeconds?: number): Promise<RemoteStreamUrlResult> {
@@ -201,7 +202,7 @@ export class RemoteStreamProxyService {
 
     let upstream: Response;
     try {
-      upstream = await fetch(proxyRequest.url, {
+      upstream = await (this.options.fetch ?? fetchWithNetworkProxy)(proxyRequest.url, {
         method: request.method,
         headers,
         signal: timeout.signal,

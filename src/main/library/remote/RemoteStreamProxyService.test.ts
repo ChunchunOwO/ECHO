@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebDavRemoteSourceAdapter } from './adapters/WebDavRemoteSourceAdapter';
 import { RemoteStreamProxyService } from './RemoteStreamProxyService';
 import type { RemoteSourceAdapter, RemoteSourceSecret } from './remoteTypes';
@@ -142,6 +142,42 @@ describe('RemoteStreamProxyService', () => {
 
     const response = await fetch(stream.url);
     expect(response.status).toBe(401);
+  });
+
+  it('uses the configured upstream fetch for remote stream requests', async () => {
+    await proxy.close();
+    const upstreamFetch = vi.fn(async () =>
+      new Response(audioBytes, {
+        status: 200,
+        headers: {
+          'Content-Length': String(audioBytes.length),
+          'Content-Type': 'audio/mpeg',
+        },
+      }),
+    );
+    const adapter = {
+      provider: 'webdav',
+      createProxyRequest: () => ({
+        url: 'https://remote.example/song.mp3',
+        headers: { Authorization: 'Bearer secret' },
+      }),
+    } as unknown as RemoteSourceAdapter;
+    proxy = new RemoteStreamProxyService(() => adapter, { fetch: upstreamFetch as typeof fetch });
+
+    const stream = await proxy.createStreamUrl(source(), '/song.mp3', 'stable-1');
+    const response = await fetch(stream.url, { headers: { Range: 'bytes=0-3' } });
+
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer()).equals(audioBytes)).toBe(true);
+    expect(upstreamFetch).toHaveBeenCalledWith(
+      'https://remote.example/song.mp3',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer secret',
+          Range: 'bytes=0-3',
+        }),
+      }),
+    );
   });
 
   it('times out stalled upstream streams instead of leaving playback waiting forever', async () => {

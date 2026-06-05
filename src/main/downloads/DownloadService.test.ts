@@ -496,6 +496,29 @@ describe('DownloadService', () => {
     expect(response.results).toEqual([expect.objectContaining({ provider: 'bilibili', title: 'Bilibili Song' })]);
   });
 
+  it('passes manual network proxy settings to yt-dlp search commands', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, _args: string[]) => ({
+      promise: Promise.resolve({ stdout: JSON.stringify({ entries: [] }), stderr: '', exitCode: 0 }),
+      kill: vi.fn(),
+    }));
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({ provider }),
+      loadAppSettings: () => ({
+        networkProxyMode: 'manual',
+        networkProxyUrl: 'http://127.0.0.1:7890/',
+        networkProxyBypassRules: '<local>;localhost;127.0.0.1',
+      }),
+    });
+
+    await service.search({ query: 'echo', limitPerProvider: 1, provider: 'youtube' });
+
+    expect(commandRunner).toHaveBeenCalledWith(
+      ytDlpPath,
+      expect.arrayContaining(['--proxy', 'http://127.0.0.1:7890/', 'ytsearch1:echo']),
+    );
+  });
+
   it('uses account cookies for search and removes temporary cookie files', async () => {
     const ytDlpPath = makeToolPath();
     const cookiePaths: string[] = [];

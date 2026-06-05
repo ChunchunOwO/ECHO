@@ -11,6 +11,8 @@
 <p align="center">
   <a href="./README_EN.md">English README</a>
   <span>&nbsp;|&nbsp;</span>
+  <a href="https://echonagi.com/">&#23448;&#32593;</a>
+  <span>&nbsp;|&nbsp;</span>
   <a href="https://github.com/moekotori/echo/releases/latest">Latest Release</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="https://afdian.com/a/echonext">爱发电</a>

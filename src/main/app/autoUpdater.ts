@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
 import type { UpdateInfo } from 'electron-updater';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
+import type { AppSettings, AutoUpdateSource } from '../../shared/types/appSettings';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { getAppSettings } from './appSettings';
 import { createDataProtectionSnapshot, writeDataProtectionManifest } from './dataProtection';
@@ -18,6 +19,18 @@ type DownloadProgressInfo = {
   transferred?: number;
   total?: number;
   bytesPerSecond?: number;
+};
+
+const officialGithubFeed = {
+  provider: 'github',
+  owner: 'Moekotori',
+  repo: 'ECHO',
+} as const;
+
+const genericUpdateFeeds: Partial<Record<AutoUpdateSource, string>> = {
+  ghfast: 'https://ghfast.top/https://github.com/Moekotori/ECHO/releases/latest/download',
+  ghproxyVip: 'https://ghproxy.vip/https://github.com/Moekotori/ECHO/releases/latest/download',
+  ghproxyCxkpro: 'https://ghproxy.cxkpro.top/https://github.com/Moekotori/ECHO/releases/latest/download',
 };
 
 let isUpdaterInitialized = false;
@@ -75,6 +88,38 @@ const applyUpdateInfo = (updateInfo: UpdateInfo): void => {
   };
 };
 
+const resolveGenericFeedUrl = (settings: Pick<AppSettings, 'autoUpdateSource' | 'autoUpdateCustomUrl'>): string | null => {
+  if (settings.autoUpdateSource === 'custom') {
+    return settings.autoUpdateCustomUrl?.trim().replace(/\/+$/u, '') || null;
+  }
+
+  return genericUpdateFeeds[settings.autoUpdateSource ?? 'official'] ?? null;
+};
+
+const configureUpdateFeed = (): boolean => {
+  const settings = getAppSettings();
+  const genericUrl = resolveGenericFeedUrl(settings);
+
+  if (genericUrl) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: genericUrl });
+    return true;
+  }
+
+  if (settings.autoUpdateSource === 'custom') {
+    updateStatus = {
+      ...updateStatus,
+      state: 'error',
+      error: 'Custom update source URL is empty or invalid.',
+      checkedAt: new Date().toISOString(),
+    };
+    emitUpdateStatus();
+    return false;
+  }
+
+  autoUpdater.setFeedURL(officialGithubFeed);
+  return true;
+};
+
 export const getUpdateStatus = (): UpdateStatus => ({
   ...updateStatus,
   currentVersion: currentVersion(),
@@ -123,6 +168,10 @@ export const checkForUpdates = async (): Promise<UpdateStatus> => {
     return getUpdateStatus();
   }
 
+  if (!configureUpdateFeed()) {
+    return getUpdateStatus();
+  }
+
   updateStatus = {
     ...updateStatus,
     state: 'checking',
@@ -149,6 +198,12 @@ export const checkForUpdates = async (): Promise<UpdateStatus> => {
   return getUpdateStatus();
 };
 
+export const reconfigureAutoUpdateFeed = (): UpdateStatus => {
+  configureUpdateFeed();
+  emitUpdateStatus();
+  return getUpdateStatus();
+};
+
 export const initializeAutoUpdater = (enabled: boolean): void => {
   if (isUpdaterInitialized) {
     return;
@@ -158,6 +213,9 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
   setAutoUpdateEnabled(enabled);
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  if (enabled) {
+    configureUpdateFeed();
+  }
 
   autoUpdater.on('checking-for-update', () => {
     updateStatus = { ...updateStatus, state: 'checking', error: null };

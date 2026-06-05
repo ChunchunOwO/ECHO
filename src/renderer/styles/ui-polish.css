@@ -390,6 +390,51 @@ html[data-theme="dark"] .sidebar-folder:hover {
   background: var(--theme-accent-solid-bg);
 }
 
+.settings-update-source-picker {
+  display: grid;
+  gap: 8px;
+  min-width: min(320px, 100%);
+}
+
+.settings-update-source-picker > span,
+.settings-update-custom-source > span {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-update-custom-source {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  width: min(620px, 100%);
+  align-items: end;
+  gap: 8px;
+}
+
+.settings-update-custom-source > span {
+  grid-column: 1 / -1;
+}
+
+.settings-update-custom-source input {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--theme-field-bg);
+  font: inherit;
+}
+
+.settings-update-source-select {
+  width: min(360px, 100%);
+}
+
+.settings-update-source-select .sort-button {
+  width: 100%;
+}
+
 .settings-select-control {
   width: min(540px, 100%);
   max-width: none;

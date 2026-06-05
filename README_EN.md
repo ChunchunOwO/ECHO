@@ -11,6 +11,8 @@
 <p align="center">
   <a href="./README.md">Chinese README</a>
   <span>&nbsp;|&nbsp;</span>
+  <a href="https://echonagi.com/">Official Site</a>
+  <span>&nbsp;|&nbsp;</span>
   <a href="https://github.com/moekotori/echo/releases/latest">Latest Release</a>
   <span>&nbsp;|&nbsp;</span>
   <a href="https://qm.qq.com/q/OdpngxJU86">QQ Group</a>

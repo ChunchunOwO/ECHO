@@ -1708,6 +1708,7 @@ export const MvPanel = ({
               className="lyrics-mv-background-video lyrics-mv-background-video--youtube"
               src={youtubeBackgroundEmbedUrl ?? undefined}
               allow="autoplay; encrypted-media; picture-in-picture"
+              referrerPolicy="strict-origin-when-cross-origin"
               tabIndex={-1}
               title=""
             />
@@ -1785,6 +1786,7 @@ export const MvPanel = ({
             src={youtubeEmbedUrl ?? undefined}
             allow="autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
             title={selectedVideo?.title ?? 'YouTube MV'}
           />
         </div>

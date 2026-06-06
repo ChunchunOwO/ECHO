@@ -7211,6 +7211,322 @@
   background: var(--volume-popover-active-hover-bg);
 }
 
+/* ============================================================
+   Sleep Timer Popover
+   ============================================================ */
+
+.sleep-timer-control {
+  position: relative;
+  z-index: 1;
+}
+
+/* 运行态按钮：倒计时文字模式，覆盖 icon-button 圆形固定尺寸 */
+.sleep-timer-control .icon-button.is-soft-active {
+  width: auto !important;
+  min-width: 44px;
+  height: 30px !important;
+  border-radius: 8px !important;
+  padding: 0 8px !important;
+}
+
+.sleep-timer-countdown {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+  text-align: center;
+  line-height: 1;
+}
+
+/* ---- Popover 面板 ---- */
+.sleep-timer-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 228px;
+  padding: 14px 16px;
+
+  border: 1px solid var(--echo-polish-border, rgba(38, 40, 46, 0.12));
+  border-radius: 16px;
+  background: var(--echo-polish-surface-strong, rgba(255, 255, 255, 0.96));
+  box-shadow:
+    0 18px 42px rgba(36, 39, 48, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(1.15);
+
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px) scale(0.97);
+  transform-origin: calc(100% - 17px) 100%;
+  transition:
+    opacity 160ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  z-index: 20;
+}
+
+.sleep-timer-popover[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+/* ---- 标题 ---- */
+.st-popover-title {
+  color: var(--theme-heading-text, #1e2025);
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 12px;
+  letter-spacing: 0.01em;
+}
+
+/* ---- 运行态（倒计时）---- */
+.st-popover-running {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0 4px;
+}
+
+.st-countdown {
+  font-size: 28px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--echo-polish-accent-text, var(--color-accent-strong, #3239c7));
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.st-hint {
+  font-size: 11px;
+  color: var(--theme-muted-text, #6c7179);
+  margin-top: 4px;
+}
+
+.st-cancel-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-top: 10px;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 8px !important;
+  border-color: var(--echo-polish-border) !important;
+  background: var(--echo-polish-button-bg) !important;
+  color: var(--theme-page-text) !important;
+  box-shadow: none !important;
+  transition: all 150ms ease !important;
+  white-space: nowrap;
+}
+
+.st-cancel-btn:hover:not(:disabled) {
+  background: var(--echo-polish-active-bg) !important;
+  border-color: var(--echo-polish-active-border) !important;
+  transform: translateY(-1px) !important;
+}
+
+.st-cancel-btn:active:not(:disabled) {
+  transform: scale(0.97) !important;
+}
+
+/* ---- 行为选择栏 ---- */
+.st-action-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.st-action-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--theme-muted-text, #6c7179);
+  border: 1px solid var(--echo-polish-border, rgba(38, 40, 46, 0.12)) !important;
+  border-radius: 8px !important;
+  background: var(--echo-polish-button-bg, rgba(255, 255, 255, 0.76)) !important;
+  box-shadow: none !important;
+  transition: all 150ms ease !important;
+}
+
+.st-action-btn:hover {
+  color: var(--theme-heading-text, #1e2025) !important;
+  background: var(--echo-polish-button-bg-hover, rgba(255, 255, 255, 0.98)) !important;
+  border-color: var(--echo-polish-border-strong, rgba(38, 40, 46, 0.18)) !important;
+  transform: translateY(-1px) !important;
+}
+
+.st-action-btn.is-active {
+  color: var(--echo-polish-accent-text, #3239c7) !important;
+  background: var(--echo-polish-active-bg, rgba(236, 238, 255, 0.86)) !important;
+  border-color: var(--echo-polish-active-border, rgba(75, 85, 232, 0.24)) !important;
+  font-weight: 600;
+}
+
+.st-action-btn:active:not(:disabled) {
+  transform: scale(0.95) !important;
+}
+
+/* ---- 渐弱开关行 ---- */
+.st-fade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+}
+
+.st-label {
+  font-size: 12px;
+  color: var(--theme-muted-text, #6c7179);
+}
+
+/* Toggle 开关 */
+.st-toggle {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--theme-control-bg, rgba(38, 40, 46, 0.1));
+  border: 1px solid var(--echo-polish-border, rgba(38, 40, 46, 0.1));
+  transition: background 200ms ease, border-color 200ms ease;
+  flex-shrink: 0;
+}
+
+.st-toggle.is-on {
+  background: var(--color-accent, #4b55e8);
+  border-color: transparent;
+}
+
+.st-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: left 200ms cubic-bezier(0.22, 1, 0.36, 1), transform 200ms ease;
+}
+
+.st-toggle.is-on .st-toggle-knob {
+  left: 18px;
+}
+
+/* ---- 预设时长网格 ---- */
+.st-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.st-preset-btn {
+  padding: 7px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--theme-page-text, #2d3036);
+  border: 1px solid var(--echo-polish-border, rgba(38, 40, 46, 0.1)) !important;
+  border-radius: 8px !important;
+  background: var(--echo-polish-surface, rgba(255, 255, 255, 0.72)) !important;
+  box-shadow: none !important;
+  transition: all 140ms ease !important;
+}
+
+.st-preset-btn:hover {
+  background: var(--echo-polish-button-bg-hover, rgba(255, 255, 255, 0.96)) !important;
+  border-color: var(--echo-polish-border-strong, rgba(38, 40, 46, 0.16)) !important;
+  color: var(--echo-polish-accent-text, #3239c7) !important;
+  transform: translateY(-1px) scale(1.02) !important;
+}
+
+.st-preset-btn:active:not(:disabled) {
+  transform: scale(0.95) !important;
+}
+
+/* ---- 自定义输入行 ---- */
+.st-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.st-input {
+  width: 52px;
+  height: 30px;
+  padding: 0 6px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--theme-page-text, #2d3036);
+  border: 1px solid var(--theme-field-border, rgba(38, 40, 46, 0.12));
+  border-radius: 8px;
+  background: var(--theme-field-bg, rgba(255, 255, 255, 0.86));
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  /* 移除 number input 箭头 */
+  -moz-appearance: textfield;
+}
+
+.st-input::-webkit-inner-spin-button,
+.st-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.st-input:focus {
+  border-color: var(--echo-polish-accent-text, #3239c7);
+  box-shadow: 0 0 0 3px var(--theme-accent-bg, rgba(75, 85, 232, 0.12));
+}
+
+.st-unit {
+  font-size: 12px;
+  color: var(--theme-muted-text, #6c7179);
+  white-space: nowrap;
+}
+
+.st-confirm-btn {
+  flex: 1;
+  max-width: 56px;
+  height: 30px;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 550;
+  color: #ffffff;
+  border: none !important;
+  border-radius: 8px !important;
+  background: linear-gradient(135deg, var(--color-accent, #4b55e8), var(--color-accent-strong, #3239c7)) !important;
+  box-shadow: 0 2px 8px rgba(75, 85, 232, 0.25) !important;
+  cursor: pointer;
+  opacity: 1;
+  transition: all 150ms ease !important;
+  margin-left: auto;
+}
+
+.st-confirm-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 12px rgba(75, 85, 232, 0.35) !important;
+  transform: translateY(-1px) !important;
+}
+
+.st-confirm-btn:active:not(:disabled) {
+  transform: scale(0.95) !important;
+}
+
+.st-confirm-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
 .audio-drawer-root {
   position: fixed;
   inset: 0;

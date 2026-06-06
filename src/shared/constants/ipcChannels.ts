@@ -482,6 +482,10 @@ export const IpcChannels = {
   RoomCorrectionSetEnabled: 'room-correction:set-enabled',
   RoomCorrectionSetTrim: 'room-correction:set-trim',
   RoomCorrectionClear: 'room-correction:clear',
+  SleepTimerStart: 'sleep-timer:start',
+  SleepTimerCancel: 'sleep-timer:cancel',
+  SleepTimerGetStatus: 'sleep-timer:get-status',
+  SleepTimerOnTick: 'sleep-timer:on-tick',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

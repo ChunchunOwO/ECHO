@@ -1,4 +1,4 @@
-﻿export type Locale = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'en-US';
+export type Locale = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'en-US';
 
 export const localeOptions: Array<{ locale: Locale; label: string }> = [
   { locale: 'zh-CN', label: '简体中文' },
@@ -3144,6 +3144,24 @@ export type TranslationKey =
   | 'segmentLoop.empty'
   | 'segmentLoop.notSet'
   | 'spotifyPlayback.error.noDevice'
+  | 'sleepTimer.title'
+  | 'sleepTimer.action.pause'
+  | 'sleepTimer.action.stop'
+  | 'sleepTimer.action.quit'
+  | 'sleepTimer.fadeOut.label'
+  | 'sleepTimer.custom.placeholder'
+  | 'sleepTimer.custom.unit'
+  | 'sleepTimer.custom.confirm'
+  | 'sleepTimer.status.active'
+  | 'sleepTimer.status.inactive'
+  | 'sleepTimer.status.cancel'
+  | 'sleepTimer.preset.5'
+  | 'sleepTimer.preset.10'
+  | 'sleepTimer.preset.15'
+  | 'sleepTimer.preset.30'
+  | 'sleepTimer.preset.45'
+  | 'sleepTimer.preset.60'
+  | 'sleepTimer.afterAction'
   | 'spotifyPlayback.error.noDrmKeysystem';
 
 type TranslationMap = Record<TranslationKey, string>;
@@ -6277,6 +6295,24 @@ const zhCN: TranslationMap = {
   'segmentLoop.empty': '保存片段后会显示在这里',
   'segmentLoop.notSet': '未设置',
   'spotifyPlayback.error.noDevice': '没有可用的 Spotify 播放设备。请开启“自动启动官方播放器”，或先打开 Spotify 桌面端/网页版。{hint}',
+  'sleepTimer.title': '睡眠定时器',
+  'sleepTimer.action.pause': '暂停',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '退出',
+  'sleepTimer.fadeOut.label': '触发前渐弱',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分钟',
+  'sleepTimer.custom.confirm': '确定',
+  'sleepTimer.status.active': '剩余 {time}',
+  'sleepTimer.status.inactive': '未启动',
+  'sleepTimer.status.cancel': '取消定时器',
+  'sleepTimer.preset.5': '5分钟',
+  'sleepTimer.preset.10': '10分钟',
+  'sleepTimer.preset.15': '15分钟',
+  'sleepTimer.preset.30': '30分钟',
+  'sleepTimer.preset.45': '45分钟',
+  'sleepTimer.preset.60': '60分钟',
+  'sleepTimer.afterAction': '到期后{action}',
   'spotifyPlayback.error.noDrmKeysystem': '当前 Electron 构建没有可用的 DRM/Widevine keysystem，Spotify 官方播放器无法在 ECHO 内注册设备。',
 };
 
@@ -8810,6 +8846,24 @@ const zhTW: TranslationMap = {
   'segmentLoop.empty': '儲存片段後會顯示在這裡',
   'segmentLoop.notSet': '未設定',
   'spotifyPlayback.error.noDevice': '沒有可用的 Spotify 播放裝置。請開啟「自動啟動官方播放器」，或先打開 Spotify 桌面端/網頁版。{hint}',
+  'sleepTimer.title': '睡眠定時器',
+  'sleepTimer.action.pause': '暫停',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '退出',
+  'sleepTimer.fadeOut.label': '觸發前漸弱',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分鐘',
+  'sleepTimer.custom.confirm': '確定',
+  'sleepTimer.status.active': '剩餘 {time}',
+  'sleepTimer.status.inactive': '未啟動',
+  'sleepTimer.status.cancel': '取消定時器',
+  'sleepTimer.preset.5': '5分鐘',
+  'sleepTimer.preset.10': '10分鐘',
+  'sleepTimer.preset.15': '15分鐘',
+  'sleepTimer.preset.30': '30分鐘',
+  'sleepTimer.preset.45': '45分鐘',
+  'sleepTimer.preset.60': '60分鐘',
+  'sleepTimer.afterAction': '到期後{action}',
   'spotifyPlayback.error.noDrmKeysystem': '目前 Electron 建置沒有可用的 DRM/Widevine keysystem，Spotify 官方播放器無法在 ECHO 內註冊裝置。',
   'settings.eq.ab.summary': '{preset} / 峰值 {peak} / 輸出 {output} / 前級 {preamp}',
   'settings.eq.level.clips': '削波 {count}',
@@ -11734,6 +11788,24 @@ const jaJP: TranslationMap = {
   'segmentLoop.empty': '区間を保存するとここに表示されます',
   'segmentLoop.notSet': '未設定',
   'spotifyPlayback.error.noDevice': '利用可能な Spotify 再生デバイスがありません。「公式プレイヤーを自動起動」を有効にするか、Spotify デスクトップ版または Web 版を先に開いてください。{hint}',
+  'sleepTimer.title': 'スリープタイマー',
+  'sleepTimer.action.pause': '一時停止',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '終了',
+  'sleepTimer.fadeOut.label': 'フェードアウト',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分',
+  'sleepTimer.custom.confirm': '確定',
+  'sleepTimer.status.active': '残り {time}',
+  'sleepTimer.status.inactive': '未設定',
+  'sleepTimer.status.cancel': 'タイマーをキャンセル',
+  'sleepTimer.preset.5': '5分',
+  'sleepTimer.preset.10': '10分',
+  'sleepTimer.preset.15': '15分',
+  'sleepTimer.preset.30': '30分',
+  'sleepTimer.preset.45': '45分',
+  'sleepTimer.preset.60': '60分',
+  'sleepTimer.afterAction': '終了後{action}',
   'spotifyPlayback.error.noDrmKeysystem': '現在の Electron ビルドには利用可能な DRM/Widevine keysystem がないため、Spotify 公式プレイヤーを ECHO 内でデバイス登録できません。',
   'settings.appearance.theme.title': 'テーマ',
   'settings.appearance.theme.description': 'ライト、ダーク、またはシステム設定に合わせます。',
@@ -14841,6 +14913,24 @@ const enUS: TranslationMap = {
   'segmentLoop.empty': 'Saved segments will appear here',
   'segmentLoop.notSet': 'Not set',
   'spotifyPlayback.error.noDevice': 'No Spotify playback device is available. Enable "auto-launch official player", or open Spotify desktop/web first.{hint}',
+  'sleepTimer.title': 'Sleep Timer',
+  'sleepTimer.action.pause': 'Pause',
+  'sleepTimer.action.stop': 'Stop',
+  'sleepTimer.action.quit': 'Quit',
+  'sleepTimer.fadeOut.label': 'Fade out before trigger',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': 'min',
+  'sleepTimer.custom.confirm': 'OK',
+  'sleepTimer.status.active': '{time} remaining',
+  'sleepTimer.status.inactive': 'Not set',
+  'sleepTimer.status.cancel': 'Cancel timer',
+  'sleepTimer.preset.5': '5 min',
+  'sleepTimer.preset.10': '10 min',
+  'sleepTimer.preset.15': '15 min',
+  'sleepTimer.preset.30': '30 min',
+  'sleepTimer.preset.45': '45 min',
+  'sleepTimer.preset.60': '60 min',
+  'sleepTimer.afterAction': '{action} after timer',
   'spotifyPlayback.error.noDrmKeysystem': 'This Electron build has no available DRM/Widevine keysystem, so the official Spotify player cannot register a device inside ECHO.',
   'settings.appearance.theme.title': 'Theme',
   'settings.appearance.theme.description': 'Choose light, dark, or follow the system appearance.',

@@ -15,6 +15,7 @@ import type { SmtcCommand, SmtcLyricsProgress } from '../shared/types/smtc';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { DiagnosticConsoleEntry } from '../shared/types/diagnostics';
 import type { DataBackupProgress } from '../shared/types/settingsBackup';
+import type { SleepTimerStatus, SleepTimerStartRequest } from '../shared/types/sleepTimer';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../shared/utils/replayGain';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../shared/constants/replayGain';
 
@@ -2396,6 +2397,18 @@ const echoApi: EchoApi = {
     setRoomCorrectionEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.RoomCorrectionSetEnabled, enabled) as Promise<RoomCorrectionState>,
     setRoomCorrectionTrim: (trimDb) => ipcRenderer.invoke(IpcChannels.RoomCorrectionSetTrim, trimDb) as Promise<RoomCorrectionState>,
     clearRoomCorrection: () => ipcRenderer.invoke(IpcChannels.RoomCorrectionClear) as Promise<RoomCorrectionState>,
+  },
+  sleepTimer: {
+    start: (request) => ipcRenderer.invoke(IpcChannels.SleepTimerStart, request),
+    cancel: () => ipcRenderer.invoke(IpcChannels.SleepTimerCancel),
+    getStatus: () => ipcRenderer.invoke(IpcChannels.SleepTimerGetStatus),
+    onTick: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, remainingMs: unknown): void => {
+        handler(typeof remainingMs === 'number' ? remainingMs : 0);
+      };
+      ipcRenderer.on(IpcChannels.SleepTimerOnTick, listener);
+      return () => ipcRenderer.off(IpcChannels.SleepTimerOnTick, listener);
+    },
   },
 };
 

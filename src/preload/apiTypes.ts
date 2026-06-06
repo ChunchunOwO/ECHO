@@ -271,6 +271,7 @@ import type {
   StreamingTrackLikedResult,
   StreamingTrackSourceInfo,
 } from '../shared/types/streaming';
+import type { SleepTimerStartRequest, SleepTimerStatus } from '../shared/types/sleepTimer';
 
 export type FontFileAsset = {
   path: string;
@@ -826,6 +827,12 @@ export type EchoApi = {
     setRoomCorrectionEnabled: (enabled: boolean) => Promise<RoomCorrectionState>;
     setRoomCorrectionTrim: (trimDb: number) => Promise<RoomCorrectionState>;
     clearRoomCorrection: () => Promise<RoomCorrectionState>;
+  };
+  sleepTimer: {
+    start: (request: SleepTimerStartRequest) => Promise<SleepTimerStatus>;
+    cancel: () => Promise<SleepTimerStatus>;
+    getStatus: () => Promise<SleepTimerStatus>;
+    onTick: (handler: (remainingMs: number) => void) => () => void;
   };
 };
 

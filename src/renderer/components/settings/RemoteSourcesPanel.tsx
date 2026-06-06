@@ -2657,7 +2657,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         ) : null}
       </section>
 
-      <section className="remote-source-card">
+      <section className="remote-source-card remote-background-card">
         <div className="remote-source-card-head">
           <div>
             <h3>后台任务</h3>

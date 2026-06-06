@@ -68,6 +68,7 @@ import type {
   EditableAlbumTags,
   EditableTrackTags,
   LibraryFolder,
+  LibraryEmbeddedTagRescanOptions,
   LibraryFolderChildrenQuery,
   LibraryFolderNode,
   LibraryFolderOverview,
@@ -379,12 +380,26 @@ export class LibraryService {
     return this.scanJobQueue.scanPaths(folder, paths, options);
   }
 
-  async rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): Promise<LibraryScanStatus[]> {
-    const folders = this.getFolders();
+  async rescanEmbeddedTags(
+    mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>,
+    options: LibraryEmbeddedTagRescanOptions = {},
+  ): Promise<LibraryScanStatus[]> {
+    const folders = options.folderId ? (() => {
+      const folder = this.store.getFolder(options.folderId);
+      if (!folder) {
+        throw new Error(`Unknown library folder ${options.folderId}`);
+      }
+      return [folder];
+    })() : this.getFolders();
     const statuses: LibraryScanStatus[] = [];
 
     for (const folder of folders) {
-      statuses.push(this.scanJobQueue.scanStoredTracks(folder, { mode, reduceScanPressure: true }));
+      statuses.push(this.scanJobQueue.scanStoredTracks(folder, {
+        mode,
+        reduceScanPressure: true,
+        storedTrackPath: options.path,
+        storedTrackRecursive: options.recursive !== false,
+      }));
       await yieldToMainLoop();
     }
 

@@ -230,6 +230,21 @@ afterEach(() => {
 });
 
 describe('LibraryFoldersPanel', () => {
+  it('keeps folder controls collapsed by default when requested', async () => {
+    libraryMock.getFolders.mockResolvedValue([baseFolder()]);
+
+    render(<LibraryFoldersPanel defaultCollapsed />);
+
+    expect(screen.getByRole('button', { name: '展开曲库文件夹', expanded: false })).toBeTruthy();
+    expect(screen.queryByPlaceholderText('D:\\Music')).toBeNull();
+    expect(libraryMock.getFolders).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '展开曲库文件夹' }));
+
+    await waitFor(() => expect(libraryMock.getFolders).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Music')).toBeTruthy();
+  });
+
   it('can defer mount-time folder loading until auto refresh is enabled', async () => {
     libraryMock.getFolders.mockResolvedValue([baseFolder()]);
 

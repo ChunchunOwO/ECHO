@@ -1722,6 +1722,33 @@ describe('AppLayout standalone routes', () => {
     expect(wallpaperLayer?.dataset.hidden).toBe('true');
   });
 
+  it('marks the app shell when window acrylic is enabled', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: false,
+          appWindowAcrylicEnabled: true,
+          smtcEnabled: true,
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const shell = await waitFor(() => {
+      const element = container.querySelector('.app-shell--acrylic') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLElement;
+    });
+
+    expect(shell.dataset.windowAcrylic).toBe('true');
+    expect(shell.querySelector('.app-wallpaper-layer')).toBeNull();
+  });
+
   it('applies the portrait app wallpaper only while the viewport is portrait', async () => {
     setViewportSize(1280, 720);
     window.echo = {

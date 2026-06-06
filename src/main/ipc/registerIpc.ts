@@ -37,6 +37,8 @@ import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
+import { getMainWindow } from '../app/windowManager';
+import { applyMainWindowBackgroundMaterial } from '../app/windowBackgroundMaterial';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { installIpcPerformanceDiagnostics } from '../diagnostics/IpcPerformanceDiagnostics';
@@ -297,6 +299,13 @@ const applyAppSettingsPatch = async (
 
   if (typeof settingsPatch.taskbarPlaybackControlsEnabled === 'boolean') {
     refreshTaskbarPlaybackIntegration();
+  }
+
+  if (typeof settingsPatch.appWindowAcrylicEnabled === 'boolean') {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      applyMainWindowBackgroundMaterial(mainWindow, settings);
+    }
   }
 
   if (

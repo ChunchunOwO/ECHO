@@ -5636,6 +5636,13 @@ export class LibraryStore {
         albums.created_at,
         albums.updated_at,
         COALESCE((
+          SELECT MAX(tracks.created_at)
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ), albums.created_at) AS added_at,
+        COALESCE((
           SELECT MAX(tracks.mtime_ms)
           FROM album_tracks
           INNER JOIN tracks ON tracks.id = album_tracks.track_id
@@ -5674,6 +5681,7 @@ export class LibraryStore {
         MIN(cover_id) AS cover_id,
         MIN(created_at) AS created_at,
         MAX(updated_at) AS updated_at,
+        MAX(created_at) AS added_at,
         MAX(sort_mtime_ms) AS sort_mtime_ms,
         GROUP_CONCAT(COALESCE(search_terms, '') || ' ' || title || ' ' || artist || ' ' || album_artist || ' ' || COALESCE(genre, '') || ' ' || remote_path, ' ') AS search_blob
       FROM remote_album_rows
@@ -5723,6 +5731,7 @@ export class LibraryStore {
         remote_albums.cover_id,
         remote_albums.created_at,
         remote_albums.updated_at,
+        remote_albums.added_at,
         remote_albums.sort_mtime_ms,
         remote_albums.search_blob
       FROM remote_albums
@@ -5738,6 +5747,7 @@ export class LibraryStore {
       case 'artistAlbum':
         return 'ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE';
       case 'recent':
+        return 'ORDER BY added_at DESC, updated_at DESC, title COLLATE NOCASE';
       case 'createdDesc':
         return 'ORDER BY updated_at DESC, title COLLATE NOCASE';
       case 'createdAsc':
@@ -8566,6 +8576,13 @@ export class LibraryStore {
       case 'artistAlbum':
         return 'ORDER BY albums.album_artist COLLATE NOCASE, albums.title COLLATE NOCASE';
       case 'recent':
+        return `ORDER BY COALESCE((
+          SELECT MAX(tracks.created_at)
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ), albums.created_at) DESC, albums.updated_at DESC, albums.title COLLATE NOCASE`;
       case 'createdDesc':
         return 'ORDER BY albums.updated_at DESC, albums.title COLLATE NOCASE';
       case 'createdAsc':

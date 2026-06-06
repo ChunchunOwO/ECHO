@@ -103,6 +103,7 @@ const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
 
 type AppWallpaperSettings = Pick<
   AppSettings,
+  | 'appWindowAcrylicEnabled'
   | 'appCustomWallpaperPath'
   | 'appPortraitWallpaperPath'
   | 'appWallpaperMediaType'
@@ -140,6 +141,7 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
   appVideoWallpaperPauseMode: 'smart',
+  appWindowAcrylicEnabled: false,
 };
 
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
@@ -200,6 +202,7 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
   appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
   appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled,
   appVideoWallpaperPauseMode: settings.appVideoWallpaperPauseMode ?? 'smart',
+  appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
 });
 
 const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
@@ -1534,6 +1537,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           'appWallpaperUiOpacityPercent' in patch ||
           'appWallpaperVisualProtectionEnabled' in patch ||
           'appWallpaperUnifiedOpacityEnabled' in patch ||
+          'appWindowAcrylicEnabled' in patch ||
           'appVideoWallpaperPauseMode' in patch)
       ) {
         setAppWallpaperSettings((current) => ({
@@ -1565,6 +1569,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           appWallpaperUnifiedOpacityEnabled: 'appWallpaperUnifiedOpacityEnabled' in patch
             ? (patch.appWallpaperUnifiedOpacityEnabled === true)
             : current.appWallpaperUnifiedOpacityEnabled,
+          appWindowAcrylicEnabled: 'appWindowAcrylicEnabled' in patch
+            ? (patch.appWindowAcrylicEnabled === true)
+            : current.appWindowAcrylicEnabled,
           appVideoWallpaperPauseMode: 'appVideoWallpaperPauseMode' in patch
             ? (patch.appVideoWallpaperPauseMode ?? defaultAppWallpaperSettings.appVideoWallpaperPauseMode)
             : current.appVideoWallpaperPauseMode,
@@ -2101,6 +2108,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       } ${
         shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       } ${
+        appWallpaperSettings.appWindowAcrylicEnabled ? 'app-shell--acrylic' : ''
+      } ${
         sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-auto-hide' : ''
       } ${
         sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-icon-only' : ''
@@ -2112,6 +2121,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
+      data-window-acrylic={appWallpaperSettings.appWindowAcrylicEnabled ? 'true' : undefined}
       data-feature-comments-hidden={featureCommentsHidden ? 'true' : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={

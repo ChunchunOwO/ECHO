@@ -17,6 +17,7 @@ import type {
   ImportAudioFilesResult,
   ImportPlaylistFileResult,
   LibraryFolderChildrenQuery,
+  LibraryEmbeddedTagRescanOptions,
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
   LibraryPageQuery,
@@ -1361,6 +1362,26 @@ const normalizeEmbeddedTagRescanMode = (value: unknown): Exclude<LibraryScanMode
   throw new Error('embedded tag rescan mode must be embedded-tags-all or embedded-tags-missing-cover');
 };
 
+const normalizeEmbeddedTagRescanOptions = (value: unknown): LibraryEmbeddedTagRescanOptions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const input = value as { folderId?: unknown; path?: unknown; recursive?: unknown };
+  const options: LibraryEmbeddedTagRescanOptions = {};
+  if (typeof input.folderId === 'string' && input.folderId.trim()) {
+    options.folderId = input.folderId.trim();
+  }
+  if (typeof input.path === 'string' && input.path.trim()) {
+    options.path = input.path;
+  }
+  if (typeof input.recursive === 'boolean') {
+    options.recursive = input.recursive;
+  }
+
+  return options;
+};
+
 const normalizeScanFolderOptions = (value: unknown): Pick<LibraryScanOptions, 'reduceScanPressure'> => {
   if (!value || typeof value !== 'object') {
     return {};
@@ -1699,8 +1720,8 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryScanFolderChanges, (_event, folderId: unknown) =>
     getLibraryService().scanFolderChanges(requireText(folderId, 'folderId')),
   );
-  ipcMain.handle(IpcChannels.LibraryRescanEmbeddedTags, (_event, mode: unknown) =>
-    getLibraryService().rescanEmbeddedTags(normalizeEmbeddedTagRescanMode(mode)),
+  ipcMain.handle(IpcChannels.LibraryRescanEmbeddedTags, (_event, mode: unknown, options: unknown) =>
+    getLibraryService().rescanEmbeddedTags(normalizeEmbeddedTagRescanMode(mode), normalizeEmbeddedTagRescanOptions(options)),
   );
   ipcMain.handle(IpcChannels.LibraryGetScanStatus, (_event, jobId: unknown) =>
     getLibraryService().getScanStatus(requireText(jobId, 'jobId')),

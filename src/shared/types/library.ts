@@ -533,6 +533,14 @@ export type LibraryScanOptions = {
   deferGroupingRefresh?: boolean;
   skipDeferredGroupingRefresh?: boolean;
   reduceScanPressure?: boolean;
+  storedTrackPath?: string;
+  storedTrackRecursive?: boolean;
+};
+
+export type LibraryEmbeddedTagRescanOptions = {
+  folderId?: string;
+  path?: string;
+  recursive?: boolean;
 };
 
 export type ArtistInsightRelationKind =

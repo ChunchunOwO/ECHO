@@ -18,6 +18,7 @@
 .page-surface:has(.album-detail-page) {
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .album-detail-page.is-returning {

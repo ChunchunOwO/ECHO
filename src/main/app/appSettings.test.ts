@@ -92,6 +92,7 @@ describe('app settings normalization', () => {
     expect(settings.featureCommentsHidden).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
+    expect(settings.appWindowAcrylicEnabled).toBe(false);
     expect(settings.appCustomWallpaperPath).toBeNull();
     expect(settings.appWallpaperMediaType).toBe('image');
     expect(settings.appWallpaperScalePercent).toBe(100);
@@ -463,6 +464,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceTheme: 'dark' }).appearanceTheme).toBe('dark');
     expect(normalizeSettings({ appearanceTheme: 'system' }).appearanceTheme).toBe('system');
     expect(normalizeSettings({ appearanceTheme: 'midnight' as never }).appearanceTheme).toBe('light');
+  });
+
+  it('normalizes window acrylic as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).appWindowAcrylicEnabled).toBe(false);
+    expect(normalizeSettings({ appWindowAcrylicEnabled: true }).appWindowAcrylicEnabled).toBe(true);
+    expect(normalizeSettings({ appWindowAcrylicEnabled: 'true' as never }).appWindowAcrylicEnabled).toBe(false);
   });
 
   it('normalizes appearance theme schedule settings', async () => {

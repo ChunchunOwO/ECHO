@@ -1869,6 +1869,36 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe(`url("${upgradedCoverUrl}")`);
   });
 
+  it("upgrades QQ Music proxied thumbnails to the stable 500px artwork endpoint", async () => {
+    const track = makeTrack({
+      mediaType: "streaming",
+      provider: "qqmusic",
+      providerTrackId: "004Drt082CV5gf",
+      coverId: null,
+      coverThumb: "echo-image://remote/https%3A%2F%2Fy.gtimg.cn%2Fmusic%2Fphoto_new%2FT002R150x150M000004Tm0RJ36QLOF.jpg?referer=https%3A%2F%2Fy.qq.com%2F",
+    });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsHighResolutionNetworkCoverEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+    const upgradedCoverUrl = "echo-image://remote/https%3A%2F%2Fy.gtimg.cn%2Fmusic%2Fphoto_new%2FT002R500x500M000004Tm0RJ36QLOF.jpg?referer=https%3A%2F%2Fy.qq.com%2F";
+
+    expect(container.querySelector(".lyrics-track-cover img")?.getAttribute("src")).toBe(upgradedCoverUrl);
+    expect(page.dataset.background).toBe("cover");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe(`url("${upgradedCoverUrl}")`);
+  });
+
   it("uses a high resolution network cover for cover-following lyrics background when available", async () => {
     const track = makeTrack({ coverId: "cover 1" });
     mockEcho(track, 0, {
@@ -3404,6 +3434,94 @@ describe("LyricsPage", () => {
       "qq-candidate",
     ));
     expect(await screen.findByText("Auto applied QQ lyric")).toBeTruthy();
+  });
+
+  it("does not show no-lyrics while QQ Music streaming lyrics are still loading", async () => {
+    const track = makeTrack({
+      id: "streaming:qqmusic:004Drt082CV5gf",
+      path: "streaming:qqmusic:004Drt082CV5gf",
+      mediaType: "streaming",
+      provider: "qqmusic",
+      providerTrackId: "004Drt082CV5gf",
+      stableKey: "streaming:qqmusic:004Drt082CV5gf",
+      title: "Cry For Me (feat. Ami)",
+      artist: "Michita",
+      album: "Pureness",
+      duration: 302,
+    });
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.streaming = {
+      getLyrics: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+    } as unknown as Window["echo"]["streaming"];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("正在加载歌词...");
+    expect(screen.queryByText("暂无歌词")).toBeNull();
+  });
+
+  it("keeps the last visible lyrics when returning to the lyrics page for the same track", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Remembered lyric" }],
+          syncedText: "[00:00.00]Remembered lyric",
+        }),
+      ),
+      getForSnapshot: vi.fn(),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      searchCandidatesForSnapshot: vi.fn(),
+      applyCandidate: vi.fn(),
+      applyCandidateForSnapshot: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const firstRender = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+    await screen.findByText("Remembered lyric");
+    firstRender.unmount();
+
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+      getForSnapshot: vi.fn(),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      searchCandidatesForSnapshot: vi.fn(),
+      applyCandidate: vi.fn(),
+      applyCandidateForSnapshot: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Remembered lyric")).toBeTruthy();
+    expect(screen.queryByText("正在加载歌词...")).toBeNull();
+    expect(screen.queryByText("暂无歌词")).toBeNull();
   });
 
   it("falls back to candidate search for QQ Music streaming lyrics when exact lookup is missing", async () => {

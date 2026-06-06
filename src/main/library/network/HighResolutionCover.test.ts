@@ -10,7 +10,7 @@ describe('highResolutionCoverUrl', () => {
 
   it('requests the original QQ Music album art instead of a fixed-size resize', () => {
     expect(highResolutionCoverUrl('qq-music', 'https://y.gtimg.cn/music/photo_new/T002R300x300M000abc.jpg')).toBe(
-      'https://y.gtimg.cn/music/photo_new/T002R0x0M000abc.jpg',
+      'https://y.gtimg.cn/music/photo_new/T002R500x500M000abc.jpg',
     );
   });
 

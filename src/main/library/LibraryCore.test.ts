@@ -2655,6 +2655,31 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getAlbums recent sort uses the newest track added time instead of album maintenance updates', async () => {
+    const harness = createHarness();
+    const oldAlbumFile = writeAudioFile(harness.folder, 'Old Added Album.flac');
+    const newAlbumFile = writeAudioFile(harness.folder, 'New Added Album.flac');
+    harness.metadataService.overrides.set(oldAlbumFile, baseMetadata({ title: 'Old Added Track', album: 'Old Added Album' }));
+    harness.metadataService.overrides.set(newAlbumFile, baseMetadata({ title: 'New Added Track', album: 'New Added Album' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+
+    const database = new Database(harness.databasePath);
+    try {
+      database.prepare("UPDATE tracks SET created_at = ? WHERE title = 'Old Added Track'").run('2024-01-01T00:00:00.000Z');
+      database.prepare("UPDATE tracks SET created_at = ? WHERE title = 'New Added Track'").run('2024-02-01T00:00:00.000Z');
+      database.prepare("UPDATE albums SET updated_at = ? WHERE title = 'Old Added Album'").run('2024-03-01T00:00:00.000Z');
+    } finally {
+      database.close();
+    }
+
+    const recent = harness.service.getAlbums({ pageSize: 10, sort: 'recent' });
+
+    expect(recent.items.map((album) => album.title)).toEqual(['New Added Album', 'Old Added Album']);
+    harness.cleanup();
+  });
+
   it('getTracks search matches multiple terms across metadata fields', async () => {
     const harness = createHarness();
     const match = writeAudioFile(harness.folder, 'Loose Match.flac');

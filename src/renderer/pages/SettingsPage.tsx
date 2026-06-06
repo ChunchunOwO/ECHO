@@ -11372,29 +11372,40 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Clapperboard} id="mv" title={t('route.mvSettings.label')}>
-              <SettingRow title={t('route.mvSettings.label')} description={t('route.mvSettings.description')}>
-                <div className="settings-chip-row">
-                  <StatusText tone={(appSettings?.mvEnabled ?? true) ? 'good' : 'muted'}>
-                    {(appSettings?.mvEnabled ?? true) ? t('mvSettings.status.on') : t('mvSettings.status.off')}
-                  </StatusText>
-                  <ToggleButton
-                    active={appSettings?.mvEnabled ?? true}
-                    disabled={!appSettings}
-                    onClick={() => patchMvSettings({ enabled: !(appSettings?.mvEnabled ?? true) })}
-                  />
-                </div>
-              </SettingRow>
-              <SettingRow title={t('mvSettings.network.maxQuality')} description={t('mvSettings.aria.maxQuality', { quality: mvQualityLabels[appSettings?.mvMaxQuality ?? 'max'] })}>
-                <div className="settings-chip-row">
-                  {mvQualityCaps.map((quality) => (
-                    <ChipButton
-                      active={(appSettings?.mvMaxQuality ?? 'max') === quality}
-                      key={quality}
-                      onClick={() => patchMvSettings({ maxQuality: quality })}
-                    >
-                      {mvQualityLabels[quality]}
-                    </ChipButton>
-                  ))}
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel setting-row--mv-overview"
+                title={t('route.mvSettings.label')}
+                description={t('route.mvSettings.description')}
+              >
+                <div className="settings-cache-panel settings-cache-panel--mv-overview">
+                  <div className="settings-mv-overview-card settings-mv-overview-card--enable">
+                    <span>
+                      <strong>{t('mvSettings.general.enabled')}</strong>
+                      <em>{(appSettings?.mvEnabled ?? true) ? t('mvSettings.status.on') : t('mvSettings.status.off')}</em>
+                    </span>
+                    <ToggleButton
+                      active={appSettings?.mvEnabled ?? true}
+                      disabled={!appSettings}
+                      onClick={() => patchMvSettings({ enabled: !(appSettings?.mvEnabled ?? true) })}
+                    />
+                  </div>
+                  <div className="settings-mv-overview-card settings-mv-overview-card--quality">
+                    <span>
+                      <strong>{t('mvSettings.network.maxQuality')}</strong>
+                      <em>{t('mvSettings.aria.maxQuality', { quality: mvQualityLabels[appSettings?.mvMaxQuality ?? 'max'] })}</em>
+                    </span>
+                    <div className="settings-chip-row settings-chip-row--left">
+                      {mvQualityCaps.map((quality) => (
+                        <ChipButton
+                          active={(appSettings?.mvMaxQuality ?? 'max') === quality}
+                          key={quality}
+                          onClick={() => patchMvSettings({ maxQuality: quality })}
+                        >
+                          {mvQualityLabels[quality]}
+                        </ChipButton>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow
@@ -11403,7 +11414,7 @@ export const SettingsPage = (): JSX.Element => {
                 description={t('mvSettings.network.autoApplyThresholdDescription', { threshold: formatMvThreshold(appSettings?.mvAutoApplyThreshold) })}
               >
                 <div className="settings-cache-panel settings-cache-panel--mv-network">
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-mv-toggle-grid">
                     <div className="settings-inline-toggle">
                       <span>{t('mvSettings.network.autoApply')}</span>
                       <ToggleButton
@@ -11437,7 +11448,7 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </div>
                     {appSettings?.mvRestartAudioOnLoad === true ? (
-                      <div className="settings-chip-row settings-chip-row--left">
+                      <div className="settings-chip-row settings-chip-row--left settings-mv-sync-row">
                         {mvSyncModes.map((mode) => (
                           <ChipButton
                             active={(appSettings?.mvSyncMode ?? 'balanced') === mode}
@@ -11478,7 +11489,7 @@ export const SettingsPage = (): JSX.Element => {
                       onChange={(value) => patchMvSettings({ autoApplyThreshold: mvThresholdFromPercent(value) })}
                     />
                   </div>
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-mv-provider-grid">
                     {mvProviderOrder.map((provider, index) => (
                       <div className="settings-inline-toggle" key={provider}>
                         <span>{`${index + 1}. ${mvProviderLabels[provider]}`}</span>
@@ -12929,6 +12940,22 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow
+                id="settings-row-window-acrylic"
+                highlighted={highlightedSettingId === 'settings-row-window-acrylic'}
+                title={t('settings.appearance.windowAcrylic.title')}
+                description={t('settings.appearance.windowAcrylic.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.appWindowAcrylicEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      appWindowAcrylicEnabled: !(appSettings?.appWindowAcrylicEnabled ?? false),
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
                 id="settings-row-now-playing-cover-color"
                 highlighted={highlightedSettingId === 'settings-row-now-playing-cover-color'}
                 title={t('settings.appearance.nowPlayingCoverColor.title')}
@@ -13176,7 +13203,7 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
-                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} pollScanStatuses={false} />
+                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} defaultCollapsed pollScanStatuses={false} />
               </div>
               <SettingRow
                 id="settings-row-live-library-updates"

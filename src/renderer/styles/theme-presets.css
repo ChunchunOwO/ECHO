@@ -13126,6 +13126,59 @@ html[data-album-cover-shape] :is(
   padding: 8px;
 }
 
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 74%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg) 68%, transparent)
+    ),
+    transparent;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper)::before {
+  display: none;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 76%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) 70%, transparent)
+    ),
+    transparent;
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar,
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar,
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar {
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 82%, transparent);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 78%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) 76%, transparent)
+    );
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 86%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg) 82%, transparent)
+    );
+}
+
 @media (max-width: 1180px) {
   .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance {
     grid-template-columns: minmax(0, 1fr);

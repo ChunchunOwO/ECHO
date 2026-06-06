@@ -237,6 +237,32 @@ describe('LyricsMatchEngine', () => {
     expect(second.search).not.toHaveBeenCalled();
   });
 
+  it('checks QQ Music first for QQ Music streaming snapshots', async () => {
+    const qq = provider('qqmusic', [result({ provider: 'qqmusic', providerLyricsId: 'qq-direct' })], 20);
+    const lrclib = provider('lrclib', [result({ providerLyricsId: 'lrclib-fallback', durationSeconds: 135 })], 0);
+    const engine = new LyricsMatchEngine([lrclib, qq]);
+
+    const matched = await engine.match(
+      {
+        ...query,
+        trackId: 'streaming:qqmusic:004Drt082CV5gf',
+        mediaType: 'streaming',
+        sourceId: '004Drt082CV5gf',
+        stableKey: 'streaming:qqmusic:004Drt082CV5gf',
+      },
+      {
+        enabledProviders: ['lrclib', 'netease', 'qqmusic'],
+        deepSearchEnabled: true,
+        providerTimeoutMs: 100,
+        totalMatchTimeoutMs: 200,
+      },
+    );
+
+    expect(matched.accepted?.provider).toBe('qqmusic');
+    expect(matched.accepted?.providerLyricsId).toBe('qq-direct');
+    expect(lrclib.search).not.toHaveBeenCalled();
+  });
+
   it('can race providers in parallel for high-throughput backfill', async () => {
     const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
     const fast = provider('lrclib', [result({ providerLyricsId: 'fast-accepted-hit' })], 0);

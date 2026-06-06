@@ -28,6 +28,7 @@ const settings: AppSettings = {
   suppressAccountExpiryNotices: false,
   coverCacheDir: null,
   hideToTrayOnClose: false,
+  appWindowAcrylicEnabled: false,
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
@@ -1727,6 +1728,23 @@ describe('SettingsPage', () => {
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nowPlayingCoverColorEnabled: true }));
+  });
+
+  it('saves the window acrylic opt-in from appearance controls', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    const row = screen.getByText('settings.appearance.windowAcrylic.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicEnabled: true }));
   });
 
   it('saves The Dark Side of the Moon theme preset from Settings', async () => {

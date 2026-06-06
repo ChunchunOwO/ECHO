@@ -787,6 +787,62 @@ html[data-theme="dark"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-h
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
+.app-shell--acrylic {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 74%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg) 68%, transparent)
+    ),
+    transparent;
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 76%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) 70%, transparent)
+    ),
+    transparent;
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar,
+.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar,
+.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar {
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 82%, transparent);
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 78%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) 76%, transparent)
+    );
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) 86%, transparent),
+      color-mix(in srgb, var(--theme-panel-bg) 82%, transparent)
+    );
+}
+
+.app-shell--acrylic .setting-row,
+.app-shell--acrylic .settings-search,
+.app-shell--acrylic .settings-nav,
+.app-shell--acrylic .settings-nav-item.active {
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--theme-panel-bg-strong) 82%, transparent);
+}
+
 .player-now {
   min-width: 0;
 }

@@ -245,6 +245,54 @@ const syncedLyrics = (lines: LyricLine[], offsetMs: number): LyricsState => ({
   offsetMs,
 });
 
+const lyricsPageSessionMemoryPrefix = "echo-next.lyrics-page.state.v1:";
+const isRememberableLyricsState = (lyrics: LyricsState): boolean =>
+  lyrics.kind === "instrumental" || lyrics.lines.length > 0;
+
+const readRememberedLyricsState = (key: string | null): LyricsState | null => {
+  if (!key || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(`${lyricsPageSessionMemoryPrefix}${key}`);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LyricsState> | null;
+    if (
+      !parsed ||
+      !Array.isArray(parsed.lines) ||
+      (parsed.kind !== "plain" && parsed.kind !== "synced" && parsed.kind !== "instrumental") ||
+      typeof parsed.offsetMs !== "number"
+    ) {
+      return null;
+    }
+
+    return {
+      kind: parsed.kind,
+      source: parsed.source ?? "none",
+      lines: parsed.lines,
+      offsetMs: parsed.offsetMs,
+    } as LyricsState;
+  } catch {
+    return null;
+  }
+};
+
+const rememberLyricsState = (key: string | null, lyrics: LyricsState): void => {
+  if (!key || !isRememberableLyricsState(lyrics) || typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(`${lyricsPageSessionMemoryPrefix}${key}`, JSON.stringify(lyrics));
+  } catch {
+    // Session memory is only a visual continuity hint.
+  }
+};
+
 const trackLyricsToState = (
   lyrics: TrackLyrics | null,
   fallbackOffsetMs = 0,
@@ -1772,6 +1820,17 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     title,
     trackId,
   ]);
+  const lyricsMemoryKey = useMemo(
+    () =>
+      trackId
+        ? [
+            trackId,
+            currentTrack?.stableKey ?? "",
+            isStreamingTrack(currentTrack) ? currentTrack.providerTrackId : "",
+          ].join("|")
+        : null,
+    [currentTrack, trackId],
+  );
   const isCurrentAirPlayReceiverTrack =
     Boolean(airPlaySourceId) ||
     snapshotProtocol(trackId) === "airplay" ||
@@ -1783,6 +1842,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     [airPlayReceiverStatus?.currentLyricLine, isCurrentAirPlayReceiverTrack],
   );
   const displayedLyrics = liveAirPlayLyrics ?? lyrics;
+  useEffect(() => {
+    rememberLyricsState(lyricsMemoryKey, lyrics);
+  }, [lyrics, lyricsMemoryKey]);
   useEffect(() => {
     setIsSmartAlignmentSessionActive(false);
     setSmartAlignmentAnchors([]);
@@ -2836,6 +2898,17 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       return;
     }
 
+    const rememberedLyrics = readRememberedLyricsState(lyricsMemoryKey);
+    const setPendingLyrics = (fallbackOffsetMs = 0): boolean => {
+      if (rememberedLyrics) {
+        setLyrics(rememberedLyrics);
+        return true;
+      }
+
+      setLyrics(emptyLyrics(fallbackOffsetMs));
+      return false;
+    };
+
     if (!lyricsDisplaySettings.lyricsEnabled) {
       lyricsRequestRef.current += 1;
       setLyrics(emptyLyrics(0));
@@ -2868,9 +2941,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsRequestRef.current += 1;
       setIsLyricsLoading(true);
       setIsCandidateLoading(false);
-      setLyrics(emptyLyrics(0));
+      const hasRememberedLyrics = setPendingLyrics();
       dispatchCurrentLyricsProviderChanged(null);
-      setLyricsStatus("Loading lyrics...");
+      setLyricsStatus(hasRememberedLyrics ? null : "Loading lyrics...");
       setCandidates([]);
       setActiveCandidateSource(readRememberedCandidateSource());
       setIsLyricsMatchPanelRevealed(false);
@@ -2891,9 +2964,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsRequestRef.current = requestId;
       setIsLyricsLoading(true);
       setIsCandidateLoading(false);
-      setLyrics(emptyLyrics(0));
+      const hasRememberedLyrics = setPendingLyrics();
       dispatchCurrentLyricsProviderChanged(null);
-      setLyricsStatus("Loading streaming lyrics...");
+      setLyricsStatus(hasRememberedLyrics ? null : "Loading streaming lyrics...");
       setCandidates([]);
       setActiveCandidateSource(readRememberedCandidateSource());
       setIsLyricsMatchPanelRevealed(false);
@@ -2957,14 +3030,16 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
             return;
           }
 
-          setLyrics(emptyLyrics(0));
+          if (!rememberedLyrics) {
+            setLyrics(emptyLyrics(0));
+          }
           dispatchCurrentLyricsProviderChanged(null);
-          setLyricsStatus("No lyrics found");
-          setError(
-            lyricsError instanceof Error
+          setLyricsStatus(rememberedLyrics ? null : "No lyrics found");
+          setError(rememberedLyrics
+            ? null
+            : lyricsError instanceof Error
               ? lyricsError.message
-              : String(lyricsError),
-          );
+              : String(lyricsError));
         })
         .finally(() => {
           if (lyricsRequestRef.current === requestId) {
@@ -2979,9 +3054,10 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     if (!lyricsApi) {
       lyricsRequestRef.current += 1;
       setLyrics(
-        initialLyrics && initialLyrics.length > 0
+        rememberedLyrics ??
+        (initialLyrics && initialLyrics.length > 0
           ? syncedLyrics(initialLyrics, 0)
-          : emptyLyrics(0),
+          : emptyLyrics(0)),
       );
       dispatchCurrentLyricsProviderChanged(null);
       return;
@@ -2990,7 +3066,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     const requestId = lyricsRequestRef.current + 1;
     lyricsRequestRef.current = requestId;
     setIsLyricsLoading(true);
-    setLyrics(emptyLyrics(0));
+    const hasRememberedLyrics = setPendingLyrics();
     dispatchCurrentLyricsProviderChanged(null);
     setLyricsStatus("正在匹配歌词...");
     setCandidates([]);
@@ -3050,14 +3126,16 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           return;
         }
 
-        setLyrics(emptyLyrics(0));
+        if (!rememberedLyrics) {
+          setLyrics(emptyLyrics(0));
+        }
         dispatchCurrentLyricsProviderChanged(null);
-        setLyricsStatus("No lyrics found");
-        setError(
-          lyricsError instanceof Error
+        setLyricsStatus(rememberedLyrics ? null : "No lyrics found");
+        setError(rememberedLyrics
+          ? null
+          : lyricsError instanceof Error
             ? lyricsError.message
-            : String(lyricsError),
-        );
+            : String(lyricsError));
       })
       .finally(() => {
         if (lyricsRequestRef.current === requestId) {
@@ -3076,6 +3154,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     lyricsDisplaySettings.lyricsEnabled,
     lyricsDisplaySettings.lyricsRomanizationEnabled,
     lyricsDisplaySettings.lyricsUtatenKanaEnabled,
+    lyricsMemoryKey,
     searchLyricsCandidatesForProvider,
     streamingTarget,
     trackId,

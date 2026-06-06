@@ -11,6 +11,7 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { closeDevConsoleWindow, recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
+import { applyMainWindowBackgroundMaterial, isMainWindowAcrylicSupportedPlatform } from './windowBackgroundMaterial';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -71,7 +72,10 @@ const rememberMainWindowSize = (window: BrowserWindow): void => {
 
 export const createMainWindow = (): BrowserWindow => {
   markStartupStage('main-window:create:start');
-  const initialSize = resolveInitialMainWindowSize();
+  const settings = getAppSettings();
+  const acrylicSupported = isMainWindowAcrylicSupportedPlatform();
+  const acrylicEnabled = acrylicSupported && settings.appWindowAcrylicEnabled === true;
+  const initialSize = resolveInitialMainWindowSize(settings);
   const window = new BrowserWindow({
     width: initialSize.width,
     height: initialSize.height,
@@ -79,7 +83,8 @@ export const createMainWindow = (): BrowserWindow => {
     minHeight: mainWindowMinimumSize.height,
     title: 'ECHO NEXT',
     icon: existsSync(appIconPath) ? appIconPath : undefined,
-    backgroundColor: '#f7f9fc',
+    backgroundColor: acrylicEnabled ? '#00000000' : '#f7f9fc',
+    ...(acrylicSupported ? { backgroundMaterial: acrylicEnabled ? 'acrylic' : 'none', transparent: true } : {}),
     frame: false,
     show: false,
     webPreferences: createMainWindowWebPreferences(),
@@ -200,6 +205,8 @@ export const createMainWindow = (): BrowserWindow => {
       app.quit();
     }
   });
+
+  applyMainWindowBackgroundMaterial(window, settings);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);

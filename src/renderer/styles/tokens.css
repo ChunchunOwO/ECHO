@@ -1,4 +1,12 @@
 @font-face {
+  font-family: "Satoshi";
+  src: url("../assets/fonts/satoshi-variable.ttf") format("truetype");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "ZCOOL Happy";
   src: url("../assets/fonts/echo-zcool-happy.ttf") format("truetype");
   font-weight: 400;
@@ -17,7 +25,8 @@
 :root {
   color-scheme: light;
   --echo-font-family:
-    Outfit, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Satoshi, Outfit, "Noto Sans SC", "Segoe UI Variable", "Microsoft YaHei UI",
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "Microsoft YaHei", "PingFang SC", "Hiragino Sans", "Yu Gothic", sans-serif;
   --echo-mono-font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   --font-main: var(--echo-font-family);

@@ -86,6 +86,7 @@ import type {
   LibraryFolderOverview,
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
+  LibraryEmbeddedTagRescanOptions,
   ImportPlaylistFileResult,
   LibraryHealthReport,
   LibraryPage,
@@ -369,7 +370,7 @@ export type EchoApi = {
     removeFolder: (folderId: string) => Promise<void>;
     scanFolder: (folderId: string, options?: Pick<LibraryScanOptions, 'reduceScanPressure'>) => Promise<LibraryScanStatus>;
     scanFolderChanges: (folderId: string) => Promise<LibraryScanStatus>;
-    rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>) => Promise<LibraryScanStatus[]>;
+    rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>, options?: LibraryEmbeddedTagRescanOptions) => Promise<LibraryScanStatus[]>;
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
     getTrack: (trackId: string) => Promise<LibraryTrack | null>;

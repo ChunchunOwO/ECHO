@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FolderPlus, RefreshCw, RotateCw, Trash2, XCircle } from 'lucide-react';
+import { ChevronDown, FolderPlus, RefreshCw, RotateCw, Trash2, XCircle } from 'lucide-react';
 import type { LibraryFolder, LibraryScanStatus } from '../../../shared/types/library';
 import {
   forgetLibraryScanStatus,
@@ -18,6 +18,7 @@ import { getLibraryBridge } from '../../utils/echoBridge';
 type LibraryFoldersPanelProps = {
   autoRefresh?: boolean;
   autoFocus?: boolean;
+  defaultCollapsed?: boolean;
   pollScanStatuses?: boolean;
 };
 
@@ -99,6 +100,7 @@ const formatFolderError = (error: unknown): string => {
 export const LibraryFoldersPanel = ({
   autoFocus = false,
   autoRefresh = true,
+  defaultCollapsed = false,
   pollScanStatuses = true,
 }: LibraryFoldersPanelProps): JSX.Element => {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
@@ -109,6 +111,7 @@ export const LibraryFoldersPanel = ({
   const [error, setError] = useState<string | null>(null);
   const [databaseRecoveryAvailable, setDatabaseRecoveryAvailable] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   const refreshFolders = useCallback(async () => {
     try {
@@ -285,12 +288,12 @@ export const LibraryFoldersPanel = ({
   );
 
   useEffect(() => {
-    if (!autoRefresh) {
+    if (!autoRefresh || isCollapsed) {
       return;
     }
 
     void refreshFolders();
-  }, [autoRefresh, refreshFolders]);
+  }, [autoRefresh, isCollapsed, refreshFolders]);
 
   useEffect(() => {
     return subscribeLibraryScanStatuses(setScanStatuses);
@@ -362,18 +365,38 @@ export const LibraryFoldersPanel = ({
     }
   }, [dispatchLibraryChanged, scanStatuses]);
 
+  const bodyId = 'library-folders-panel-body';
+
   return (
-    <section className="audio-dev-panel" aria-label="曲库文件夹">
+    <section className="audio-dev-panel library-folders-panel" aria-label="曲库文件夹" data-collapsed={isCollapsed ? 'true' : 'false'}>
       <div className="audio-dev-header">
         <div>
           <span className="panel-kicker">曲库</span>
           <h2>文件夹</h2>
         </div>
-        <button className="tool-button" type="button" aria-label="刷新文件夹" title="刷新文件夹" onClick={() => void refreshFolders()}>
-          <RefreshCw size={17} />
-        </button>
+        <div className="library-folders-panel-actions">
+          {!isCollapsed ? (
+            <button className="tool-button" type="button" aria-label="刷新文件夹" title="刷新文件夹" onClick={() => void refreshFolders()}>
+              <RefreshCw size={17} />
+            </button>
+          ) : null}
+          <button
+            className="settings-collapse-toggle library-folders-panel-toggle"
+            type="button"
+            aria-controls={bodyId}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? '展开曲库文件夹' : '折叠曲库文件夹'}
+            title={isCollapsed ? '展开曲库文件夹' : '折叠曲库文件夹'}
+            onClick={() => setIsCollapsed((current) => !current)}
+          >
+            <span>{isCollapsed ? '展开' : '折叠'}</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
+      {!isCollapsed ? (
+        <div id={bodyId} className="library-folders-panel-body">
       <div className="library-folder-entry">
         <label className="audio-field">
           <span>文件夹路径</span>
@@ -464,6 +487,8 @@ export const LibraryFoldersPanel = ({
           })}
         </div>
       )}
+        </div>
+      ) : null}
     </section>
   );
 };

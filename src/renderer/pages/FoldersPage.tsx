@@ -2660,7 +2660,7 @@ export const FoldersPage = (): JSX.Element => {
               </>
             )}
           </div>
-          {mode === 'local' ? (
+          {hasRunningLocalScan ? (
             <div className="folders-scan-warning folders-scan-warning--panel" role="note">
               <AlertTriangle size={15} />
               <span>{t('folders.scan.patientWarning')}</span>

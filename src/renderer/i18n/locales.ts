@@ -1895,6 +1895,8 @@ export type TranslationKey =
   | 'settings.appearance.lineHeight.title'
   | 'settings.appearance.nowPlayingCoverColor.description'
   | 'settings.appearance.nowPlayingCoverColor.title'
+  | 'settings.appearance.windowAcrylic.description'
+  | 'settings.appearance.windowAcrylic.title'
   | 'settings.appearance.reset.action'
   | 'settings.appearance.reset.description'
   | 'settings.appearance.reset.title'
@@ -5009,7 +5011,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.font.chinese.title': '中文字体',
   'settings.appearance.font.fallback.description': '界面字体的第三组备用，优先级最低，用于继续补齐缺失字符。',
   'settings.appearance.font.fallback.title': '备用字体',
-  'settings.appearance.font.main.description': 'ECHO 默认使用 Outfit、Microsoft YaHei 与 Noto Sans SC；也可以输入任意已安装字体名称。',
+  'settings.appearance.font.main.description': 'ECHO 默认使用 Satoshi、Noto Sans SC 与 Outfit；也可以输入任意已安装字体名称。',
   'settings.appearance.font.main.title': '主字体',
   'settings.appearance.fontSize.description': '调整全局界面的基础字号。',
   'settings.appearance.fontSize.title': '基础字号',
@@ -5017,8 +5019,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.lineHeight.title': '界面行距',
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
+  'settings.appearance.windowAcrylic.title': '窗口亚克力',
+  'settings.appearance.windowAcrylic.description': '开启后使用系统亚克力材质，让桌面背景从窗口后方透出；界面会保留可读遮罩。Windows 11 22H2 及以上效果最佳。',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Outfit、Microsoft YaHei、Noto Sans SC、字号、行距、文字深浅与圆角封面。',
+  'settings.appearance.reset.description': '恢复 Satoshi、Noto Sans SC、Outfit、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
@@ -8823,6 +8827,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.sidebar.showAria': '顯示 {label}',
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
+  'settings.appearance.windowAcrylic.title': '視窗壓克力',
+  'settings.appearance.windowAcrylic.description': '開啟後使用系統壓克力材質，讓桌面背景從視窗後方透出；介面會保留可讀遮罩。Windows 11 22H2 以上效果最佳。',
   'settings.appearance.albumCoverShape.title': '專輯封面形狀',
   'settings.appearance.albumCoverShape.description': '選擇專輯封面顯示為圓角或方角；此設定優先於主題預設。預設圓角。',
   'settings.appearance.albumCoverShape.rounded': '圓角',
@@ -11728,6 +11734,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.sidebar.showAria': '{label} を表示',
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
+  'settings.appearance.windowAcrylic.title': 'ウィンドウ アクリル',
+  'settings.appearance.windowAcrylic.description': '有効にするとシステムのアクリル素材を使い、デスクトップ背景をウィンドウ越しに見せます。読みやすさを保つ保護レイヤーは維持します。Windows 11 22H2 以降で最適です。',
   'settings.appearance.albumCoverShape.title': 'アルバムカバー形状',
   'settings.appearance.albumCoverShape.description': 'アルバムアートを角丸または四角で表示します。この設定はテーマプリセットより優先されます。既定は角丸です。',
   'settings.appearance.albumCoverShape.rounded': '角丸',
@@ -14823,6 +14831,8 @@ const enUS: TranslationMap = {
   'settings.appearance.sidebar.showAria': 'Show {label}',
   'settings.appearance.nowPlayingCoverColor.title': 'Now Playing Cover Color',
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
+  'settings.appearance.windowAcrylic.title': 'Window Acrylic',
+  'settings.appearance.windowAcrylic.description': 'Use the system acrylic material so the desktop shows through behind the window, while keeping a readability scrim over the UI. Best on Windows 11 22H2 and later.',
   'settings.appearance.wallpaper.title': 'Custom Background',
   'settings.appearance.wallpaper.description': 'Landscape and portrait backgrounds are saved separately. Portrait windows only apply the portrait background. Supports images and local videos.',
   'settings.appearance.wallpaper.choose': 'Choose Landscape Background',
@@ -15042,14 +15052,14 @@ const enUS: TranslationMap = {
   'settings.appearance.font.chinese.title': 'Chinese Font',
   'settings.appearance.font.fallback.description': 'The third and lowest-priority interface font group, used to continue filling missing glyphs.',
   'settings.appearance.font.fallback.title': 'Fallback Font',
-  'settings.appearance.font.main.description': 'ECHO uses Outfit, Microsoft YaHei, and Noto Sans SC by default. You can enter any installed font family.',
+  'settings.appearance.font.main.description': 'ECHO uses Satoshi, Noto Sans SC, and Outfit by default. You can enter any installed font family.',
   'settings.appearance.font.main.title': 'Main Font',
   'settings.appearance.fontSize.description': 'Adjust the base size used by the interface.',
   'settings.appearance.fontSize.title': 'Base Font Size',
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Outfit, Microsoft YaHei, Noto Sans SC, base size, line height, text depth, and rounded covers.',
+  'settings.appearance.reset.description': 'Restore Satoshi, Noto Sans SC, Outfit, base size, line height, text depth, and rounded covers.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',

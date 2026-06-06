@@ -1580,7 +1580,8 @@ export class LibraryStore {
     });
 
     const deleteBatchSize = 500;
-    while (true) {
+    let hasTracksToDelete = true;
+    while (hasTracksToDelete) {
       const rows = this.allRows(
         `SELECT id
          FROM tracks
@@ -1591,6 +1592,7 @@ export class LibraryStore {
       );
       const trackIds = rows.map((row) => textOrNull(row.id)).filter((trackId): trackId is string => Boolean(trackId));
       if (trackIds.length === 0) {
+        hasTracksToDelete = false;
         break;
       }
 
@@ -1599,7 +1601,26 @@ export class LibraryStore {
       await yieldToMainLoop();
     }
 
-    this.run('DELETE FROM album_tracks WHERE track_id NOT IN (SELECT id FROM tracks)');
+    let hasAlbumTracksToDelete = true;
+    while (hasAlbumTracksToDelete) {
+      const rows = this.allRows(
+        `SELECT album_tracks.track_id
+         FROM album_tracks
+         LEFT JOIN tracks ON tracks.id = album_tracks.track_id
+         WHERE tracks.id IS NULL
+         LIMIT ?`,
+        deleteBatchSize,
+      );
+      const trackIds = rows.map((row) => textOrNull(row.track_id)).filter((trackId): trackId is string => Boolean(trackId));
+      if (trackIds.length === 0) {
+        hasAlbumTracksToDelete = false;
+        break;
+      }
+
+      const placeholders = trackIds.map(() => '?').join(', ');
+      this.run(`DELETE FROM album_tracks WHERE track_id IN (${placeholders})`, ...trackIds);
+      await yieldToMainLoop();
+    }
   }
 
   createScanJob(folderId: string): LibraryScanStatus {
@@ -2289,7 +2310,7 @@ export class LibraryStore {
   getTrackCacheStatesByFolder(folderId: string): Map<string, StoredTrackCoverState> {
     const rows = this.allRows(
       `SELECT
-        tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms,
+        tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms, tracks.duration,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
         tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
@@ -2308,6 +2329,7 @@ export class LibraryStore {
         id: String(row.id),
         sizeBytes: Number(row.size_bytes),
         mtimeMs: Number(row.mtime_ms),
+        duration: numberOrNull(row.duration),
         coverId: textOrNull(row.cover_id),
         metadataStatus: textOrNull(row.metadata_status),
         embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),
@@ -2346,7 +2368,7 @@ export class LibraryStore {
       const placeholders = batch.map(() => '?').join(', ');
       const rows = this.allRows(
         `SELECT
-          tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms,
+          tracks.path, tracks.id, tracks.size_bytes, tracks.mtime_ms, tracks.duration,
           tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
           tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
           tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
@@ -2365,6 +2387,7 @@ export class LibraryStore {
           id: String(row.id),
           sizeBytes: Number(row.size_bytes),
           mtimeMs: Number(row.mtime_ms),
+          duration: numberOrNull(row.duration),
           coverId: textOrNull(row.cover_id),
           metadataStatus: textOrNull(row.metadata_status),
           embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),
@@ -2394,7 +2417,7 @@ export class LibraryStore {
   findTrackCoverState(filePath: string): StoredTrackCoverState | null {
     const row = this.getRow(
       `SELECT
-        tracks.id, tracks.size_bytes, tracks.mtime_ms,
+        tracks.id, tracks.size_bytes, tracks.mtime_ms, tracks.duration,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.file_identity, tracks.file_identity_source, tracks.quick_hash, tracks.quick_hash_version,
         tracks.identity_status, tracks.identity_updated_at, tracks.identity_error,
@@ -2415,6 +2438,7 @@ export class LibraryStore {
       id: String(row.id),
       sizeBytes: Number(row.size_bytes),
       mtimeMs: Number(row.mtime_ms),
+      duration: numberOrNull(row.duration),
       coverId: textOrNull(row.cover_id),
       metadataStatus: textOrNull(row.metadata_status),
       embeddedMetadataStatus: textOrNull(row.embedded_metadata_status),

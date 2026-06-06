@@ -14,17 +14,8 @@ export type LibraryScanPerfLogPayload = LibraryScanPerfContext & {
 const scanPerfLogPrefix = '[library-scan-perf]';
 const recentScanPerfContextTtlMs = 30_000;
 
-const isDevelopmentRuntime = (): boolean =>
-  process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL !== undefined || process.env.VITEST === 'true';
-
 export const isLibraryScanPerfDiagnosticsEnabled = (): boolean => {
-  if (process.env.ECHO_SCAN_PERF_LOGS === '0') {
-    return false;
-  }
-  if (process.env.ECHO_SCAN_PERF_LOGS === '1') {
-    return true;
-  }
-  return isDevelopmentRuntime();
+  return process.env.ECHO_SCAN_PERF_LOGS === '1';
 };
 
 let activeScanPerfContext: LibraryScanPerfContext | null = null;

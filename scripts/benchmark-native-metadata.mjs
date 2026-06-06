@@ -99,6 +99,13 @@ const createId3TextFrame = (id, text) => {
   ]);
 };
 
+const createMpeg1Layer3CbrFrames = (count = 100) => {
+  const frameLength = Math.floor((144 * 128000) / 44100);
+  const frame = Buffer.alloc(frameLength);
+  Buffer.from([0xff, 0xfb, 0x90, 0x64]).copy(frame, 0);
+  return Buffer.concat(Array.from({ length: count }, () => frame));
+};
+
 const createMinimalMp3WithId3v24 = (index) => {
   const frameData = Buffer.concat([
     createId3TextFrame('TIT2', `Native Bench MP3 ${index}`),
@@ -114,7 +121,7 @@ const createMinimalMp3WithId3v24 = (index) => {
     Buffer.from([4, 0, 0]),
     synchsafe32(frameData.length),
     frameData,
-    Buffer.from([0xff, 0xfb, 0x90, 0x64, 0, 0, 0, 0]),
+    createMpeg1Layer3CbrFrames(),
   ]);
 };
 

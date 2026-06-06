@@ -1241,6 +1241,47 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.upsertedTracks).toHaveLength(1);
   });
 
+  it('treats a stored track with invalid duration as an embedded metadata repair target', async () => {
+    const root = makeTempRoot();
+    const cacheRoot = join(root, 'custom-cache');
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const [file] = makeFiles(root, 1);
+    writeFileSync(file.path, 'audio');
+
+    const metadataReader = new FakeMetadataReader();
+    const store = new FakeStore(
+      coverStateMap([file], (track) =>
+        coverState(track, {
+          duration: 0,
+          coverSource: 'embedded',
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runStoredQueue(
+      store,
+      new ThrowingScanner(),
+      metadataReader,
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+      { mode: 'embedded-tags-missing-cover' },
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.totalFiles).toBe(1);
+    expect(metadataReader.paths).toEqual([resolve(file.path)]);
+    expect(store.upsertedTracks).toHaveLength(1);
+  });
+
   it('finishes stored missing-cover rescans without regrouping when there are no targets', async () => {
     const root = makeTempRoot();
     const cacheRoot = join(root, 'custom-cache');

@@ -37,9 +37,21 @@ const stderrTailLimit = 4096;
 const metadataRequestTimeoutMs = 10000;
 const nativeMetadataReaderSupportedFormats = ['FLAC', 'MP3', 'M4A/MP4'];
 const nativeMetadataReaderSupportedExtensions = new Set(['.flac', '.fla', '.mp3', '.m4a', '.mp4', '.m4b', '.m4p']);
+const defaultNativeMetadataSummaryInterval = 500;
 
 const isNativeMetadataSupportedPath = (filePath: string): boolean =>
   nativeMetadataReaderSupportedExtensions.has(extname(filePath).toLowerCase());
+
+const getNativeMetadataSummaryInterval = (): number => {
+  const value = Number(process.env.ECHO_NATIVE_METADATA_SUMMARY_INTERVAL ?? defaultNativeMetadataSummaryInterval);
+  return Number.isFinite(value) ? Math.max(50, Math.round(value)) : defaultNativeMetadataSummaryInterval;
+};
+
+const isNativeMetadataVerbose = (): boolean => process.env.ECHO_NATIVE_METADATA_VERBOSE === '1';
+const shouldSupplementNativeMetadataFromTs = (): boolean => process.env.ECHO_DISABLE_NATIVE_METADATA_TS_SUPPLEMENT !== '1';
+const shouldSupplementNativeMetadataCover = (): boolean => process.env.ECHO_DISABLE_NATIVE_METADATA_COVER_SUPPLEMENT !== '1';
+const isPositiveNumber = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
 
 const getNativeMetadataReaderEnablement = (
   readSettingEnabled: NativeMetadataReaderEnabledProvider = () => false,
@@ -319,16 +331,76 @@ export class NativeThenTsMetadataReader implements MetadataReader {
     try {
       const result = await this.nativeReader.read(filePath);
       this.recordNativeStats(enablement.source, 'native_ok');
-      return result;
+      return this.supplementNativeResult(filePath, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!this.warnedFallbackMessages.has(message)) {
+      if (isNativeMetadataVerbose() && !this.warnedFallbackMessages.has(message)) {
         this.warnedFallbackMessages.add(message);
         this.logger(`[library-scan] Native metadata reader failed; falling back to TS reader: ${message}`);
       }
       this.recordNativeStats(enablement.source, 'fallback_to_ts');
       return this.tsReader.read(filePath);
     }
+  }
+
+  private async supplementNativeResult(filePath: string, nativeResult: MetadataResult): Promise<MetadataResult> {
+    if (!shouldSupplementNativeMetadataFromTs()) {
+      return nativeResult;
+    }
+
+    const shouldReadTs =
+      this.shouldSupplementCover(nativeResult) ||
+      this.shouldSupplementTechnicalFields(nativeResult);
+    if (!shouldReadTs) {
+      return nativeResult;
+    }
+
+    try {
+      const tsResult = await this.tsReader.read(filePath);
+      const supplemented: MetadataResult = {
+        ...nativeResult,
+        fields: { ...nativeResult.fields },
+        fieldSources: { ...nativeResult.fieldSources },
+      };
+
+      this.supplementTechnicalFields(supplemented, tsResult);
+
+      if (this.shouldSupplementCover(nativeResult) && (tsResult.embeddedCover || tsResult.embeddedCoverStatus === 'error')) {
+        supplemented.embeddedCover = tsResult.embeddedCover;
+        supplemented.embeddedCoverStatus = tsResult.embeddedCover ? 'present' : tsResult.embeddedCoverStatus;
+      }
+
+      return supplemented;
+    } catch {
+      return nativeResult;
+    }
+  }
+
+  private shouldSupplementCover(nativeResult: MetadataResult): boolean {
+    return shouldSupplementNativeMetadataCover() && !nativeResult.embeddedCover;
+  }
+
+  private shouldSupplementTechnicalFields(nativeResult: MetadataResult): boolean {
+    return (
+      !isPositiveNumber(nativeResult.fields.duration) ||
+      !isPositiveNumber(nativeResult.fields.sampleRate) ||
+      !isPositiveNumber(nativeResult.fields.bitrate)
+    );
+  }
+
+  private supplementTechnicalFields(nativeResult: MetadataResult, tsResult: MetadataResult): void {
+    const supplementPositiveNumber = (field: 'duration' | 'sampleRate' | 'bitrate' | 'bitDepth'): void => {
+      if (isPositiveNumber(nativeResult.fields[field]) || !isPositiveNumber(tsResult.fields[field])) {
+        return;
+      }
+      nativeResult.fields[field] = tsResult.fields[field];
+      nativeResult.fieldSources[field] = tsResult.fieldSources[field] ?? 'technical';
+    };
+
+    supplementPositiveNumber('duration');
+    supplementPositiveNumber('sampleRate');
+    supplementPositiveNumber('bitrate');
+    supplementPositiveNumber('bitDepth');
   }
 
   private recordNativeStats(source: NativeMetadataReaderEnablementSource, status: 'native_ok' | 'fallback_to_ts' | 'skipped_extension'): void {
@@ -341,11 +413,12 @@ export class NativeThenTsMetadataReader implements MetadataReader {
       this.stats.skippedUnsupportedExtension += 1;
     }
 
+    const verbose = isNativeMetadataVerbose();
     const shouldLog =
-      this.stats.total === 1 ||
-      this.stats.fallbackToTs <= 3 && status === 'fallback_to_ts' ||
-      this.stats.skippedUnsupportedExtension <= 3 && status === 'skipped_extension' ||
-      this.stats.total - this.lastStatsLogTotal >= 100;
+      this.stats.total - this.lastStatsLogTotal >= getNativeMetadataSummaryInterval() ||
+      (verbose && this.stats.total === 1) ||
+      (verbose && this.stats.fallbackToTs <= 3 && status === 'fallback_to_ts') ||
+      (verbose && this.stats.skippedUnsupportedExtension <= 3 && status === 'skipped_extension');
     if (!shouldLog) {
       return;
     }

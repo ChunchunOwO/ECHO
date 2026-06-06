@@ -1288,7 +1288,7 @@ export class ScanJobQueue {
       return true;
     }
 
-    return this.isMissingOrDefaultCover(state);
+    return this.needsMissingCoverOrDurationRepair(state);
   }
 
   private async collectStoredTrackRescanFiles(
@@ -1792,7 +1792,7 @@ export class ScanJobQueue {
       return true;
     }
 
-    return !state || this.isMissingOrDefaultCover(state);
+    return !state || this.needsMissingCoverOrDurationRepair(state);
   }
 
   private shouldBackfillPlaceholderMetadata(state: StoredTrackCoverState | null): boolean {
@@ -1809,6 +1809,10 @@ export class ScanJobQueue {
 
   private isMissingOrDefaultCover(state: StoredTrackCoverState): boolean {
     return !state.coverId || state.coverSource === 'default' || !this.hasCompleteCoverCache(state);
+  }
+
+  private needsMissingCoverOrDurationRepair(state: StoredTrackCoverState): boolean {
+    return this.isMissingOrDefaultCover(state) || typeof state.duration === 'number' && state.duration <= 0;
   }
 
   private canRepairCoverCache(state: StoredTrackCoverState): boolean {

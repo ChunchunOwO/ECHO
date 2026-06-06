@@ -92,9 +92,19 @@ class FakeNativeProcess extends EventEmitter {
 
 const previousNativeMetadataReaderEnv = process.env.ECHO_NATIVE_METADATA_READER;
 const previousDisableNativeMetadataReaderEnv = process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+const previousNativeMetadataVerboseEnv = process.env.ECHO_NATIVE_METADATA_VERBOSE;
+const previousNativeMetadataSummaryIntervalEnv = process.env.ECHO_NATIVE_METADATA_SUMMARY_INTERVAL;
+const previousDisableNativeMetadataCoverSupplementEnv = process.env.ECHO_DISABLE_NATIVE_METADATA_COVER_SUPPLEMENT;
+const previousDisableNativeMetadataTsSupplementEnv = process.env.ECHO_DISABLE_NATIVE_METADATA_TS_SUPPLEMENT;
 
 const restoreEnv = (
-  name: 'ECHO_NATIVE_METADATA_READER' | 'ECHO_DISABLE_NATIVE_METADATA_READER',
+  name:
+    | 'ECHO_NATIVE_METADATA_READER'
+    | 'ECHO_DISABLE_NATIVE_METADATA_READER'
+    | 'ECHO_NATIVE_METADATA_VERBOSE'
+    | 'ECHO_NATIVE_METADATA_SUMMARY_INTERVAL'
+    | 'ECHO_DISABLE_NATIVE_METADATA_COVER_SUPPLEMENT'
+    | 'ECHO_DISABLE_NATIVE_METADATA_TS_SUPPLEMENT',
   value: string | undefined,
 ): void => {
   if (value === undefined) {
@@ -108,6 +118,10 @@ describe('NativeThenTsMetadataReader', () => {
   afterEach(() => {
     restoreEnv('ECHO_NATIVE_METADATA_READER', previousNativeMetadataReaderEnv);
     restoreEnv('ECHO_DISABLE_NATIVE_METADATA_READER', previousDisableNativeMetadataReaderEnv);
+    restoreEnv('ECHO_NATIVE_METADATA_VERBOSE', previousNativeMetadataVerboseEnv);
+    restoreEnv('ECHO_NATIVE_METADATA_SUMMARY_INTERVAL', previousNativeMetadataSummaryIntervalEnv);
+    restoreEnv('ECHO_DISABLE_NATIVE_METADATA_COVER_SUPPLEMENT', previousDisableNativeMetadataCoverSupplementEnv);
+    restoreEnv('ECHO_DISABLE_NATIVE_METADATA_TS_SUPPLEMENT', previousDisableNativeMetadataTsSupplementEnv);
     vi.mocked(logLibraryScanPerf).mockClear();
   });
 
@@ -125,8 +139,25 @@ describe('NativeThenTsMetadataReader', () => {
     expect(tsReader.calls).toEqual(['D:\\Music\\song.flac']);
   });
 
-  it('falls back to TS when native metadata is enabled but unsupported', async () => {
+  it('falls back to TS quietly when native metadata is enabled but unsupported', async () => {
     process.env.ECHO_NATIVE_METADATA_READER = '1';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new FailingMetadataReader();
+    const tsReader = new StaticMetadataReader(metadataResult('Fallback Title'));
+    const logger = vi.fn();
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader, logger);
+
+    await expect(reader.read('D:\\Music\\song.flac')).resolves.toMatchObject({
+      fields: { title: 'Fallback Title' },
+    });
+    expect(nativeReader.calls).toEqual(['D:\\Music\\song.flac']);
+    expect(tsReader.calls).toEqual(['D:\\Music\\song.flac']);
+    expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('logs native metadata fallback details in verbose mode', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    process.env.ECHO_NATIVE_METADATA_VERBOSE = '1';
     delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
     const nativeReader = new FailingMetadataReader();
     const tsReader = new StaticMetadataReader(metadataResult('Fallback Title'));
@@ -155,6 +186,149 @@ describe('NativeThenTsMetadataReader', () => {
     expect(tsReader.calls).toEqual(['D:\\Music\\song.flac']);
   });
 
+  it('keeps native metadata fields while supplementing embedded cover data from TS', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new StaticMetadataReader(metadataResult('Native Title'));
+    const tsReader = new StaticMetadataReader({
+      ...metadataResult('TS Title'),
+      embeddedCover: {
+        data: new Uint8Array([1, 2, 3]),
+        mimeType: 'image/jpeg',
+      },
+      embeddedCoverStatus: 'present',
+    });
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader);
+
+    await expect(reader.read('D:\\Music\\song.flac')).resolves.toMatchObject({
+      fields: { title: 'Native Title' },
+      embeddedCoverStatus: 'present',
+      embeddedCover: {
+        mimeType: 'image/jpeg',
+      },
+    });
+    expect(nativeReader.calls).toEqual(['D:\\Music\\song.flac']);
+    expect(tsReader.calls).toEqual(['D:\\Music\\song.flac']);
+  });
+
+  it('supplements invalid native duration from TS so playback progress has a usable length', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new StaticMetadataReader({
+      ...metadataResult('Native Title'),
+      fields: {
+        ...metadataResult('Native Title').fields,
+        duration: 0,
+        sampleRate: null,
+        bitrate: null,
+      },
+      fieldSources: {
+        duration: 'unknown',
+        sampleRate: 'unknown',
+        bitrate: 'unknown',
+      },
+    });
+    const tsReader = new StaticMetadataReader({
+      ...metadataResult('TS Title'),
+      fields: {
+        ...metadataResult('TS Title').fields,
+        duration: 220,
+        sampleRate: 44100,
+        bitrate: 320000,
+      },
+      fieldSources: {
+        duration: 'technical',
+        sampleRate: 'technical',
+        bitrate: 'technical',
+      },
+    });
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader);
+
+    await expect(reader.read('D:\\Music\\song.mp3')).resolves.toMatchObject({
+      fields: {
+        title: 'Native Title',
+        duration: 220,
+        sampleRate: 44100,
+        bitrate: 320000,
+      },
+      fieldSources: {
+        duration: 'technical',
+        sampleRate: 'technical',
+        bitrate: 'technical',
+      },
+    });
+    expect(nativeReader.calls).toEqual(['D:\\Music\\song.mp3']);
+    expect(tsReader.calls).toEqual(['D:\\Music\\song.mp3']);
+  });
+
+  it('can disable TS cover supplement for native metadata diagnostics', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    process.env.ECHO_DISABLE_NATIVE_METADATA_COVER_SUPPLEMENT = '1';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new StaticMetadataReader({
+      ...metadataResult('Native Title'),
+      fields: {
+        ...metadataResult('Native Title').fields,
+        bitrate: 320000,
+      },
+      fieldSources: {
+        bitrate: 'technical',
+      },
+    });
+    const tsReader = new StaticMetadataReader({
+      ...metadataResult('TS Title'),
+      embeddedCover: {
+        data: new Uint8Array([1, 2, 3]),
+        mimeType: 'image/jpeg',
+      },
+      embeddedCoverStatus: 'present',
+    });
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader);
+
+    await expect(reader.read('D:\\Music\\song.flac')).resolves.toMatchObject({
+      fields: { title: 'Native Title' },
+      embeddedCoverStatus: 'missing',
+    });
+    expect(nativeReader.calls).toEqual(['D:\\Music\\song.flac']);
+    expect(tsReader.calls).toEqual([]);
+  });
+
+  it('can disable all TS supplement work for native metadata diagnostics', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    process.env.ECHO_DISABLE_NATIVE_METADATA_TS_SUPPLEMENT = '1';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new StaticMetadataReader({
+      ...metadataResult('Native Title'),
+      fields: {
+        ...metadataResult('Native Title').fields,
+        duration: 0,
+      },
+      fieldSources: {
+        duration: 'unknown',
+      },
+    });
+    const tsReader = new StaticMetadataReader({
+      ...metadataResult('TS Title'),
+      fields: {
+        ...metadataResult('TS Title').fields,
+        duration: 220,
+      },
+      embeddedCover: {
+        data: new Uint8Array([1, 2, 3]),
+        mimeType: 'image/jpeg',
+      },
+      embeddedCoverStatus: 'present',
+    });
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader);
+
+    await expect(reader.read('D:\\Music\\song.mp3')).resolves.toMatchObject({
+      fields: { title: 'Native Title', duration: 0 },
+      embeddedCoverStatus: 'missing',
+    });
+    expect(nativeReader.calls).toEqual(['D:\\Music\\song.mp3']);
+    expect(tsReader.calls).toEqual([]);
+  });
+
   it('skips native metadata for unsupported extensions and uses TS directly', async () => {
     process.env.ECHO_NATIVE_METADATA_READER = '1';
     delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
@@ -170,13 +344,10 @@ describe('NativeThenTsMetadataReader', () => {
     expect(nativeReader.calls).toEqual([]);
     expect(tsReader.calls).toEqual(['D:\\Music\\song.wav']);
     expect(logger).not.toHaveBeenCalled();
-    expect(vi.mocked(logLibraryScanPerf)).toHaveBeenCalledWith(expect.objectContaining({
-      phase: 'nativeMetadataReader',
-      detail: expect.stringContaining('skippedUnsupportedExtension=1'),
-    }));
+    expect(vi.mocked(logLibraryScanPerf)).not.toHaveBeenCalled();
   });
 
-  it('logs native metadata summaries without logging every successful file', async () => {
+  it('does not log native metadata summaries for small successful scans by default', async () => {
     process.env.ECHO_NATIVE_METADATA_READER = '1';
     delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
     const nativeReader = new StaticMetadataReader(metadataResult('Native Title'));
@@ -188,12 +359,29 @@ describe('NativeThenTsMetadataReader', () => {
     }
 
     expect(nativeReader.calls).toHaveLength(50);
-    expect(tsReader.calls).toEqual([]);
-    expect(vi.mocked(logLibraryScanPerf)).toHaveBeenCalledTimes(1);
+    expect(tsReader.calls).toHaveLength(50);
+    expect(vi.mocked(logLibraryScanPerf)).not.toHaveBeenCalled();
+  });
+
+  it('logs native metadata summaries at the configured interval', async () => {
+    process.env.ECHO_NATIVE_METADATA_READER = '1';
+    process.env.ECHO_NATIVE_METADATA_SUMMARY_INTERVAL = '50';
+    delete process.env.ECHO_DISABLE_NATIVE_METADATA_READER;
+    const nativeReader = new StaticMetadataReader(metadataResult('Native Title'));
+    const tsReader = new StaticMetadataReader(metadataResult('TS Title'));
+    const reader = new NativeThenTsMetadataReader(nativeReader, tsReader);
+
+    for (let index = 0; index < 100; index += 1) {
+      await reader.read(`D:\\Music\\song-${index}.flac`);
+    }
+
+    expect(nativeReader.calls).toHaveLength(100);
+    expect(tsReader.calls).toHaveLength(100);
+    expect(vi.mocked(logLibraryScanPerf)).toHaveBeenCalledTimes(2);
     expect(vi.mocked(logLibraryScanPerf)).toHaveBeenCalledWith(expect.objectContaining({
       phase: 'nativeMetadataReader',
-      fileCount: 1,
-      detail: expect.stringContaining('nativeOk=1'),
+      fileCount: 50,
+      detail: expect.stringContaining('nativeOk=50'),
     }));
   });
 });

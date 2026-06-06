@@ -46,9 +46,16 @@ struct NativeMetadataResult {
   double duration = 0;
   std::optional<int> sampleRate;
   std::optional<int> bitDepth;
+  std::optional<int> bitrate;
   std::string codec = "FLAC";
   bool hasVorbisComments = false;
   std::map<std::string, std::string> sources;
+};
+
+struct Mp3StreamInfo {
+  double duration = 0;
+  int sampleRate = 0;
+  int bitrate = 0;
 };
 
 static std::string jsonEscape(const std::string& value) {
@@ -966,6 +973,171 @@ static bool isValidId3FrameId(const unsigned char* bytes) {
   return true;
 }
 
+static std::optional<Mp3StreamInfo> parseMp3FrameHeader(std::uint32_t header) {
+  if ((header & 0xffe00000U) != 0xffe00000U) {
+    return std::nullopt;
+  }
+
+  const int versionBits = static_cast<int>((header >> 19U) & 0x3U);
+  const int layerBits = static_cast<int>((header >> 17U) & 0x3U);
+  const int bitrateIndex = static_cast<int>((header >> 12U) & 0xfU);
+  const int sampleRateIndex = static_cast<int>((header >> 10U) & 0x3U);
+
+  if (versionBits == 1 || layerBits != 1 || bitrateIndex == 0 || bitrateIndex == 15 || sampleRateIndex == 3) {
+    return std::nullopt;
+  }
+
+  static constexpr int mpeg1Layer3BitratesKbps[] = {
+    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+  };
+  static constexpr int mpeg2Layer3BitratesKbps[] = {
+    0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160,
+  };
+  static constexpr int mpeg1SampleRates[] = { 44100, 48000, 32000 };
+
+  int sampleRate = mpeg1SampleRates[sampleRateIndex];
+  if (versionBits == 2) {
+    sampleRate /= 2;
+  } else if (versionBits == 0) {
+    sampleRate /= 4;
+  }
+
+  const bool isMpeg1 = versionBits == 3;
+  const int bitrateKbps = isMpeg1 ? mpeg1Layer3BitratesKbps[bitrateIndex] : mpeg2Layer3BitratesKbps[bitrateIndex];
+  if (bitrateKbps <= 0 || sampleRate <= 0) {
+    return std::nullopt;
+  }
+
+  Mp3StreamInfo info;
+  info.sampleRate = sampleRate;
+  info.bitrate = bitrateKbps * 1000;
+  return info;
+}
+
+static std::optional<std::uint32_t> readMp3FrameCountFromXingOrInfo(
+  std::ifstream& stream,
+  std::uintmax_t fileSize,
+  std::uintmax_t frameStart,
+  std::uint32_t header
+) {
+  const int versionBits = static_cast<int>((header >> 19U) & 0x3U);
+  const int channelMode = static_cast<int>((header >> 6U) & 0x3U);
+  const bool isMpeg1 = versionBits == 3;
+  const bool isMono = channelMode == 3;
+  const std::uintmax_t sideInfoBytes = isMpeg1 ? (isMono ? 17U : 32U) : (isMono ? 9U : 17U);
+  const std::uintmax_t xingOffset = frameStart + 4U + sideInfoBytes;
+  if (xingOffset + 16U > fileSize) {
+    return std::nullopt;
+  }
+
+  stream.clear();
+  stream.seekg(static_cast<std::streamoff>(xingOffset), std::ios::beg);
+  unsigned char headerBytes[16] = {};
+  if (!readExact(stream, headerBytes, sizeof(headerBytes))) {
+    return std::nullopt;
+  }
+
+  const std::string marker(reinterpret_cast<const char*>(headerBytes), 4);
+  if (marker != "Xing" && marker != "Info") {
+    return std::nullopt;
+  }
+
+  const std::uint32_t flags = readBe32(headerBytes + 4);
+  if ((flags & 0x1U) == 0) {
+    return std::nullopt;
+  }
+
+  const std::uint32_t frames = readBe32(headerBytes + 8);
+  return frames > 0 ? std::optional<std::uint32_t>(frames) : std::nullopt;
+}
+
+static std::optional<std::uint32_t> readMp3FrameCountFromVbri(std::ifstream& stream, std::uintmax_t fileSize, std::uintmax_t frameStart) {
+  const std::uintmax_t vbriOffset = frameStart + 4U + 32U;
+  if (vbriOffset + 18U > fileSize) {
+    return std::nullopt;
+  }
+
+  stream.clear();
+  stream.seekg(static_cast<std::streamoff>(vbriOffset), std::ios::beg);
+  unsigned char headerBytes[18] = {};
+  if (!readExact(stream, headerBytes, sizeof(headerBytes))) {
+    return std::nullopt;
+  }
+
+  const std::string marker(reinterpret_cast<const char*>(headerBytes), 4);
+  if (marker != "VBRI") {
+    return std::nullopt;
+  }
+
+  const std::uint32_t frames = readBe32(headerBytes + 14);
+  return frames > 0 ? std::optional<std::uint32_t>(frames) : std::nullopt;
+}
+
+static std::optional<Mp3StreamInfo> readMp3StreamInfo(
+  std::ifstream& stream,
+  const std::string& filePath,
+  std::uintmax_t audioStart,
+  std::string& unsupportedReason
+) {
+  std::error_code errorCode;
+  const std::uintmax_t fileSize = fs::file_size(pathFromUtf8(filePath), errorCode);
+  if (errorCode || fileSize <= audioStart + 4U) {
+    unsupportedReason = "native metadata reader could not determine MP3 audio size";
+    return std::nullopt;
+  }
+
+  stream.clear();
+  stream.seekg(static_cast<std::streamoff>(audioStart), std::ios::beg);
+
+  unsigned char frameHeaderBytes[4] = {};
+  std::uintmax_t frameStart = audioStart;
+  bool foundFrame = false;
+  constexpr std::uintmax_t maxMp3FrameSyncSearchBytes = 4096;
+  for (std::uintmax_t scanned = 0; scanned <= maxMp3FrameSyncSearchBytes && frameStart + 4U <= fileSize; scanned += 1, frameStart += 1) {
+    stream.clear();
+    stream.seekg(static_cast<std::streamoff>(frameStart), std::ios::beg);
+    if (!readExact(stream, frameHeaderBytes, sizeof(frameHeaderBytes))) {
+      break;
+    }
+    const std::uint32_t header = readBe32(frameHeaderBytes);
+    if (parseMp3FrameHeader(header)) {
+      foundFrame = true;
+      break;
+    }
+  }
+
+  if (!foundFrame) {
+    unsupportedReason = "native metadata reader could not find MP3 audio frame";
+    return std::nullopt;
+  }
+
+  const std::uint32_t frameHeader = readBe32(frameHeaderBytes);
+  auto info = parseMp3FrameHeader(frameHeader);
+  if (!info) {
+    unsupportedReason = "native metadata reader could not parse MP3 frame header";
+    return std::nullopt;
+  }
+
+  const int versionBits = static_cast<int>((frameHeader >> 19U) & 0x3U);
+  const int samplesPerFrame = versionBits == 3 ? 1152 : 576;
+  const auto xingFrames = readMp3FrameCountFromXingOrInfo(stream, fileSize, frameStart, frameHeader);
+  const auto vbriFrames = xingFrames ? std::nullopt : readMp3FrameCountFromVbri(stream, fileSize, frameStart);
+  if (xingFrames || vbriFrames) {
+    const std::uint32_t frames = xingFrames.value_or(vbriFrames.value_or(0));
+    info->duration = static_cast<double>(frames) * static_cast<double>(samplesPerFrame) / static_cast<double>(info->sampleRate);
+  } else {
+    const std::uintmax_t audioBytes = fileSize - frameStart;
+    info->duration = static_cast<double>(audioBytes) * 8.0 / static_cast<double>(info->bitrate);
+  }
+
+  if (!(info->duration > 0.001)) {
+    unsupportedReason = "native metadata reader could not determine MP3 duration";
+    return std::nullopt;
+  }
+
+  return info;
+}
+
 static std::optional<NativeMetadataResult> readMp3Id3Metadata(const std::string& filePath, std::string& unsupportedReason) {
   std::ifstream stream(pathFromUtf8(filePath), std::ios::binary);
   if (!stream.is_open()) {
@@ -1003,6 +1175,8 @@ static std::optional<NativeMetadataResult> readMp3Id3Metadata(const std::string&
     unsupportedReason = "native metadata reader could not read ID3v2 tag";
     return std::nullopt;
   }
+
+  const std::uintmax_t audioStart = 10U + static_cast<std::uintmax_t>(*tagSize) + (((flags & 0x10U) != 0) ? 10U : 0U);
 
   std::map<std::string, std::vector<std::string>> tags;
   for (std::size_t offset = 0; offset + 10 <= tag.size();) {
@@ -1058,14 +1232,21 @@ static std::optional<NativeMetadataResult> readMp3Id3Metadata(const std::string&
     return std::nullopt;
   }
 
+  const auto streamInfo = readMp3StreamInfo(stream, filePath, audioStart, unsupportedReason);
+  if (!streamInfo) {
+    return std::nullopt;
+  }
+
   NativeMetadataResult result;
   result.codec = "MP3";
-  result.duration = 0;
-  result.sources["duration"] = "unknown";
-  result.sources["codec"] = "filename_fallback";
-  result.sources["sampleRate"] = "unknown";
+  result.duration = streamInfo->duration;
+  result.sampleRate = streamInfo->sampleRate;
+  result.bitrate = streamInfo->bitrate;
+  result.sources["duration"] = "technical";
+  result.sources["codec"] = "technical";
+  result.sources["sampleRate"] = "technical";
   result.sources["bitDepth"] = "unknown";
-  result.sources["bitrate"] = "unknown";
+  result.sources["bitrate"] = "technical";
   result.sources["bpm"] = "unknown";
   result.sources["replayGainTrackGainDb"] = "unknown";
   result.sources["replayGainAlbumGainDb"] = "unknown";
@@ -1419,7 +1600,13 @@ static void writeNativeMetadataResponse(const std::string& path, const NativeMet
   } else {
     std::cout << "null";
   }
-  std::cout << ",\"bitrate\":null,\"bpm\":null";
+  std::cout << ",\"bitrate\":";
+  if (result.bitrate) {
+    std::cout << *result.bitrate;
+  } else {
+    std::cout << "null";
+  }
+  std::cout << ",\"bpm\":null";
   std::cout << ",\"replayGainTrackGainDb\":null,\"replayGainAlbumGainDb\":null";
   std::cout << ",\"replayGainTrackPeak\":null,\"replayGainAlbumPeak\":null,\"replayGainIntegratedLufs\":null";
   std::cout << "},\"fieldSources\":{";

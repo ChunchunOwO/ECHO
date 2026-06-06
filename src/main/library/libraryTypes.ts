@@ -313,6 +313,7 @@ export type CoverCacheRepairOptions = {
 };
 
 export type StoredTrackCoverState = StoredTrackFingerprint & {
+  duration?: number | null;
   coverId: string | null;
   metadataStatus?: MetadataStatus | string | null;
   embeddedMetadataStatus?: EmbeddedReadinessStatus | string | null;

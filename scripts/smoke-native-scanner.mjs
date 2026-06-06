@@ -145,6 +145,13 @@ const createId3TextFrame = (id, text) => {
   ]);
 };
 
+const createMpeg1Layer3CbrFrames = (count = 100) => {
+  const frameLength = Math.floor((144 * 128000) / 44100);
+  const frame = Buffer.alloc(frameLength);
+  Buffer.from([0xff, 0xfb, 0x90, 0x64]).copy(frame, 0);
+  return Buffer.concat(Array.from({ length: count }, () => frame));
+};
+
 const createMinimalMp3WithId3v24 = (frames) => {
   const frameData = Buffer.concat(frames.map(([id, text]) => createId3TextFrame(id, text)));
   return Buffer.concat([
@@ -152,7 +159,7 @@ const createMinimalMp3WithId3v24 = (frames) => {
     Buffer.from([4, 0, 0]),
     synchsafe32(frameData.length),
     frameData,
-    Buffer.from([0xff, 0xfb, 0x90, 0x64, 0, 0, 0, 0]),
+    createMpeg1Layer3CbrFrames(),
   ]);
 };
 
@@ -350,8 +357,13 @@ try {
   if (mp3Metadata.result?.fields?.trackNo !== 3 || mp3Metadata.result?.fields?.year !== 2025) {
     fail(`Expected native MP3 numeric metadata, got ${JSON.stringify(mp3Metadata)}`);
   }
-  if (mp3Metadata.result?.fields?.codec !== 'MP3' || mp3Metadata.result?.embeddedCoverStatus !== 'missing') {
-    fail(`Expected native MP3 codec and no cover extraction, got ${JSON.stringify(mp3Metadata)}`);
+  if (
+    mp3Metadata.result?.fields?.codec !== 'MP3' ||
+    !(mp3Metadata.result?.fields?.duration > 2) ||
+    mp3Metadata.result?.fields?.bitrate !== 128000 ||
+    mp3Metadata.result?.embeddedCoverStatus !== 'missing'
+  ) {
+    fail(`Expected native MP3 codec/duration/bitrate and no cover extraction, got ${JSON.stringify(mp3Metadata)}`);
   }
 
   const m4aMetadata = metadataResults[2];

@@ -28,13 +28,7 @@ const readRendererEnv = (name: string): string | undefined => {
 
 const isRendererScanPerfDiagnosticsEnabled = (): boolean => {
   const explicit = readRendererEnv('ECHO_SCAN_PERF_LOGS');
-  if (explicit === '0') {
-    return false;
-  }
-  if (explicit === '1') {
-    return true;
-  }
-  return readRendererEnv('NODE_ENV') !== 'production';
+  return explicit === '1';
 };
 
 const getWindowKind = (): DiagnosticPerformanceStallPayload['windowKind'] => {

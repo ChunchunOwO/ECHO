@@ -7,7 +7,7 @@ import { TrackContextMenu } from './TrackContextMenu';
 
 vi.mock('../../i18n/I18nProvider', () => ({
   useI18n: () => ({
-    t: (key: string) => (key === 'trackMenu.action.audioAuthenticity' ? '音频可信度' : key),
+    t: (key: string) => key,
   }),
 }));
 

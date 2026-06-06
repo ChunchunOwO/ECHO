@@ -43,6 +43,9 @@ type ActionState =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+const normalizeSeverity = (value: unknown): PluginAudioAnalysisSeverity | undefined =>
+  value === 'risk' || value === 'warning' || value === 'info' ? value : undefined;
+
 const normalizeResult = (value: unknown): PluginTrackActionResult | null => {
   if (!isRecord(value)) {
     return null;
@@ -53,23 +56,25 @@ const normalizeResult = (value: unknown): PluginTrackActionResult | null => {
         .filter(isRecord)
         .map((item) => ({
           label: typeof item.label === 'string' ? item.label : '',
-          value: ['string', 'number', 'boolean'].includes(typeof item.value) || item.value === null ? item.value as PluginTrackActionMetric['value'] : String(item.value ?? ''),
+          value: ['string', 'number', 'boolean'].includes(typeof item.value) || item.value === null
+            ? item.value as PluginTrackActionMetric['value']
+            : String(item.value ?? ''),
         }))
-        .filter((item) => item.label)
+        .filter((item) => Boolean(item.label))
     : undefined;
 
   const evidence = Array.isArray(value.evidence)
     ? value.evidence
         .filter(isRecord)
         .map((item) => ({
-          severity: item.severity === 'risk' || item.severity === 'warning' || item.severity === 'info' ? item.severity : undefined,
+          severity: normalizeSeverity(item.severity),
           message: typeof item.message === 'string' ? item.message : '',
         }))
-        .filter((item) => item.message)
+        .filter((item) => Boolean(item.message))
     : undefined;
 
   const notes = Array.isArray(value.notes)
-    ? value.notes.filter((item): item is string => typeof item === 'string' && item.trim()).map((item) => item.trim())
+    ? value.notes.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map((item) => item.trim())
     : undefined;
 
   return {

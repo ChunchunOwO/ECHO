@@ -4327,6 +4327,40 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   ]);
 
   const shouldHideLyricsInMv = lyricsViewMode === "mv" && mvHideLyrics;
+  const lyricsDrawerCurrentTrackTools = useMemo(() => {
+    if (shouldHideLyricsInMv) {
+      return null;
+    }
+
+    const smartAlignmentControls = lyricsDisplaySettings.lyricsOffsetControlsEnabled ? lyricsSmartAlignmentControls : null;
+    if (!lyricsOffsetControls && !smartAlignmentControls) {
+      return null;
+    }
+
+    return (
+      <div className="lyrics-current-track-tools">
+        {lyricsOffsetControls}
+        {smartAlignmentControls}
+      </div>
+    );
+  }, [
+    lyricsDisplaySettings.lyricsOffsetControlsEnabled,
+    lyricsOffsetControls,
+    lyricsSmartAlignmentControls,
+    shouldHideLyricsInMv,
+  ]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(lyricsDrawerToolsChangedEvent, {
+      detail: { currentTrackTools: lyricsDrawerCurrentTrackTools },
+    }));
+
+    return () => {
+      window.dispatchEvent(new CustomEvent(lyricsDrawerToolsChangedEvent, {
+        detail: { currentTrackTools: null },
+      }));
+    };
+  }, [lyricsDrawerCurrentTrackTools]);
 
   if (!currentTrack && !filePath && !trackId) {
     return (

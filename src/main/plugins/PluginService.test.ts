@@ -182,14 +182,24 @@ describe('PluginService', () => {
     });
   });
 
-  it('creates an audio authenticity example with controlled audio analysis permission', () => {
-    const created = service.createExample('audio-authenticity');
+  it('surfaces plugin-provided track context menu contributions', () => {
+    const manifest: PluginManifest = {
+      id: 'echo.audio-authenticity',
+      name: 'Audio Authenticity',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: ['library:read', 'audio:analyze'],
+      contributes: {
+        commands: [{ id: 'analyze-track', title: 'Analyze selected track authenticity' }],
+        trackContextMenus: [{ id: 'audio-authenticity', title: '音频可信度', commandId: 'analyze-track', localOnly: true }],
+      },
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('analyze-track', async () => ({ title: 'OK' }));",
+    ].join('\n'));
     const summary = service.list().plugins[0];
 
-    expect(created.pluginId).toBe('echo.audio-authenticity');
-    expect(existsSync(join(created.directory, 'echo.plugin.json'))).toBe(true);
-    expect(existsSync(join(created.directory, 'plugin.js'))).toBe(true);
-    expect(existsSync(join(created.directory, 'panel.html'))).toBe(true);
     expect(summary).toMatchObject({
       id: 'echo.audio-authenticity',
       enabled: false,
@@ -197,8 +207,7 @@ describe('PluginService', () => {
       permissions: ['library:read', 'audio:analyze'],
     });
     expect(summary.security.highRiskPermissions).toEqual(['audio:analyze']);
-    expect(summary.security.sandboxedPanel).toBe(true);
-    expect(summary.commands.map((command) => command.id)).toEqual(['analyze-page', 'analyze-track']);
+    expect(summary.commands.map((command) => command.id)).toEqual(['analyze-track']);
     expect(summary.contributes.trackContextMenus).toEqual([
       { id: 'audio-authenticity', title: '音频可信度', commandId: 'analyze-track', localOnly: true },
     ]);

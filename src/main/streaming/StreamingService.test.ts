@@ -106,7 +106,7 @@ const favoriteTrack = (providerTrackId: string, provider: StreamingTrack['provid
   mvStatus: 'available',
 });
 
-const albumDetail = (): StreamingAlbumDetail => ({
+const albumDetail = (overrides: Partial<StreamingAlbumDetail> = {}): StreamingAlbumDetail => ({
   id: 'streaming:netease:album:album-1',
   provider: 'netease',
   providerAlbumId: 'album-1',
@@ -140,6 +140,7 @@ const albumDetail = (): StreamingAlbumDetail => ({
       mvStatus: 'unknown',
     },
   ],
+  ...overrides,
 });
 
 const fakeCacheStore = (): ConstructorParameters<typeof StreamingService>[1] =>
@@ -709,6 +710,27 @@ describe('StreamingService playlist imports', () => {
 
     expect(cacheStore.upsertTracks).not.toHaveBeenCalled();
     expect(cacheStore.setApiCache).not.toHaveBeenCalled();
+  });
+
+  it('skips the synchronous album API cache read while playback is active', async () => {
+    const registry = new StreamingProviderRegistry();
+    const cacheStore = fakeAlbumCacheStore();
+    const detail = albumDetail({ title: 'Fresh Album' });
+    const cachedDetail = albumDetail({ title: 'Cached Album' });
+    cacheStore.getApiCache.mockReturnValue(cachedDetail);
+    registry.register({
+      name: 'netease',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getAlbum: vi.fn(async () => detail),
+      resolvePlayback: vi.fn(),
+    });
+    const service = new StreamingService(registry, cacheStore, undefined, undefined, () => true);
+
+    const result = await service.getAlbum('netease', 'album-1');
+
+    expect(cacheStore.getApiCache).not.toHaveBeenCalled();
+    expect(result.title).toBe('Fresh Album');
   });
 
   it('attaches a short-lived download authorization to protected playback sources', async () => {

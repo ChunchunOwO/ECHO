@@ -190,6 +190,7 @@ export type AppSettings = {
   appearanceThemeCustomExpanded?: boolean;
   appearanceSidebarLayoutExpanded?: boolean;
   appWindowAcrylicEnabled?: boolean;
+  appWindowAcrylicTransparencyPercent?: number;
   appearancePreferences?: AppearancePreferences;
   sidebarRouteOrder?: SidebarRouteId[];
   sidebarHiddenRouteIds?: SidebarRouteId[];

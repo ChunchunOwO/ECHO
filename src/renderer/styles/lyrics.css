@@ -1705,7 +1705,31 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 
 .lyrics-settings-drawer .lyrics-offset-controls p,
 .lyrics-settings-drawer .lyrics-smart-alignment p {
+  color: var(--audio-drawer-muted-text);
+  font-weight: 400;
   margin: 0;
+}
+
+.lyrics-settings-drawer .lyrics-offset-label,
+.lyrics-settings-drawer .lyrics-smart-alignment-label {
+  color: var(--audio-drawer-text);
+  font-weight: 600;
+}
+
+.lyrics-settings-drawer .lyrics-offset-value,
+.lyrics-settings-drawer .lyrics-smart-alignment-suggestion,
+.lyrics-settings-drawer .lyrics-offset-buttons button,
+.lyrics-settings-drawer .lyrics-smart-alignment-buttons button {
+  color: var(--audio-drawer-soft-text);
+  border-color: var(--theme-glass-bg-soft);
+  background: var(--theme-glass-bg-muted);
+  box-shadow: none;
+}
+
+.lyrics-settings-drawer .lyrics-offset-buttons button:hover,
+.lyrics-settings-drawer .lyrics-smart-alignment-buttons button:hover {
+  color: var(--audio-drawer-text);
+  background: var(--theme-glass-bg-raised);
 }
 
 .mv-offset-controls {

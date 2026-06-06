@@ -73,7 +73,56 @@ describe('AudioAuthenticityAnalyzer', () => {
     });
   });
 
-  it('uses DSD headers when the host can read them', async () => {
+  it('treats valid DSD headers as container evidence instead of proof of native source', async () => {
+    const analyzer = new AudioAuthenticityAnalyzer({
+      existsSync: () => true,
+      readDsdNativeSampleRate: async () => 2_822_400,
+    });
+
+    await expect(analyzer.analyzeTrack(track({
+      path: 'D:\\Music\\Dsd.dsf',
+      codec: 'DSF',
+      sampleRate: 2_822_400,
+      bitDepth: 1,
+      bitrate: 5_644_800,
+    }))).resolves.toMatchObject({
+      verdict: 'trusted_dsd_container',
+      confidence: 0.54,
+      metrics: {
+        dsdNativeSampleRate: 2_822_400,
+      },
+      evidence: expect.arrayContaining([
+        expect.objectContaining({ id: 'dsd_header_rate' }),
+        expect.objectContaining({ id: 'dsd_bitrate_plausible' }),
+        expect.objectContaining({ id: 'dsd_source_not_proven', severity: 'warning' }),
+      ]),
+    });
+  });
+
+  it('flags PCM-rate and PCM-depth DSD metadata as likely PCM-to-DSD conversion', async () => {
+    const analyzer = new AudioAuthenticityAnalyzer({
+      existsSync: () => true,
+      readDsdNativeSampleRate: async () => 2_822_400,
+    });
+
+    await expect(analyzer.analyzeTrack(track({
+      path: 'D:\\Music\\PCM2DSD\\Song.dsf',
+      codec: 'DSF',
+      sampleRate: 44_100,
+      bitDepth: 24,
+      bitrate: 1_200_000,
+    }))).resolves.toMatchObject({
+      verdict: 'likely_pcm_to_dsd',
+      confidence: 0.78,
+      evidence: expect.arrayContaining([
+        expect.objectContaining({ id: 'dsd_pcm_rate_metadata', severity: 'warning' }),
+        expect.objectContaining({ id: 'dsd_pcm_bit_depth_metadata', severity: 'risk' }),
+        expect.objectContaining({ id: 'dsd_transcode_text_hint', severity: 'risk' }),
+      ]),
+    });
+  });
+
+  it('downgrades DSD containers when only PCM-rate metadata is available', async () => {
     const analyzer = new AudioAuthenticityAnalyzer({
       existsSync: () => true,
       readDsdNativeSampleRate: async () => 2_822_400,
@@ -84,14 +133,11 @@ describe('AudioAuthenticityAnalyzer', () => {
       codec: 'DSF',
       sampleRate: 44_100,
       bitDepth: 1,
-      bitrate: null,
+      bitrate: 5_644_800,
     }))).resolves.toMatchObject({
-      verdict: 'trusted_dsd_container',
-      metrics: {
-        dsdNativeSampleRate: 2_822_400,
-      },
+      verdict: 'dsd_metadata_mismatch',
       evidence: expect.arrayContaining([
-        expect.objectContaining({ id: 'dsd_header_rate' }),
+        expect.objectContaining({ id: 'dsd_pcm_rate_metadata', severity: 'warning' }),
       ]),
     });
   });

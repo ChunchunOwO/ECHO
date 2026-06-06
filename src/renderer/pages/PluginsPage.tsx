@@ -30,7 +30,6 @@ const exampleLabels: Array<{ kind: PluginCreateExampleKind; label: string; descr
   { kind: 'playback-panel', label: '播放状态面板', description: '监听播放状态，带一个可编辑面板。' },
   { kind: 'command-tool', label: '命令工具', description: '注册一个手动执行的工具命令。' },
   { kind: 'library-script', label: '曲库脚本', description: '读取曲库摘要，适合整理类脚本起步。' },
-  { kind: 'audio-authenticity', label: '音频可信度', description: '通过受控宿主音频 API 分析无损与 DSD 可信度。' },
   { kind: 'source-provider', label: '自定义音源', description: '返回搜索候选，并在用户触发时解析音频 URL。' },
   { kind: 'theme-preset', label: '主题预设', description: '贡献可导入的高自定义主题参数。' },
 ];

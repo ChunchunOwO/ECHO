@@ -52,6 +52,7 @@ import { TidalStreamingProvider } from './providers/TidalStreamingProvider';
 import { M3u8StreamingProvider } from './providers/M3u8StreamingProvider';
 import { PluginStreamingProvider } from './providers/PluginStreamingProvider';
 import { buildM3u8StreamingPlaylistDetail } from './M3u8Playlist';
+import { enrichStreamingPlaybackSourceMetadata } from './StreamingAudioMetadataProbe';
 
 const searchTtlMs = 5 * 60 * 1000;
 const trackDetailTtlMs = 30 * 60 * 1000;
@@ -703,8 +704,9 @@ export class StreamingService {
         'Streaming playback',
         playbackProviderTimeoutMs,
       );
-      const authorizedSource = this.attachDownloadAuthorization(normalizedRequest, source);
-      const ttlMs = playableTtlMs(source);
+      const enrichedSource = await enrichStreamingPlaybackSourceMetadata(source);
+      const authorizedSource = this.attachDownloadAuthorization(normalizedRequest, enrichedSource);
+      const ttlMs = playableTtlMs(enrichedSource);
       if (ttlMs > 0) {
         this.memoryCache.set(key, authorizedSource, ttlMs);
       }
@@ -904,10 +906,13 @@ export class StreamingService {
       return memoryHit;
     }
 
-    const sqliteHit = this.cacheStore.getApiCache<StreamingAlbumDetail>(key);
-    if (sqliteHit) {
-      this.memoryCache.set(key, sqliteHit, trackDetailTtlMs);
-      return sqliteHit;
+    const playbackActive = await Promise.resolve(this.playbackActivityProvider()).catch(() => false);
+    if (!playbackActive) {
+      const sqliteHit = this.cacheStore.getApiCache<StreamingAlbumDetail>(key);
+      if (sqliteHit) {
+        this.memoryCache.set(key, sqliteHit, trackDetailTtlMs);
+        return sqliteHit;
+      }
     }
 
     return this.memoryCache.getOrCreateInflight(key, async () => {

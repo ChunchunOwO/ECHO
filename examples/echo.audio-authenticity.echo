@@ -1,0 +1,38 @@
+{
+  "type": "echo-next-plugin-package",
+  "version": 1,
+  "exportedAt": "2026-06-06T13:50:00.000Z",
+  "manifest": {
+    "id": "echo.audio-authenticity",
+    "name": "Audio Authenticity",
+    "version": "0.0.1",
+    "apiVersion": 2,
+    "entry": "plugin.js",
+    "permissions": [
+      "library:read",
+      "audio:analyze"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "analyze-track",
+          "title": "Analyze selected track authenticity"
+        }
+      ],
+      "trackContextMenus": [
+        {
+          "id": "audio-authenticity",
+          "title": "音频可信度",
+          "commandId": "analyze-track",
+          "localOnly": true
+        }
+      ]
+    }
+  },
+  "files": [
+    {
+      "path": "plugin.js",
+      "content": "const verdictLabels = {\n  trusted_lossless: '可信无损',\n  likely_lossy_transcode: '疑似假无损',\n  likely_fake_hires: '疑似假 Hi-Res',\n  trusted_dsd_container: '可信 DSD 容器',\n  dsd_metadata_mismatch: 'DSD 元数据异常',\n  lossy_source: '有损来源',\n  not_applicable: '不适用',\n  unknown: '暂时无法判断'\n};\n\nconst verdictTone = (verdict) => {\n  if (verdict === 'trusted_lossless' || verdict === 'trusted_dsd_container') return 'good';\n  if (verdict === 'likely_lossy_transcode' || verdict === 'likely_fake_hires' || verdict === 'dsd_metadata_mismatch') return 'risk';\n  if (verdict === 'lossy_source') return 'warn';\n  return 'neutral';\n};\n\nconst formatSampleRate = (value) => {\n  if (!value) return '--';\n  if (value >= 1000000) return `${Math.round(value / 10000) / 100} MHz`;\n  return `${Math.round(value / 100) / 10} kHz`;\n};\n\nconst formatBitrate = (value) => value ? `${Math.round(value / 1000)} kbps` : '--';\n\nconst toDrawerResult = (track, report) => ({\n  title: verdictLabels[report.verdict] || '检测完成',\n  summary: `${track.title || report.trackId} · ${Math.round((report.confidence || 0) * 100)}%`,\n  tone: verdictTone(report.verdict),\n  confidence: report.confidence,\n  metrics: [\n    { label: '编码', value: report.metrics.codec || report.metrics.extension || '--' },\n    { label: '采样率', value: formatSampleRate(report.metrics.sampleRate) },\n    { label: '位深', value: report.metrics.bitDepth ? `${Math.round(report.metrics.bitDepth)} bit` : '--' },\n    { label: '码率', value: formatBitrate(report.metrics.bitrate) }\n  ],\n  evidence: report.evidence,\n  notes: report.limitations\n});\n\necho.commands.register('analyze-track', { title: 'Analyze selected track authenticity' }, async (input) => {\n  const trackId = typeof input === 'string' ? input : input && typeof input.trackId === 'string' ? input.trackId : '';\n  if (!trackId) throw new Error('track_id_required');\n  const track = input && typeof input === 'object'\n    ? { id: trackId, title: input.title || trackId, artist: input.artist || null }\n    : { id: trackId, title: trackId };\n  const report = await echo.audio.analyzeTrack(trackId);\n  const result = toDrawerResult(track, report);\n  await echo.storage.set('lastAudioAuthenticityTrack', { trackId, result, report });\n  return result;\n});\n"
+    }
+  ]
+}

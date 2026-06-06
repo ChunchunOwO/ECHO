@@ -69,7 +69,6 @@ describe('plugin IPC', () => {
   it('routes valid plugin IPC requests to the service', async () => {
     expect(handlers[IpcChannels.PluginsList]!(null)).toEqual({ directory: 'D:\\Echo\\plugins', plugins: [] });
     expect(handlers[IpcChannels.PluginsCreateExample]!(null, 'playback-panel')).toMatchObject({ pluginId: 'echo.playback-panel' });
-    expect(handlers[IpcChannels.PluginsCreateExample]!(null, 'audio-authenticity')).toMatchObject({ pluginId: 'echo.audio-authenticity' });
     expect(handlers[IpcChannels.PluginsCreateExample]!(null, 'theme-preset')).toMatchObject({ pluginId: 'echo.theme-preset' });
     expect(handlers[IpcChannels.PluginsEnable]!(null, { pluginId: 'echo.playback-panel' })).toMatchObject({ enabled: true });
     expect(handlers[IpcChannels.PluginsDisable]!(null, 'echo.playback-panel')).toMatchObject({ enabled: false });
@@ -91,7 +90,6 @@ describe('plugin IPC', () => {
     expect(handlers[IpcChannels.PluginsGetLogs]!(null, 'echo.playback-panel')).toEqual([]);
 
     expect(serviceMock.createExample).toHaveBeenCalledWith('playback-panel');
-    expect(serviceMock.createExample).toHaveBeenCalledWith('audio-authenticity');
     expect(serviceMock.createExample).toHaveBeenCalledWith('theme-preset');
     expect(serviceMock.enable).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel' });
     expect(serviceMock.exportPluginPackage).toHaveBeenCalledWith('echo.playback-panel');

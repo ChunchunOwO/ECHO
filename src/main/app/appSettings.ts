@@ -85,6 +85,7 @@ const fallbackLocale: AppLocale = 'zh-CN';
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
 const defaultAppearanceThemeScheduleDarkAt = '19:00';
 const defaultAppearanceThemeScheduleLightAt = '07:00';
+const defaultAppWindowAcrylicTransparencyPercent = 56;
 const audioTransportFadeCurves: AudioTransportFadeCurve[] = ['linear', 'smooth', 'equalPower'];
 const defaultAudioTransportFadeDurationMs = 80;
 const defaultAudioTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
@@ -370,6 +371,7 @@ export const defaultSettings: AppSettings = {
   appearanceThemeCustomExpanded: false,
   appearanceSidebarLayoutExpanded: false,
   appWindowAcrylicEnabled: false,
+  appWindowAcrylicTransparencyPercent: defaultAppWindowAcrylicTransparencyPercent,
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
@@ -1616,6 +1618,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceThemeCustomExpanded: settings.appearanceThemeCustomExpanded === true,
     appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,
     appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
+    appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
+      ? clamp(Math.round(Number(settings.appWindowAcrylicTransparencyPercent)), 30, 82)
+      : defaultAppWindowAcrylicTransparencyPercent,
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     sidebarRouteOrder: normalizeSidebarRouteOrder(settings.sidebarRouteOrder),
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),

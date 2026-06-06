@@ -151,7 +151,7 @@ describe('PluginsPage', () => {
 
     fireEvent.click(createButtons[3]);
 
-    await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('audio-authenticity'));
+    await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('source-provider'));
   });
 
   it('imports and exports local plugin packages', async () => {

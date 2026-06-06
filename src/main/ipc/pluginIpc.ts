@@ -20,7 +20,7 @@ const requireText = (value: unknown, field: string): string => {
   return value.trim();
 };
 
-const exampleKinds = new Set<PluginCreateExampleKind>(['playback-panel', 'command-tool', 'library-script', 'audio-authenticity', 'source-provider', 'theme-preset']);
+const exampleKinds = new Set<PluginCreateExampleKind>(['playback-panel', 'command-tool', 'library-script', 'source-provider', 'theme-preset']);
 
 export const registerPluginIpc = (): void => {
   const service = getPluginService();

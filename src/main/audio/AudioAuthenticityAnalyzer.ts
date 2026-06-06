@@ -24,6 +24,7 @@ const lossyCodecs = new Set(['mp3', 'aac', 'ogg', 'opus', 'vorbis', 'wma']);
 const losslessExtensions = new Set(['.flac', '.alac', '.wav', '.wave', '.aiff', '.aif', '.ape']);
 const lossyExtensions = new Set(['.mp3', '.aac', '.m4a', '.ogg', '.opus', '.wma']);
 const dsdNativeRateFloor = 1_000_000;
+const dsdTextTranscodePattern = /(?:pcm\s*(?:to|2)\s*dsd|upsampl|up[-_\s]?convert|converted\s+to\s+dsd|dsd\s+convert|remodulat|noise[-_\s]?shap|hqplayer|foobar|sacd[-_\s]?r|升频|升采样|升取样|转\s*dsd|轉\s*dsd|转码|轉碼|转制|轉製|假\s*dsd|fake\s*dsd)/iu;
 
 const cleanText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -50,6 +51,40 @@ const evidence = (id: string, severity: PluginAudioAnalysisEvidence['severity'],
 
 const clampConfidence = (value: number): number =>
   Math.max(0, Math.min(1, Math.round(value * 100) / 100));
+
+const formatKhz = (value: number): string =>
+  value >= 1_000_000
+    ? `${Math.round(value / 10_000) / 100} MHz`
+    : `${Math.round(value / 100) / 10} kHz`;
+
+const formatMbps = (value: number): string =>
+  `${Math.round(value / 10_000) / 100} Mbps`;
+
+const dsdFamily = (sampleRate: number): string => {
+  const multiple = Math.round(sampleRate / 44_100);
+  return multiple >= 64 ? `DSD${multiple}` : `${formatKhz(sampleRate)} DSD`;
+};
+
+const observedBitrate = (bitrate: number | null, fileSizeBytes: number | null, durationSeconds: number | null): number | null => {
+  if (fileSizeBytes !== null && durationSeconds !== null && durationSeconds > 0) {
+    return (fileSizeBytes * 8) / durationSeconds;
+  }
+
+  return bitrate;
+};
+
+const dsdTextProbe = (track: LibraryTrack, filePath: string | null, codec: string | null): string =>
+  [
+    filePath,
+    codec,
+    track.title,
+    track.album,
+    track.artist,
+    track.albumArtist,
+    track.genre,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join(' ');
 
 export class AudioAuthenticityAnalyzer {
   private readonly now: () => Date;
@@ -99,10 +134,64 @@ export class AudioAuthenticityAnalyzer {
     if (dsdByName) {
       items.push(evidence('dsd_container_hint', 'info', 'Track is identified as DSF/DFF/DSD by codec or file extension.'));
       if (dsdNativeSampleRate !== null) {
-        items.push(evidence('dsd_header_rate', 'info', `DSD header reports native rate ${Math.round(dsdNativeSampleRate)} Hz.`));
+        items.push(evidence('dsd_header_rate', 'info', `DSD header reports ${dsdFamily(dsdNativeSampleRate)} native rate (${Math.round(dsdNativeSampleRate)} Hz).`));
+      } else {
+        items.push(evidence('dsd_header_unverified', 'warning', 'No native DSD sample rate was verified from the file header, so the container claim is not enough to trust the source.'));
       }
-      if ((sampleRate !== null && sampleRate < dsdNativeRateFloor) && dsdNativeSampleRate === null) {
-        items.push(evidence('dsd_metadata_low_rate', 'risk', 'Track looks like DSD but metadata exposes a PCM-rate sample rate and no native DSD header rate was verified.'));
+
+      const pcmRateMetadata = sampleRate !== null && sampleRate < dsdNativeRateFloor;
+      const pcmBitDepthMetadata = bitDepth !== null && bitDepth > 1;
+      const textProbe = dsdTextProbe(track, filePath, codec);
+      const hasTranscodeTextHint = dsdTextTranscodePattern.test(textProbe);
+      const measuredBitrate = observedBitrate(bitrate, fileSizeBytes, durationSeconds);
+      let dsdBitrateRisk = false;
+      let dsdBitrateWarning = false;
+
+      if (pcmRateMetadata) {
+        items.push(evidence('dsd_pcm_rate_metadata', 'warning', `Library metadata exposes PCM-rate ${Math.round(sampleRate)} Hz for a DSD-looking track; this may be a decode path or a PCM-sourced conversion, not proof of native DSD provenance.`));
+      }
+
+      if (pcmBitDepthMetadata) {
+        items.push(evidence('dsd_pcm_bit_depth_metadata', 'risk', `DSD should be 1-bit at the container level, but metadata reports ${Math.round(bitDepth)} bit PCM-style depth.`));
+      }
+
+      if (hasTranscodeTextHint) {
+        items.push(evidence('dsd_transcode_text_hint', 'risk', 'Path, title, album, artist, or genre contains wording commonly used for PCM-to-DSD conversion or upsampling.'));
+      }
+
+      if (dsdNativeSampleRate !== null && measuredBitrate !== null) {
+        const expectedStereoBitrate = dsdNativeSampleRate * 2;
+        const ratioToStereo = measuredBitrate / expectedStereoBitrate;
+        if (ratioToStereo < 0.35) {
+          dsdBitrateRisk = true;
+          items.push(evidence('dsd_bitrate_far_below_native', 'risk', `Observed bitrate ${formatMbps(measuredBitrate)} is far below uncompressed stereo ${dsdFamily(dsdNativeSampleRate)} around ${formatMbps(expectedStereoBitrate)}. This is suspicious unless the file uses a known compressed DSD variant.`));
+        } else if (ratioToStereo < 0.72) {
+          dsdBitrateWarning = true;
+          items.push(evidence('dsd_bitrate_below_native', 'warning', `Observed bitrate ${formatMbps(measuredBitrate)} is below normal uncompressed stereo ${dsdFamily(dsdNativeSampleRate)} around ${formatMbps(expectedStereoBitrate)}; treat source authenticity as unproven.`));
+        } else {
+          items.push(evidence('dsd_bitrate_plausible', 'info', `Observed bitrate ${formatMbps(measuredBitrate)} is plausible for ${dsdFamily(dsdNativeSampleRate)} container data.`));
+        }
+      } else {
+        items.push(evidence('dsd_bitrate_unverified', 'warning', 'No reliable duration/file-size bitrate cross-check was available for the DSD container.'));
+      }
+
+      if (hasTranscodeTextHint || dsdBitrateRisk || (pcmRateMetadata && pcmBitDepthMetadata)) {
+        return this.report(track.id, 'ready', 'likely_pcm_to_dsd', hasTranscodeTextHint || dsdBitrateRisk ? 0.78 : 0.7, {
+          codec,
+          extension,
+          sampleRate,
+          bitDepth,
+          bitrate,
+          durationSeconds,
+          fileSizeBytes,
+          dsdNativeSampleRate,
+        }, items, limitations);
+      }
+
+      if (pcmRateMetadata || pcmBitDepthMetadata || dsdNativeSampleRate === null || dsdBitrateWarning) {
+        if (dsdNativeSampleRate === null && pcmRateMetadata) {
+          items.push(evidence('dsd_header_missing_pcm_rate', 'risk', 'Track looks like DSD but only PCM-rate metadata was available and the host could not verify a native DSD header.'));
+        }
         return this.report(track.id, 'ready', 'dsd_metadata_mismatch', 0.72, {
           codec,
           extension,
@@ -114,7 +203,8 @@ export class AudioAuthenticityAnalyzer {
           dsdNativeSampleRate,
         }, items, limitations);
       }
-      return this.report(track.id, 'ready', 'trusted_dsd_container', dsdNativeSampleRate ? 0.82 : 0.62, {
+      items.push(evidence('dsd_source_not_proven', 'warning', 'Valid DSD container evidence does not prove the original mastering source; spectral/noise-shaping analysis is still required before calling it true native DSD.'));
+      return this.report(track.id, 'ready', 'trusted_dsd_container', 0.54, {
         codec,
         extension,
         sampleRate,

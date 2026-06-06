@@ -116,6 +116,7 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
     x: position.x + pointerOffset,
     y: position.y + pointerOffset,
   }));
+  const [menuMaxHeight, setMenuMaxHeight] = useState(() => window.innerHeight - viewportPadding * 2);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -125,11 +126,21 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
     }
 
     const rect = menu.getBoundingClientRect();
+    const viewportMaxHeight = Math.max(0, window.innerHeight - viewportPadding * 2);
+    const measuredHeight = Math.max(menu.scrollHeight, rect.height);
+    const fittedHeight = Math.min(measuredHeight, viewportMaxHeight);
+    const nextY = clamp(
+      position.y + pointerOffset,
+      viewportPadding,
+      Math.max(viewportPadding, window.innerHeight - fittedHeight - viewportPadding),
+    );
+
     setMenuPosition({
       x: clamp(position.x + pointerOffset, viewportPadding, window.innerWidth - rect.width - viewportPadding),
-      y: clamp(position.y + pointerOffset, viewportPadding, window.innerHeight - rect.height - viewportPadding),
+      y: nextY,
     });
-  }, [position.x, position.y]);
+    setMenuMaxHeight(Math.max(0, window.innerHeight - nextY - viewportPadding));
+  }, [enabledActions, liked, pluginMenuItems.length, position.x, position.y, selectionCount, showRemoveFromPlaylist, track.mediaType]);
 
   const loadPlaylists = (): void => {
     if (playlistLoadStartedRef.current) {
@@ -272,7 +283,7 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
         ref={menuRef}
         className="track-context-menu"
         role="menu"
-        style={{ left: menuPosition.x, top: menuPosition.y }}
+        style={{ left: menuPosition.x, top: menuPosition.y, maxHeight: menuMaxHeight }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {isBatch ? <div className="track-menu-heading">已选 {selectionCount} 首</div> : null}

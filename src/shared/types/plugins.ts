@@ -440,6 +440,7 @@ export type PluginAudioAnalysisVerdict =
   | 'trusted_lossless'
   | 'likely_lossy_transcode'
   | 'likely_fake_hires'
+  | 'likely_pcm_to_dsd'
   | 'trusted_dsd_container'
   | 'dsd_metadata_mismatch'
   | 'lossy_source'
@@ -649,7 +650,6 @@ export type PluginCreateExampleKind =
   | 'playback-panel'
   | 'command-tool'
   | 'library-script'
-  | 'audio-authenticity'
   | 'source-provider'
   | 'theme-preset';
 

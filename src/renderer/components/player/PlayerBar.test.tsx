@@ -10,7 +10,7 @@ import type { HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { setPlaybackStatusSnapshot } from '../../stores/playbackStatusStore';
+import { beginPlaybackSeekSnapshot, setPlaybackStatusSnapshot } from '../../stores/playbackStatusStore';
 import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlaybackCommandController } from './PlaybackCommandController';
 import { PlayerBar } from './PlayerBar';
@@ -2930,6 +2930,68 @@ describe('PlayerBar', () => {
     });
 
     expect(Number(slider.value)).toBeGreaterThanOrEqual(12);
+  });
+
+  it('does not retain same-track audio status after a shared seek snapshot clears audio telemetry', async () => {
+    const track = makeTrack(1, { duration: 240 });
+    const initialAudioStatus = {
+      ...audioStatus(track),
+      durationSeconds: track.duration,
+      positionSeconds: 181,
+    };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 181000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(initialAudioStatus),
+        onStatus: vi.fn(),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    const slider = screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement;
+    await waitFor(() => expect(Number(slider.value)).toBeGreaterThanOrEqual(181));
+
+    act(() => {
+      beginPlaybackSeekSnapshot({
+        state: 'playing',
+        currentTrackId: track.id,
+        positionMs: 60000,
+        durationMs: track.duration * 1000,
+        filePath: track.path,
+      });
+    });
+
+    await waitFor(() => expect(Number(slider.value)).toBeLessThan(65));
+    expect(Number(slider.value)).toBeGreaterThanOrEqual(60);
   });
 
   it('keeps high-speed progress from jumping backward on a brief same-track stale audio status', async () => {

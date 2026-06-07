@@ -23,7 +23,10 @@ import {
   PlaybackQueueProvider,
   usePlaybackQueue,
 } from "../stores/PlaybackQueueProvider";
-import { setPlaybackStatusSnapshot } from "../stores/playbackStatusStore";
+import {
+  beginPlaybackSeekSnapshot,
+  setPlaybackStatusSnapshot,
+} from "../stores/playbackStatusStore";
 import { LyricsPage } from "./LyricsPage";
 import type { LyricLine } from "../components/lyrics/lyricsTypes";
 import { albumDetailNavigationEvent } from "../utils/albumNavigation";
@@ -945,6 +948,46 @@ describe("LyricsPage", () => {
     expect(
       container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
     ).toContain("Third line");
+  });
+
+  it("does not retain same-track audio status after a shared seek snapshot clears audio telemetry", async () => {
+    const track = makeTrack({ duration: 240 });
+    const seekSensitiveLyrics: LyricLine[] = [
+      { timeMs: 0, text: "line at start" },
+      { timeMs: 60000, text: "line at 60" },
+      { timeMs: 181000, text: "line at 181" },
+    ];
+    mockEcho(track, 181);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={seekSensitiveLyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("line at 181"),
+    );
+
+    act(() => {
+      beginPlaybackSeekSnapshot({
+        state: "playing",
+        currentTrackId: track.id,
+        positionMs: 60000,
+        durationMs: track.duration * 1000,
+        filePath: track.path,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("line at 60"),
+    );
   });
 
   it("keeps lyrics advancing when the reported playback position stalls without native telemetry", async () => {

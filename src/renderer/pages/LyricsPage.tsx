@@ -2521,15 +2521,10 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
           Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath)
         : false;
-      if (shouldApplyAudioStatus) {
+      if (snapshotAudioStatus && shouldApplyAudioStatus) {
         setAudioStatus(snapshotAudioStatus);
-      } else if (snapshot.playbackStatus) {
-        const nextPlaybackStatus = snapshot.playbackStatus;
-        setAudioStatus((current) =>
-          current && !isAudioStatusForPlayback(current, nextPlaybackStatus)
-            ? null
-            : current,
-        );
+      } else if (snapshotAudioStatus || snapshot.playbackStatus || snapshot.error) {
+        setAudioStatus(null);
       }
 
       const nextTrackId =

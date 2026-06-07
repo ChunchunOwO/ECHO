@@ -29,6 +29,7 @@ const fallbackEqState: EqState = {
   enabled: false,
   preampDb: 0,
   dspHeadroomDb: 0,
+  dspSafetyLimiterEnabled: true,
   presetId: 'flat',
   presetName: 'Flat',
   clippingRisk: false,
@@ -344,6 +345,11 @@ const dspLocalText: Record<string, string> = {
   'dsp.panel.safety.routeOutput': '输出',
   'dsp.panel.safety.checkBitPerfect': 'Bit-perfect',
   'dsp.panel.safety.checkLimiter': '保护限制器',
+  'dsp.panel.safety.disableLimiter': '关闭保护限制器',
+  'dsp.panel.safety.enableLimiter': '启用保护限制器',
+  'dsp.panel.safety.limiterBypassed': '已旁路',
+  'dsp.panel.safety.limiterBypassedDetail': '最终保护限制器已关闭，热输出可能削波或失真。',
+  'dsp.panel.safety.limiterToggleTitle': '保护限制器',
   'dsp.panel.safety.checkRoom': 'FIR',
   'dsp.panel.safety.checkChannel': '声道工具',
   'dsp.panel.safety.note': '输出安全只负责最终链路状态，不改变 EQ、FIR 或声道参数。',
@@ -623,6 +629,7 @@ type ModulePanelProps = {
   onEchoSrcQualityProfileChange: (profile: AudioEchoSrcQualityProfile) => void;
   onEchoSrcCompareToggle: () => void;
   onHeadroomChange: (headroomDb: number) => void;
+  onSafetyLimiterChange: (enabled: boolean) => void;
   onImportRoomCorrection: () => void;
   onToggleRoomCorrection: () => void;
   onEnableRoomSafely: () => void;
@@ -1612,10 +1619,11 @@ const ChannelPanel = ({ channelBalance, busyKey, onChannelPatch, onChannelReset 
   );
 };
 
-const SafetyPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, onRefresh }: ModulePanelProps): JSX.Element => {
+const SafetyPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, busyKey, onSafetyLimiterChange, onRefresh }: ModulePanelProps): JSX.Element => {
   const { t } = useDspI18n();
   const dspActive = audioStatus?.dspActive === true;
   const limiterProtecting = audioStatus?.dspLimiterProtecting === true;
+  const safetyLimiterEnabled = eqState.dspSafetyLimiterEnabled !== false;
   const liveHeadroomDb = finiteLevel(audioStatus?.audioLevels?.headroomDb);
   const outputPeakDb = finiteLevel(audioStatus?.audioLevels?.estimatedOutputPeakDb);
   const clipCount = audioStatus?.audioLevels?.clipCount ?? 0;
@@ -1658,8 +1666,10 @@ const SafetyPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, onR
     },
     {
       label: t('dsp.panel.safety.checkLimiter'),
-      value: limiterProtecting ? t('dsp.status.protected') : t('dsp.status.limiterArmed'),
-      tone: limiterProtecting ? 'risk' as HeadroomTone : 'good' as HeadroomTone,
+      value: safetyLimiterEnabled
+        ? (limiterProtecting ? t('dsp.status.protected') : t('dsp.status.limiterArmed'))
+        : t('dsp.panel.safety.limiterBypassed'),
+      tone: !safetyLimiterEnabled ? 'risk' as HeadroomTone : limiterProtecting ? 'risk' as HeadroomTone : 'good' as HeadroomTone,
     },
     {
       label: t('dsp.metric.outputEstimate'),
@@ -1742,6 +1752,27 @@ const SafetyPanel = ({ audioStatus, eqState, roomCorrection, channelBalance, onR
           </span>
           <strong>{t(nextTitleKey)}</strong>
           <p>{t(nextDetailKey)}</p>
+          <div className="dsp-module-actions" role="group" aria-label={t('dsp.panel.safety.limiterToggleTitle')}>
+            <button
+              type="button"
+              data-active={safetyLimiterEnabled}
+              disabled={busyKey === 'safety'}
+              onClick={() => onSafetyLimiterChange(true)}
+            >
+              <ShieldCheck size={14} aria-hidden="true" />
+              {t('dsp.panel.safety.enableLimiter')}
+            </button>
+            <button
+              type="button"
+              data-active={!safetyLimiterEnabled}
+              disabled={busyKey === 'safety'}
+              onClick={() => onSafetyLimiterChange(false)}
+            >
+              <Zap size={14} aria-hidden="true" />
+              {t('dsp.panel.safety.disableLimiter')}
+            </button>
+          </div>
+          {!safetyLimiterEnabled ? <p>{t('dsp.panel.safety.limiterBypassedDetail')}</p> : null}
           <button type="button" onClick={onRefresh}>
             <Activity size={14} aria-hidden="true" />
             {t('dsp.action.refresh')}
@@ -1930,6 +1961,22 @@ export const DspPage = (): JSX.Element => {
     [runModuleAction, t],
   );
 
+  const handleSafetyLimiterChange = useCallback(
+    (enabled: boolean): void => {
+      const eq = getEqBridge();
+      if (!eq?.setDspSafetyLimiterEnabled) {
+        setModuleError(t('dsp.error.dspBridge'));
+        return;
+      }
+
+      setEqState((current) => ({ ...current, dspSafetyLimiterEnabled: enabled }));
+      void runModuleAction('safety', async () => {
+        setEqState(await eq.setDspSafetyLimiterEnabled(enabled));
+      });
+    },
+    [runModuleAction, t],
+  );
+
   const handleImportRoomCorrection = useCallback((): void => {
     const eq = getEqBridge();
     if (!eq?.importRoomCorrectionIr) {
@@ -2046,6 +2093,7 @@ export const DspPage = (): JSX.Element => {
   const clippingRisk = hasObservedDspClippingRisk(audioStatus, eqState, roomCorrection, channelBalance, clipCount);
   const headroomWarning = hasHeadroomWarning(audioStatus, outputPeakDb, liveHeadroomDb);
   const dspHeadroomDb = eqState.dspHeadroomDb ?? 0;
+  const safetyLimiterEnabled = eqState.dspSafetyLimiterEnabled !== false;
   const outputName = audioStatus?.outputDeviceName || t('dsp.status.systemOutput');
   const sampleRate = audioStatus?.actualDeviceSampleRate ?? audioStatus?.requestedOutputSampleRate ?? audioStatus?.fileSampleRate ?? null;
   const echoSrcActive = audioStatus?.echoSrcActive === true;
@@ -2123,14 +2171,14 @@ export const DspPage = (): JSX.Element => {
         id: 'safety',
         stageKey: 'dsp.stage.output',
         title: t('dsp.module.safety.title'),
-        subtitle: clippingRisk ? t('dsp.status.riskDetected') : headroomWarning ? t('dsp.status.headroomRisk') : t('dsp.status.limiterArmed'),
+        subtitle: !safetyLimiterEnabled ? t('dsp.panel.safety.limiterBypassed') : clippingRisk ? t('dsp.status.riskDetected') : headroomWarning ? t('dsp.status.headroomRisk') : t('dsp.status.limiterArmed'),
         description: t('dsp.module.safety.description'),
         icon: ShieldCheck,
-        enabled: clippingRisk || headroomWarning || dspActive,
-        accent: clippingRisk || headroomWarning ? 'amber' : 'green',
+        enabled: !safetyLimiterEnabled || clippingRisk || headroomWarning || dspActive,
+        accent: !safetyLimiterEnabled || clippingRisk || headroomWarning ? 'amber' : 'green',
       },
     ],
-    [activeEqPresetName, channelBalanceEnabled, clippingRisk, dspActive, dspHeadroomDb, echoSrcActive, echoSrcEnabled, echoSrcSubtitle, eqEnabled, eqState.presetName, headroomWarning, headphoneCorrectionActive, roomCorrection.enabled, roomCorrection.irName, t],
+    [activeEqPresetName, channelBalanceEnabled, clippingRisk, dspActive, dspHeadroomDb, echoSrcActive, echoSrcEnabled, echoSrcSubtitle, eqEnabled, eqState.presetName, headroomWarning, headphoneCorrectionActive, roomCorrection.enabled, roomCorrection.irName, safetyLimiterEnabled, t],
   );
 
   const activeCount = modules.filter((module) => module.enabled).length;
@@ -2157,6 +2205,7 @@ export const DspPage = (): JSX.Element => {
     onEchoSrcQualityProfileChange: handleEchoSrcQualityProfileChange,
     onEchoSrcCompareToggle: handleEchoSrcCompareToggle,
     onHeadroomChange: handleHeadroomChange,
+    onSafetyLimiterChange: handleSafetyLimiterChange,
     onImportRoomCorrection: handleImportRoomCorrection,
     onToggleRoomCorrection: handleToggleRoomCorrection,
     onEnableRoomSafely: handleEnableRoomSafely,

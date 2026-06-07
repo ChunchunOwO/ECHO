@@ -289,6 +289,7 @@ void testDspChainBypassPreservesDryBuffer()
 
 void testDspChainLimiterProtectsActiveOutput()
 {
+    echo::DspChain::setSafetyLimiterEnabled(true);
     echo::EqProcessor eqProcessor;
     echo::ConvolutionProcessor convolutionProcessor;
     echo::ChannelBalanceProcessor channelBalanceProcessor;
@@ -318,8 +319,35 @@ void testDspChainLimiterProtectsActiveOutput()
     }
 }
 
+void testDspChainLimiterCanBeBypassed()
+{
+    echo::DspChain::setSafetyLimiterEnabled(false);
+    echo::EqProcessor eqProcessor;
+    echo::ConvolutionProcessor convolutionProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    echo::DspHeadroomProcessor headroomProcessor;
+    echo::DspChain dspChain(eqProcessor, convolutionProcessor, channelBalanceProcessor, headroomProcessor);
+    dspChain.prepare(48000.0, 128, 2);
+    eqProcessor.setEnabled(true);
+
+    auto buffer = makeBuffer(2, 128);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* samples = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            samples[sample] = 2.0f;
+    }
+
+    dspChain.processBlock(buffer, 0, buffer.getNumSamples());
+    require(buffer.getSample(0, 0) > 1.0f, "disabled DSP safety limiter must not cap active-chain output");
+    require(! dspChain.isSafetyLimiterProtecting(), "disabled DSP safety limiter must not report protection");
+
+    echo::DspChain::setSafetyLimiterEnabled(true);
+}
+
 void testDspHeadroomOnlyAppliesToActiveDsp()
 {
+    echo::DspChain::setSafetyLimiterEnabled(true);
     echo::EqProcessor eqProcessor;
     echo::ConvolutionProcessor convolutionProcessor;
     echo::ChannelBalanceProcessor channelBalanceProcessor;
@@ -1302,6 +1330,7 @@ int main()
         { "Channel balance band gain compensation", testChannelBalanceBandGainCompensation },
         { "DSP chain bypass preserves dry buffer", testDspChainBypassPreservesDryBuffer },
         { "DSP chain limiter protects active output", testDspChainLimiterProtectsActiveOutput },
+        { "DSP chain limiter can be bypassed", testDspChainLimiterCanBeBypassed },
         { "DSP headroom only applies to active DSP", testDspHeadroomOnlyAppliesToActiveDsp },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },

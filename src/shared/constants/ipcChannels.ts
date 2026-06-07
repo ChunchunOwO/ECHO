@@ -455,6 +455,7 @@ export const IpcChannels = {
   EqSetBandEnabled: 'eq:set-band-enabled',
   EqSetPreamp: 'eq:set-preamp',
   EqSetDspHeadroom: 'eq:set-dsp-headroom',
+  EqSetDspSafetyLimiterEnabled: 'eq:set-dsp-safety-limiter-enabled',
   EqSetPreset: 'eq:set-preset',
   EqReset: 'eq:reset',
   EqListPresets: 'eq:list-presets',

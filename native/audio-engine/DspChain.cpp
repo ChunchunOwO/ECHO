@@ -1,4 +1,5 @@
 #include "DspChain.h"
+#include "DspSafetyLimiter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -105,9 +106,19 @@ bool DspChain::isSafetyLimiterProtecting() const
     return safetyLimiterClippingRisk.load(std::memory_order_acquire);
 }
 
+void DspChain::setSafetyLimiterEnabled(bool enabled)
+{
+    setDspSafetyLimiterEnabled(enabled);
+}
+
+bool DspChain::isSafetyLimiterEnabled()
+{
+    return isDspSafetyLimiterEnabled();
+}
+
 void DspChain::processSafetyLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
-    if (numSamples <= 0)
+    if (numSamples <= 0 || ! isSafetyLimiterEnabled())
     {
         safetyLimiterClippingRisk.store(false, std::memory_order_release);
         return;

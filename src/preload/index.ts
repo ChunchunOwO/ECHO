@@ -2357,6 +2357,7 @@ const echoApi: EchoApi = {
     setBandEnabled: (request) => ipcRenderer.invoke(IpcChannels.EqSetBandEnabled, request),
     setPreamp: (preampDb) => ipcRenderer.invoke(IpcChannels.EqSetPreamp, preampDb),
     setDspHeadroom: (headroomDb) => ipcRenderer.invoke(IpcChannels.EqSetDspHeadroom, headroomDb),
+    setDspSafetyLimiterEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.EqSetDspSafetyLimiterEnabled, enabled),
     setPreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqSetPreset, presetId),
     reset: () => ipcRenderer.invoke(IpcChannels.EqReset),
     listPresets: () => ipcRenderer.invoke(IpcChannels.EqListPresets),

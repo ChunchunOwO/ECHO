@@ -1,4 +1,5 @@
 #include "EqProcessor.h"
+#include "DspSafetyLimiter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -150,7 +151,7 @@ void EqProcessor::processBlock(juce::AudioBuffer<float>& buffer, int startSample
                 wet = channelStates[static_cast<size_t>(channel)].filters[band].process(wet, coefficients[band]);
 
             const float mixed = dry + (wet - dry) * bypassMix;
-            const bool shouldProtect = bypassMix > 0.0f || targetBypassMix > 0.0f || wasEnabled;
+            const bool shouldProtect = isDspSafetyLimiterEnabled() && (bypassMix > 0.0f || targetBypassMix > 0.0f || wasEnabled);
             samples[sample] = protectClippingSample(mixed, shouldProtect, risk);
         }
     }

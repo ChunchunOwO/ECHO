@@ -799,6 +799,7 @@ export type EchoApi = {
     setBandEnabled: (request: EqSetBandEnabledRequest) => Promise<EqState>;
     setPreamp: (preampDb: number) => Promise<EqState>;
     setDspHeadroom: (headroomDb: number) => Promise<EqState>;
+    setDspSafetyLimiterEnabled: (enabled: boolean) => Promise<EqState>;
     setPreset: (presetId: string) => Promise<EqState>;
     reset: () => Promise<EqState>;
     listPresets: () => Promise<EqPreset[]>;

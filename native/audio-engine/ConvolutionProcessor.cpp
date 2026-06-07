@@ -1,4 +1,5 @@
 #include "ConvolutionProcessor.h"
+#include "DspSafetyLimiter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -112,7 +113,7 @@ void ConvolutionProcessor::processBlock(juce::AudioBuffer<float>& buffer, int st
             buffer.setSample(
                 channel,
                 startSample + sample,
-                protectClippingSample(static_cast<float>(output) * trimGain, true, risk));
+                protectClippingSample(static_cast<float>(output) * trimGain, isDspSafetyLimiterEnabled(), risk));
         }
 
         historyWriteIndex = (historyWriteIndex + 1) % roomCorrectionMaxTaps;

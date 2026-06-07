@@ -27,6 +27,8 @@ public:
     bool isActive() const;
     bool hasClippingRisk() const;
     bool isSafetyLimiterProtecting() const;
+    static void setSafetyLimiterEnabled(bool enabled);
+    static bool isSafetyLimiterEnabled();
 
 private:
     static constexpr int bypassTailBlocks = 16;

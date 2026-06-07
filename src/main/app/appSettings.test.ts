@@ -89,6 +89,7 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.sidebarAutoHideEnabled).toBe(false);
     expect(settings.sidebarIconOnlyEnabled).toBe(false);
+    expect(settings.settingsOptionalSectionsVisible).toBe(false);
     expect(settings.featureCommentsHidden).toBe(false);
     expect(settings.touchOnScreenKeyboardEnabled).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
@@ -267,6 +268,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).touchOnScreenKeyboardEnabled).toBe(false);
     expect(normalizeSettings({ touchOnScreenKeyboardEnabled: true }).touchOnScreenKeyboardEnabled).toBe(true);
     expect(normalizeSettings({ touchOnScreenKeyboardEnabled: 'true' as never }).touchOnScreenKeyboardEnabled).toBe(false);
+  });
+
+  it('normalizes optional settings sections as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).settingsOptionalSectionsVisible).toBe(false);
+    expect(normalizeSettings({ settingsOptionalSectionsVisible: true }).settingsOptionalSectionsVisible).toBe(true);
+    expect(normalizeSettings({ settingsOptionalSectionsVisible: 'true' as never }).settingsOptionalSectionsVisible).toBe(false);
   });
 
   it('normalizes data protection disable as an explicit opt-in', async () => {

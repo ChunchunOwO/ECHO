@@ -44,6 +44,14 @@ const hasArtistAvatar = (artist: LibraryArtist): boolean => Boolean(artist.avata
 const prioritizeArtistsWithAvatars = (items: LibraryArtist[]): LibraryArtist[] =>
   [...items].sort((left, right) => Number(hasArtistAvatar(right)) - Number(hasArtistAvatar(left)));
 
+const versionedArtistImageUrl = (imageUrl: string | null, version: number | undefined): string | null => {
+  if (!imageUrl || !version || !imageUrl.startsWith('echo-artist-image://')) {
+    return imageUrl;
+  }
+
+  return `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}v=${version}`;
+};
+
 const artistMeta = (artist: LibraryArtist, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   const parts: string[] = [];
 
@@ -160,6 +168,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [artistWallAlbumFallbackForMissingAvatars, setArtistWallAlbumFallbackForMissingAvatars] = useState(false);
   const [artistImagesAutoFetch, setArtistImagesAutoFetch] = useState(false);
   const [artistAvatarMenu, setArtistAvatarMenu] = useState<{ artist: LibraryArtist; position: { x: number; y: number } } | null>(null);
+  const [artistAvatarVersions, setArtistAvatarVersions] = useState<Record<string, number>>({});
   const [failedAvatarUrls, setFailedAvatarUrls] = useState<Record<string, string>>({});
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -394,6 +403,28 @@ export const ArtistsPage = (): JSX.Element => {
   }, [loadArtists]);
 
   const applyUpdatedArtist = useCallback((updatedArtist: LibraryArtist): void => {
+    setArtistAvatarVersions((current) => ({
+      ...current,
+      [updatedArtist.id]: (current[updatedArtist.id] ?? 0) + 1,
+    }));
+    setFailedAvatarUrls((current) => {
+      if (!(updatedArtist.id in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[updatedArtist.id];
+      return next;
+    });
+    setFailedCoverUrls((current) => {
+      if (!(updatedArtist.id in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[updatedArtist.id];
+      return next;
+    });
     setArtists((current) => {
       let changed = false;
       const next = current.map((artist) => {
@@ -806,7 +837,8 @@ export const ArtistsPage = (): JSX.Element => {
       <div ref={pageRootRef} className="media-wall-scroll-shell page-scroll-container">
         <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
           {artists.map((artist, index) => {
-            const avatarImageUrl = artist.avatarUrl ?? artist.avatarThumbUrl ?? null;
+            const avatarVersion = artistAvatarVersions[artist.id];
+            const avatarImageUrl = versionedArtistImageUrl(artist.avatarUrl ?? artist.avatarThumbUrl ?? null, avatarVersion);
             const coverImageUrl = artist.coverSource === 'default' ? null : artist.coverThumb;
             const shouldShowAvatar = Boolean(
               avatarImageUrl && failedAvatarUrls[artist.id] !== avatarImageUrl,
@@ -823,7 +855,7 @@ export const ArtistsPage = (): JSX.Element => {
             );
             const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? coverImageUrl : null;
             const avatarSrcSet = shouldShowAvatar && artist.avatarThumbUrl && artist.avatarUrl && artist.avatarThumbUrl !== artist.avatarUrl
-              ? `${artist.avatarThumbUrl} 192w, ${artist.avatarUrl} 1024w`
+              ? `${versionedArtistImageUrl(artist.avatarThumbUrl, avatarVersion)} 192w, ${versionedArtistImageUrl(artist.avatarUrl, avatarVersion)} 1024w`
               : undefined;
 
             return (

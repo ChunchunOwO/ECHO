@@ -197,6 +197,7 @@ export type AppSettings = {
   sidebarHiddenRouteIds?: SidebarRouteId[];
   sidebarAutoHideEnabled?: boolean;
   sidebarIconOnlyEnabled?: boolean;
+  settingsOptionalSectionsVisible?: boolean;
   featureCommentsHidden?: boolean;
   trackContextMenuExtraActionsEnabled?: boolean;
   touchOnScreenKeyboardEnabled?: boolean;

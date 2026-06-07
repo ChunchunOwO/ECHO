@@ -12377,6 +12377,7 @@
 .lyrics-settings-drawer .lyrics-font-panel,
 .lyrics-settings-drawer .lyrics-desktop-font-panel-body,
 .lyrics-settings-drawer .lyrics-font-actions,
+.lyrics-settings-drawer .lyrics-background-select,
 .lyrics-settings-drawer .lyrics-background-segmented,
 .lyrics-settings-drawer .lyrics-desktop-opacity-control,
 .lyrics-settings-drawer .mv-threshold-slider {
@@ -12525,6 +12526,8 @@
   background: var(--theme-accent-solid-bg);
 }
 
+.settings-lyrics-panel .lyrics-background-select__trigger,
+.settings-lyrics-panel .lyrics-background-select__menu,
 .settings-lyrics-panel .lyrics-background-segmented button,
 .settings-lyrics-panel .lyrics-source-option,
 .settings-lyrics-panel .lyrics-color-reset,
@@ -12549,6 +12552,8 @@ html[data-theme="dark"] .settings-lyrics-panel {
 
 html[data-theme="dark"] .settings-lyrics-panel .audio-engine-meter,
 html[data-theme="dark"] .settings-lyrics-panel .audio-device-pill,
+html[data-theme="dark"] .settings-lyrics-panel .lyrics-background-select__trigger,
+html[data-theme="dark"] .settings-lyrics-panel .lyrics-background-select__menu,
 html[data-theme="dark"] .settings-lyrics-panel .lyrics-background-segmented button,
 html[data-theme="dark"] .settings-lyrics-panel .lyrics-source-option,
 html[data-theme="dark"] .settings-lyrics-panel .lyrics-color-reset,

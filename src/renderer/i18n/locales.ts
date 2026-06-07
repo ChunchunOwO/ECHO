@@ -1960,6 +1960,8 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.berryDream.description'
   | 'settings.appearance.themePreset.classic'
   | 'settings.appearance.themePreset.classic.description'
+  | 'settings.appearance.themePreset.random'
+  | 'settings.appearance.themePreset.random.description'
   | 'settings.appearance.themePreset.amberNoir'
   | 'settings.appearance.themePreset.amberNoir.description'
   | 'settings.appearance.themePreset.caramelPudding'
@@ -2124,6 +2126,7 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.message.importFailed'
   | 'settings.appearance.themeCustom.message.invalidColor'
   | 'settings.appearance.themeCustom.message.lowContrast'
+  | 'settings.appearance.themeCustom.message.randomReady'
   | 'settings.appearance.themeCustom.message.reset'
   | 'settings.appearance.themeCustom.message.saved'
   | 'settings.appearance.themeCustom.myThemes.description'
@@ -2271,6 +2274,8 @@ export type TranslationKey =
   | 'settings.general.sidebarAutoHide.title'
   | 'settings.general.sidebarIconOnly.description'
   | 'settings.general.sidebarIconOnly.title'
+  | 'settings.general.settingsOptionalSections.description'
+  | 'settings.general.settingsOptionalSections.title'
   | 'settings.general.featureCommentsHidden.description'
   | 'settings.general.featureCommentsHidden.title'
   | 'settings.general.trackContextMenuExtraActions.description'
@@ -5105,8 +5110,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.theme.title': '主题',
   'settings.appearance.themePreset.title': '主题预设',
   'settings.appearance.themePreset.description': '选择一套全局渐变色板；当前明暗模式仍会保留。',
-  'settings.appearance.themePreset.classic': '经典 ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白灰基底、克制蓝紫强调，接近 Roon 的干净耐看。',
+  'settings.appearance.themePreset.classic': '经典',
+  'settings.appearance.themePreset.classic.description': '白灰基底、克制蓝紫强调，清爽耐看。',
+  'settings.appearance.themePreset.random': '随机主题',
+  'settings.appearance.themePreset.random.description': '生成一套可读性校验通过的随机配色，满意后可手动保存。',
   'settings.appearance.themePreset.echoTwilight': '暮光桃雾',
   'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉渐变感。',
   'settings.appearance.themePreset.sakuraMilk': '樱粉奶霜',
@@ -5277,6 +5284,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': '已自动调整文字与按钮颜色。',
   'settings.appearance.themeCustom.message.invalidColor': '请输入 #RRGGBB 格式的安全颜色。',
   'settings.appearance.themeCustom.message.lowContrast': '当前文字对比度不足，可能影响阅读。可自动修正或手动调整文字颜色。',
+  'settings.appearance.themeCustom.message.randomReady': '已生成随机主题草稿，满意后点保存。',
   'settings.appearance.themeCustom.message.reset': '已重置当前主题的自定义。',
   'settings.appearance.themeCustom.message.saved': '已保存当前主题自定义。',
   'settings.danger.database.kicker': '曲库数据库安全',
@@ -5402,6 +5410,8 @@ const zhCN: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
   'settings.general.sidebarIconOnly.title': '侧栏仅显示图标',
   'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
+  'settings.general.settingsOptionalSections.title': '显示插件 / 网盘 / EQ 设置栏目',
+  'settings.general.settingsOptionalSections.description': '默认隐藏。开启后在设置栏目中显示插件、网盘 / 远程和 EQ；功能入口仍保留在侧栏。',
   'settings.general.featureCommentsHidden.title': '关闭功能注释',
   'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
   'settings.general.trackContextMenuExtraActions.title': '右键菜单扩展动作',
@@ -8521,6 +8531,8 @@ const zhTW: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
   'settings.general.sidebarIconOnly.title': '側邊欄僅顯示圖示',
   'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
+  'settings.general.settingsOptionalSections.title': '顯示外掛 / 網路硬碟 / EQ 設定欄目',
+  'settings.general.settingsOptionalSections.description': '預設隱藏。開啟後在設定欄目中顯示外掛、網路硬碟 / 遠端和 EQ；功能入口仍保留在側邊欄。',
   'settings.general.featureCommentsHidden.title': '關閉功能註釋',
   'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
   'settings.general.trackContextMenuExtraActions.title': '右鍵選單擴充操作',
@@ -8926,8 +8938,10 @@ const zhTW: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': '統一透明度',
   'settings.appearance.themePreset.title': '主題預設',
   'settings.appearance.themePreset.description': '選擇一套全域漸層色板；目前的明暗模式仍會保留。',
-  'settings.appearance.themePreset.classic': '經典 ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白灰基底、克制藍紫強調，接近 Roon 的乾淨耐看。',
+  'settings.appearance.themePreset.classic': '經典',
+  'settings.appearance.themePreset.classic.description': '白灰基底、克制藍紫強調，清爽耐看。',
+  'settings.appearance.themePreset.random': '隨機主題',
+  'settings.appearance.themePreset.random.description': '產生一套通過可讀性校驗的隨機配色，滿意後可手動保存。',
   'settings.appearance.themePreset.echoTwilight': '暮光桃霧',
   'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉漸層感。',
   'settings.appearance.themePreset.sakuraMilk': '櫻粉奶霜',
@@ -9098,6 +9112,7 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': '已自動調整文字與按鈕顏色。',
   'settings.appearance.themeCustom.message.invalidColor': '請輸入 #RRGGBB 格式的安全顏色。',
   'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，可能影響閱讀。可自動修正或手動調整文字顏色。',
+  'settings.appearance.themeCustom.message.randomReady': '已產生隨機主題草稿，滿意後點保存。',
   'settings.appearance.themeCustom.message.reset': '已重置目前主題的自訂。',
   'settings.appearance.themeCustom.message.saved': '已儲存目前主題自訂。',
   'settings.appearance.artistAvatars.action.clear': '清除頭像快取',
@@ -11455,6 +11470,8 @@ const jaJP: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
   'settings.general.sidebarIconOnly.title': 'サイドバーをアイコンのみ表示',
   'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
+  'settings.general.settingsOptionalSections.title': 'プラグイン / クラウド / EQ 設定セクションを表示',
+  'settings.general.settingsOptionalSections.description': '既定では非表示です。有効にすると設定にプラグイン、クラウド / リモート、EQ を表示します。機能入口はサイドバーにも残ります。',
   'settings.general.featureCommentsHidden.title': '機能注釈を非表示',
   'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
   'settings.general.trackContextMenuExtraActions.title': '右クリックメニューの追加操作',
@@ -11857,8 +11874,10 @@ const jaJP: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': '透明度を統一',
   'settings.appearance.themePreset.title': 'テーマプリセット',
   'settings.appearance.themePreset.description': 'アプリ全体のグラデーション色板を選びます。ライト/ダーク設定はそのまま使われます。',
-  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白とライトグレーを基調に、控えめなブルーパープルを添えた Roon 風の見た目です。',
+  'settings.appearance.themePreset.classic': 'Classic',
+  'settings.appearance.themePreset.classic.description': 'White and light gray with a restrained blue-violet accent.',
+  'settings.appearance.themePreset.random': 'Random Theme',
+  'settings.appearance.themePreset.random.description': 'Generate a readable random palette, then save it manually if it feels right.',
   'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
   'settings.appearance.themePreset.echoTwilight.description': '旧 ECHO らしい暖かいピンクのグラデーション。',
   'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
@@ -12029,6 +12048,7 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
+  'settings.appearance.themeCustom.message.randomReady': 'Random theme draft generated. Save it if it feels right.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.artistAvatars.action.clear': 'アバターキャッシュを消去',
@@ -14487,6 +14507,8 @@ const enUS: TranslationMap = {
   'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
   'settings.general.sidebarIconOnly.title': 'Sidebar Icons Only',
   'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
+  'settings.general.settingsOptionalSections.title': 'Show Plugins / Cloud / EQ Settings Sections',
+  'settings.general.settingsOptionalSections.description': 'Hidden by default. Turn on to show Plugins, Cloud / Remote, and EQ in Settings; their feature entries stay in the sidebar.',
   'settings.general.featureCommentsHidden.title': 'Hide Feature Comments',
   'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
   'settings.general.trackContextMenuExtraActions.title': 'Context Menu Extra Actions',
@@ -14973,8 +14995,10 @@ const enUS: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': 'Unified Opacity',
   'settings.appearance.themePreset.title': 'Theme Presets',
   'settings.appearance.themePreset.description': 'Choose a global gradient palette; your light, dark, or system mode stays separate.',
-  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
-  'settings.appearance.themePreset.classic.description': 'White and light gray surfaces with a restrained blue-violet accent, closer to Roon.',
+  'settings.appearance.themePreset.classic': 'Classic',
+  'settings.appearance.themePreset.classic.description': 'White and light gray surfaces with a restrained blue-violet accent.',
+  'settings.appearance.themePreset.random': 'Random Theme',
+  'settings.appearance.themePreset.random.description': 'Generate a readable random palette, then save it manually if it feels right.',
   'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
   'settings.appearance.themePreset.echoTwilight.description': 'Warm pink gradients inspired by classic ECHO.',
   'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
@@ -15145,6 +15169,7 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
+  'settings.appearance.themeCustom.message.randomReady': 'Random theme draft generated. Save it if it feels right.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.artistAvatars.action.clear': 'Clear Avatar Cache',

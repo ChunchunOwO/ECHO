@@ -22,7 +22,7 @@ import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/libraryS
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 90;
-const albumWallReturnAnimationMs = 80;
+const albumWallReturnAnimationMs = 0;
 const priorityAlbumWallImageCount = 32;
 const albumWallLoadAheadDistancePx = 1400;
 const albumWallImageLoadAheadMargin = '1000px 0px';
@@ -306,7 +306,7 @@ export const AlbumsPage = (): JSX.Element => {
     setSelectedAlbumReturnTo(null);
     setSelectedAlbum(null);
 
-    if (!showReturnAnimation) {
+    if (!showReturnAnimation || albumWallReturnAnimationMs <= 0) {
       return;
     }
 

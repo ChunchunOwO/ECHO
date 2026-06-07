@@ -2,6 +2,22 @@
 !include FileFunc.nsh
 !include nsDialogs.nsh
 
+!macro EchoReadCommandFlag FLAG OUTPUT
+  StrCpy ${OUTPUT} "0"
+  ClearErrors
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "--${FLAG}" $R1
+  ${IfNot} ${Errors}
+    StrCpy ${OUTPUT} "1"
+  ${Else}
+    ClearErrors
+    ${GetOptions} $R0 "/${FLAG}" $R1
+    ${IfNot} ${Errors}
+      StrCpy ${OUTPUT} "1"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 !ifndef BUILD_UNINSTALLER
   Var /GLOBAL echoCreateDesktopShortcut
   Var /GLOBAL echoCreateDesktopShortcutCheckbox
@@ -10,7 +26,8 @@
     ${If} ${Silent}
       Abort
     ${EndIf}
-    ${If} ${isUpdated}
+    !insertmacro EchoReadCommandFlag "updated" $R2
+    ${If} $R2 == "1"
       Abort
     ${EndIf}
 
@@ -54,12 +71,14 @@
     ${EndIf}
 
     ${If} $echoCreateDesktopShortcut == "${BST_CHECKED}"
-    ${AndIfNot} ${isUpdated}
-      CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
-      ClearErrors
-      WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
-      System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
-      DetailPrint "Created ECHO NEXT desktop shortcut."
+      !insertmacro EchoReadCommandFlag "updated" $R2
+      ${If} $R2 != "1"
+        CreateShortCut "$newDesktopLink" "$appExe" "" "$INSTDIR\uninstallerIcon.ico" 0 "" "" "${APP_DESCRIPTION}"
+        ClearErrors
+        WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
+        System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
+        DetailPrint "Created ECHO NEXT desktop shortcut."
+      ${EndIf}
     ${EndIf}
   !macroend
 !else
@@ -218,13 +237,16 @@
   !macroend
 
   !macro customUnInstall
-    ${IfNot} ${isUpdated}
-    ${AndIfNot} ${isKeepShortcuts}
-      WinShell::UninstShortcut "$oldDesktopLink"
-      Delete "$oldDesktopLink"
-      ${If} $oldDesktopLink != $newDesktopLink
-        WinShell::UninstShortcut "$newDesktopLink"
-        Delete "$newDesktopLink"
+    !insertmacro EchoReadCommandFlag "updated" $R2
+    !insertmacro EchoReadCommandFlag "keep-shortcuts" $R3
+    ${If} $R2 != "1"
+      ${If} $R3 != "1"
+        WinShell::UninstShortcut "$oldDesktopLink"
+        Delete "$oldDesktopLink"
+        ${If} $oldDesktopLink != $newDesktopLink
+          WinShell::UninstShortcut "$newDesktopLink"
+          Delete "$newDesktopLink"
+        ${EndIf}
       ${EndIf}
     ${EndIf}
 
@@ -255,7 +277,8 @@
       StrCpy $echoUninstallDataMode "all"
     ${EndIf}
 
-    ${IfNot} ${isUpdated}
+    !insertmacro EchoReadCommandFlag "updated" $R2
+    ${If} $R2 != "1"
       ${If} $installMode == "all"
         SetShellVarContext current
       ${EndIf}

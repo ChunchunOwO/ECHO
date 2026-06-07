@@ -836,9 +836,30 @@ html[data-theme="dark"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-h
   pointer-events: none;
 }
 
-.app-shell--acrylic:not(.app-shell--wallpaper) > :not(.app-wallpaper-layer) {
+.app-shell--acrylic:not(.app-shell--wallpaper) {
+  isolation: isolate;
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .app-titlebar,
+  .sidebar,
+  .page-surface,
+  .player-bar
+) {
   position: relative;
   z-index: 1;
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) .lyrics-player-drawer-host {
+  z-index: 30;
+}
+
+.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .audio-drawer-root,
+  .lyrics-settings-drawer-root,
+  .mv-settings-drawer-root
+) {
+  z-index: 130;
 }
 
 .app-shell--acrylic:not(.app-shell--wallpaper) .page-surface {

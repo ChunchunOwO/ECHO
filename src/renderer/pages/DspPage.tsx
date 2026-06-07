@@ -2222,7 +2222,7 @@ export const DspPage = (): JSX.Element => {
 
   return (
     <div className="dsp-page">
-      <div className="dsp-stage">
+      <div className="dsp-stage" data-module={selectedModuleId}>
         <aside className="dsp-rail" aria-label={t('dsp.aria.modules')}>
           <div className="dsp-brand">
             <span>DSP</span>
@@ -2275,7 +2275,7 @@ export const DspPage = (): JSX.Element => {
           </nav>
         </aside>
 
-        <section className="dsp-workspace" aria-label={t('dsp.aria.workspace')}>
+        <section className="dsp-workspace" data-module={selectedModuleId} aria-label={t('dsp.aria.workspace')}>
           <header className="dsp-topbar">
             <div className="dsp-topbar-title">
               <span className="dsp-selected-icon">

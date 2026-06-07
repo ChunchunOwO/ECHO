@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
-import type { AppSettings } from '../../shared/types/appSettings';
+import type { AppSettings, AppThemeToneOverride } from '../../shared/types/appSettings';
 import type { PluginSummary } from '../../shared/types/plugins';
 import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { DownloadSettings } from '../../shared/types/downloads';
@@ -781,6 +781,36 @@ const createThemePluginSummary = (): PluginSummary => ({
   settingsValues: {},
 });
 
+const hexToRgb = (value: string): { r: number; g: number; b: number } => ({
+  r: Number.parseInt(value.slice(1, 3), 16),
+  g: Number.parseInt(value.slice(3, 5), 16),
+  b: Number.parseInt(value.slice(5, 7), 16),
+});
+
+const relativeLuminance = (value: string): number => {
+  const channel = (component: number): number => {
+    const normalized = component / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  const rgb = hexToRgb(value);
+  return channel(rgb.r) * 0.2126 + channel(rgb.g) * 0.7152 + channel(rgb.b) * 0.0722;
+};
+
+const contrastRatio = (foreground: string, background: string): number => {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+const expectReadableThemeTone = (tone: AppThemeToneOverride): void => {
+  expect(contrastRatio(tone.text ?? '', tone.appBg ?? '')).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(tone.heading ?? '', tone.appBg ?? '')).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(tone.buttonText ?? '', tone.panel ?? '')).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(tone.onAccent ?? '', tone.accent ?? '')).toBeGreaterThanOrEqual(3);
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -902,6 +932,57 @@ describe('SettingsPage', () => {
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarIconOnlyEnabled: true, sidebarAutoHideEnabled: false }));
+  });
+
+  it('hides optional Plugins, Remote, and EQ settings nav items by default', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const nav = screen.getByRole('navigation', { name: 'route.settings.label' });
+
+    expect(within(nav).queryByRole('button', { name: /settings\.nav\.plugins\.label/ })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: /settings\.nav\.remote\.label/ })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: /settings\.nav\.eq\.label/ })).toBeNull();
+    expect(screen.getByText('settings.general.settingsOptionalSections.title')).toBeTruthy();
+  });
+
+  it('shows optional Plugins, Remote, and EQ settings nav items when enabled', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({
+      ...settings,
+      settingsOptionalSectionsVisible: true,
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const nav = screen.getByRole('navigation', { name: 'route.settings.label' });
+
+    expect(within(nav).getByRole('button', { name: /settings\.nav\.plugins\.label/ })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: /settings\.nav\.remote\.label/ })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: /settings\.nav\.eq\.label/ })).toBeTruthy();
+  });
+
+  it('saves optional settings sections visibility from general settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(within(screen.getByText('settings.general.settingsOptionalSections.title').closest('.setting-row') as HTMLElement).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ settingsOptionalSectionsVisible: true }));
   });
 
   it('saves hidden feature comments from the general settings toggle', async () => {
@@ -1905,6 +1986,59 @@ describe('SettingsPage', () => {
     fireEvent.click(presetButton);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon', appearanceThemeCustomId: null }));
+  });
+
+  it('generates a readable random theme draft and only saves it after confirmation', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.spyOn(Math, 'random').mockReturnValue(0.42);
+    let currentSettings: AppSettings = { ...settings, appearanceThemePreset: 'classic', appearanceCustomThemes: [], appearanceThemeCustomId: null };
+    getSettingsMock.mockResolvedValue(currentSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...patch };
+      return currentSettings;
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    expandThemePresetGrid();
+    setSettingsMock.mockClear();
+    const randomButton = (await screen.findByText('settings.appearance.themePreset.random')).closest('button') as HTMLButtonElement;
+    fireEvent.click(randomButton);
+
+    expect(setSettingsMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
+    expect(await screen.findByText('settings.appearance.themeCustom.message.randomReady')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.save/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceThemePreset: 'classic',
+          appearanceThemeCustomId: expect.any(String),
+          appearanceCustomThemes: expect.arrayContaining([
+            expect.objectContaining({
+              basePreset: 'classic',
+              name: 'settings.appearance.themePreset.random',
+            }),
+          ]),
+        }),
+      ),
+    );
+
+    const randomPatch = setSettingsMock.mock.calls.find(([patch]) => {
+      const nextPatch = patch as Partial<AppSettings>;
+      return nextPatch.appearanceCustomThemes?.some((theme) => theme.name === 'settings.appearance.themePreset.random');
+    })?.[0] as Partial<AppSettings>;
+    const randomTheme = randomPatch.appearanceCustomThemes?.find((theme) => theme.name === 'settings.appearance.themePreset.random');
+    expect(randomTheme?.light).toBeTruthy();
+    expect(randomTheme?.dark).toBeTruthy();
+    expectReadableThemeTone(randomTheme?.light ?? {});
+    expectReadableThemeTone(randomTheme?.dark ?? {});
+    expect(document.documentElement.dataset.themeCustomId).toBe(randomTheme?.id);
   });
 
   it('imports and applies an enabled plugin theme preset as a custom theme', async () => {

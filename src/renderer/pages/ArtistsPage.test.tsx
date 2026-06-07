@@ -429,7 +429,7 @@ describe('ArtistsPage', () => {
   });
 
   it('refreshes the artist wall avatar after an artist image update reuses the same local URL', async () => {
-    let emitArtistImagesUpdated: ((payload: { artistId?: string | null }) => void) | null = null;
+    let emitArtistImagesUpdated: (payload: { artistId: string | null; artistKey: string; status: string }) => void = () => undefined;
     const getArtists = vi.fn().mockResolvedValue(
       page([
         artist('1', {
@@ -447,7 +447,7 @@ describe('ArtistsPage', () => {
     );
     installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: false, autoFetchArtistImages: false }));
     window.echo!.library.getArtist = getArtist;
-    window.echo!.library.onArtistImagesUpdated = vi.fn((callback: (payload: { artistId?: string | null }) => void) => {
+    window.echo!.library.onArtistImagesUpdated = vi.fn((callback: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => {
       emitArtistImagesUpdated = callback;
       return vi.fn();
     });
@@ -461,7 +461,7 @@ describe('ArtistsPage', () => {
     expect(document.querySelector('.artist-avatar img')).toBeNull();
     expect(screen.getByText('AR')).toBeTruthy();
 
-    emitArtistImagesUpdated?.({ artistId: '1' });
+    emitArtistImagesUpdated({ artistId: '1', artistKey: 'artist-1', status: 'matched' });
 
     await waitFor(() => expect(getArtist).toHaveBeenCalledWith('1'));
     await waitFor(() => expect(document.querySelector('.artist-avatar img')?.getAttribute('src')).toBe('echo-artist-image://large/artist-1?v=1'));

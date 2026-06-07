@@ -387,6 +387,7 @@ const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers
 const officialWebsiteUrl = 'https://echonext.moe';
 const userDocumentationUrl = 'https://echonext.moe/zh/docs/';
 const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
+const bilibiliSpaceUrl = 'https://space.bilibili.com/25265128';
 const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
   { source: 'official', label: 'GitHub', description: '官方直连' },
   { source: 'ghfast', label: 'ghfast.top', description: '实测可读 latest.yml' },

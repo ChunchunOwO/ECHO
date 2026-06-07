@@ -105,7 +105,7 @@ export const AppTitleBar = ({
     <header className="app-titlebar" aria-label="ECHO Next">
       <div className="app-titlebar-brand">
         <strong>ECHO</strong>
-        <span className="app-titlebar-brand-mark">NEXT</span>
+        <span>Next</span>
         {updateStatus ? (
           <button
             className="app-titlebar-update"

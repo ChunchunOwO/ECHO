@@ -1,52 +1,21 @@
 .app-titlebar-brand {
   display: inline-flex;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 7px;
   color: var(--theme-heading-text);
 }
 
 .app-titlebar-brand strong {
-  font-size: 18px;
-  font-weight: 880;
+  font-size: 17px;
+  font-weight: 850;
   letter-spacing: 0;
-  line-height: 1;
 }
 
-.app-titlebar-brand-mark {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--theme-heading-text) 14%, transparent);
-  border-radius: 5px;
-  color: var(--theme-heading-text);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--theme-accent-bg) 88%, white 12%), color-mix(in srgb, var(--theme-control-bg) 72%, transparent)),
-    color-mix(in srgb, var(--theme-accent-bg) 42%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
-    0 6px 16px color-mix(in srgb, var(--theme-accent-text) 10%, transparent);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0;
-  line-height: 1;
-  transform: skewX(-7deg);
-}
-
-.app-titlebar-brand-mark::after {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 0 50%, color-mix(in srgb, white 28%, transparent) 50% 62%, transparent 62% 100%);
-  content: "";
-  opacity: 0.62;
-  pointer-events: none;
-}
-
-.app-titlebar-brand-mark {
-  text-shadow: 0 1px 0 color-mix(in srgb, white 54%, transparent);
+.app-titlebar-brand span {
+  color: var(--theme-subtle-text);
+  font-size: 11px;
+  font-weight: 760;
 }
 
 .app-titlebar-update {

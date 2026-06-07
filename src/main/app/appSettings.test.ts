@@ -73,6 +73,7 @@ describe('app settings normalization', () => {
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.connectAutoStartReceiversEnabled).toBe(false);
+    expect(settings.airPlayReceiverProtocol).toBe('airplay1');
     expect(settings.hqPlayer).toMatchObject({
       enabled: false,
       connectionMode: 'localDesktop',
@@ -814,6 +815,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ connectAutoStartReceiversEnabled: true }).connectAutoStartReceiversEnabled).toBe(true);
     expect(normalizeSettings({ connectAutoStartReceiversEnabled: false }).connectAutoStartReceiversEnabled).toBe(false);
     expect(normalizeSettings({ connectAutoStartReceiversEnabled: 'yes' as never }).connectAutoStartReceiversEnabled).toBe(false);
+  });
+
+  it('defaults AirPlay receiver to AirPlay 1 unless the experimental mode is selected', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).airPlayReceiverProtocol).toBe('airplay1');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay1' }).airPlayReceiverProtocol).toBe('airplay1');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay2' }).airPlayReceiverProtocol).toBe('airplay2');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay3' as never }).airPlayReceiverProtocol).toBe('airplay1');
   });
 
   it('normalizes remembered window size settings', async () => {

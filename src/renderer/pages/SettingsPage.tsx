@@ -972,6 +972,7 @@ const lockedVisibleSidebarRouteIdSet = new Set<SidebarRouteId>(lockedVisibleSide
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
 const pendingRouteStorageKey = 'echo-next.pending-route';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
+const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const pluginsDocumentationUrl = 'https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md';
 const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
 
@@ -4443,6 +4444,22 @@ export const SettingsPage = (): JSX.Element => {
     () => settingsNavItems.filter((item) => shouldShowSettingsNavItem(item.key, appSettings)),
     [appSettings?.settingsOptionalSectionsVisible],
   );
+
+  useEffect(() => {
+    const handleSettingsSectionNavigation = (event: Event): void => {
+      const section = event instanceof CustomEvent ? (event.detail as { section?: unknown } | null | undefined)?.section : null;
+      if (!section || !settingsNavKeys.has(section as SettingsNavKey)) {
+        return;
+      }
+
+      setActiveSection(section as SettingsNavKey);
+      setSettingsQuery('');
+      setHighlightedSettingId(null);
+    };
+
+    window.addEventListener(settingsSectionNavigationEvent, handleSettingsSectionNavigation);
+    return () => window.removeEventListener(settingsSectionNavigationEvent, handleSettingsSectionNavigation);
+  }, []);
 
   useEffect(() => {
     if (!settingsNavigationItems.some((item) => item.key === activeSection)) {
@@ -9503,7 +9520,7 @@ export const SettingsPage = (): JSX.Element => {
       const job = await library.startLyricsBackfill({
         mode,
         limit: 10000,
-        concurrency: mode === 'complete' ? 6 : 18,
+        concurrency: mode === 'complete' ? 6 : 10,
         autoAcceptScore: lyricsBackfillAutoAcceptScore,
       });
       setLyricsBackfillJob(job);

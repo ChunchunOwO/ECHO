@@ -181,6 +181,7 @@ describe('LibraryQualityPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /补全缺失封面/ }));
     await waitFor(() => expect(startMissingCoverBackfill).toHaveBeenCalledWith({ limit: 500, fields: ['cover'] }));
+    expect(screen.getByRole('progressbar', { name: /网络封面补全进度/ })).toBeTruthy();
     expect(startMissingMetadataScan).not.toHaveBeenCalled();
   });
 });

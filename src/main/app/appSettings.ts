@@ -6,6 +6,7 @@ import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSideba
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
+  AirPlayReceiverProtocol,
   AppThemeCustomTheme,
   AppLocale,
   AppThemeMode,
@@ -426,6 +427,7 @@ export const defaultSettings: AppSettings = {
   downloadsFeatureUnlocked: false,
   streamingDownloadActionsEnabled: false,
   connectAutoStartReceiversEnabled: false,
+  airPlayReceiverProtocol: 'airplay1',
   hqPlayer: { ...defaultHqPlayerSettings },
   playlistBackupsEnabled: true,
   autoDataBackupEnabled: false,
@@ -725,6 +727,9 @@ const normalizeNullablePort = (value: unknown): number | null => {
 
 const normalizeHqPlayerBackend = (value: unknown): HqPlayerDefaultPlaybackBackend =>
   value === 'echoNative' || value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
+
+export const normalizeAirPlayReceiverProtocol = (value: unknown): AirPlayReceiverProtocol =>
+  value === 'airplay2' ? 'airplay2' : 'airplay1';
 
 const normalizeRemoteBackgroundConcurrency = (value: unknown): RemoteBackgroundConcurrencySettings => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -1681,6 +1686,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     downloadsFeatureUnlocked,
     streamingDownloadActionsEnabled: downloadsFeatureUnlocked && settings.streamingDownloadActionsEnabled === true,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
+    airPlayReceiverProtocol: normalizeAirPlayReceiverProtocol(settings.airPlayReceiverProtocol),
     hqPlayer: normalizeHqPlayerSettings(settings.hqPlayer),
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
     autoDataBackupEnabled: settings.autoDataBackupEnabled === true,

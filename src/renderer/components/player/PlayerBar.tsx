@@ -2664,7 +2664,7 @@ export const PlayerBar = ({
           />
         </div>
         <PlayerProgress
-          disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
+          disabled={!filePath && !isSpotifyCurrentTrack}
           durationSeconds={durationSeconds}
           isLoading={isNetworkPlaybackLoading}
           waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled && !isNetworkPlaybackLoading}

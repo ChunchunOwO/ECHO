@@ -164,8 +164,48 @@ import { getRemoteSourceService } from './remote/RemoteSourceService';
 import { writeEmbeddedTrackTags } from './TagWriter';
 import { backupPlaylistIfEnabled, type PlaylistBackupReason } from './PlaylistBackup';
 import { NETWORK_AUTO_APPLY_THRESHOLD } from './network/matchScore';
-import type { NetworkApplyResult, StoredNetworkMetadataCandidate } from './network/networkTypes';
+import type { NetworkApplyResult, NetworkProviderName, StoredNetworkMetadataCandidate } from './network/networkTypes';
 import type { StreamingProviderName } from '../../shared/types/streaming';
+
+const coverBackfillProviderPriority: NetworkProviderName[] = [
+  'netease-cloud-music',
+  'qq-music',
+  'kugou-music',
+  'musicbrainz',
+  'cover-art-archive',
+  'mock',
+];
+
+const coverBackfillProviderScoreBoost: Partial<Record<NetworkProviderName, number>> = {
+  'netease-cloud-music': 0.08,
+  'qq-music': 0.08,
+  'kugou-music': 0.04,
+};
+
+const coverBackfillProviderRank = (provider: string): number => {
+  const rank = coverBackfillProviderPriority.indexOf(provider as NetworkProviderName);
+  return rank >= 0 ? rank : Number.MAX_SAFE_INTEGER;
+};
+
+const coverBackfillAutoApplyThreshold = (provider: string): number => {
+  if (provider === 'netease-cloud-music' || provider === 'qq-music') {
+    return 0.45;
+  }
+  if (provider === 'kugou-music') {
+    return 0.45;
+  }
+  return 0.6;
+};
+
+const compareCoverBackfillCandidates = (left: { provider: string; score: number }, right: { provider: string; score: number }): number => {
+  const leftBoost = coverBackfillProviderScoreBoost[left.provider as NetworkProviderName] ?? 0;
+  const rightBoost = coverBackfillProviderScoreBoost[right.provider as NetworkProviderName] ?? 0;
+  const boostedScore = right.score + rightBoost - (left.score + leftBoost);
+  return boostedScore || coverBackfillProviderRank(left.provider) - coverBackfillProviderRank(right.provider) || right.score - left.score;
+};
+
+const isCoverOnlyNetworkApply = (options: NetworkApplyOptions | undefined): boolean =>
+  Boolean(options?.fields?.length === 1 && options.fields.includes('cover'));
 
 type LibraryServiceDependencies = {
   fileScanner?: FileScanner;
@@ -1805,6 +1845,11 @@ export class LibraryService {
     return this.cloneMissingCoverBackfillJob(job);
   }
 
+  getActiveMissingCoverBackfillStatus(): NetworkMetadataScanJobStatus | null {
+    const activeJob = [...this.missingCoverBackfillJobs.values()].find((job) => job.status === 'queued' || job.status === 'running');
+    return activeJob ? this.cloneMissingCoverBackfillJob(activeJob) : null;
+  }
+
   showNetworkCandidates(trackId: string): NetworkCandidateList {
     if (!this.networkMetadataService) {
       throw new Error('Network metadata service is unavailable');
@@ -1897,7 +1942,10 @@ export class LibraryService {
       return result;
     }
 
-    if (!force && candidate.score < NETWORK_AUTO_APPLY_THRESHOLD) {
+    const autoApplyThreshold = isCoverOnlyNetworkApply(options)
+      ? coverBackfillAutoApplyThreshold(candidate.provider)
+      : NETWORK_AUTO_APPLY_THRESHOLD;
+    if (!force && candidate.score < autoApplyThreshold) {
       return withCoverSkipReason('score_below_auto_apply_threshold');
     }
 
@@ -1977,33 +2025,70 @@ export class LibraryService {
     providerNames?: AppSettings['networkMetadataProviders'],
   ): Promise<void> {
     job.status = 'running';
-    job.currentTrackTitle = 'Searching network cover candidates';
+    job.currentTrackTitle = '正在搜索网络封面候选';
 
     try {
-      const result = await this.scanMissingMetadata(limit, providerNames, ['cover']);
+      if (!this.networkMetadataService) {
+        throw new Error('Network metadata service is unavailable');
+      }
+
+      const scanJob = this.networkMetadataService.startMissingMetadataScan(limit, providerNames, ['cover']);
+      let result: NetworkMetadataScanJobStatus = scanJob;
+      for (;;) {
+        result = this.networkMetadataService.getMissingMetadataScanStatus(scanJob.id);
+        const scanTotal = result.totalTracks || result.diagnostics.targetCount || result.scannedCount;
+        job.items = [...result.items];
+        job.scannedCount = result.scannedCount;
+        job.candidateCount = result.candidateCount;
+        job.errors = [...result.errors];
+        job.diagnostics = { ...result.diagnostics };
+        job.totalTracks = scanTotal > 0 ? scanTotal * 2 : 0;
+        job.processedTracks = Math.min(scanTotal, result.processedTracks || result.scannedCount);
+        job.currentTrackTitle = result.currentTrackTitle ?? '正在搜索网络封面候选';
+
+        if (result.status === 'completed') {
+          break;
+        }
+        if (result.status === 'failed') {
+          throw new Error(result.errors.at(-1) ?? 'Network cover scan failed');
+        }
+
+        await delay(900);
+      }
+
       job.items = result.items;
       job.scannedCount = result.scannedCount;
       job.candidateCount = result.candidateCount;
       job.errors = [...result.errors];
       job.diagnostics = { ...result.diagnostics };
-      job.totalTracks = result.scannedCount;
+      job.totalTracks = result.scannedCount > 0 ? result.scannedCount * 2 : 0;
+      job.processedTracks = result.scannedCount;
 
       let appliedCount = 0;
       let protectedCount = result.diagnostics.protectedCount;
       for (const item of result.items) {
         job.currentTrackTitle = item.track.title || item.track.path;
-        const candidate = item.candidates.metadata.find((entry) => Boolean(entry.coverUrl));
-        if (!candidate) {
+        const candidates = item.candidates.metadata
+          .filter((entry) => Boolean(entry.coverUrl))
+          .filter((entry) => entry.score >= coverBackfillAutoApplyThreshold(entry.provider))
+          .sort(compareCoverBackfillCandidates);
+        if (!candidates.length) {
           job.processedTracks += 1;
           continue;
         }
 
         try {
-          const applied = await this.applyNetworkMissingOnly(candidate.id, { fields: ['cover'] });
-          if (applied.appliedFields.coverId) {
-            appliedCount += 1;
-          } else if (applied.reason?.startsWith('cover_source_') || applied.reason === 'embedded_cover_not_ready') {
-            protectedCount += 1;
+          for (const candidate of candidates) {
+            const applied = await this.applyNetworkMissingOnly(candidate.id, { fields: ['cover'] });
+            if (applied.appliedFields.coverId) {
+              appliedCount += 1;
+              break;
+            }
+
+            if (applied.reason?.startsWith('cover_source_') || applied.reason === 'embedded_cover_not_ready') {
+              protectedCount += 1;
+              break;
+            }
           }
         } catch (error) {
           job.errors.push(`${item.track.title || item.track.path}: ${error instanceof Error ? error.message : String(error)}`);
@@ -3257,14 +3342,36 @@ const mimeTypeForImageUrl = (url: string): string => {
   return mimeTypeForImagePath(path);
 };
 
+const refererForImageUrl = (url: string): string => {
+  try {
+    const hostname = new URL(url).hostname.toLocaleLowerCase();
+    if (hostname.endsWith('music.126.net') || hostname.endsWith('music.163.com')) {
+      return 'https://music.163.com/';
+    }
+    if (hostname.endsWith('gtimg.cn') || hostname.endsWith('qq.com')) {
+      return 'https://y.qq.com/';
+    }
+    if (hostname.endsWith('kugou.com') || hostname.endsWith('kgimg.com')) {
+      return 'https://www.kugou.com/';
+    }
+    if (hostname.endsWith('bilibili.com') || hostname.endsWith('hdslb.com')) {
+      return 'https://www.bilibili.com/';
+    }
+  } catch {
+    // Fall back to the previous generic referer for malformed or proxy-only URLs.
+  }
+  return 'https://www.bilibili.com/';
+};
+
 const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): Promise<{ data: Uint8Array; mimeType: string }> => {
   let coverUrl = url;
-  let referer = 'https://www.bilibili.com/';
+  let referer: string | null = null;
   if (url.startsWith('echo-image://remote/')) {
     const proxied = new URL(url);
     coverUrl = decodeURIComponent(proxied.pathname.replace(/^\/+/u, ''));
-    referer = proxied.searchParams.get('referer') ?? referer;
+    referer = proxied.searchParams.get('referer');
   }
+  referer ??= refererForImageUrl(coverUrl);
 
   let response: Response;
   const controller = new AbortController();

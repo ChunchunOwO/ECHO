@@ -344,6 +344,8 @@ const lyricsDrawerToolsChangedEvent = 'app:lyrics-drawer-tools-changed';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
+const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const lyricsMiniPlayerAutoHideDistancePx = 118;
 const lyricsMiniPlayerAutoHideDelayMs = 460;
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
@@ -397,6 +399,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const playbackStatusSnapshot = useSharedPlaybackStatus();
   const [activeRouteId, setActiveRouteId] = useState<AppRouteId>(() => readInitialRouteId(routes));
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
+  const [availableUpdateStatus, setAvailableUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChromeNoticeVisible, setIsChromeNoticeVisible] = useState(false);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const suppressAccountExpiryNoticesRef = useRef(false);
@@ -1495,7 +1498,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   useEffect(() => {
     const notifyUpdateStatus = (status: UpdateStatus): void => {
-      if (status.state !== 'available' && status.state !== 'downloaded') {
+      if (status.state !== 'available' && status.state !== 'downloading' && status.state !== 'downloaded') {
+        setAvailableUpdateStatus(null);
+        return;
+      }
+
+      setAvailableUpdateStatus(status);
+      if (status.state === 'downloading') {
         return;
       }
 
@@ -2186,6 +2195,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     [isWindowFullscreen, startWindowFullscreenTransition, t],
   );
 
+  const handleOpenUpdateSettings = useCallback((): void => {
+    try {
+      window.sessionStorage.setItem(pendingSettingsSectionStorageKey, 'about');
+      window.localStorage.setItem(pendingSettingsSectionStorageKey, 'about');
+    } catch {
+      // SettingsPage falls back to the normal settings entrypoint when storage is unavailable.
+    }
+
+    setIsAudioDrawerOpen(false);
+    setIsLyricsDrawerOpen(false);
+    setIsMvDrawerOpen(false);
+    navigateRoute('settings');
+    window.dispatchEvent(new CustomEvent(settingsSectionNavigationEvent, { detail: { section: 'about' } }));
+  }, [navigateRoute]);
+
   const handleOpenCrashReportNotice = useCallback(async (): Promise<void> => {
     try {
       const reportPath = await window.echo?.diagnostics.openCrashReport();
@@ -2343,7 +2367,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         isAudioSettingsOpen={isAudioDrawerOpen}
         isLyricsSettingsOpen={isLyricsDrawerOpen}
         isMvSettingsOpen={isMvDrawerOpen}
+        updateStatus={availableUpdateStatus}
         onRouteChange={navigateRoute}
+        onOpenUpdateSettings={handleOpenUpdateSettings}
         onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
         onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}
         onOpenMvSettings={() => setIsMvDrawerOpen(true)}

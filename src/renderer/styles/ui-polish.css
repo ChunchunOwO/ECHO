@@ -15,14 +15,18 @@
   line-height: 1;
 }
 
-.app-titlebar-brand span {
+.app-titlebar-brand-mark {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  color: var(--theme-muted-text);
-  font-size: 11px;
-  font-weight: 640;
+  color: var(--theme-heading-text);
   line-height: 1;
+}
+
+.app-titlebar-brand .app-titlebar-update span {
+  height: auto;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 820;
 }
 
 .titlebar-action,

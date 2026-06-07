@@ -2,6 +2,7 @@ import type { AudioStatus } from '../../../shared/types/audio';
 import { isDisplayableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { isHiResAudioSpec } from '../../../shared/utils/audioQuality';
+import { formatAudioChannelLayout } from '../../../shared/utils/audioChannels';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type PlayerStatusChipsProps = {
@@ -42,22 +43,6 @@ const formatHqPlayerOutputRate = (value: number | null | undefined): string | nu
   }
 
   return formatSpecRate(value);
-};
-
-const channelLabel = (channels: number | null | undefined): string | null => {
-  if (!channels || !Number.isFinite(channels)) {
-    return null;
-  }
-
-  if (channels === 1) {
-    return 'Mono';
-  }
-
-  if (channels === 2) {
-    return 'Stereo';
-  }
-
-  return `${channels}ch`;
 };
 
 const codecClassName = (codec: string): string => {
@@ -182,7 +167,7 @@ export const PlayerStatusChips = ({ hqPlayerActiveRate = null, status, state, tr
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
   const sampleRate = track?.sampleRate ?? status?.fileSampleRate ?? null;
   const bitrate = track?.bitrate ?? status?.bitrate ?? null;
-  const channels = channelLabel(status?.channels);
+  const channels = formatAudioChannelLayout(status?.channels);
   const formattedRate = formatSpecRate(sampleRate);
   const playbackRate = status?.playbackRate ?? 1;
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;

@@ -1842,7 +1842,11 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     () => (isCurrentAirPlayReceiverTrack ? airPlaySingleLineLyrics(airPlayReceiverStatus?.currentLyricLine ?? null) : null),
     [airPlayReceiverStatus?.currentLyricLine, isCurrentAirPlayReceiverTrack],
   );
-  const displayedLyrics = liveAirPlayLyrics ?? lyrics;
+  const hasMatchedLyricsForAirPlay = isCurrentAirPlayReceiverTrack && isRememberableLyricsState(lyrics);
+  const displayedLyrics = hasMatchedLyricsForAirPlay ? lyrics : liveAirPlayLyrics ?? lyrics;
+  const shouldRevealAutomaticLyricsCandidates =
+    isCurrentAirPlayReceiverTrack ||
+    lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true;
   useEffect(() => {
     rememberLyricsState(lyricsMemoryKey, lyrics);
   }, [lyrics, lyricsMemoryKey]);
@@ -3017,7 +3021,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
+              shouldRevealAutomaticLyricsCandidates,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
         })
@@ -3107,7 +3111,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
+              shouldRevealAutomaticLyricsCandidates,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
           return;
@@ -3152,6 +3156,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     lyricsDisplaySettings.lyricsUtatenKanaEnabled,
     lyricsMemoryKey,
     searchLyricsCandidatesForProvider,
+    shouldRevealAutomaticLyricsCandidates,
     streamingTarget,
     trackId,
     tryAutoApplyCandidate,

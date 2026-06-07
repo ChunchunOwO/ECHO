@@ -2076,7 +2076,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
-  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGroupingPlaybackSafe());
+  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGrouping());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
   ipcMain.handle(IpcChannels.LibraryGetMoveCandidates, (_event, options: unknown) =>
     getLibraryService().getMoveCandidates(
@@ -2405,6 +2405,9 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryNetworkGetMissingCoverBackfillStatus, (_event, jobId: unknown) =>
     getLibraryService().getMissingCoverBackfillStatus(requireText(jobId, 'jobId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryNetworkGetActiveMissingCoverBackfillStatus, () =>
+    getLibraryService().getActiveMissingCoverBackfillStatus(),
   );
   ipcMain.handle(IpcChannels.LibraryNetworkShowCandidates, (_event, trackId: unknown) =>
     getLibraryService().showNetworkCandidates(requireText(trackId, 'trackId')),

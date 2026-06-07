@@ -18,6 +18,7 @@ export type AppVideoWallpaperPauseMode = 'smart' | 'minimized' | 'never';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 export type ReplayGainMode = 'off' | 'track' | 'album';
+export type AirPlayReceiverProtocol = 'airplay1' | 'airplay2';
 export type AudioTransportFadeCurve = 'linear' | 'smooth' | 'equalPower';
 export type NetworkProxyMode = 'off' | 'system' | 'manual' | 'pac';
 export type DataBackupIntervalDays = 3 | 7 | 30;
@@ -245,6 +246,7 @@ export type AppSettings = {
   downloadsFeatureUnlocked?: boolean;
   streamingDownloadActionsEnabled?: boolean;
   connectAutoStartReceiversEnabled?: boolean;
+  airPlayReceiverProtocol?: AirPlayReceiverProtocol;
   hqPlayer?: HqPlayerSettings;
   playlistBackupsEnabled?: boolean;
   autoDataBackupEnabled?: boolean;

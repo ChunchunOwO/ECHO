@@ -277,6 +277,7 @@ describe('preload SMTC API', () => {
     await exposedApi!.library.classifyImportPaths(['D:\\Music']);
     await exposedApi!.library.chooseImportFiles();
     await exposedApi!.library.resolveLyricsBackgroundCover('track-1');
+    await exposedApi!.library.getActiveMissingCoverBackfillStatus?.();
     await exposedApi!.library.getLibraryInboxBatches();
     await exposedApi!.library.getLibraryInboxTracks({ scope: 'latest', filter: 'all' });
     await exposedApi!.library.createPlaylistFromLibraryInbox({ scope: 'latest', filter: 'missing_cover' });
@@ -284,6 +285,7 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryChooseImportFiles);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryResolveLyricsBackgroundCover, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryNetworkGetActiveMissingCoverBackfillStatus);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetInboxBatches);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetInboxTracks, { scope: 'latest', filter: 'all' });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryCreateInboxPlaylist, { scope: 'latest', filter: 'missing_cover' });

@@ -1,21 +1,100 @@
 .app-titlebar-brand {
   display: inline-flex;
   min-width: 0;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: 8px;
   color: var(--theme-heading-text);
 }
 
 .app-titlebar-brand strong {
-  font-size: 17px;
-  font-weight: 850;
+  font-size: 18px;
+  font-weight: 880;
   letter-spacing: 0;
+  line-height: 1;
 }
 
-.app-titlebar-brand span {
-  color: var(--theme-subtle-text);
+.app-titlebar-brand-mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theme-heading-text) 14%, transparent);
+  border-radius: 5px;
+  color: var(--theme-heading-text);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--theme-accent-bg) 88%, white 12%), color-mix(in srgb, var(--theme-control-bg) 72%, transparent)),
+    color-mix(in srgb, var(--theme-accent-bg) 42%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
+    0 6px 16px color-mix(in srgb, var(--theme-accent-text) 10%, transparent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  transform: skewX(-7deg);
+}
+
+.app-titlebar-brand-mark::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 0 50%, color-mix(in srgb, white 28%, transparent) 50% 62%, transparent 62% 100%);
+  content: "";
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.app-titlebar-brand-mark {
+  text-shadow: 0 1px 0 color-mix(in srgb, white 54%, transparent);
+}
+
+.app-titlebar-update {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 112px;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent-text) 22%, transparent);
+  border-radius: 999px;
+  color: var(--theme-accent-text-strong);
+  background: color-mix(in srgb, var(--theme-accent-bg) 72%, transparent);
+  font: inherit;
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 820;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.app-titlebar-update:hover {
+  border-color: color-mix(in srgb, var(--theme-accent-text) 36%, transparent);
+  background: color-mix(in srgb, var(--theme-accent-bg) 92%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--theme-accent-text) 12%, transparent);
+}
+
+.app-titlebar-update:active {
+  transform: scale(0.96);
+}
+
+.app-titlebar-update svg {
+  flex: 0 0 auto;
+}
+
+.app-titlebar-update span {
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-titlebar-actions,
@@ -138,6 +217,19 @@
 .titlebar-action:active,
 .window-control:active {
   transform: scale(0.94);
+}
+
+@media (max-width: 640px) {
+  .app-titlebar-update {
+    width: 28px;
+    max-width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-titlebar-update span {
+    display: none;
+  }
 }
 
 .browser-preview-picker {
@@ -18138,6 +18230,40 @@ html[data-theme="dark"] .history-play-count {
   align-items: center;
   gap: 18px;
   min-width: 0;
+}
+
+.connect-airplay-protocols {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--theme-control-bg);
+}
+
+.connect-airplay-protocols button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--theme-subtle-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.connect-airplay-protocols button[aria-pressed="true"] {
+  color: var(--theme-accent-text);
+  background: color-mix(in srgb, var(--theme-accent-text) 12%, transparent);
+}
+
+.connect-airplay-protocols button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .connect-receiver-meta {

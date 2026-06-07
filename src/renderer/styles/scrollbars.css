@@ -148,6 +148,25 @@ html[data-theme="dark"] {
   background-clip: padding-box;
 }
 
+.signal-path-popover.signal-path-popover--roon {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
+}
+
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar,
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar-track,
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar-track-piece,
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar-thumb,
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar-button,
+.signal-path-popover.signal-path-popover--roon::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .mv-settings-drawer .audio-drawer-scroll {
   scrollbar-color: var(--echo-scrollbar-thumb) transparent;
 }
@@ -175,4 +194,23 @@ html[data-theme="dark"] {
   border-width: 2px;
   background: var(--echo-scrollbar-thumb-hover);
   background-clip: padding-box;
+}
+
+.page-surface:has(.home-page) {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
+}
+
+.page-surface:has(.home-page)::-webkit-scrollbar,
+.page-surface:has(.home-page)::-webkit-scrollbar-track,
+.page-surface:has(.home-page)::-webkit-scrollbar-track-piece,
+.page-surface:has(.home-page)::-webkit-scrollbar-thumb,
+.page-surface:has(.home-page)::-webkit-scrollbar-button,
+.page-surface:has(.home-page)::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }

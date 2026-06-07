@@ -504,6 +504,7 @@ export type EchoApi = {
     getMissingMetadataScanStatus: (jobId: string) => Promise<NetworkMetadataScanJobStatus>;
     startMissingCoverBackfill: (options?: number | MissingMetadataScanOptions) => Promise<NetworkMetadataScanJobStatus>;
     getMissingCoverBackfillStatus: (jobId: string) => Promise<NetworkMetadataScanJobStatus>;
+    getActiveMissingCoverBackfillStatus?: () => Promise<NetworkMetadataScanJobStatus | null>;
     showNetworkCandidates: (trackId: string) => Promise<NetworkCandidateList>;
     searchNetworkTagCandidates: (
       trackId: string,

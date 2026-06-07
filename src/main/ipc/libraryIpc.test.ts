@@ -629,6 +629,7 @@ const installLibraryService = () => {
     hasRunningJobs: vi.fn(() => false),
     updateTrackTags: vi.fn(),
     searchNetworkTagCandidates: vi.fn(async () => []),
+    getActiveMissingCoverBackfillStatus: vi.fn<() => unknown>(() => null),
     recordTrackPlayback: vi.fn(),
     getPlaybackStatsDashboardPlaybackSafe: vi.fn(() => Promise.resolve({
       generatedAt: '2026-05-20T00:00:00.000Z',
@@ -749,6 +750,36 @@ describe('library IPC', () => {
       query: undefined,
       providers: ['netease-cloud-music', 'qq-music'],
     });
+  });
+
+  it('returns the active missing-cover backfill job without starting a new one', async () => {
+    const service = installLibraryService();
+    service.getActiveMissingCoverBackfillStatus.mockReturnValue({
+      id: 'cover-job-1',
+      status: 'running',
+      fields: ['cover'],
+      totalTracks: 20,
+      processedTracks: 5,
+      scannedCount: 5,
+      candidateCount: 2,
+      items: [],
+      errors: [],
+      diagnostics: {
+        targetCount: 10,
+        providerErrors: 0,
+        noCandidateCount: 0,
+        protectedCount: 0,
+        appliedCount: 1,
+      },
+      startedAt: '2026-06-07T00:00:00.000Z',
+      finishedAt: null,
+      currentTrackTitle: 'Song',
+    });
+
+    const result = await handlers[IpcChannels.LibraryNetworkGetActiveMissingCoverBackfillStatus]!();
+
+    expect(service.getActiveMissingCoverBackfillStatus).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ id: 'cover-job-1', status: 'running' });
   });
 
   it('normalizes library quality issue queries to local bounded pages', async () => {
@@ -1247,7 +1278,8 @@ describe('library IPC', () => {
 
     const result = await handlers[IpcChannels.LibraryRefreshAlbumGrouping]!();
 
-    expect(service.refreshAlbumGroupingPlaybackSafe).toHaveBeenCalledTimes(1);
+    expect(service.refreshAlbumGrouping).toHaveBeenCalledTimes(1);
+    expect(service.refreshAlbumGroupingPlaybackSafe).not.toHaveBeenCalled();
     expect(result).toMatchObject({ albumCount: 1 });
   });
 

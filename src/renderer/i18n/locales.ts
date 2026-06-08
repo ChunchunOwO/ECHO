@@ -2964,6 +2964,9 @@ export type TranslationKey =
   | 'settings.playback.monoAudio.title'
   | 'settings.playback.nativeDecode.description'
   | 'settings.playback.nativeDecode.title'
+  | 'settings.playback.audioDrawerNotice.description'
+  | 'settings.playback.audioDrawerNotice.status'
+  | 'settings.playback.audioDrawerNotice.title'
   | 'settings.playback.outputDevice.description'
   | 'settings.playback.outputDevice.empty'
   | 'settings.playback.outputDevice.title'
@@ -6081,6 +6084,9 @@ const zhCN: TranslationMap = {
   'settings.playback.monoAudio.title': '单声道音频',
   'settings.playback.nativeDecode.description': '默认关闭。开启后，本地 WAV/FLAC/MP3 在无需重采样时使用长驻原生解码；MP3 走 Windows Media，失败会自动回退 FFmpeg。',
   'settings.playback.nativeDecode.title': '长驻原生解码',
+  'settings.playback.audioDrawerNotice.description': '这里会跟随右上角音频抽屉的实时状态刷新；如果两边短时间内不一致，请以右上角抽屉为准。',
+  'settings.playback.audioDrawerNotice.status': '建议从右上角音频设置抽屉调整输出模式、共享后端和设备。',
+  'settings.playback.audioDrawerNotice.title': '音频设置以右上角抽屉为准',
   'settings.playback.outputDevice.description': '来自 echo-audio-host 的设备列表；没有设备时保持默认输出。',
   'settings.playback.outputDevice.empty': '无可用设备',
   'settings.playback.outputDevice.title': '输出设备',
@@ -8633,6 +8639,9 @@ const zhTW: TranslationMap = {
   'settings.playback.hqplayer.test': '測試連線',
   'settings.playback.hqplayer.testing': '測試中',
   'settings.playback.hqplayer.title': 'HQPlayer 整合',
+  'settings.playback.audioDrawerNotice.description': '這裡會跟隨右上角音訊抽屜的即時狀態刷新；如果兩邊短時間內不一致，請以右上角抽屜為準。',
+  'settings.playback.audioDrawerNotice.status': '建議從右上角音訊設定抽屜調整輸出模式、共享後端和裝置。',
+  'settings.playback.audioDrawerNotice.title': '音訊設定以右上角抽屜為準',
   'settings.playback.speedMode.description': '選擇播放器底部速度滑桿使用的變速方式。',
   'settings.playback.speedMode.title': '變速模式',
   'settings.playback.outputDevice.title': '輸出裝置',
@@ -11569,6 +11578,9 @@ const jaJP: TranslationMap = {
   'settings.playback.hqplayer.test': '接続テスト',
   'settings.playback.hqplayer.testing': 'テスト中',
   'settings.playback.hqplayer.title': 'HQPlayer 連携',
+  'settings.playback.audioDrawerNotice.description': 'This section follows the live state from the audio drawer in the top-right. If the two surfaces briefly disagree, trust the top-right drawer.',
+  'settings.playback.audioDrawerNotice.status': 'Use the top-right audio settings drawer to adjust output mode, shared backend, and device.',
+  'settings.playback.audioDrawerNotice.title': 'Top-Right Audio Drawer Is Authoritative',
   'settings.playback.speedMode.description': '下部プレイヤーの速度スライダーで使う変速方式を選びます。',
   'settings.playback.speedMode.title': '変速モード',
   'settings.playback.outputMode.description': '一般的なヘッドホン、Bluetooth、PC スピーカーには標準出力を推奨します。WASAPI / ASIO / Exclusive は外部オーディオ機器や HiFi 調整向けです。',
@@ -14606,6 +14618,9 @@ const enUS: TranslationMap = {
   'settings.playback.hqplayer.test': 'Test Connection',
   'settings.playback.hqplayer.testing': 'Testing',
   'settings.playback.hqplayer.title': 'HQPlayer Integration',
+  'settings.playback.audioDrawerNotice.description': 'This section follows the live state from the audio drawer in the top-right. If the two surfaces briefly disagree, trust the top-right drawer.',
+  'settings.playback.audioDrawerNotice.status': 'Use the top-right audio settings drawer to adjust output mode, shared backend, and device.',
+  'settings.playback.audioDrawerNotice.title': 'Top-Right Audio Drawer Is Authoritative',
   'settings.playback.speedMode.description': 'Choose the mode used by the speed slider in the player bar.',
   'settings.playback.speedMode.title': 'Speed Mode',
   'settings.playback.outputMode.description': 'Use Standard Output for headphones, Bluetooth, and computer speakers. WASAPI / ASIO / Exclusive are for external audio interfaces and HiFi debugging.',

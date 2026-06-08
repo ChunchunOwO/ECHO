@@ -5300,9 +5300,10 @@ export const SettingsPage = (): JSX.Element => {
     () => getCompatiblePlaybackDevices(devices, outputMode),
     [devices, outputMode],
   );
+  const effectiveAudioStatus = sharedPlaybackStatus.audioStatus ?? status;
   const statusSelectedDevice = useMemo(
-    () => devices.find((device) => deviceMatchesAudioStatus(device, status)) ?? null,
-    [devices, status],
+    () => devices.find((device) => deviceMatchesAudioStatus(device, effectiveAudioStatus)) ?? null,
+    [devices, effectiveAudioStatus],
   );
   const outputDeviceOptions = useMemo(
     () =>
@@ -5325,7 +5326,7 @@ export const SettingsPage = (): JSX.Element => {
     [appSettings?.globalShortcuts],
   );
   const segmentPlaybackStatus = sharedPlaybackStatus.playbackStatus;
-  const segmentAudioStatus = sharedPlaybackStatus.audioStatus ?? status;
+  const segmentAudioStatus = effectiveAudioStatus;
   const segmentTrackId = playbackQueue.currentTrackId ?? segmentPlaybackStatus?.currentTrackId ?? segmentAudioStatus?.currentTrackId ?? null;
   const segmentQueueTracks = playbackQueue.tracks ?? [];
   const segmentCurrentTrack = playbackQueue.currentTrack ?? segmentQueueTracks.find((track) => track.id === segmentTrackId) ?? null;
@@ -6049,16 +6050,16 @@ export const SettingsPage = (): JSX.Element => {
   );
 
   useEffect(() => {
-    setOutputMode(status?.outputMode ?? 'shared');
-    if (status?.sharedBackend || status?.outputBackend === 'directsound-shared') {
+    setOutputMode(effectiveAudioStatus?.outputMode ?? 'shared');
+    if (effectiveAudioStatus?.sharedBackend || effectiveAudioStatus?.outputBackend === 'directsound-shared') {
       setSharedBackend(
         normalizeAudioSharedBackendForPlatform(
-          status.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(status.sharedBackend),
+          effectiveAudioStatus.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(effectiveAudioStatus.sharedBackend),
           rendererPlatform,
         ),
       );
     }
-  }, [rendererPlatform, status?.outputBackend, status?.outputMode, status?.sharedBackend]);
+  }, [effectiveAudioStatus?.outputBackend, effectiveAudioStatus?.outputMode, effectiveAudioStatus?.sharedBackend, rendererPlatform]);
 
   useEffect(() => {
     if (statusSelectedDevice) {
@@ -11235,6 +11236,13 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Zap} id="playback" title={t('settings.nav.playback.label')}>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title={t('settings.playback.audioDrawerNotice.title')}
+                description={t('settings.playback.audioDrawerNotice.description')}
+              >
+                <StatusText tone="muted">{t('settings.playback.audioDrawerNotice.status')}</StatusText>
+              </SettingRow>
               <SettingRow title={t('settings.playback.outputMode.title')} description={t('settings.playback.outputMode.description')}>
                 <div className="settings-chip-row">
                   {playbackOutputModesForPlatform.map((mode) => (

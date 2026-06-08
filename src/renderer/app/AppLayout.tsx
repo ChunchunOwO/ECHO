@@ -1911,6 +1911,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     };
   }, []);
 
+  const handleAudioDrawerStatusChange = useCallback((status: AudioStatus | null): void => {
+    setAudioDrawerStatus(status);
+    setPlaybackStatusSnapshot({ audioStatus: status, error: status?.error ?? null });
+  }, []);
+
   useEffect(() => {
     const audio = window.echo?.audio;
 
@@ -1952,7 +1957,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
               echoSrcQualityProfile,
               releaseExclusiveOnPauseExperimentalEnabled,
             })
-            .then(setAudioDrawerStatus);
+            .then(handleAudioDrawerStatusChange);
         }
 
         return audio
@@ -1973,12 +1978,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             echoSrcQualityProfile,
             releaseExclusiveOnPauseExperimentalEnabled,
           })
-          .then(setAudioDrawerStatus);
+          .then(handleAudioDrawerStatusChange);
       })
       .catch((error) => {
         console.error('Failed to restore remembered audio output', error);
       });
-  }, []);
+  }, [handleAudioDrawerStatusChange]);
 
   const notifyLibraryChanged = useCallback(async (options: { preserveScroll?: boolean } = {}): Promise<void> => {
     try {
@@ -2518,7 +2523,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           }
         }}
         onHqPlayerTakeoverEnabledChange={playbackQueue.setHqPlayerTakeoverEnabled}
-        onStatusChange={setAudioDrawerStatus}
+        onStatusChange={handleAudioDrawerStatusChange}
       />
       <LyricsSettingsDrawer
         currentTrackTools={lyricsDrawerCurrentTrackTools}

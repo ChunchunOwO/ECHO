@@ -11,6 +11,7 @@ const betterSqlitePackageJsonPath = join(projectRoot, 'node_modules', 'better-sq
 const nativeBinaryPath = join(projectRoot, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
 const markerPath = join(projectRoot, 'node_modules', '.echo-native-abi.json');
 const cacheRoot = join(projectRoot, 'node_modules', '.echo-native-cache', 'better-sqlite3');
+const betterSqlitePatchScript = join(projectRoot, 'scripts', 'patch-better-sqlite3-electron42.cjs');
 
 if (process.env.ECHO_SKIP_NATIVE_ABI === '1') {
   console.log(`[native-abi] skipped ${target} ABI alignment because ECHO_SKIP_NATIVE_ABI=1`);
@@ -154,6 +155,28 @@ const isCurrent = (marker, info) => {
   );
 };
 
+const copyFileWithRetry = (sourcePath, targetPath) => {
+  const maxAttempts = process.platform === 'win32' ? 8 : 1;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      copyFileSync(sourcePath, targetPath);
+      return;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= maxAttempts) {
+        break;
+      }
+
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const cacheNativeBinary = (info) => {
   if (!existsSync(nativeBinaryPath)) {
     return false;
@@ -161,7 +184,7 @@ const cacheNativeBinary = (info) => {
 
   const cachePath = getCachePath(info);
   mkdirSync(dirname(cachePath), { recursive: true });
-  copyFileSync(nativeBinaryPath, cachePath);
+  copyFileWithRetry(nativeBinaryPath, cachePath);
   return true;
 };
 
@@ -173,7 +196,7 @@ const restoreCachedBinary = (info) => {
   }
 
   mkdirSync(dirname(nativeBinaryPath), { recursive: true });
-  copyFileSync(cachePath, nativeBinaryPath);
+  copyFileWithRetry(cachePath, nativeBinaryPath);
   writeMarker(info);
   return true;
 };
@@ -204,6 +227,11 @@ const rebuild = (info) => {
 };
 
 try {
+  run(process.execPath, [betterSqlitePatchScript], {
+    stdio: 'inherit',
+    encoding: undefined,
+  });
+
   const info = await getTargetInfo();
   const marker = readMarker();
 

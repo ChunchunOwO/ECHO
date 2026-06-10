@@ -22,6 +22,7 @@ import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountBrowser, AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
+import type { EchoLinkServerStatus } from '../shared/types/echoLink';
 import type {
   OpraHeadphoneCorrectionApplyRequest,
   OpraHeadphoneCorrectionApplyResult,
@@ -611,6 +612,9 @@ export type EchoApi = {
     stop: () => Promise<ConnectSessionStatus>;
     seek: (positionSeconds: number) => Promise<ConnectSessionStatus>;
     setVolume: (volumePercent: number) => Promise<ConnectSessionStatus>;
+    getEchoLinkStatus: () => Promise<EchoLinkServerStatus>;
+    setEchoLinkEnabled: (enabled: boolean) => Promise<EchoLinkServerStatus>;
+    rotateEchoLinkToken: () => Promise<EchoLinkServerStatus>;
     onStatus: (handler: (status: ConnectSessionStatus) => void) => () => void;
     getReceiverStatus: () => Promise<ConnectReceiverStatus>;
     setReceiverEnabled: (enabled: boolean) => Promise<ConnectReceiverStatus>;

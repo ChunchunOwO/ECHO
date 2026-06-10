@@ -4382,6 +4382,7 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-now--stage,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-section--stage,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-hqplayer-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-echo-link-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-radio-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-receiver-panel,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-outgoing-debug,

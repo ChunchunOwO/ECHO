@@ -5,6 +5,8 @@ import { getAppSettings } from '../app/appSettings';
 import { getAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
 import { getConnectReceiverService } from '../connect/ConnectReceiverService';
 import { getConnectService, normalizeConnectStartRequest } from '../connect/ConnectService';
+import { getEchoLinkService } from '../connect/EchoLinkService';
+import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
 
 const sendConnectStatus = (status: ConnectSessionStatus): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -56,6 +58,7 @@ export const registerConnectIpc = (): void => {
   const service = getConnectService();
   const receiverService = getConnectReceiverService();
   const airPlayReceiverService = getAirPlayReceiverSpikeService();
+  const echoLinkService = getEchoLinkService();
   service.on('status', sendConnectStatus);
   receiverService.on('status', sendConnectReceiverStatus);
   airPlayReceiverService.on('status', sendAirPlayReceiverStatus);
@@ -76,6 +79,11 @@ export const registerConnectIpc = (): void => {
   ipcMain.handle(IpcChannels.ConnectSetVolume, (_event, volumePercent: unknown): Promise<ConnectSessionStatus> =>
     service.setVolume(normalizeVolume(volumePercent)),
   );
+  ipcMain.handle(IpcChannels.EchoLinkGetStatus, (): EchoLinkServerStatus => echoLinkService.getServerStatus());
+  ipcMain.handle(IpcChannels.EchoLinkSetEnabled, (_event, enabled: unknown): Promise<EchoLinkServerStatus> =>
+    echoLinkService.setEnabled(enabled === true),
+  );
+  ipcMain.handle(IpcChannels.EchoLinkRotateToken, (): EchoLinkServerStatus => echoLinkService.rotateToken());
   ipcMain.handle(IpcChannels.ConnectReceiverGetStatus, (): ConnectReceiverStatus => receiverService.getStatus());
   ipcMain.handle(IpcChannels.ConnectReceiverSetEnabled, (_event, enabled: unknown): Promise<ConnectReceiverStatus> =>
     receiverService.setEnabled(enabled === true),

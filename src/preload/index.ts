@@ -2133,6 +2133,9 @@ const echoApi: EchoApi = {
     stop: () => ipcRenderer.invoke(IpcChannels.ConnectStop),
     seek: (positionSeconds) => ipcRenderer.invoke(IpcChannels.ConnectSeek, positionSeconds),
     setVolume: (volumePercent) => ipcRenderer.invoke(IpcChannels.ConnectSetVolume, volumePercent),
+    getEchoLinkStatus: () => ipcRenderer.invoke(IpcChannels.EchoLinkGetStatus),
+    setEchoLinkEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.EchoLinkSetEnabled, enabled),
+    rotateEchoLinkToken: () => ipcRenderer.invoke(IpcChannels.EchoLinkRotateToken),
     onStatus: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
         handler(status as Awaited<ReturnType<EchoApi['connect']['getStatus']>>);

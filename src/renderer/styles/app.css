@@ -18183,6 +18183,7 @@ html[data-theme="dark"] .history-play-count {
 }
 
 .connect-receiver-panel,
+.connect-echo-link-panel,
 .connect-radio-panel {
   display: grid;
   gap: 12px;
@@ -18191,6 +18192,163 @@ html[data-theme="dark"] .history-play-count {
   border-radius: 8px;
   background: var(--color-bg-elevated);
   box-shadow: var(--theme-shadow-soft);
+}
+
+.connect-echo-link-panel {
+  order: -2;
+}
+
+.connect-now--stage {
+  order: -1;
+}
+
+.connect-echo-link-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.connect-echo-link-grid span {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--theme-control-bg);
+}
+
+.connect-echo-link-grid em {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.connect-echo-link-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-echo-link-grid .icon-button {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+}
+
+.connect-echo-link-grid span:has(.icon-button) strong {
+  padding-right: 32px;
+}
+
+.connect-echo-link-hosts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connect-echo-link-hosts small,
+.connect-echo-link-address-note {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.connect-echo-link-hosts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.connect-echo-link-hosts button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--theme-subtle-text);
+  background: var(--theme-control-bg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.connect-echo-link-hosts button[aria-pressed="true"] {
+  color: var(--theme-accent-text);
+  border-color: color-mix(in srgb, var(--theme-accent-text) 34%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-accent-text) 12%, var(--theme-control-bg));
+}
+
+.connect-echo-link-pairing {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.connect-echo-link-qr {
+  display: grid;
+  width: 132px;
+  height: 132px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--theme-muted-text);
+  background: #fff;
+}
+
+.connect-echo-link-qr img {
+  width: 118px;
+  height: 118px;
+  object-fit: contain;
+}
+
+.connect-echo-link-qr[data-empty="true"] {
+  background: var(--theme-control-bg);
+}
+
+.connect-echo-link-pairing code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--theme-heading-text);
+  background: var(--theme-control-bg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .connect-echo-link-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .connect-echo-link-pairing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .connect-echo-link-qr {
+    width: 120px;
+    height: 120px;
+  }
+
+  .connect-echo-link-qr img {
+    width: 108px;
+    height: 108px;
+  }
 }
 
 .connect-receiver-body {
@@ -18810,6 +18968,7 @@ html[data-theme="dark"] .history-play-count {
 .connect-now--stage,
 .connect-device-section--stage,
 .connect-hqplayer-panel,
+.connect-echo-link-panel,
 .connect-radio-panel,
 .connect-receiver-panel {
   border-color: #e1e4e8;
@@ -19126,6 +19285,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 .app-shell--wallpaper-ready .connect-now--stage,
 .app-shell--wallpaper-ready .connect-device-section--stage,
 .app-shell--wallpaper-ready .connect-hqplayer-panel,
+.app-shell--wallpaper-ready .connect-echo-link-panel,
 .app-shell--wallpaper-ready .connect-radio-panel,
 .app-shell--wallpaper-ready .connect-receiver-panel,
 .app-shell--wallpaper-ready .connect-outgoing-debug {
@@ -19177,6 +19337,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-now--stage,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-section--stage,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-panel,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-echo-link-panel,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-panel,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-receiver-panel,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-outgoing-debug,

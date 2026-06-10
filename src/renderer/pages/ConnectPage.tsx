@@ -23,9 +23,11 @@ import {
   Unplug,
   Volume2,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import type { AirPlayReceiverProtocol, AppSettings } from '../../shared/types/appSettings';
 import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
 import type {
   HqPlayerConnectionMode,
   HqPlayerConnectionTestResult,
@@ -91,6 +93,36 @@ const defaultAirPlayReceiverStatus: AirPlayReceiverStatus = {
   volume: 100,
   error: null,
   debugEvents: [],
+  updatedAt: new Date(0).toISOString(),
+};
+
+const defaultEchoLinkStatus: EchoLinkServerStatus = {
+  enabled: false,
+  running: false,
+  port: 26789,
+  host: '127.0.0.1',
+  addresses: [],
+  pairingUri: null,
+  token: '',
+  deviceName: 'PC ECHO',
+  deviceId: '',
+  activeMediaTokens: 0,
+  activeArtworkTokens: 0,
+  mdns: {
+    state: 'disabled',
+    serviceName: '_echo-link._tcp.local',
+    error: null,
+    advertisedAddresses: [],
+  },
+  diagnostics: {
+    selectedLanAddress: '127.0.0.1',
+    lastPhoneConnectionAt: null,
+    lastAuthFailureAt: null,
+    authFailureCount: 0,
+    lastMediaTokenServed: null,
+    recentHttpErrors: [],
+  },
+  error: null,
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -163,6 +195,20 @@ const airPlayReceiverProtocols: AirPlayReceiverProtocol[] = ['airplay1', 'airpla
 
 const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
 const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
+
+const createEchoLinkPairingUri = (status: EchoLinkServerStatus, host: string): string | null => {
+  if (!status.enabled || !status.running || !status.token) {
+    return null;
+  }
+  const entries: Array<[string, string]> = [
+    ['host', host],
+    ['port', String(status.port)],
+    ['token', status.token],
+    ['name', status.deviceName],
+    ['scheme', 'http'],
+  ];
+  return `echo://pair?${entries.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')}`;
+};
 
 const hqPlayerStateLabel: Record<HqPlayerStatus['state'], TranslationKey> = {
   disabled: 'connectPage.hqplayer.state.disabled',
@@ -872,6 +918,12 @@ export const ConnectPage = (): JSX.Element => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isReceiverBusy, setIsReceiverBusy] = useState(false);
   const [isAirPlayReceiverBusy, setIsAirPlayReceiverBusy] = useState(false);
+  const [echoLinkStatus, setEchoLinkStatus] = useState<EchoLinkServerStatus>(defaultEchoLinkStatus);
+  const [isEchoLinkBusy, setIsEchoLinkBusy] = useState(false);
+  const [copiedEchoLinkPairing, setCopiedEchoLinkPairing] = useState(false);
+  const [showEchoLinkToken, setShowEchoLinkToken] = useState(false);
+  const [selectedEchoLinkHost, setSelectedEchoLinkHost] = useState<string | null>(null);
+  const [echoLinkQrDataUrl, setEchoLinkQrDataUrl] = useState<string | null>(null);
   const [copiedAirPlayDebug, setCopiedAirPlayDebug] = useState(false);
   const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
   const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
@@ -1014,6 +1066,35 @@ export const ConnectPage = (): JSX.Element => {
   const radioStatusLabel = activeRadioStation
     ? `${playbackState === 'playing' ? '播放中' : playbackState === 'paused' ? '已暂停' : '准备中'} · ${activeRadioStation.name}`
     : '未播放电台';
+  const echoLinkHosts = useMemo(() => {
+    const candidates = echoLinkStatus.addresses.length > 0 ? echoLinkStatus.addresses : [echoLinkStatus.host];
+    return [...new Set(candidates.filter((address) => address.trim().length > 0))];
+  }, [echoLinkStatus.addresses, echoLinkStatus.host]);
+  const echoLinkSelectedHost = selectedEchoLinkHost && echoLinkHosts.includes(selectedEchoLinkHost)
+    ? selectedEchoLinkHost
+    : echoLinkStatus.host;
+  const echoLinkPairingUri = createEchoLinkPairingUri(echoLinkStatus, echoLinkSelectedHost) ?? echoLinkStatus.pairingUri;
+  const echoLinkAddressLabel = echoLinkHosts.length > 0
+    ? echoLinkHosts.map((address) => `${address}:${echoLinkStatus.port}`).join(' / ')
+    : `${echoLinkStatus.host}:${echoLinkStatus.port}`;
+  const echoLinkTokenLabel = showEchoLinkToken
+    ? echoLinkStatus.token
+    : echoLinkStatus.token
+      ? `${echoLinkStatus.token.slice(0, 6)}...${echoLinkStatus.token.slice(-6)}`
+      : '-';
+
+  const refreshEchoLink = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    if (!connect?.getEchoLinkStatus) {
+      return;
+    }
+
+    try {
+      setEchoLinkStatus(await connect.getEchoLinkStatus());
+    } catch {
+      // Keep the rest of Connect usable when running against an older bridge.
+    }
+  }, []);
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1056,6 +1137,43 @@ export const ConnectPage = (): JSX.Element => {
       // Keep Connect usable when running against an older preload bridge.
     }
   }, []);
+
+  useEffect(() => {
+    if (!selectedEchoLinkHost || echoLinkHosts.includes(selectedEchoLinkHost)) {
+      return;
+    }
+    setSelectedEchoLinkHost(null);
+  }, [echoLinkHosts, selectedEchoLinkHost]);
+
+  useEffect(() => {
+    if (!echoLinkPairingUri) {
+      setEchoLinkQrDataUrl(null);
+      return;
+    }
+
+    let disposed = false;
+    void QRCode.toDataURL(echoLinkPairingUri, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 180,
+      color: {
+        dark: '#111827ff',
+        light: '#ffffffff',
+      },
+    }).then((dataUrl) => {
+      if (!disposed) {
+        setEchoLinkQrDataUrl(dataUrl);
+      }
+    }).catch(() => {
+      if (!disposed) {
+        setEchoLinkQrDataUrl(null);
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [echoLinkPairingUri]);
 
   useEffect(() => {
     const connect = window.echo?.connect;
@@ -1101,6 +1219,7 @@ export const ConnectPage = (): JSX.Element => {
       }
     }).catch(() => undefined);
     void refreshDevices();
+    void refreshEchoLink();
     void refreshHqPlayer();
     const unsubscribe = connect.onStatus((nextStatus) => {
       setStatus(nextStatus);
@@ -1130,7 +1249,7 @@ export const ConnectPage = (): JSX.Element => {
       unsubscribeReceiver();
       unsubscribeAirPlayReceiver();
     };
-  }, [refreshDevices, refreshHqPlayer]);
+  }, [refreshDevices, refreshEchoLink, refreshHqPlayer]);
 
   useEffect(() => {
     if (isHqPlayerExpanded) {
@@ -1250,6 +1369,58 @@ export const ConnectPage = (): JSX.Element => {
       setIsReceiverBusy(false);
     }
   }, [receiverStatus.enabled]);
+
+  const toggleEchoLink = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    if (!connect?.setEchoLinkEnabled) {
+      setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 ECHO Link。');
+      return;
+    }
+
+    setIsEchoLinkBusy(true);
+    setError(null);
+    try {
+      const nextStatus = await connect.setEchoLinkEnabled(!echoLinkStatus.enabled);
+      setEchoLinkStatus(nextStatus);
+      if (nextStatus.error) {
+        setError(nextStatus.error);
+      }
+    } catch (linkError) {
+      setError(linkError instanceof Error ? linkError.message : String(linkError));
+    } finally {
+      setIsEchoLinkBusy(false);
+    }
+  }, [echoLinkStatus.enabled]);
+
+  const copyEchoLinkPairing = useCallback(async (): Promise<void> => {
+    const value = echoLinkPairingUri ?? '';
+    if (!value) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(value);
+    setCopiedEchoLinkPairing(true);
+    window.setTimeout(() => setCopiedEchoLinkPairing(false), 1400);
+  }, [echoLinkPairingUri]);
+
+  const rotateEchoLinkToken = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    if (!connect?.rotateEchoLinkToken) {
+      setError('Desktop bridge unavailable. 请在 Electron 桌面端更新 ECHO Link token。');
+      return;
+    }
+
+    setIsEchoLinkBusy(true);
+    setError(null);
+    try {
+      setEchoLinkStatus(await connect.rotateEchoLinkToken());
+      setShowEchoLinkToken(true);
+    } catch (tokenError) {
+      setError(tokenError instanceof Error ? tokenError.message : String(tokenError));
+    } finally {
+      setIsEchoLinkBusy(false);
+    }
+  }, []);
 
   const stopReceiverPlayback = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1717,6 +1888,120 @@ export const ConnectPage = (): JSX.Element => {
             )}
           </div>
         </details>
+
+        <section className="connect-echo-link-panel" aria-label="Android ECHO Link">
+          <div className="connect-section-title">
+            <div>
+              <span>Android ECHO Link</span>
+              <h2>手机连接</h2>
+            </div>
+            <div className="connect-section-actions">
+              <span className="connect-hqplayer-state" data-state={echoLinkStatus.running ? 'available' : echoLinkStatus.error ? 'unavailable' : 'disabled'}>
+                {echoLinkStatus.running ? '运行中' : echoLinkStatus.error ? '异常' : '已关闭'}
+              </span>
+              <button className="settings-action-button" type="button" onClick={() => void refreshEchoLink()} disabled={isEchoLinkBusy}>
+                <RefreshCw size={15} />
+                刷新
+              </button>
+              <button className="settings-action-button" type="button" onClick={() => void toggleEchoLink()} disabled={isEchoLinkBusy}>
+                {isEchoLinkBusy ? <Loader2 className="spinning-icon" size={15} /> : <Power size={15} />}
+                {echoLinkStatus.enabled ? '关闭' : '开启'}
+              </button>
+              <button className="settings-action-button" type="button" onClick={() => void rotateEchoLinkToken()} disabled={isEchoLinkBusy}>
+                <RefreshCw size={15} />
+                轮换 Token
+              </button>
+            </div>
+          </div>
+          <div className="connect-echo-link-grid">
+            <span>
+              <em>地址</em>
+              <strong>{echoLinkSelectedHost}:{echoLinkStatus.port}</strong>
+            </span>
+            <span>
+              <em>设备</em>
+              <strong>{echoLinkStatus.deviceName}</strong>
+            </span>
+            <span>
+              <em>Token</em>
+              <strong>{echoLinkTokenLabel}</strong>
+              <button className="icon-button" type="button" aria-label={showEchoLinkToken ? '隐藏 Token' : '显示 Token'} title={showEchoLinkToken ? '隐藏 Token' : '显示 Token'} onClick={() => setShowEchoLinkToken((current) => !current)}>
+                {showEchoLinkToken ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </span>
+            <span>
+              <em>临时流</em>
+              <strong>{echoLinkStatus.activeMediaTokens}</strong>
+            </span>
+            <span>
+              <em>发现</em>
+              <strong>{echoLinkStatus.mdns.state === 'advertising' ? 'mDNS 已广播' : echoLinkStatus.mdns.state === 'error' ? 'mDNS 异常' : '未广播'}</strong>
+            </span>
+            <span>
+              <em>手机</em>
+              <strong>{echoLinkStatus.diagnostics.lastPhoneConnectionAt ? new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString() : '尚未连接'}</strong>
+            </span>
+            <span>
+              <em>认证失败</em>
+              <strong>{echoLinkStatus.diagnostics.authFailureCount}</strong>
+            </span>
+            <span>
+              <em>最后 Range</em>
+              <strong>{echoLinkStatus.diagnostics.lastMediaTokenServed?.range ?? '无'}</strong>
+            </span>
+          </div>
+          {echoLinkHosts.length > 1 ? (
+            <div className="connect-echo-link-hosts" aria-label="ECHO Link LAN address">
+              <small>LAN 地址</small>
+              <div>
+                {echoLinkHosts.map((host) => (
+                  <button
+                    key={host}
+                    type="button"
+                    aria-pressed={host === echoLinkSelectedHost}
+                    onClick={() => setSelectedEchoLinkHost(host)}
+                  >
+                    {host}:{echoLinkStatus.port}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <small className="connect-echo-link-address-note">{echoLinkAddressLabel}</small>
+          )}
+          <div className="connect-echo-link-pairing">
+            <div className="connect-echo-link-qr" data-empty={echoLinkQrDataUrl ? 'false' : 'true'}>
+              {echoLinkQrDataUrl ? <img src={echoLinkQrDataUrl} alt="" /> : <Smartphone size={30} />}
+            </div>
+            <code>{echoLinkPairingUri ?? 'echo://pair 未启用'}</code>
+            <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkPairing()} disabled={!echoLinkPairingUri}>
+              {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
+              {copiedEchoLinkPairing ? '已复制' : '复制'}
+            </button>
+          </div>
+          {echoLinkStatus.error ? (
+            <div className="connect-alert connect-alert--inline" role="alert">
+              <AlertTriangle size={16} />
+              <span>{echoLinkStatus.error}</span>
+            </div>
+          ) : null}
+          {echoLinkStatus.mdns.error || echoLinkStatus.diagnostics.recentHttpErrors.length > 0 ? (
+            <details className="connect-receiver-debug">
+              <summary>
+                <span>ECHO Link 诊断</span>
+                <small>{echoLinkStatus.diagnostics.recentHttpErrors.length} errors</small>
+              </summary>
+              <div className="connect-receiver-debug__items">
+                {echoLinkStatus.mdns.error ? <code>mDNS {echoLinkStatus.mdns.error}</code> : null}
+                {echoLinkStatus.diagnostics.recentHttpErrors.slice(0, 6).map((event) => (
+                  <code key={`${event.at}-${event.path}-${event.statusCode}`}>
+                    {new Date(event.at).toLocaleTimeString()} {event.statusCode} {event.path} {event.message}
+                  </code>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </section>
 
         <section className="connect-device-section connect-device-section--stage" aria-label={t('connectPage.devices.aria')}>
           <div className="connect-section-title">

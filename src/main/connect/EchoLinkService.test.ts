@@ -1,0 +1,443 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AudioStatus } from '../../shared/types/audio';
+import type { LibraryPage, LibraryTrack } from '../../shared/types/library';
+import type { TrackLyrics } from '../../shared/types/lyrics';
+import { EchoLinkService } from './EchoLinkService';
+
+const makeAudioStatus = (overrides: Partial<AudioStatus> = {}): AudioStatus => ({
+  host: 'ready',
+  state: 'idle',
+  outputDeviceId: null,
+  outputDeviceName: null,
+  outputDeviceType: null,
+  outputBackend: null,
+  activeOutputBackendImpl: null,
+  outputMode: 'shared',
+  sharedBackend: 'auto',
+  useJuceOutputRequested: false,
+  useJuceDecodeRequested: false,
+  activeDecodeBackendImpl: null,
+  volume: 0.72,
+  playbackRate: 1,
+  playbackSpeedMode: 'speed',
+  currentFilePath: null,
+  currentTrackId: null,
+  durationSeconds: 0,
+  positionSeconds: 0,
+  channels: null,
+  codec: null,
+  bitDepth: null,
+  bitrate: null,
+  fileSampleRate: null,
+  decoderOutputSampleRate: null,
+  requestedOutputSampleRate: null,
+  actualDeviceSampleRate: null,
+  sharedDeviceSampleRate: null,
+  resampling: false,
+  bitPerfectCandidate: false,
+  sampleRateMismatch: false,
+  eqEnabled: false,
+  channelBalanceEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: null,
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
+  warnings: [],
+  error: null,
+  ...overrides,
+});
+
+const makeTrack = (patch: Partial<LibraryTrack> = {}): LibraryTrack => ({
+  id: 'track-1',
+  mediaType: 'local',
+  path: 'song.flac',
+  title: 'Song',
+  artist: 'Artist',
+  album: 'Album',
+  albumArtist: 'Artist',
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: 240,
+  codec: 'flac',
+  sampleRate: 44100,
+  bitDepth: 16,
+  bitrate: 900000,
+  coverId: null,
+  coverThumb: null,
+  fieldSources: {},
+  ...patch,
+});
+
+const makeLyrics = (patch: Partial<TrackLyrics> = {}): TrackLyrics => ({
+  id: 'lyrics-1',
+  trackId: 'track-1',
+  provider: 'local',
+  kind: 'synced',
+  title: 'Song A',
+  artist: 'Artist',
+  album: 'Album',
+  durationSeconds: 240,
+  lines: [{ timeMs: 1000, text: 'line one' }],
+  plainText: null,
+  syncedText: '[00:01.00]line one',
+  offsetMs: 0,
+  cachedAt: '2026-06-10T00:00:00.000Z',
+  updatedAt: '2026-06-10T00:00:00.000Z',
+  ...patch,
+});
+
+class FakeAudioSession {
+  status = makeAudioStatus();
+  play = vi.fn(async () => {
+    this.status = { ...this.status, state: 'playing' };
+    return this.status;
+  });
+  pause = vi.fn(async () => {
+    this.status = { ...this.status, state: 'paused' };
+    return this.status;
+  });
+  stop = vi.fn(() => {
+    this.status = { ...this.status, state: 'stopped', positionSeconds: 0 };
+    return this.status;
+  });
+  seek = vi.fn(async (positionSeconds: number) => {
+    this.status = { ...this.status, positionSeconds };
+    return this.status;
+  });
+  setOutput = vi.fn(async ({ volume }: { volume?: number }) => {
+    this.status = { ...this.status, volume: volume ?? this.status.volume };
+    return this.status;
+  });
+  playLocalFile = vi.fn(async (request: { filePath: string; trackId?: string }) => {
+    this.status = makeAudioStatus({
+      state: 'playing',
+      currentFilePath: request.filePath,
+      currentTrackId: request.trackId ?? null,
+      durationSeconds: 240,
+    });
+    return this.status;
+  });
+  getStatus = vi.fn(() => this.status);
+}
+
+class FakeLibraryService {
+  constructor(private readonly tracks: LibraryTrack[]) {}
+
+  getTrack = vi.fn((trackId: string): LibraryTrack | null => this.tracks.find((track) => track.id === trackId) ?? null);
+
+  getTracks = vi.fn((query = {}): LibraryPage<LibraryTrack> => {
+    const page = Math.max(1, Number(query.page ?? 1));
+    const pageSize = Math.max(1, Number(query.pageSize ?? 12));
+    const search = typeof query.search === 'string' ? query.search.toLowerCase() : '';
+    const filtered = search
+      ? this.tracks.filter((track) => `${track.title} ${track.artist} ${track.album}`.toLowerCase().includes(search))
+      : this.tracks;
+    const offset = (page - 1) * pageSize;
+    return {
+      items: filtered.slice(offset, offset + pageSize),
+      total: filtered.length,
+      page,
+      pageSize,
+      hasMore: offset + pageSize < filtered.length,
+    };
+  });
+
+  resolveCoverAsset = vi.fn(() => null);
+}
+
+class FakeLyricsService {
+  getLyricsForTrack = vi.fn(async (trackId: string): Promise<TrackLyrics | null> => (
+    trackId === 'track-1' ? makeLyrics({ trackId }) : null
+  ));
+}
+
+describe('EchoLinkService', () => {
+  let tempRoot: string;
+  let audioPath: string;
+  let audioSession: FakeAudioSession;
+  let libraryService: FakeLibraryService;
+  let lyricsService: FakeLyricsService;
+  let service: EchoLinkService;
+  let dispatchPlaybackAction: ReturnType<typeof vi.fn<(action: 'nextTrack' | 'previousTrack') => void>>;
+  let mdnsStarts: unknown[];
+  let now: number;
+
+  const baseUrl = (): string => `http://127.0.0.1:${service.getServerStatus().port}`;
+  const authHeaders = (): Record<string, string> => ({
+    Authorization: `Bearer ${service.getServerStatus().token}`,
+    'X-ECHO-Link-Version': '1',
+  });
+
+  beforeEach(async () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'echo-link-'));
+    audioPath = join(tempRoot, 'song.flac');
+    writeFileSync(audioPath, Buffer.from('abcdef', 'utf8'));
+    now = 1_780_000_000_000;
+    audioSession = new FakeAudioSession();
+    libraryService = new FakeLibraryService([
+      makeTrack({ id: 'track-1', path: audioPath, title: 'Song A' }),
+      makeTrack({ id: 'track-2', path: audioPath, title: 'Song B' }),
+    ]);
+    lyricsService = new FakeLyricsService();
+    dispatchPlaybackAction = vi.fn();
+    mdnsStarts = [];
+    service = new EchoLinkService({
+      audioSession,
+      libraryService,
+      lyricsService,
+      dispatchPlaybackAction,
+      getLanAddresses: () => ['127.0.0.1'],
+      createMdnsAdvertiser: () => ({
+        start: vi.fn(async (advertisement: unknown) => {
+          mdnsStarts.push(advertisement);
+        }),
+        stop: vi.fn(async () => undefined),
+      }),
+      now: () => now,
+      deviceId: 'pc-device-id',
+      port: 0,
+    });
+    await service.setEnabled(true);
+  });
+
+  afterEach(async () => {
+    await service.close();
+    rmSync(tempRoot, { force: true, recursive: true });
+  });
+
+  it('rejects missing bearer auth on API endpoints', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, {
+      headers: { 'X-ECHO-Link-Version': '1' },
+    });
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: 'unauthorized' });
+  });
+
+  it('returns Android status shape', async () => {
+    audioSession.status = makeAudioStatus({
+      state: 'playing',
+      currentTrackId: 'track-1',
+      currentFilePath: audioPath,
+      positionSeconds: 42,
+      durationSeconds: 240,
+    });
+
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, { headers: authHeaders() });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      device: { id: 'pc-device-id', name: 'PC ECHO' },
+      playback: {
+        state: 'playing',
+        positionMs: 42000,
+        durationMs: 240000,
+        volume: 0.72,
+        outputMode: 'WASAPI Shared',
+        track: {
+          id: 'track-1',
+          title: 'Song A',
+          sourceLabel: 'Local Library',
+          canPlayOnPhone: true,
+        },
+      },
+    });
+    expect(body.playback.track.artworkUrl).toContain('/echo-link/v1/artwork/');
+    expect(body.playback.track.albumArtist).toBe('Artist');
+  });
+
+  it('generates and rotates pairing tokens', () => {
+    const before = service.getServerStatus();
+    const rotated = service.rotateToken();
+
+    expect(before.token).toEqual(expect.any(String));
+    expect(rotated.token).toEqual(expect.any(String));
+    expect(rotated.token).not.toBe(before.token);
+    expect(rotated.pairingUri).toContain(`token=${encodeURIComponent(rotated.token)}`);
+    expect(rotated.pairingUri).toContain('name=PC%20ECHO');
+  });
+
+  it('keeps library preview paged and cheap', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/library/tracks?page=1&pageSize=1&q=Song`, {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(libraryService.getTracks).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 1, search: 'Song' }));
+    expect(body).toMatchObject({
+      totalCount: 2,
+      tracks: [expect.objectContaining({ id: 'track-1', durationMs: 240000 })],
+    });
+    expect(body.tracks).toHaveLength(1);
+  });
+
+  it('returns track lyrics for Android linked playback', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/library/tracks/track-1/lyrics`, {
+      headers: authHeaders(),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(lyricsService.getLyricsForTrack).toHaveBeenCalledWith('track-1');
+    expect(body).toMatchObject({
+      lyrics: '[00:01.00]line one',
+      sourceLabel: 'PC ECHO',
+      kind: 'synced',
+    });
+  });
+
+  it('returns 404 when a track has no lyrics', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/library/tracks/track-2/lyrics`, {
+      headers: authHeaders(),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: 'lyrics_not_found' });
+  });
+
+  it('dispatches playback commands through the audio session', async () => {
+    const playResponse = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'playTrack', trackId: 'track-1', output: 'pc' }),
+    });
+    await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'seekTo', positionMs: 42000 }),
+    });
+    await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'setVolume', volume: 0.5 }),
+    });
+
+    expect(playResponse.status).toBe(200);
+    expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ filePath: audioPath, trackId: 'track-1' }));
+    expect(audioSession.seek).toHaveBeenCalledWith(42);
+    expect(audioSession.setOutput).toHaveBeenCalledWith({ volume: 0.5 });
+  });
+
+  it('handles handoff with start position', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'handoff', trackId: 'track-2', positionMs: 42000, target: 'pc' }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-2', startSeconds: 42 }));
+    expect(body.playback.queue).toMatchObject({
+      currentTrackId: 'track-2',
+      items: [expect.objectContaining({ id: 'track-2' })],
+    });
+  });
+
+  it('handles queueReplace and advances within the ECHO Link queue', async () => {
+    const response = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'queueReplace', trackIds: ['track-1', 'track-2'], startTrackId: 'track-1', output: 'pc' }),
+    });
+    const body = await response.json();
+    await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'next' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(body.playback.queue.items).toHaveLength(2);
+    expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-1' }));
+    expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-2' }));
+    expect(dispatchPlaybackAction).not.toHaveBeenCalledWith('nextTrack');
+  });
+
+  it('routes queue navigation commands through the existing playback action bus', async () => {
+    const nextResponse = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'next' }),
+    });
+    const previousResponse = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'previous' }),
+    });
+
+    expect(nextResponse.status).toBe(200);
+    expect(previousResponse.status).toBe(200);
+    expect(dispatchPlaybackAction).toHaveBeenCalledWith('nextTrack');
+    expect(dispatchPlaybackAction).toHaveBeenCalledWith('previousTrack');
+  });
+
+  it('creates temporary stream tokens with HTTP Range support', async () => {
+    const streamResponse = await fetch(`${baseUrl()}/echo-link/v1/library/tracks/track-1/stream`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'phone' }),
+    });
+    const streamBody = await streamResponse.json();
+    const rangeResponse = await fetch(streamBody.streamUrl, { headers: { Range: 'bytes=2-4' } });
+    const rangeBody = await rangeResponse.text();
+
+    expect(streamResponse.status).toBe(200);
+    expect(streamBody.expiresAtEpochMs).toBe(now + 5 * 60 * 1000);
+    expect(rangeResponse.status).toBe(206);
+    expect(rangeResponse.headers.get('accept-ranges')).toBe('bytes');
+    expect(rangeResponse.headers.get('content-range')).toBe('bytes 2-4/6');
+    expect(rangeResponse.headers.get('content-type')).toContain('audio/flac');
+    expect(rangeBody).toBe('cde');
+  });
+
+  it('expires temporary stream tokens', async () => {
+    const stream = service.createStream('track-1', baseUrl());
+    now += 5 * 60 * 1000 + 1;
+
+    const response = await fetch(stream.streamUrl);
+
+    expect(response.status).toBe(401);
+    await expect(response.text()).resolves.toContain('media_token_expired_or_missing');
+  });
+
+  it('keeps manual server operation when mDNS advertising fails', async () => {
+    await service.close();
+    service = new EchoLinkService({
+      audioSession,
+      libraryService,
+      lyricsService,
+      dispatchPlaybackAction,
+      getLanAddresses: () => ['127.0.0.1'],
+      createMdnsAdvertiser: () => ({
+        start: vi.fn(async () => {
+          throw new Error('mdns_failed');
+        }),
+        stop: vi.fn(async () => undefined),
+      }),
+      now: () => now,
+      deviceId: 'pc-device-id',
+      port: 0,
+    });
+    const status = await service.setEnabled(true);
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, { headers: authHeaders() });
+
+    expect(status.running).toBe(true);
+    expect(status.mdns).toMatchObject({ state: 'error' });
+    expect(response.status).toBe(200);
+  });
+
+  it('starts mDNS advertisement without exposing the bearer token', async () => {
+    expect(mdnsStarts).toHaveLength(1);
+    expect(JSON.stringify(mdnsStarts[0])).toContain('pc-device-id');
+    expect(JSON.stringify(mdnsStarts[0])).not.toContain(service.getServerStatus().token);
+  });
+});

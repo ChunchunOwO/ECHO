@@ -15,7 +15,7 @@ import { loadPersistedRememberedAudioOutput } from '../components/player/audioOu
 import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
 import { EditableContextMenu } from '../components/ui/EditableContextMenu';
-import { formatAudioHostError } from '../components/player/audioErrorFormat';
+import { formatAudioHostError, shouldSuppressAudioHostError } from '../components/player/audioErrorFormat';
 import type { AppRoute, AppRouteId } from './routes';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AccountProvider, AccountStatus } from '../../shared/types/accounts';
@@ -345,6 +345,7 @@ const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const proUnlockNoticeStoragePrefix = 'echo-next.pro-unlock-thanks';
 const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const lyricsMiniPlayerAutoHideDistancePx = 118;
 const lyricsMiniPlayerAutoHideDelayMs = 460;
@@ -406,6 +407,35 @@ const readInitialRouteId = (routes: AppRoute[]): AppRouteId => {
   return fallbackRouteId;
 };
 
+const readProUnlockNoticeStorageKey = (status: {
+  pluginId?: string;
+  requiredVersion?: string;
+  hwidHash?: string;
+}): string =>
+  [
+    proUnlockNoticeStoragePrefix,
+    status.pluginId || 'unknown-plugin',
+    status.requiredVersion || 'unknown-version',
+    status.hwidHash || 'unknown-hwid',
+  ].join(':');
+
+const shouldShowProUnlockNotice = (status: {
+  pluginId?: string;
+  requiredVersion?: string;
+  hwidHash?: string;
+}): boolean => {
+  const storageKey = readProUnlockNoticeStorageKey(status);
+  try {
+    if (window.localStorage.getItem(storageKey) === 'shown') {
+      return false;
+    }
+    window.localStorage.setItem(storageKey, 'shown');
+  } catch {
+    // Fall back to the in-memory guard for privacy modes or unavailable storage.
+  }
+  return true;
+};
+
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const { t } = useI18n();
   const playbackQueue = usePlaybackQueue();
@@ -421,6 +451,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null);
   const [isFirstRunWizardOpen, setIsFirstRunWizardOpen] = useState(false);
   const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
+  const [connectDonatorUnlocked, setConnectDonatorUnlocked] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [lyricsDrawerCurrentTrackTools, setLyricsDrawerCurrentTrackTools] = useState<ReactNode | null>(null);
@@ -521,6 +552,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const touchKeyboardLastRequestAtRef = useRef(0);
   const lastAudioErrorRef = useRef<string | null>(null);
   const notifiedWindowsAudioDefaultFormatKeysRef = useRef<Set<string>>(new Set());
+  const proUnlockNoticeShownRef = useRef(false);
   const previousRouteIdRef = useRef<AppRouteId>('songs');
   const routeSwitchSequenceRef = useRef(0);
   const routeSwitchTraceRef = useRef<RouteSwitchTrace | null>(null);
@@ -531,11 +563,34 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const visibleRoutes = useMemo(
     () =>
       applySidebarPreferences(
-        routes.map((route) => (route.id === 'downloads' && !downloadsFeatureUnlocked ? { ...route, hideFromSidebar: true } : route)),
+        routes.map((route) => (
+          (route.id === 'downloads' && !downloadsFeatureUnlocked) ||
+          (route.id === 'connect' && !connectDonatorUnlocked)
+            ? { ...route, hideFromSidebar: true }
+            : route
+        )),
         sidebarLayoutSettings,
       ),
-    [downloadsFeatureUnlocked, routes, sidebarLayoutSettings],
+    [connectDonatorUnlocked, downloadsFeatureUnlocked, routes, sidebarLayoutSettings],
   );
+
+  const refreshConnectFeatureUnlock = useCallback((): void => {
+    const getDonatorUnlockStatus = window.echo?.connect?.getDonatorUnlockStatus;
+    if (!getDonatorUnlockStatus) {
+      return;
+    }
+
+    void getDonatorUnlockStatus()
+      .then((status) => {
+        const unlocked = status.unlocked === true;
+        setConnectDonatorUnlocked(unlocked);
+        if (unlocked && !proUnlockNoticeShownRef.current && shouldShowProUnlockNotice(status)) {
+          proUnlockNoticeShownRef.current = true;
+          setChromeNotice('Pro 已解锁，感谢你的赞助。');
+        }
+      })
+      .catch(() => setConnectDonatorUnlocked(false));
+  }, []);
 
   const startWindowFullscreenTransition = useCallback((nextFullscreen: boolean): void => {
     fullscreenTransitionStartedAtRef.current = Date.now();
@@ -987,6 +1042,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    refreshConnectFeatureUnlock();
+    const handlePluginsChanged = (): void => refreshConnectFeatureUnlock();
+    window.addEventListener('plugins:changed', handlePluginsChanged);
+    return () => window.removeEventListener('plugins:changed', handlePluginsChanged);
+  }, [refreshConnectFeatureUnlock]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
@@ -1435,6 +1497,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
 
     if (isSpotifyPlaybackSetupError(rawError)) {
+      return;
+    }
+
+    if (shouldSuppressAudioHostError(rawError)) {
       return;
     }
 
@@ -2395,6 +2461,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         isAudioSettingsOpen={isAudioDrawerOpen}
         isLyricsSettingsOpen={isLyricsDrawerOpen}
         isMvSettingsOpen={isMvDrawerOpen}
+        isProUnlocked={connectDonatorUnlocked}
         updateStatus={availableUpdateStatus}
         onRouteChange={navigateRoute}
         onOpenUpdateSettings={handleOpenUpdateSettings}

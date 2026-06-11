@@ -12403,6 +12403,12 @@ html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scr
   -webkit-overflow-scrolling: touch;
 }
 
+html[data-theme-preset="FINAL"] .page-surface:has(.album-detail-page) {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-gutter: stable;
+}
+
 html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) :is(.album-wall, .artist-wall) {
   min-height: min-content;
 }

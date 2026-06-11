@@ -325,6 +325,7 @@ export const IpcChannels = {
   RemoteSourcesExchangeBaiduAuthCode: 'remoteSources:exchangeBaiduAuthCode',
   RemoteSourcesStartBaiduOAuthLogin: 'remoteSources:startBaiduOAuthLogin',
   ConnectListDevices: 'connect:list-devices',
+  ConnectGetDonatorUnlockStatus: 'connect:get-donator-unlock-status',
   ConnectRefresh: 'connect:refresh',
   ConnectGetStatus: 'connect:get-status',
   ConnectConnect: 'connect:connect',

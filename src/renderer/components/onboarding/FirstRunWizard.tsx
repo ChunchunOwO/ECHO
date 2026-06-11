@@ -40,8 +40,8 @@ const scanModes: Array<FirstRunOption<ScanPerformanceMode>> = [
 ];
 
 const outputModes: Array<FirstRunOption<AudioOutputMode>> = [
-  { mode: 'system', labelKey: 'firstRun.audio.system.label', descriptionKey: 'firstRun.audio.system.description', hintKey: 'firstRun.audio.system.hint' },
   { mode: 'shared', labelKey: 'firstRun.audio.shared.label', descriptionKey: 'firstRun.audio.shared.description', hintKey: 'firstRun.audio.shared.hint' },
+  { mode: 'system', labelKey: 'firstRun.audio.system.label', descriptionKey: 'firstRun.audio.system.description', hintKey: 'firstRun.audio.system.hint' },
   { mode: 'exclusive', labelKey: 'firstRun.audio.exclusive.label', descriptionKey: 'firstRun.audio.exclusive.description', hintKey: 'firstRun.audio.exclusive.hint' },
   { mode: 'asio', labelKey: 'firstRun.audio.asio.label', descriptionKey: 'firstRun.audio.asio.description', hintKey: 'firstRun.audio.asio.hint' },
 ];
@@ -160,8 +160,10 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
   const [appearanceTheme, setAppearanceTheme] = useState<AppThemeMode>(initialSettings?.appearanceTheme ?? 'light');
   const [appearanceThemePreset, setAppearanceThemePreset] = useState<AppThemePreset>(initialSettings?.appearanceThemePreset ?? 'classic');
   const [outputMode, setOutputMode] = useState<AudioOutputMode>(() => {
-    const rememberedMode = initialSettings?.rememberedAudioOutput?.outputMode ?? 'system';
-    return getSupportedFirstRunOutputModes(rendererPlatform).some((item) => item.mode === rememberedMode) ? rememberedMode : 'system';
+    const supportedModes = getSupportedFirstRunOutputModes(rendererPlatform);
+    const fallbackMode = supportedModes.some((item) => item.mode === 'shared') ? 'shared' : 'system';
+    const rememberedMode = initialSettings?.rememberedAudioOutput?.outputMode ?? fallbackMode;
+    return supportedModes.some((item) => item.mode === rememberedMode) ? rememberedMode : fallbackMode;
   });
   const [scanNow, setScanNow] = useState(true);
   const [busy, setBusy] = useState<'folder' | 'cache' | 'finish' | 'skip' | null>(null);

@@ -63,8 +63,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.signal.dsdDopFallback': 'DSD DoP fallback',
   'audioDrawer.signal.dsdDopStandby': 'DSD DoP not used',
   'audioDrawer.device.asioDriver': 'ASIO driver',
-  'audioDrawer.device.systemAudio': 'Windows Direct Output',
-  'audioDrawer.device.systemAudioDescription': 'Default Windows audio path for headphones, Bluetooth, and computer speakers',
+  'audioDrawer.device.systemAudio': 'Safe Mode',
+  'audioDrawer.device.systemAudioDescription': 'Chromium/system-audio compatibility path for native output trouble',
   'audioDrawer.warning.highOutputSampleRate': '当前音频设备采样率过高，可能导致播放速度异常，建议改为 48 kHz。',
   'audioProfessional.action.hideDetails': 'Hide professional details',
   'audioProfessional.action.refresh': 'Refresh status',
@@ -424,17 +424,40 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     await waitFor(() => expect(screen.getByText(/FLAC \/ 16 bit \/ 48 kHz \/ 5\.1 \(6 ch\)/)).toBeTruthy());
   });
 
-  it('labels system audio as Windows direct output', () => {
+  it('labels system audio as safe mode', () => {
     renderDrawer({
       ...baseStatus,
       outputMode: 'system',
       outputBackend: 'system-audio',
     });
 
-    expect(screen.getAllByRole('button', { name: /Windows Direct Output/ }).some((button) =>
+    expect(screen.getAllByRole('button', { name: /Safe Mode/ }).some((button) =>
       button.className.includes('audio-device-pill'),
     )).toBe(true);
-    expect(screen.getByText('Default Windows audio path for headphones, Bluetooth, and computer speakers')).toBeTruthy();
+    expect(screen.getByText('Chromium/system-audio compatibility path for native output trouble')).toBeTruthy();
+  });
+
+  it('switches the safe mode card to real system audio instead of WASAPI shared', async () => {
+    const setOutput = vi.fn().mockResolvedValue({
+      ...baseStatus,
+      outputMode: 'system',
+      outputBackend: 'system-audio',
+    });
+    renderDrawer(baseStatus, setOutput);
+
+    const safeModeButton = screen.getByRole('button', { name: /Safe Mode/ });
+    expect(safeModeButton.className).not.toContain('active');
+
+    fireEvent.click(safeModeButton);
+
+    await waitFor(() => expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({
+      outputMode: 'system',
+      latencyProfile: baseStatus.latencyProfile,
+    })));
+    expect(setOutput).not.toHaveBeenCalledWith(expect.objectContaining({
+      outputMode: 'shared',
+      sharedBackend: 'windows',
+    }));
   });
 
   it('lets users leave HQPlayer takeover before choosing local output devices', async () => {

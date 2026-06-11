@@ -32,7 +32,22 @@ describe('AppTitleBar', () => {
 
     expect(screen.queryByRole('button', { name: 'Albums' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Import File' })).toBeNull();
+    expect(screen.queryByLabelText('ECHO Pro unlocked')).toBeNull();
     expect(onRouteChange).not.toHaveBeenCalled();
+  });
+
+  it('shows the Pro badge when the app is unlocked', () => {
+    renderTitleBar({
+      activeRouteId: 'songs',
+      isProUnlocked: true,
+      onRouteChange: vi.fn(),
+      onOpenAudioSettings: vi.fn(),
+      onMinimize: vi.fn(),
+      onToggleMaximize: vi.fn(),
+      onClose: vi.fn(),
+    });
+
+    expect(screen.getByLabelText('ECHO Pro unlocked').textContent).toBe('Pro');
   });
 
   it('keeps navigation buttons as route changes', () => {

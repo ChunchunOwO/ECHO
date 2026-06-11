@@ -7,6 +7,7 @@ import { getConnectReceiverService } from '../connect/ConnectReceiverService';
 import { getConnectService, normalizeConnectStartRequest } from '../connect/ConnectService';
 import { getEchoLinkService } from '../connect/EchoLinkService';
 import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
+import { getConnectDonatorUnlockService } from '../plugins/ConnectDonatorUnlockService';
 
 const sendConnectStatus = (status: ConnectSessionStatus): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -49,6 +50,11 @@ const startConfiguredReceivers = (
   if (getAppSettings().connectAutoStartReceiversEnabled !== true) {
     return;
   }
+  try {
+    getConnectDonatorUnlockService().assertUnlocked();
+  } catch {
+    return;
+  }
 
   void receiverService.setEnabled(true).catch(() => undefined);
   void airPlayReceiverService.setEnabled(true).catch(() => undefined);
@@ -63,38 +69,88 @@ export const registerConnectIpc = (): void => {
   receiverService.on('status', sendConnectReceiverStatus);
   airPlayReceiverService.on('status', sendAirPlayReceiverStatus);
 
-  ipcMain.handle(IpcChannels.ConnectListDevices, (): ConnectDevice[] => service.listDevices());
-  ipcMain.handle(IpcChannels.ConnectRefresh, (): Promise<ConnectDevice[]> => service.refreshDevices());
-  ipcMain.handle(IpcChannels.ConnectGetStatus, (): ConnectSessionStatus => service.getStatus());
+  const requireConnectDonatorUnlock = (): void => {
+    getConnectDonatorUnlockService().assertUnlocked();
+  };
+
+  ipcMain.handle(IpcChannels.ConnectGetDonatorUnlockStatus, () => getConnectDonatorUnlockService().getStatus());
+  ipcMain.handle(IpcChannels.ConnectListDevices, (): ConnectDevice[] => {
+    requireConnectDonatorUnlock();
+    return service.listDevices();
+  });
+  ipcMain.handle(IpcChannels.ConnectRefresh, (): Promise<ConnectDevice[]> => {
+    requireConnectDonatorUnlock();
+    return service.refreshDevices();
+  });
+  ipcMain.handle(IpcChannels.ConnectGetStatus, (): ConnectSessionStatus => {
+    requireConnectDonatorUnlock();
+    return service.getStatus();
+  });
   ipcMain.handle(IpcChannels.ConnectConnect, (_event, request: unknown): Promise<ConnectSessionStatus> =>
-    service.connect(normalizeConnectStartRequest(request)),
+    {
+      requireConnectDonatorUnlock();
+      return service.connect(normalizeConnectStartRequest(request));
+    },
   );
-  ipcMain.handle(IpcChannels.ConnectDisconnect, (): Promise<ConnectSessionStatus> => service.disconnect());
-  ipcMain.handle(IpcChannels.ConnectPlay, (): Promise<ConnectSessionStatus> => service.play());
-  ipcMain.handle(IpcChannels.ConnectPause, (): Promise<ConnectSessionStatus> => service.pause());
-  ipcMain.handle(IpcChannels.ConnectStop, (): Promise<ConnectSessionStatus> => service.stop());
-  ipcMain.handle(IpcChannels.ConnectSeek, (_event, positionSeconds: unknown): Promise<ConnectSessionStatus> =>
-    service.seek(normalizeSeconds(positionSeconds)),
-  );
-  ipcMain.handle(IpcChannels.ConnectSetVolume, (_event, volumePercent: unknown): Promise<ConnectSessionStatus> =>
-    service.setVolume(normalizeVolume(volumePercent)),
-  );
-  ipcMain.handle(IpcChannels.EchoLinkGetStatus, (): EchoLinkServerStatus => echoLinkService.getServerStatus());
-  ipcMain.handle(IpcChannels.EchoLinkSetEnabled, (_event, enabled: unknown): Promise<EchoLinkServerStatus> =>
-    echoLinkService.setEnabled(enabled === true),
-  );
-  ipcMain.handle(IpcChannels.EchoLinkRotateToken, (): EchoLinkServerStatus => echoLinkService.rotateToken());
-  ipcMain.handle(IpcChannels.ConnectReceiverGetStatus, (): ConnectReceiverStatus => receiverService.getStatus());
-  ipcMain.handle(IpcChannels.ConnectReceiverSetEnabled, (_event, enabled: unknown): Promise<ConnectReceiverStatus> =>
-    receiverService.setEnabled(enabled === true),
-  );
-  ipcMain.handle(IpcChannels.ConnectReceiverStopPlayback, (): ConnectReceiverStatus => receiverService.stopPlayback());
-  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverGetStatus, (): AirPlayReceiverStatus => airPlayReceiverService.getStatus());
-  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverSetEnabled, (_event, enabled: unknown): Promise<AirPlayReceiverStatus> =>
-    airPlayReceiverService.setEnabled(enabled === true),
-  );
-  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverStopPlayback, (): Promise<AirPlayReceiverStatus> =>
-    airPlayReceiverService.stopPlayback(),
-  );
+  ipcMain.handle(IpcChannels.ConnectDisconnect, (): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.disconnect();
+  });
+  ipcMain.handle(IpcChannels.ConnectPlay, (): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.play();
+  });
+  ipcMain.handle(IpcChannels.ConnectPause, (): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.pause();
+  });
+  ipcMain.handle(IpcChannels.ConnectStop, (): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.stop();
+  });
+  ipcMain.handle(IpcChannels.ConnectSeek, (_event, positionSeconds: unknown): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.seek(normalizeSeconds(positionSeconds));
+  });
+  ipcMain.handle(IpcChannels.ConnectSetVolume, (_event, volumePercent: unknown): Promise<ConnectSessionStatus> => {
+    requireConnectDonatorUnlock();
+    return service.setVolume(normalizeVolume(volumePercent));
+  });
+  ipcMain.handle(IpcChannels.EchoLinkGetStatus, (): EchoLinkServerStatus => {
+    requireConnectDonatorUnlock();
+    return echoLinkService.getServerStatus();
+  });
+  ipcMain.handle(IpcChannels.EchoLinkSetEnabled, (_event, enabled: unknown): Promise<EchoLinkServerStatus> => {
+    requireConnectDonatorUnlock();
+    return echoLinkService.setEnabled(enabled === true);
+  });
+  ipcMain.handle(IpcChannels.EchoLinkRotateToken, (): EchoLinkServerStatus => {
+    requireConnectDonatorUnlock();
+    return echoLinkService.rotateToken();
+  });
+  ipcMain.handle(IpcChannels.ConnectReceiverGetStatus, (): ConnectReceiverStatus => {
+    requireConnectDonatorUnlock();
+    return receiverService.getStatus();
+  });
+  ipcMain.handle(IpcChannels.ConnectReceiverSetEnabled, (_event, enabled: unknown): Promise<ConnectReceiverStatus> => {
+    requireConnectDonatorUnlock();
+    return receiverService.setEnabled(enabled === true);
+  });
+  ipcMain.handle(IpcChannels.ConnectReceiverStopPlayback, (): ConnectReceiverStatus => {
+    requireConnectDonatorUnlock();
+    return receiverService.stopPlayback();
+  });
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverGetStatus, (): AirPlayReceiverStatus => {
+    requireConnectDonatorUnlock();
+    return airPlayReceiverService.getStatus();
+  });
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverSetEnabled, (_event, enabled: unknown): Promise<AirPlayReceiverStatus> => {
+    requireConnectDonatorUnlock();
+    return airPlayReceiverService.setEnabled(enabled === true);
+  });
+  ipcMain.handle(IpcChannels.ConnectAirPlayReceiverStopPlayback, (): Promise<AirPlayReceiverStatus> => {
+    requireConnectDonatorUnlock();
+    return airPlayReceiverService.stopPlayback();
+  });
   startConfiguredReceivers(receiverService, airPlayReceiverService);
 };

@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "LAW9wYDY844=",
+  "success": true,
+  "projectFilePath": "G:\\ECHO-main\\tools\\connect-donator-issuer\\EchoConnectDonatorIssuer.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Moe\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.28\\microsoft.net.illink.tasks.8.0.28.nupkg.sha512",
+    "C:\\Users\\Moe\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.28\\microsoft.netcore.app.runtime.win-x64.8.0.28.nupkg.sha512",
+    "C:\\Users\\Moe\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.28\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.28.nupkg.sha512",
+    "C:\\Users\\Moe\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.28\\microsoft.aspnetcore.app.runtime.win-x64.8.0.28.nupkg.sha512"
+  ],
+  "logs": []
+}

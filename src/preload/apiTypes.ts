@@ -9,6 +9,7 @@ import type {
   ChannelBalanceState,
 } from '../shared/types/audio';
 import type { AppSettings, NetworkProxyTestResult } from '../shared/types/appSettings';
+import type { ConnectDonatorUnlockStatus } from '../shared/constants/featureUnlocks';
 import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
 import type {
   DataBackupExportResult,
@@ -602,6 +603,7 @@ export type EchoApi = {
     startBaiduOAuthLogin: (input: BaiduOAuthLoginRequest) => Promise<BaiduOAuthTokenResult>;
   };
   connect: {
+    getDonatorUnlockStatus?: () => Promise<ConnectDonatorUnlockStatus>;
     listDevices: () => Promise<ConnectDevice[]>;
     refresh: () => Promise<ConnectDevice[]>;
     getStatus: () => Promise<ConnectSessionStatus>;

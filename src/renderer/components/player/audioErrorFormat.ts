@@ -1,5 +1,6 @@
 const nonActionableAudioErrorPatterns = [
   /^Desktop bridge unavailable\b/u,
+  /\bconnect_(?:donator_unlock_required|hwid_not_allowed)\b/u,
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
   /\baudio_session_run_cancelled\b/u,

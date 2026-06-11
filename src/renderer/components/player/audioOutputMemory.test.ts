@@ -11,10 +11,10 @@ beforeEach(() => {
 });
 
 describe('audioOutputMemory', () => {
-  it('defaults empty output memory to system audio', () => {
+  it('defaults empty output memory to shared audio', () => {
     expect(readRememberedAudioOutput()).toMatchObject({
       enabled: false,
-      outputMode: 'system',
+      outputMode: 'shared',
       sharedBackend: 'auto',
       latencyProfile: 'balanced',
     });

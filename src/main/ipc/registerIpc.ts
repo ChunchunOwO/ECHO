@@ -5,7 +5,6 @@ import { basename, extname, join, resolve } from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import { finalThemeUnlockPluginId } from '../../shared/constants/featureUnlocks';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type {
   DataBackupExportResult,
@@ -48,6 +47,7 @@ import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { getPluginService } from '../plugins/PluginService';
+import { getConnectDonatorUnlockService } from '../plugins/ConnectDonatorUnlockService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
 import { getMainWindow } from '../app/windowManager';
 import { applyMainWindowBackgroundMaterial } from '../app/windowBackgroundMaterial';
@@ -214,22 +214,16 @@ const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryReque
 
 const getAppCacheInventory = (): Promise<AppCacheInventory> => collectAppCacheInventory(app.getPath('userData'));
 
-const hasFinalThemeUnlockPlugin = (): boolean => {
+const hasProThemeUnlock = (): boolean => {
   try {
-    return getPluginService().list().plugins.some((plugin) =>
-      plugin.id === finalThemeUnlockPluginId &&
-      plugin.enabled === true &&
-      plugin.disabledByHost !== true &&
-      !plugin.error &&
-      plugin.status !== 'disabled',
-    );
+    return getConnectDonatorUnlockService().getStatus().unlocked === true;
   } catch {
     return false;
   }
 };
 
 const getFinalThemeSettingsOptions = (): NormalizeSettingsOptions => {
-  const finalThemeUnlocked = hasFinalThemeUnlockPlugin();
+  const finalThemeUnlocked = hasProThemeUnlock();
   setFinalThemeUnlockAvailable(finalThemeUnlocked);
   return { finalThemeUnlocked };
 };

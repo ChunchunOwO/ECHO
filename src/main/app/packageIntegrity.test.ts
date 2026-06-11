@@ -54,8 +54,30 @@ describe('verifyPackageIntegrity', () => {
       ok: true,
       skipped: false,
       verified: ['app.asar'],
+      warnings: [],
       errors: [],
     });
+  });
+
+  it('does not block legacy manifests when app.asar is a loose app directory', async () => {
+    const resourcesPath = makeTempResources();
+    mkdirSync(join(resourcesPath, 'app.asar'));
+    writeFileSync(join(resourcesPath, 'app.asar', 'package.json'), '{}');
+    const manifestPath = writeManifest(resourcesPath, {
+      schemaVersion: 1,
+      appId: 'app.echo.next',
+      productName: 'ECHO NEXT',
+      version: '26.6.11',
+      generatedAt: '2026-06-11T00:00:00.000Z',
+      files: [{ path: 'app.asar', sha256: sha256('old packed asar'), size: 15 }],
+    });
+
+    const result = await verifyPackageIntegrity({ resourcesPath, manifestPath, isPackaged: true, env: {} });
+
+    expect(result.ok).toBe(true);
+    expect(result.verified).toEqual(['app.asar/']);
+    expect(result.warnings).toEqual(['app.asar: loose directory layout; legacy file hash skipped']);
+    expect(result.errors).toEqual([]);
   });
 
   it('reports changed files without throwing', async () => {

@@ -8,6 +8,8 @@ describe('audio error formatting', () => {
       'eq_control_closed',
       'eq_control_sync_skipped',
       'audio_session_run_cancelled',
+      "Error invoking remote method 'connect:connect': Error: connect_donator_unlock_required",
+      'connect_hwid_not_allowed',
       'The play() request was interrupted by a call to pause(). https://goo.gl/LdLk22',
     ];
 

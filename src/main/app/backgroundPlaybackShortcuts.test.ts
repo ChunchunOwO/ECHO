@@ -278,6 +278,42 @@ describe('global playback shortcuts', () => {
     expect(sendMock).not.toHaveBeenCalledWith(IpcChannels.AppGlobalShortcutCommand, 'nextTrack');
   });
 
+  it('keeps Windows mouse hook callback non-blocking', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    currentSettings = createSettings({
+      globalShortcuts: {
+        ...createDefaultGlobalShortcuts(),
+        nextTrack: { enabled: true, accelerator: 'MouseButton4' },
+      },
+    });
+    const shortcuts = await import('./backgroundPlaybackShortcuts');
+
+    shortcuts.refreshBackgroundSpaceRegistration();
+
+    const spawnCalls = spawnMock.mock.calls as unknown as Array<[string, string[]]>;
+    const spawnArgs = spawnCalls[0]?.[1];
+    const encodedCommandIndex = spawnArgs?.indexOf('-EncodedCommand') ?? -1;
+    expect(encodedCommandIndex).toBeGreaterThanOrEqual(0);
+    const encodedScript = spawnArgs?.[encodedCommandIndex + 1] ?? '';
+    const hookScript = Buffer.from(encodedScript, 'base64').toString('utf16le');
+    const hookCallbackPathStart = hookScript.indexOf('private static bool ShouldCapture');
+    const hookCallbackStart = hookScript.indexOf('private static IntPtr HookCallback');
+    const hookCallbackEnd = hookScript.indexOf('\n}\n"@', hookCallbackStart);
+    const hookCallbackPath = hookScript.slice(hookCallbackPathStart, hookCallbackEnd);
+
+    expect(hookScript).toContain('BlockingCollection<string>');
+    expect(hookScript).toContain('WriterLoop');
+    expect(hookScript).toContain('EchoMouseShortcutWriter');
+    expect(hookScript).toContain('Console.WriteLine("ready")');
+    expect(hookCallbackPath).not.toContain('Console.WriteLine');
+    expect(hookCallbackPath).not.toContain('Console.Out.Flush');
+    expect(hookCallbackPath).not.toContain('GetEnvironmentVariable');
+
+    spawnedProcesses[0]?.stdout.emit('data', 'ready\r\nMouseButton4\r\n');
+
+    expect(sendMock).toHaveBeenCalledWith(IpcChannels.AppGlobalShortcutCommand, 'nextTrack');
+  });
+
   it('validates mouse side buttons without Electron globalShortcut registration on Windows', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const shortcuts = await import('./backgroundPlaybackShortcuts');

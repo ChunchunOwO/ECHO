@@ -1,0 +1,2 @@
+G:\ECHO-main\tools\connect-donator-issuer\bin\Release\net8.0\win-x64\publish\ECHOConnectDonatorIssuer.pdb
+G:\ECHO-main\tools\connect-donator-issuer\bin\Release\net8.0\win-x64\publish\ECHOConnectDonatorIssuer.exe

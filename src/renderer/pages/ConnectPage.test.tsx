@@ -295,6 +295,17 @@ const installEchoBridge = (
       }),
     },
     connect: {
+      getDonatorUnlockStatus: vi.fn().mockResolvedValue({
+        featureId: 'connect',
+        pluginId: 'echo.connect-donator-unlock',
+        requiredVersion: 'plugin:echo.connect-donator-unlock:v1',
+        unlocked: true,
+        pluginInstalled: true,
+        pluginEnabled: true,
+        hwidHash: 'a'.repeat(64),
+        reason: 'unlocked',
+        checkedAt: '2026-05-21T01:00:00.000Z',
+      }),
       listDevices: vi.fn().mockResolvedValue(devices),
       refresh: vi.fn().mockResolvedValue(devices),
       getStatus: vi.fn().mockResolvedValue(initialConnectStatus),
@@ -404,6 +415,29 @@ describe('ConnectPage HQPlayer controls', () => {
     cleanup();
     Reflect.deleteProperty(window, 'echo');
     Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('shows Donator Only and avoids device scans while Connect is locked', async () => {
+    const bridge = installEchoBridge(hqStatus('available'));
+    bridge.connect.getDonatorUnlockStatus.mockResolvedValue({
+      featureId: 'connect',
+      pluginId: 'echo.connect-donator-unlock',
+      requiredVersion: 'plugin:echo.connect-donator-unlock:v1',
+      unlocked: false,
+      pluginInstalled: false,
+      pluginEnabled: false,
+      hwidHash: 'b'.repeat(64),
+      reason: 'plugin-missing',
+      checkedAt: '2026-05-21T01:00:00.000Z',
+    });
+
+    renderConnectPage();
+
+    expect(await screen.findByRole('heading', { name: 'Donator Only' })).toBeTruthy();
+    expect(screen.getByText('导入插件')).toBeTruthy();
+    await waitFor(() => expect(bridge.connect.getDonatorUnlockStatus).toHaveBeenCalled());
+    expect(bridge.connect.listDevices).not.toHaveBeenCalled();
+    expect(bridge.connect.refresh).not.toHaveBeenCalled();
   });
 
   it('shows HQPlayer as a Connect output device and routes connection through Connect', async () => {
@@ -610,8 +644,9 @@ describe('ConnectPage HQPlayer controls', () => {
     unmount();
     renderConnectPage();
 
+    await waitFor(() => expect(screen.queryByText('Donator Only')).toBeNull());
     expect(screen.queryByText('HQPlayer Desktop')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '展开局域网数播' }));
+    fireEvent.click(await screen.findByRole('button', { name: '展开局域网数播' }));
     await screen.findByText('HQPlayer Desktop');
   });
 

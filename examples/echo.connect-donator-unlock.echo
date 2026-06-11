@@ -1,0 +1,34 @@
+{
+  "type": "echo-next-plugin-package",
+  "version": 1,
+  "exportedAt": "2026-06-11T08:27:05.463Z",
+  "manifest": {
+    "id": "echo.connect-donator-unlock",
+    "name": "Connect Donator Unlock",
+    "version": "1.0.0",
+    "apiVersion": 2,
+    "entry": "plugin.js",
+    "permissions": [],
+    "contributes": {
+      "commands": [],
+      "panels": [],
+      "trackContextMenus": [],
+      "metadataProviders": [],
+      "sourceProviders": [],
+      "lyricsProviders": [],
+      "coverProviders": [],
+      "themePresets": [],
+      "settings": []
+    }
+  },
+  "files": [
+    {
+      "path": "plugin.js",
+      "content": "// Connect Donator unlock marker plugin. Keep this plugin installed and enabled.\n"
+    },
+    {
+      "path": "donator.machine-license.json",
+      "content": "{\n  \"version\": 1,\n  \"algorithm\": \"aes-256-gcm\",\n  \"issuedAt\": \"2026-06-11T08:27:05.464Z\",\n  \"iv\": \"t1022FPMtb3RlYnv\",\n  \"tag\": \"EwfhMYsHFRJSS8XVvqXVOA==\",\n  \"ciphertext\": \"qaOhi85r+YGzPqyOT2pl1T6Uso6EtZCBqWCGKgY2B6SZiRYGoA4Pwg59eQDol+Pkw7BHLQMgZQg4BHnteAL+frhFm1MZiM5/hJ/CIoC9p8OTLwVX3ubovpWzqZsmRCpx1t/PKSoDIBrUki4YGy3OE2tYdO99WkMY5O8Xl+nI38aPWafGUGK1b7hh/e6lELTnVOj0uXxUPwAeYWOI2IwKcrtlPy75BMhJl/v8Ks2+wOzTNkSUkye2+R/8w+BPY1qt\"\n}\n"
+    }
+  ]
+}

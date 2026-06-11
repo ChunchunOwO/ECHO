@@ -31,8 +31,11 @@ let lastRegistrationStatuses: RegistrationStatus[] = [];
 const windowsMouseHookScript = `
 Add-Type -TypeDefinition @"
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 public static class EchoMouseShortcutHook
 {
@@ -44,6 +47,9 @@ public static class EchoMouseShortcutHook
     private const int WM_QUIT = 0x0012;
     private static LowLevelMouseProc _proc = HookCallback;
     private static IntPtr _hookID = IntPtr.Zero;
+    private static HashSet<string> _configuredButtons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private static BlockingCollection<string> _pendingEvents = new BlockingCollection<string>();
+    private static Thread _writerThread;
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -99,6 +105,13 @@ public static class EchoMouseShortcutHook
 
     public static void Run()
     {
+        ConfigureButtons();
+        _pendingEvents = new BlockingCollection<string>();
+        _writerThread = new Thread(WriterLoop);
+        _writerThread.IsBackground = true;
+        _writerThread.Name = "EchoMouseShortcutWriter";
+        _writerThread.Start();
+
         using (Process currentProcess = Process.GetCurrentProcess())
         using (ProcessModule currentModule = currentProcess.MainModule)
         {
@@ -107,6 +120,7 @@ public static class EchoMouseShortcutHook
 
         if (_hookID == IntPtr.Zero)
         {
+            StopWriter();
             Console.Error.WriteLine("hook-failed");
             Environment.Exit(2);
             return;
@@ -115,24 +129,76 @@ public static class EchoMouseShortcutHook
         Console.WriteLine("ready");
         Console.Out.Flush();
 
-        MSG msg;
-        while (GetMessage(out msg, IntPtr.Zero, 0, 0) != 0)
+        try
         {
-            if (msg.message == WM_QUIT)
+            MSG msg;
+            while (GetMessage(out msg, IntPtr.Zero, 0, 0) != 0)
             {
-                break;
+                if (msg.message == WM_QUIT)
+                {
+                    break;
+                }
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
             }
-            TranslateMessage(ref msg);
-            DispatchMessage(ref msg);
+        }
+        finally
+        {
+            StopWriter();
+            UnhookWindowsHookEx(_hookID);
+            _hookID = IntPtr.Zero;
+        }
+    }
+
+    private static void ConfigureButtons()
+    {
+        string configuredButtons = Environment.GetEnvironmentVariable("ECHO_MOUSE_SHORTCUT_BUTTONS") ?? "";
+        HashSet<string> nextButtons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string buttonName in configuredButtons.Split(','))
+        {
+            string trimmedButtonName = buttonName.Trim();
+            if (trimmedButtonName.Length > 0)
+            {
+                nextButtons.Add(trimmedButtonName);
+            }
+        }
+        _configuredButtons = nextButtons;
+    }
+
+    private static void WriterLoop()
+    {
+        try
+        {
+            foreach (string buttonName in _pendingEvents.GetConsumingEnumerable())
+            {
+                Console.WriteLine(buttonName);
+                Console.Out.Flush();
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static void StopWriter()
+    {
+        try
+        {
+            _pendingEvents.CompleteAdding();
+        }
+        catch
+        {
         }
 
-        UnhookWindowsHookEx(_hookID);
+        if (_writerThread != null && _writerThread.IsAlive)
+        {
+            _writerThread.Join(500);
+        }
     }
 
     private static bool ShouldCapture(string buttonName)
     {
-        string configuredButtons = Environment.GetEnvironmentVariable("ECHO_MOUSE_SHORTCUT_BUTTONS") ?? "";
-        return ("," + configuredButtons + ",").IndexOf("," + buttonName + ",", StringComparison.OrdinalIgnoreCase) >= 0;
+        return _configuredButtons.Contains(buttonName);
     }
 
     private static IntPtr EmitAndSuppress(string buttonName, bool emit)
@@ -144,8 +210,13 @@ public static class EchoMouseShortcutHook
 
         if (emit)
         {
-            Console.WriteLine(buttonName);
-            Console.Out.Flush();
+            try
+            {
+                _pendingEvents.Add(buttonName);
+            }
+            catch
+            {
+            }
         }
 
         return (IntPtr)1;

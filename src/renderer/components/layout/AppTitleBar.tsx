@@ -21,6 +21,7 @@ type AppTitleBarProps = {
   isAudioSettingsOpen?: boolean;
   isLyricsSettingsOpen?: boolean;
   isMvSettingsOpen?: boolean;
+  isProUnlocked?: boolean;
   updateStatus?: UpdateStatus | null;
   onRouteChange: (routeId: AppRouteId) => void;
   onOpenUpdateSettings?: () => void;
@@ -48,6 +49,7 @@ export const AppTitleBar = ({
   isAudioSettingsOpen = false,
   isLyricsSettingsOpen = false,
   isMvSettingsOpen = false,
+  isProUnlocked = false,
   updateStatus = null,
   onRouteChange,
   onOpenUpdateSettings = () => undefined,
@@ -106,6 +108,11 @@ export const AppTitleBar = ({
       <div className="app-titlebar-brand">
         <strong>ECHO</strong>
         <span>Next</span>
+        {isProUnlocked ? (
+          <span className="app-titlebar-pro-badge" aria-label="ECHO Pro unlocked">
+            Pro
+          </span>
+        ) : null}
         {updateStatus ? (
           <button
             className="app-titlebar-update"

@@ -56,7 +56,7 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { finalThemeUnlockPluginId, finalThemeUnlockVersion, isDownloadFeatureUnlockCode } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, isDownloadFeatureUnlockCode, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, playerBarButtonIds } from '../../shared/types/appSettings';
 import {
   defaultSidebarHiddenRouteIds,
@@ -81,6 +81,7 @@ import type {
   NetworkProxyMode,
   NetworkProxyTestResult,
   PlayerBarButtonId,
+  RememberedAudioOutput,
 } from '../../shared/types/appSettings';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
 import type { MiniPlayerState } from '../../shared/types/miniPlayer';
@@ -127,6 +128,7 @@ import { AudioProfessionalStatusPanel } from '../components/player/AudioProfessi
 import { PlaybackStabilityDiagnosticsPanel } from '../components/player/PlaybackStabilityDiagnosticsPanel';
 import { SegmentLoopPanel } from '../components/player/SegmentLoopPanel';
 import { formatAudioDiagnostics } from '../components/player/audioDiagnosticsFormat';
+import { writeRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { titleFromPath } from '../components/player/playerFormat';
 import { DiagnosticsAssistantPanel } from '../components/settings/DiagnosticsAssistantPanel';
 import { RemoteSourcesPanel } from '../components/settings/RemoteSourcesPanel';
@@ -178,6 +180,7 @@ import {
   getAccountsBridge,
   getAppBridge,
   getAudioBridge,
+  getConnectBridge,
   getDiagnosticsBridge,
   getDiscordPresenceBridge,
   getDownloadsBridge,
@@ -472,6 +475,9 @@ const isTidalClientSecretInputValid = (value: string): boolean => /^[A-Za-z0-9._
 const isTidalCountryCodeInputValid = (value: string): boolean => /^[A-Za-z]{2}$/u.test(value.trim());
 
 const playbackOutputModes: AudioOutputMode[] = ['system', 'shared', 'exclusive', 'asio'];
+
+const isPlaybackOutputMode = (value: unknown): value is AudioOutputMode =>
+  playbackOutputModes.includes(value as AudioOutputMode);
 
 const detectSettingsPlatform = (): NodeJS.Platform | 'unknown' =>
   typeof window !== 'undefined' ? detectRendererPlatform(window.navigator) : 'unknown';
@@ -1920,12 +1926,9 @@ const collectPluginThemeOptions = (plugins: PluginSummary[]): PluginThemeOption[
       }));
   });
 
-const isFinalThemeUnlockPlugin = (plugin: PluginSummary): boolean =>
-  plugin.id === finalThemeUnlockPluginId &&
-  plugin.enabled === true &&
-  plugin.disabledByHost !== true &&
-  !plugin.error &&
-  plugin.status !== 'disabled';
+const proOnlyThemePresetSet = new Set<AppThemePreset>(proOnlyThemePresets);
+
+const isProOnlyThemePreset = (preset: AppThemePreset): boolean => proOnlyThemePresetSet.has(preset);
 
 type ThemeTone = 'light' | 'dark';
 type ThemeColorField = keyof Pick<
@@ -4311,6 +4314,7 @@ export const SettingsPage = (): JSX.Element => {
   const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(false);
   const [finalThemeUnlockChecked, setFinalThemeUnlockChecked] = useState(false);
   const finalThemeRelockAppliedRef = useRef(false);
+  const finalThemeMarkerUnlockedRef = useRef(false);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
@@ -5735,6 +5739,7 @@ export const SettingsPage = (): JSX.Element => {
       const activeCustomTheme = customThemes.find((theme) => theme.id === customThemeId);
       const basePreset = activeCustomTheme?.basePreset ?? settings.appearanceThemePreset ?? defaultThemePreset;
       const settingsFinalThemeUnlocked = settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
+      finalThemeMarkerUnlockedRef.current = settingsFinalThemeUnlocked;
       if (settingsFinalThemeUnlocked) {
         setFinalThemeUnlocked(true);
         setFinalThemeUnlockChecked(true);
@@ -5752,6 +5757,10 @@ export const SettingsPage = (): JSX.Element => {
       setThemeCustomDraft(activeCustomTheme?.light ?? settings.appearanceThemePresetOverrides?.[basePreset]?.light ?? {});
       if (settings.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
+      }
+      const rememberedOutputMode = settings.rememberedAudioOutput?.outputMode;
+      if (isPlaybackOutputMode(rememberedOutputMode) && getPlaybackOutputModesForPlatform(rendererPlatform).includes(rememberedOutputMode)) {
+        setOutputMode(rememberedOutputMode);
       }
       setSharedBackend(normalizeAudioSharedBackendForPlatform(settings.rememberedAudioOutput?.sharedBackend ?? 'auto', rendererPlatform));
       setChannelBalanceState(settings.channelBalance ?? defaultSettingsChannelBalance);
@@ -5788,29 +5797,24 @@ export const SettingsPage = (): JSX.Element => {
   useEffect(() => {
     let disposed = false;
     const plugins = getPluginsBridge();
-    if (!plugins) {
-      setFinalThemeUnlocked(false);
-      setFinalThemeUnlockChecked(true);
-      if (activeSection === 'appearance') {
-        setPluginThemeOptions([]);
-      }
-      return undefined;
-    }
+    const connect = getConnectBridge();
 
-    void plugins
-      .list()
-      .then((result) => {
+    void Promise.all([
+      plugins?.list().catch(() => null) ?? Promise.resolve(null),
+      connect?.getDonatorUnlockStatus?.().catch(() => null) ?? Promise.resolve(null),
+    ])
+      .then(([pluginResult, donatorStatus]) => {
         if (!disposed) {
-          setFinalThemeUnlocked(result.plugins.some(isFinalThemeUnlockPlugin));
+          setFinalThemeUnlocked(donatorStatus?.unlocked === true || finalThemeMarkerUnlockedRef.current);
           setFinalThemeUnlockChecked(true);
           if (activeSection === 'appearance') {
-            setPluginThemeOptions(collectPluginThemeOptions(result.plugins));
+            setPluginThemeOptions(pluginResult ? collectPluginThemeOptions(pluginResult.plugins) : []);
           }
         }
       })
       .catch(() => {
         if (!disposed) {
-          setFinalThemeUnlocked(false);
+          setFinalThemeUnlocked(finalThemeMarkerUnlockedRef.current);
           setFinalThemeUnlockChecked(true);
           if (activeSection === 'appearance') {
             setPluginThemeOptions([]);
@@ -6100,6 +6104,10 @@ export const SettingsPage = (): JSX.Element => {
         return;
       }
       const appPatch = normalizeExternalAppSettingsPatch(patch);
+      if (Object.prototype.hasOwnProperty.call(appPatch, 'finalThemeUnlockVersion')) {
+        finalThemeMarkerUnlockedRef.current = appPatch.finalThemeUnlockVersion === finalThemeUnlockVersion;
+        setFinalThemeUnlocked((current) => current || finalThemeMarkerUnlockedRef.current);
+      }
 
       setAppSettings((current) => {
         const nextSettings = current ? { ...current, ...appPatch } : current;
@@ -6396,6 +6404,20 @@ export const SettingsPage = (): JSX.Element => {
       }
 
       setStatus(await audio.setOutput(output));
+
+      const rememberedOutput: RememberedAudioOutput = {
+        enabled: true,
+        outputMode: nextOutputMode,
+        sharedBackend: normalizedSharedBackend,
+        latencyProfile: output.latencyProfile ?? 'lowLatency',
+        deviceIndex: nextDevice && normalizedSharedBackend !== 'directsound' ? nextDevice.index : undefined,
+        deviceName: nextDevice?.name,
+        asioOutputChannelStart: nextOutputMode === 'asio' ? nextDevice?.asioOutputChannelStart : undefined,
+      };
+      writeRememberedAudioOutput(rememberedOutput);
+      setAppSettings((currentSettings) =>
+        currentSettings ? { ...currentSettings, rememberedAudioOutput: rememberedOutput } : currentSettings,
+      );
     },
     [
       appSettings?.audioAsioUnavailableFallbackEnabled,
@@ -6807,7 +6829,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemePresetChange = (appearanceThemePreset: AppThemePreset): void => {
-    if (appearanceThemePreset === 'FINAL' && !finalThemeUnlocked) {
+    if (isProOnlyThemePreset(appearanceThemePreset) && !finalThemeUnlocked) {
       return;
     }
 
@@ -6832,8 +6854,8 @@ export const SettingsPage = (): JSX.Element => {
           }
         : current,
     );
-    const nextFinalThemeUnlockVersion = appearanceThemePreset === 'FINAL' && finalThemeUnlocked ? finalThemeUnlockVersion : null;
-    const finalThemeUnlockPatch = appearanceThemePreset === 'FINAL' || appSettings?.finalThemeUnlockVersion
+    const nextFinalThemeUnlockVersion = isProOnlyThemePreset(appearanceThemePreset) && finalThemeUnlocked ? finalThemeUnlockVersion : null;
+    const finalThemeUnlockPatch = isProOnlyThemePreset(appearanceThemePreset) || appSettings?.finalThemeUnlockVersion
       ? { finalThemeUnlockVersion: nextFinalThemeUnlockVersion }
       : {};
     patchAppSettings(
@@ -6997,7 +7019,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSave = (): void => {
-    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+    if (
+      (isProOnlyThemePreset(selectedThemePreset) || (activeThemeCustom && isProOnlyThemePreset(activeThemeCustom.basePreset))) &&
+      !finalThemeUnlocked
+    ) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7052,7 +7077,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomReset = (): void => {
-    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+    if (
+      (isProOnlyThemePreset(selectedThemePreset) || (activeThemeCustom && isProOnlyThemePreset(activeThemeCustom.basePreset))) &&
+      !finalThemeUnlocked
+    ) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7088,7 +7116,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomExport = (): void => {
-    if (selectedThemePreset === 'FINAL' || activeThemeCustom?.basePreset === 'FINAL') {
+    if (
+      (isProOnlyThemePreset(selectedThemePreset) || (activeThemeCustom && isProOnlyThemePreset(activeThemeCustom.basePreset))) &&
+      !finalThemeUnlocked
+    ) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7119,8 +7150,14 @@ export const SettingsPage = (): JSX.Element => {
 
           let importedTheme: AppThemeCustomTheme | undefined;
           if (parsed.version === 2 && parsed.schema === 'echo-next.custom-theme') {
-            if (parsed.theme && typeof parsed.theme === 'object' && !Array.isArray(parsed.theme) && (parsed.theme as Partial<AppThemeCustomTheme>).basePreset === 'FINAL') {
-              throw new Error('FINAL custom themes cannot be imported');
+            if (
+              parsed.theme &&
+              typeof parsed.theme === 'object' &&
+              !Array.isArray(parsed.theme) &&
+              isProOnlyThemePreset((parsed.theme as Partial<AppThemeCustomTheme>).basePreset as AppThemePreset) &&
+              !finalThemeUnlocked
+            ) {
+              throw new Error('Pro custom themes cannot be imported without unlock');
             }
             importedTheme = normalizeThemeCustomTheme(parsed.theme);
           } else if (parsed.version === 1 && parsed.schema === 'echo-next.theme-preset') {
@@ -7140,8 +7177,8 @@ export const SettingsPage = (): JSX.Element => {
           if (!importedTheme) {
             throw new Error('Invalid theme payload');
           }
-          if (importedTheme.basePreset === 'FINAL') {
-            throw new Error('FINAL custom themes cannot be imported');
+          if (isProOnlyThemePreset(importedTheme.basePreset) && !finalThemeUnlocked) {
+            throw new Error('Pro custom themes cannot be imported without unlock');
           }
 
           const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes.filter((theme) => theme.id !== importedTheme.id), importedTheme]);
@@ -7183,7 +7220,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handlePluginThemeApply = (pluginTheme: PluginThemeOption): void => {
-    if (pluginTheme.basePreset === 'FINAL') {
+    if (isProOnlyThemePreset(pluginTheme.basePreset) && !finalThemeUnlocked) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7228,7 +7265,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomCreate = (): void => {
-    if (selectedThemePreset === 'FINAL') {
+    if (isProOnlyThemePreset(selectedThemePreset) && !finalThemeUnlocked) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7264,7 +7301,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSelect = (theme: AppThemeCustomTheme): void => {
-    if (theme.basePreset === 'FINAL') {
+    if (isProOnlyThemePreset(theme.basePreset) && !finalThemeUnlocked) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7315,7 +7352,7 @@ export const SettingsPage = (): JSX.Element => {
     if (!activeThemeCustom) {
       return;
     }
-    if (activeThemeCustom.basePreset === 'FINAL') {
+    if (isProOnlyThemePreset(activeThemeCustom.basePreset) && !finalThemeUnlocked) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7355,7 +7392,7 @@ export const SettingsPage = (): JSX.Element => {
     if (!activeThemeCustom) {
       return;
     }
-    if (activeThemeCustom.basePreset === 'FINAL') {
+    if (isProOnlyThemePreset(activeThemeCustom.basePreset) && !finalThemeUnlocked) {
       revokeFinalThemeSelection(t('settings.appearance.themeCustom.message.importFailed'));
       return;
     }
@@ -7443,7 +7480,13 @@ export const SettingsPage = (): JSX.Element => {
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
 
   useEffect(() => {
-    if (!finalThemeUnlockChecked || finalThemeUnlocked || finalThemeRelockAppliedRef.current || appSettings?.appearanceThemePreset !== 'FINAL') {
+    if (
+      !finalThemeUnlockChecked ||
+      finalThemeUnlocked ||
+      finalThemeRelockAppliedRef.current ||
+      !appSettings?.appearanceThemePreset ||
+      !isProOnlyThemePreset(appSettings.appearanceThemePreset)
+    ) {
       return;
     }
 
@@ -11231,7 +11274,7 @@ export const SettingsPage = (): JSX.Element => {
                   className="setting-row--full setting-row--compact-panel"
                   title="Mysterious key"
                   description="Enter a special key to unlock hidden capabilities."
-                >
+              >
                   {downloadsFeatureUnlocked ? (
                     <div className="settings-mysterious-key-accepted">
                       <div className="settings-inline-toggle settings-inline-toggle--compact">
@@ -13273,18 +13316,18 @@ export const SettingsPage = (): JSX.Element => {
                       {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
-                        const isFinalThemeLocked = option.preset === 'FINAL' && !finalThemeUnlocked;
+                        const isProThemeLocked = isProOnlyThemePreset(option.preset) && !finalThemeUnlocked;
 
                         return (
                           <button
-                            aria-disabled={isFinalThemeLocked}
+                            aria-disabled={isProThemeLocked}
                             aria-pressed={isActive}
-                            className={`settings-theme-preset-card${isActive ? ' active' : ''}${isFinalThemeLocked ? ' locked' : ''}`}
+                            className={`settings-theme-preset-card${isActive ? ' active' : ''}${isProThemeLocked ? ' locked' : ''}`}
                             data-preset={option.preset}
-                            disabled={isFinalThemeLocked}
+                            disabled={isProThemeLocked}
                             key={option.preset}
                             onClick={() => handleThemePresetChange(option.preset)}
-                            title={isFinalThemeLocked ? '需持有FINAL耳机解锁主题' : t(option.descriptionKey)}
+                            title={isProThemeLocked ? 'Pro Only' : t(option.descriptionKey)}
                             type="button"
                           >
                             <span
@@ -13297,7 +13340,7 @@ export const SettingsPage = (): JSX.Element => {
                             <span className="settings-theme-preset-copy">
                               <strong>{t(option.labelKey)}</strong>
                               <em>{t(option.descriptionKey)}</em>
-                              {isFinalThemeLocked ? <small>需持有FINAL耳机解锁主题</small> : null}
+                              {isProThemeLocked ? <small>Pro Only</small> : null}
                             </span>
                             <span aria-hidden="true" className="settings-theme-preset-swatches">
                               {option.swatches.map((swatch) => (

@@ -1279,6 +1279,62 @@ const playSystemSource = async (
   return toSystemPlaybackStatus();
 };
 
+const createSystemPlaybackSourceFromNativeStatus = (status: AudioStatus | null): SystemPlaybackSource | null => {
+  const filePath = status?.currentFilePath?.trim();
+  if (!filePath) {
+    return null;
+  }
+
+  return {
+    filePath,
+    probe: {
+      durationSeconds: finiteSeconds(status.durationSeconds) ?? undefined,
+      fileSampleRate: status.fileSampleRate,
+      channels: status.channels ?? undefined,
+      codec: status.codec,
+      bitDepth: status.bitDepth,
+      bitrate: status.bitrate,
+    },
+    durationSeconds: finiteSeconds(status.durationSeconds),
+    trackId: status.currentTrackId ?? null,
+    metadata: {
+      title: status.currentTrackTitle ?? null,
+      artist: status.currentTrackArtist ?? null,
+      album: status.currentTrackAlbum ?? null,
+      albumArtist: status.currentTrackAlbumArtist ?? null,
+      coverUrl: status.currentTrackCoverUrl ?? null,
+    },
+    mimeType: null,
+    replayGain: null,
+  };
+};
+
+const canHandoffNativeStatusToSystemAudio = (status: AudioStatus | null): boolean =>
+  Boolean(
+    createSystemPlaybackSourceFromNativeStatus(status) &&
+      (status?.state === 'playing' || status?.state === 'loading'),
+  );
+
+const handoffNativePlaybackToSystemAudio = async (status: AudioStatus | null): Promise<AudioStatus | null> => {
+  if (!isMainPlaybackRenderer || !canHandoffNativeStatusToSystemAudio(status)) {
+    return null;
+  }
+
+  const source = createSystemPlaybackSourceFromNativeStatus(status);
+  if (!source) {
+    return null;
+  }
+
+  const generation = nextSystemPlaybackGeneration();
+  await ipcRenderer.invoke(IpcChannels.PlaybackStop).catch(() => undefined);
+  await playSystemSource(source, status?.positionSeconds, {
+    generation,
+    request: null,
+    allowRecovery: true,
+  });
+  return createSystemAudioStatus();
+};
+
 const handleSystemPlaybackFailure = async (
   phase: string,
   error: unknown,
@@ -1413,6 +1469,15 @@ const stopSystemPlayback = (
 
 const isSystemOutputRequest = (settings: unknown): boolean =>
   Boolean(settings && typeof settings === 'object' && (settings as Partial<AudioOutputSettings>).outputMode === 'system');
+
+const isExplicitNativeOutputRequest = (settings: unknown): boolean =>
+  Boolean(
+    settings &&
+      typeof settings === 'object' &&
+      Object.prototype.hasOwnProperty.call(settings, 'outputMode') &&
+      (settings as Partial<AudioOutputSettings>).outputMode !== undefined &&
+      (settings as Partial<AudioOutputSettings>).outputMode !== 'system',
+  );
 
 const requiresNativeChainedPlayback = (request: Pick<PlaybackStartRequest, 'automix' | 'gapless'>): boolean =>
   (request.automix?.enabled === true && Boolean(request.automix.nextItem)) ||
@@ -2123,6 +2188,7 @@ const echoApi: EchoApi = {
     startBaiduOAuthLogin: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesStartBaiduOAuthLogin, input),
   },
   connect: {
+    getDonatorUnlockStatus: () => ipcRenderer.invoke(IpcChannels.ConnectGetDonatorUnlockStatus),
     listDevices: () => ipcRenderer.invoke(IpcChannels.ConnectListDevices),
     refresh: () => ipcRenderer.invoke(IpcChannels.ConnectRefresh),
     getStatus: () => ipcRenderer.invoke(IpcChannels.ConnectGetStatus),
@@ -2316,12 +2382,22 @@ const echoApi: EchoApi = {
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: async (settings) => {
       const wasSystemAudioModeActive = systemAudioModeActive;
+      const previousNativeAudioStatus = lastNativeAudioStatus;
       const nextStatus = await ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings) as AudioStatus;
       lastNativeAudioStatus = nextStatus;
       applySystemOutputSettings(settings, nextStatus);
 
-      if (wasSystemAudioModeActive || isSystemOutputRequest(settings) || nextStatus.outputMode === 'system') {
+      if (
+        !isExplicitNativeOutputRequest(settings) &&
+        (wasSystemAudioModeActive || isSystemOutputRequest(settings) || nextStatus.outputMode === 'system')
+      ) {
         systemAudioModeActive = true;
+        const handoffStatus = await handoffNativePlaybackToSystemAudio(
+          canHandoffNativeStatusToSystemAudio(previousNativeAudioStatus) ? previousNativeAudioStatus : nextStatus,
+        );
+        if (handoffStatus) {
+          return handoffStatus;
+        }
         return emitSystemAudioStatus();
       }
 

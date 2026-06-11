@@ -35,6 +35,7 @@ const trackSwitchPositionGuardMs = 15_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const seekIntentSettleToleranceMs = 250;
 const nonActionableAudioStatusErrorPatterns = [
+  /\bconnect_(?:donator_unlock_required|hwid_not_allowed)\b/u,
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
   /\baudio_session_run_cancelled\b/u,
@@ -157,16 +158,21 @@ const shouldIgnoreAudioStatusPatch = (audioStatus: AudioStatus): boolean =>
 const applyConnectStatus = (connectStatus: ConnectSessionStatus): PlaybackStatusSnapshot => {
   const connectState = connectStatus.state;
   const connectIsActive = isActiveConnectPlaybackStatus(connectStatus);
+  const connectError = getActionableAudioStatusError(connectStatus.error);
   activeConnectStatus = connectIsActive ? connectStatus : null;
 
   if (!connectIsActive && connectState !== 'error') {
     return snapshot;
   }
 
+  if (!connectIsActive && !connectError) {
+    return snapshot;
+  }
+
   return setPlaybackStatusSnapshot({
     audioStatus: null,
     playbackStatus: playbackStatusFromConnectStatus(connectStatus),
-    error: connectStatus.error,
+    error: connectError,
   });
 };
 

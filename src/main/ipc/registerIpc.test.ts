@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import { finalThemeUnlockPluginId, finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
 import type { PluginRuntimeStatus } from '../../shared/types/plugins';
 
 const handlers: Record<string, (...args: unknown[]) => unknown> = {};
@@ -24,6 +24,7 @@ type MinimalPluginSummary = {
   status: PluginRuntimeStatus;
 };
 const pluginListMock = vi.fn<() => { directory: string; plugins: MinimalPluginSummary[] }>(() => ({ directory: 'D:\\Echo\\plugins', plugins: [] }));
+const connectDonatorUnlockStatusMock = vi.fn(() => ({ unlocked: false }));
 const proxyTestSessionMock = { partition: 'network-proxy-test' };
 const fromPartitionMock = vi.fn(() => proxyTestSessionMock);
 const getLibraryServiceMock = vi.fn();
@@ -254,6 +255,12 @@ vi.mock('../plugins/PluginService', () => ({
   }),
 }));
 
+vi.mock('../plugins/ConnectDonatorUnlockService', () => ({
+  getConnectDonatorUnlockService: () => ({
+    getStatus: connectDonatorUnlockStatusMock,
+  }),
+}));
+
 vi.mock('./lastFmIpc', () => ({
   registerLastFmIpc: vi.fn(),
 }));
@@ -294,6 +301,8 @@ describe('app IPC cover cache directory', () => {
     getAppSettingsMock.mockClear();
     pluginListMock.mockReset();
     pluginListMock.mockReturnValue({ directory: 'D:\\Echo\\plugins', plugins: [] });
+    connectDonatorUnlockStatusMock.mockReset();
+    connectDonatorUnlockStatusMock.mockReturnValue({ unlocked: false });
     getLibraryServiceMock.mockReset();
     ensureCoverCacheDirectoryMock.mockReset();
     ensureTrayMock.mockClear();
@@ -418,19 +427,20 @@ describe('app IPC cover cache directory', () => {
     expect(destroyTrayMock).not.toHaveBeenCalled();
   });
 
-  it('allows FINAL theme settings only when the unlock plugin is installed', async () => {
-    pluginListMock.mockReturnValue({
-      directory: 'D:\\Echo\\plugins',
-      plugins: [
-        {
-          id: finalThemeUnlockPluginId,
-          enabled: true,
-          disabledByHost: false,
-          error: null,
-          status: 'running',
-        },
-      ],
+  it('keeps Pro theme settings locked when the donator machine license is missing', async () => {
+    await handlers[IpcChannels.AppSetSettings]!(null, {
+      appearanceThemePreset: 'nyanCat',
+      finalThemeUnlockVersion,
     });
+
+    expect(setAppSettingsMock).toHaveBeenCalledWith({
+      appearanceThemePreset: 'nyanCat',
+      finalThemeUnlockVersion,
+    });
+  });
+
+  it('allows Pro theme settings only when the donator machine license is valid', async () => {
+    connectDonatorUnlockStatusMock.mockReturnValue({ unlocked: true });
 
     await handlers[IpcChannels.AppSetSettings]!(null, {
       appearanceThemePreset: 'FINAL',

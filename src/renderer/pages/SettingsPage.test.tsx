@@ -18,7 +18,7 @@ import type { HqPlayerConnectionTestResult, HqPlayerSettings, HqPlayerStatus } f
 import type { LibraryDatabaseProtectionStatus, LibraryScanStatus } from '../../shared/types/library';
 import type { MvSettings } from '../../shared/types/mv';
 import { resetLibraryScanSessionForTests } from '../stores/libraryScanSession';
-import { finalThemeUnlockPluginId, finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
 
 const settings: AppSettings = {
   appearanceTheme: 'light',
@@ -182,6 +182,7 @@ const hqPlayerGetStatusMock = vi.fn();
 const hqPlayerTestConnectionMock = vi.fn();
 const openDevConsoleMock = vi.fn();
 const relaunchAppMock = vi.fn();
+const getDonatorUnlockStatusMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -345,6 +346,9 @@ vi.mock('../utils/echoBridge', () => ({
     openDirectory: openPluginDirectoryMock,
     createExample: createPluginExampleMock,
   }),
+  getConnectBridge: () => ({
+    getDonatorUnlockStatus: getDonatorUnlockStatusMock,
+  }),
   getDiscordPresenceBridge: () => ({
     getStatus: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: false, lastError: null }),
     setEnabled: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: true, lastError: null }),
@@ -478,6 +482,7 @@ beforeEach(() => {
     items: [],
   });
   listPluginsMock.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins: [] });
+  getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: false });
   getUpdateStatusMock.mockResolvedValue(null);
   getDatabaseProtectionStatusMock.mockResolvedValue(healthyDatabaseProtectionStatus);
   createDatabaseSnapshotMock.mockResolvedValue(healthyDatabaseProtectionStatus);
@@ -780,20 +785,6 @@ const createThemePluginSummary = (): PluginSummary => ({
   lyricsProviders: [],
   coverProviders: [],
   settingsValues: {},
-});
-
-const createFinalUnlockPluginSummary = (): PluginSummary => ({
-  ...createThemePluginSummary(),
-  id: finalThemeUnlockPluginId,
-  name: 'FINAL Theme Unlock',
-  directory: 'D:\\Echo\\plugins\\echo.final-theme-unlock',
-  contributes: {
-    themePresets: [],
-  },
-  security: {
-    ...createThemePluginSummary().security,
-    themePresetCount: 0,
-  },
 });
 
 const hexToRgb = (value: string): { r: number; g: number; b: number } => ({
@@ -1975,7 +1966,7 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicKeepWhenUnfocusedEnabled: true }));
   });
 
-  it('saves The Dark Side of the Moon theme preset from Settings', async () => {
+  it('keeps Pro theme presets locked until the donator plugin is verified', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
@@ -1987,15 +1978,19 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     expandThemePresetGrid();
-    const presetButton = (await screen.findByText('settings.appearance.themePreset.darkSideMoon')).closest('button') as HTMLButtonElement;
-    fireEvent.click(presetButton);
+    const nyanButton = (await screen.findByText('settings.appearance.themePreset.nyanCat')).closest('button') as HTMLButtonElement;
+    const darkSideButton = (await screen.findByText('settings.appearance.themePreset.darkSideMoon')).closest('button') as HTMLButtonElement;
+    const finalButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon' }));
-    expect(presetButton.className).toContain('active');
-    expect(document.documentElement.dataset.themePreset).toBe('darkSideMoon');
+    expect(nyanButton.disabled).toBe(true);
+    expect(darkSideButton.disabled).toBe(true);
+    expect(finalButton.disabled).toBe(true);
+    expect(screen.getAllByText('Pro Only').length).toBeGreaterThanOrEqual(3);
+    fireEvent.click(darkSideButton);
+    expect(setSettingsMock).not.toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon' });
   });
 
-  it('keeps the FINAL theme preset locked for all settings search keys', async () => {
+  it('keeps Pro theme presets locked for all legacy FINAL search keys', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
@@ -2010,7 +2005,7 @@ describe('SettingsPage', () => {
 
     const lockedPresetButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
     expect(lockedPresetButton.disabled).toBe(true);
-    expect(screen.getByText('需持有FINAL耳机解锁主题')).toBeTruthy();
+    expect(screen.getAllByText('Pro Only').length).toBeGreaterThanOrEqual(3);
 
     fireEvent.change(screen.getByPlaceholderText('settings.header.searchPlaceholder'), { target: { value: 'finalaudio' } });
 
@@ -2026,9 +2021,9 @@ describe('SettingsPage', () => {
     expect(window.localStorage.getItem('echo-next:settings:final-theme-unlocked')).toBeNull();
   });
 
-  it('unlocks the FINAL theme preset only when the unlock plugin is installed', async () => {
+  it('unlocks Pro theme presets only when the donator plugin is verified', async () => {
     Element.prototype.scrollIntoView = vi.fn();
-    listPluginsMock.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins: [createFinalUnlockPluginSummary()] });
+    getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: true });
     getSettingsMock.mockResolvedValue(settings);
     setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
     resetSettingsMock.mockResolvedValue(settings);
@@ -2040,12 +2035,34 @@ describe('SettingsPage', () => {
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     expandThemePresetGrid();
 
-    const presetButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
-    await waitFor(() => expect(presetButton.disabled).toBe(false));
-    fireEvent.click(presetButton);
+    const nyanButton = (await screen.findByText('settings.appearance.themePreset.nyanCat')).closest('button') as HTMLButtonElement;
+    const darkSideButton = (await screen.findByText('settings.appearance.themePreset.darkSideMoon')).closest('button') as HTMLButtonElement;
+    const finalButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
+    await waitFor(() => expect(finalButton.disabled).toBe(false));
+    expect(nyanButton.disabled).toBe(false);
+    expect(darkSideButton.disabled).toBe(false);
+    fireEvent.click(finalButton);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }));
     expect(document.documentElement.dataset.themePreset).toBe('FINAL');
+  });
+
+  it('keeps an already marked Pro theme selected while the donator status refresh is stale', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const proSettings: AppSettings = { ...settings, appearanceThemePreset: 'nyanCat', finalThemeUnlockVersion };
+    getDonatorUnlockStatusMock.mockResolvedValue({ unlocked: false });
+    getSettingsMock.mockResolvedValue(proSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...proSettings, ...patch }));
+    resetSettingsMock.mockResolvedValue(proSettings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    await waitFor(() => expect(getDonatorUnlockStatusMock).toHaveBeenCalled());
+
+    expect(setSettingsMock).not.toHaveBeenCalledWith({ appearanceThemePreset: 'classic', appearanceThemeCustomId: null, finalThemeUnlockVersion: null });
+    expect(document.documentElement.dataset.themePreset).toBe('nyanCat');
   });
 
   it('relocks an old FINAL theme unlock on the new key version', async () => {
@@ -2989,6 +3006,67 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
 
     expect(await screen.findByText('1 - USB DAC B')).toBeTruthy();
+  });
+
+  it('restores remembered safe mode in playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({
+      ...settings,
+      rememberedAudioOutput: {
+        enabled: true,
+        outputMode: 'system',
+        sharedBackend: 'auto',
+        latencyProfile: 'balanced',
+      },
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+
+    expect(screen.getByText('settings.playback.outputMode.system').closest('button')?.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('settings.playback.outputMode.shared').closest('button')?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('persists safe mode output from playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    audioSetOutputMock.mockResolvedValue({
+      ...playbackStatus,
+      outputMode: 'system',
+      outputBackend: 'system',
+      sharedBackend: 'auto',
+    });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    fireEvent.click(screen.getByText('settings.playback.outputMode.system'));
+
+    await waitFor(() =>
+      expect(audioSetOutputMock).toHaveBeenCalledWith(expect.objectContaining({ outputMode: 'system', sharedBackend: 'auto' })),
+    );
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        rememberedAudioOutput: expect.objectContaining({
+          enabled: true,
+          outputMode: 'system',
+          sharedBackend: 'auto',
+        }),
+      }),
+    );
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).toMatchObject({
+      enabled: true,
+      outputMode: 'system',
+      sharedBackend: 'auto',
+    });
   });
 
   it('shows the professional playback status panel in playback settings', async () => {

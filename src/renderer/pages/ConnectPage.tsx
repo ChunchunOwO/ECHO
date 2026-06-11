@@ -9,6 +9,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  LockKeyhole,
+  PackagePlus,
   Pause,
   Play,
   Power,
@@ -25,6 +27,14 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import type { AirPlayReceiverProtocol, AppSettings } from '../../shared/types/appSettings';
+import {
+  connectDonatorHwidFileName,
+  connectDonatorLicenseFileName,
+  connectDonatorUnlockPluginId,
+  connectDonatorUnlockVersion,
+  type ConnectDonatorUnlockReason,
+  type ConnectDonatorUnlockStatus,
+} from '../../shared/constants/featureUnlocks';
 import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
 import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
@@ -124,6 +134,18 @@ const defaultEchoLinkStatus: EchoLinkServerStatus = {
   },
   error: null,
   updatedAt: new Date(0).toISOString(),
+};
+
+const defaultDonatorUnlockStatus: ConnectDonatorUnlockStatus = {
+  featureId: 'connect',
+  pluginId: connectDonatorUnlockPluginId,
+  requiredVersion: connectDonatorUnlockVersion,
+  unlocked: false,
+  pluginInstalled: false,
+  pluginEnabled: false,
+  hwidHash: '',
+  reason: 'plugin-missing',
+  checkedAt: new Date(0).toISOString(),
 };
 
 const stateLabel: Record<ConnectSessionStatus['state'], TranslationKey> = {
@@ -227,6 +249,17 @@ const hqPlayerBackendLabel: Record<HqPlayerDefaultPlaybackBackend, string> = {
   echoNative: '继续用 ECHO',
   ask: '每次询问',
   hqplayer: '优先 HQPlayer',
+};
+
+const connectDonatorUnlockReasonLabel: Record<ConnectDonatorUnlockReason, string> = {
+  'plugin-missing': '需要先导入连接解锁插件。',
+  'plugin-disabled': '解锁插件已安装但未启用。',
+  'plugin-error': '解锁插件异常或已被隔离。',
+  'hwid-file-missing': `插件缺少 ${connectDonatorHwidFileName} 白名单文件。`,
+  'hwid-file-invalid': `${connectDonatorHwidFileName} 不是有效的 HWID 白名单。`,
+  'hwid-not-allowed': '当前设备 HWID 不在插件白名单内。',
+  'license-invalid': `${connectDonatorLicenseFileName} 不是有效的机器授权。`,
+  unlocked: '已解锁。',
 };
 
 const hqPlayerHandoffReasonLabel: Record<HqPlayerPlaybackHandoffReason, string> = {
@@ -928,6 +961,8 @@ export const ConnectPage = (): JSX.Element => {
   const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
   const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
   const [airPlayReceiverProtocol, setAirPlayReceiverProtocol] = useState<AirPlayReceiverProtocol>('airplay1');
+  const [donatorUnlockStatus, setDonatorUnlockStatus] = useState<ConnectDonatorUnlockStatus>(defaultDonatorUnlockStatus);
+  const [isDonatorUnlockLoading, setIsDonatorUnlockLoading] = useState(true);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
@@ -1083,6 +1118,19 @@ export const ConnectPage = (): JSX.Element => {
       ? `${echoLinkStatus.token.slice(0, 6)}...${echoLinkStatus.token.slice(-6)}`
       : '-';
 
+  const refreshDonatorUnlockStatus = useCallback(async (): Promise<void> => {
+    const connect = window.echo?.connect;
+    setIsDonatorUnlockLoading(true);
+    try {
+      const nextStatus = await connect?.getDonatorUnlockStatus?.();
+      setDonatorUnlockStatus(nextStatus ?? defaultDonatorUnlockStatus);
+    } catch {
+      setDonatorUnlockStatus(defaultDonatorUnlockStatus);
+    } finally {
+      setIsDonatorUnlockLoading(false);
+    }
+  }, []);
+
   const refreshEchoLink = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.getEchoLinkStatus) {
@@ -1176,8 +1224,17 @@ export const ConnectPage = (): JSX.Element => {
   }, [echoLinkPairingUri]);
 
   useEffect(() => {
+    void refreshDonatorUnlockStatus();
+    const handlePluginsChanged = (): void => {
+      void refreshDonatorUnlockStatus();
+    };
+    window.addEventListener('plugins:changed', handlePluginsChanged);
+    return () => window.removeEventListener('plugins:changed', handlePluginsChanged);
+  }, [refreshDonatorUnlockStatus]);
+
+  useEffect(() => {
     const connect = window.echo?.connect;
-    if (!connect) {
+    if (!connect || donatorUnlockStatus.unlocked !== true) {
       return;
     }
 
@@ -1249,7 +1306,7 @@ export const ConnectPage = (): JSX.Element => {
       unsubscribeReceiver();
       unsubscribeAirPlayReceiver();
     };
-  }, [refreshDevices, refreshEchoLink, refreshHqPlayer]);
+  }, [donatorUnlockStatus.unlocked, refreshDevices, refreshEchoLink, refreshHqPlayer]);
 
   useEffect(() => {
     if (isHqPlayerExpanded) {
@@ -1779,6 +1836,67 @@ export const ConnectPage = (): JSX.Element => {
       return next;
     });
   }, []);
+
+  const openPluginsForUnlock = useCallback((): void => {
+    window.dispatchEvent(new Event('app:navigate:plugins'));
+  }, []);
+
+  const copyDonatorHwid = useCallback(async (): Promise<void> => {
+    if (!donatorUnlockStatus.hwidHash) {
+      return;
+    }
+    try {
+      await writeTextToClipboard(donatorUnlockStatus.hwidHash);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
+    }
+  }, [donatorUnlockStatus.hwidHash]);
+
+  if (donatorUnlockStatus.unlocked !== true) {
+    return (
+      <div className="connect-page connect-page--locked">
+        <section className="connect-donator-lock" aria-label="Donator Only">
+          <div className="connect-donator-lock__icon" aria-hidden="true">
+            {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={30} /> : <LockKeyhole size={30} />}
+          </div>
+          <p className="section-kicker">WIRELESS PLAYBACK</p>
+          <h1>Donator Only</h1>
+          <p>{connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason]}</p>
+          <div className="connect-donator-lock__facts">
+            <span>
+              <em>Plugin</em>
+              <strong>{connectDonatorUnlockPluginId}</strong>
+            </span>
+            <span>
+              <em>State</em>
+              <strong>{donatorUnlockStatus.pluginInstalled ? (donatorUnlockStatus.pluginEnabled ? 'Enabled' : 'Disabled') : 'Not imported'}</strong>
+            </span>
+            <span>
+              <em>HWID SHA-256</em>
+              <strong>{donatorUnlockStatus.hwidHash || 'Unavailable'}</strong>
+            </span>
+          </div>
+          <div className="connect-donator-lock__actions">
+            <button className="settings-action-button" type="button" onClick={openPluginsForUnlock}>
+              <PackagePlus size={16} />
+              导入插件
+            </button>
+            <button className="settings-action-button" type="button" onClick={() => void refreshDonatorUnlockStatus()} disabled={isDonatorUnlockLoading}>
+              {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
+              重新校验
+            </button>
+            <button className="settings-action-button" type="button" onClick={() => void copyDonatorHwid()} disabled={!donatorUnlockStatus.hwidHash}>
+              <Copy size={16} />
+              复制 HWID
+            </button>
+          </div>
+          <small>
+            使用 Donator Unlock Issuer 在目标机器生成插件包；插件内的 {connectDonatorLicenseFileName} 会绑定当前 HWID，导入并启用后连接功能才会开放。
+          </small>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="connect-page">

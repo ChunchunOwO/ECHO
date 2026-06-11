@@ -6,7 +6,7 @@ const storageKey = 'echo-next.audio-output-memory';
 const lowLatencyMaxBufferSizeFrames = 2048;
 const defaultRememberedAudioOutput: RememberedAudioOutput = {
   enabled: true,
-  outputMode: 'system',
+  outputMode: 'shared',
   sharedBackend: 'auto',
   latencyProfile: 'balanced',
 };

@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   downloadFeatureUnlockCode,
-  finalThemeUnlockPluginId,
+  connectDonatorHwidFileName,
+  connectDonatorLicenseFileName,
+  connectDonatorUnlockPluginId,
+  connectDonatorUnlockVersion,
   finalThemeUnlockVersion,
   isDownloadFeatureUnlockCode,
   isFinalThemeUnlockCode,
+  proOnlyThemePresets,
 } from './featureUnlocks';
 
 describe('feature unlock codes', () => {
@@ -23,13 +27,23 @@ describe('feature unlock codes', () => {
     expect(isDownloadFeatureUnlockCode('')).toBe(false);
   });
 
-  it('uses a plugin marker for FINAL theme unlocks and rejects all text keys', () => {
-    expect(finalThemeUnlockPluginId).toBe('echo.final-theme-unlock');
-    expect(finalThemeUnlockVersion).toBe('plugin:echo.final-theme-unlock:v1');
+  it('uses the donator plugin marker for Pro theme unlocks and rejects all text keys', () => {
+    expect(finalThemeUnlockVersion).toBe('plugin:echo.connect-donator-unlock:pro-themes-v1');
     expect(isFinalThemeUnlockCode('FINAL-8K-7Q4M-H2ND-2026')).toBe(false);
     expect(isFinalThemeUnlockCode('final-8k-7q4m-h2nd-2026')).toBe(false);
     expect(isFinalThemeUnlockCode(' FINAL-8K-7Q4M-H2ND-2026 ')).toBe(false);
     expect(isFinalThemeUnlockCode('finalaudio')).toBe(false);
     expect(isFinalThemeUnlockCode('')).toBe(false);
+  });
+
+  it('uses a fixed plugin marker and machine license file for Connect donator unlocks', () => {
+    expect(connectDonatorUnlockPluginId).toBe('echo.connect-donator-unlock');
+    expect(connectDonatorUnlockVersion).toBe('plugin:echo.connect-donator-unlock:v1');
+    expect(connectDonatorHwidFileName).toBe('donator.allowed-hwids.json');
+    expect(connectDonatorLicenseFileName).toBe('donator.machine-license.json');
+  });
+
+  it('locks premium built-in themes behind the donator unlock', () => {
+    expect(proOnlyThemePresets).toEqual(['nyanCat', 'darkSideMoon', 'FINAL']);
   });
 });

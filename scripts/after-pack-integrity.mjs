@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
+import { readdir, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
 const hashFileSha256 = (filePath) =>
@@ -14,22 +14,35 @@ const hashFileSha256 = (filePath) =>
 
 const normalizeRelativePath = (value) => value.split(sep).join('/');
 
-const addFile = async (resourcesDir, files, relativePath) => {
+const addFileInfo = async (resourcesDir, files, filePath) => {
+  files.push({
+    path: normalizeRelativePath(relative(resourcesDir, filePath)),
+    sha256: await hashFileSha256(filePath),
+    size: (await stat(filePath)).size,
+  });
+};
+
+const addResourcePath = async (resourcesDir, files, relativePath) => {
   const filePath = join(resourcesDir, relativePath);
   if (!existsSync(filePath)) {
     return;
   }
 
   const info = await stat(filePath);
-  if (!info.isFile()) {
+  if (info.isFile()) {
+    await addFileInfo(resourcesDir, files, filePath);
     return;
   }
 
-  files.push({
-    path: normalizeRelativePath(relative(resourcesDir, filePath)),
-    sha256: await hashFileSha256(filePath),
-    size: info.size,
-  });
+  if (!info.isDirectory()) {
+    return;
+  }
+
+  const entries = await readdir(filePath, { withFileTypes: true });
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    await addResourcePath(resourcesDir, files, join(relativePath, entry.name));
+  }
 };
 
 export default async function afterPack(context) {
@@ -47,7 +60,7 @@ export default async function afterPack(context) {
   ];
 
   for (const relativePath of candidateFiles) {
-    await addFile(resourcesDir, files, relativePath);
+    await addResourcePath(resourcesDir, files, relativePath);
   }
 
   files.sort((a, b) => a.path.localeCompare(b.path));

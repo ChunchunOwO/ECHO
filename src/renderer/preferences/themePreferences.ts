@@ -1,5 +1,5 @@
 import type { AppSettings, AppThemeCustomTheme, AppThemeMode, AppThemePreset, AppThemePresetOverride, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
-import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
 import { getAppBridge } from '../utils/echoBridge';
 import { applyAppearancePreferences, readAppearancePreferences } from './appearancePreferences';
 
@@ -56,6 +56,8 @@ const validThemePresets: AppThemePreset[] = [
   'frostJazz',
 ];
 const unlockedThemePresets: AppThemePreset[] = [...validThemePresets, 'FINAL'];
+const lockedThemePresets = new Set<AppThemePreset>(proOnlyThemePresets);
+const publicThemePresets = unlockedThemePresets.filter((preset) => !lockedThemePresets.has(preset));
 const themeTransitionMs = 140;
 const defaultScheduleDarkAt = '19:00';
 const defaultScheduleLightAt = '07:00';
@@ -320,7 +322,7 @@ export const normalizeThemeScheduleTime = (value: unknown, fallback = defaultSch
 };
 
 export const normalizeThemePreset = (value: unknown, options: ThemePresetOptions = {}): AppThemePreset => {
-  const allowedPresets = options.finalThemeUnlocked === true ? unlockedThemePresets : validThemePresets;
+  const allowedPresets = options.finalThemeUnlocked === true ? unlockedThemePresets : publicThemePresets;
   return allowedPresets.includes(value as AppThemePreset) ? (value as AppThemePreset) : defaultThemePreset;
 };
 

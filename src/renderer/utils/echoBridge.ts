@@ -76,6 +76,8 @@ export const getDownloadsBridge = (): Window['echo']['downloads'] | null => getE
 
 export const getPluginsBridge = (): Window['echo']['plugins'] | null => getEchoBridge()?.plugins ?? null;
 
+export const getConnectBridge = (): Window['echo']['connect'] | null => getEchoBridge()?.connect ?? null;
+
 const browserEqStorageKey = 'echo-next.browser-eq';
 
 type BrowserEqStorage = {

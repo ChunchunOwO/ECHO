@@ -536,7 +536,7 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'seaSaltJelly' }).appearanceThemePreset).toBe('seaSaltJelly');
     expect(normalizeSettings({ appearanceThemePreset: 'caramelPudding' }).appearanceThemePreset).toBe('caramelPudding');
     expect(normalizeSettings({ appearanceThemePreset: 'neonCandy' }).appearanceThemePreset).toBe('neonCandy');
-    expect(normalizeSettings({ appearanceThemePreset: 'nyanCat' }).appearanceThemePreset).toBe('nyanCat');
+    expect(normalizeSettings({ appearanceThemePreset: 'nyanCat' }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'childrenDoodle' }).appearanceThemePreset).toBe('childrenDoodle');
     expect(normalizeSettings({ appearanceThemePreset: 'wisteriaBubble' }).appearanceThemePreset).toBe('wisteriaBubble');
     expect(normalizeSettings({ appearanceThemePreset: 'strawberryCookie' }).appearanceThemePreset).toBe('strawberryCookie');
@@ -544,7 +544,7 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'amberNoir' }).appearanceThemePreset).toBe('amberNoir');
     expect(normalizeSettings({ appearanceThemePreset: 'oceanStudio' }).appearanceThemePreset).toBe('oceanStudio');
     expect(normalizeSettings({ appearanceThemePreset: 'rosewoodVinyl' }).appearanceThemePreset).toBe('rosewoodVinyl');
-    expect(normalizeSettings({ appearanceThemePreset: 'darkSideMoon' }).appearanceThemePreset).toBe('darkSideMoon');
+    expect(normalizeSettings({ appearanceThemePreset: 'darkSideMoon' }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'shibuyaNight' }).appearanceThemePreset).toBe('shibuyaNight');
     expect(normalizeSettings({ appearanceThemePreset: 'kyotoKurenai' }).appearanceThemePreset).toBe('kyotoKurenai');
     expect(normalizeSettings({ appearanceThemePreset: 'ukiyoIndigo' }).appearanceThemePreset).toBe('ukiyoIndigo');
@@ -556,17 +556,21 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
   });
 
-  it('keeps FINAL locked unless the unlock plugin is present for the current marker', async () => {
+  it('keeps Pro themes locked unless the donator unlock plugin is valid for the current marker', async () => {
     const { normalizeSettings } = await import('./appSettings');
     const { finalThemeUnlockVersion } = await import('../../shared/constants/featureUnlocks');
 
     expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion: 'true' }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }).appearanceThemePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceThemePreset: 'nyanCat', finalThemeUnlockVersion }).appearanceThemePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceThemePreset: 'darkSideMoon', finalThemeUnlockVersion }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }, { finalThemeUnlocked: true }).appearanceThemePreset).toBe('FINAL');
+    expect(normalizeSettings({ appearanceThemePreset: 'nyanCat', finalThemeUnlockVersion }, { finalThemeUnlocked: true }).appearanceThemePreset).toBe('nyanCat');
+    expect(normalizeSettings({ appearanceThemePreset: 'darkSideMoon', finalThemeUnlockVersion }, { finalThemeUnlocked: true }).appearanceThemePreset).toBe('darkSideMoon');
     expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }, { finalThemeUnlocked: true }).finalThemeUnlockVersion).toBe(finalThemeUnlockVersion);
   });
 
-  it('drops FINAL custom themes and overrides even when the unlock plugin is present', async () => {
+  it('keeps Pro custom themes and overrides when the unlock plugin is present', async () => {
     const { normalizeSettings } = await import('./appSettings');
     const { finalThemeUnlockVersion } = await import('../../shared/constants/featureUnlocks');
 
@@ -583,9 +587,17 @@ describe('app settings normalization', () => {
     }, { finalThemeUnlocked: true });
 
     expect(normalized.appearanceThemePreset).toBe('FINAL');
-    expect(normalized.appearanceThemeCustomId).toBeNull();
-    expect(normalized.appearanceCustomThemes).toEqual([]);
-    expect(normalized.appearanceThemePresetOverrides?.FINAL).toBeUndefined();
+    expect(normalized.appearanceThemeCustomId).toBe('theme-final');
+    expect(normalized.appearanceCustomThemes).toEqual([
+      {
+        id: 'theme-final',
+        name: 'Final Copy',
+        basePreset: 'FINAL',
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+      },
+    ]);
+    expect(normalized.appearanceThemePresetOverrides?.FINAL).toEqual({ light: { accent: '#ffffff' } });
   });
 
   it('normalizes appearance theme preset expansion state', async () => {
@@ -658,7 +670,7 @@ describe('app settings normalization', () => {
     const manyThemes = Array.from({ length: 30 }, (_item, index) => ({
       id: `theme-${index}`,
       name: `Theme ${index}`,
-      basePreset: index === 0 ? 'nyanCat' : 'unknown',
+      basePreset: index === 0 ? 'neonCandy' : 'unknown',
       light: {
         titlebar: '#AABBCC',
         player: 'not-a-color',
@@ -689,11 +701,11 @@ describe('app settings normalization', () => {
 
     expect(normalized.appearanceCustomThemes).toHaveLength(24);
     expect(normalized.appearanceThemeCustomId).toBe('theme-0');
-    expect(normalized.appearanceThemePreset).toBe('nyanCat');
+    expect(normalized.appearanceThemePreset).toBe('neonCandy');
     expect(normalized.appearanceCustomThemes?.[0]).toEqual({
       id: 'theme-0',
       name: 'Theme 0',
-      basePreset: 'nyanCat',
+      basePreset: 'neonCandy',
       light: {
         titlebar: '#aabbcc',
         cornerRadiusPx: 28,
@@ -1235,12 +1247,12 @@ describe('app settings normalization', () => {
     expect(shortcuts?.seekBackward).toEqual({ enabled: false, accelerator: null });
   });
 
-  it('defaults users without remembered audio output to system audio', async () => {
+  it('defaults users without remembered audio output to shared audio', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({}).rememberedAudioOutput).toMatchObject({
       enabled: true,
-      outputMode: 'system',
+      outputMode: 'shared',
       sharedBackend: 'auto',
       latencyProfile: 'balanced',
     });
@@ -1296,7 +1308,7 @@ describe('app settings normalization', () => {
     ).toBe('auto');
   });
 
-  it('migrates stale remembered exclusive output back to system audio', async () => {
+  it('migrates stale remembered exclusive output back to shared audio', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(
@@ -1313,7 +1325,7 @@ describe('app settings normalization', () => {
       }).rememberedAudioOutput,
     ).toEqual({
       enabled: true,
-      outputMode: 'system',
+      outputMode: 'shared',
       sharedBackend: 'auto',
       latencyProfile: 'balanced',
     });

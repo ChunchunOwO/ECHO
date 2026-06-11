@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
-import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, proOnlyThemePresets } from '../../shared/constants/featureUnlocks';
 import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider, playerBarButtonIds } from '../../shared/types/appSettings';
 import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
@@ -189,6 +189,7 @@ const themeOverrideColorKeys: Array<keyof Pick<
   'success',
   'warning',
 ];
+const proOnlyThemePresetSet = new Set<AppThemePreset>(proOnlyThemePresets);
 const maxCustomThemes = 24;
 const fallbackCustomThemeTimestamp = '1970-01-01T00:00:00.000Z';
 const librarySorts: LibrarySort[] = [
@@ -225,7 +226,7 @@ export const defaultAppearancePreferences: AppearancePreferences = {
 
 const defaultRememberedAudioOutput: RememberedAudioOutput = {
   enabled: true,
-  outputMode: 'system',
+  outputMode: 'shared',
   sharedBackend: 'auto',
   latencyProfile: 'balanced',
 };
@@ -1170,7 +1171,7 @@ const migrateRememberedAudioOutput = (
 
   return {
     enabled: remembered.enabled,
-    outputMode: 'system',
+    outputMode: 'shared',
     sharedBackend: 'auto',
     latencyProfile: 'balanced',
   };
@@ -1633,20 +1634,24 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
   );
   const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
   const replayGainPreampDb = Number(settings.replayGainPreampDb);
-  const finalThemeUnlocked = (options.finalThemeUnlocked ?? finalThemeUnlockAvailable) === true
+  const proThemeUnlocked = (options.finalThemeUnlocked ?? finalThemeUnlockAvailable) === true
     && settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
   const appearanceCustomThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes)
-    .filter((theme) => theme.basePreset !== 'FINAL');
+    .filter((theme) => proThemeUnlocked || !proOnlyThemePresetSet.has(theme.basePreset));
   const requestedAppearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
   const requestedAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === requestedAppearanceThemeCustomId);
-  const appearanceThemeCustomId = requestedAppearanceCustomTheme?.basePreset === 'FINAL' && !finalThemeUnlocked
+  const appearanceThemeCustomId = requestedAppearanceCustomTheme && proOnlyThemePresetSet.has(requestedAppearanceCustomTheme.basePreset) && !proThemeUnlocked
     ? null
     : requestedAppearanceThemeCustomId;
   const activeAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === appearanceThemeCustomId);
   const requestedAppearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
-  const appearanceThemePreset = !finalThemeUnlocked && requestedAppearanceThemePreset === 'FINAL' ? 'classic' : requestedAppearanceThemePreset;
+  const appearanceThemePreset = !proThemeUnlocked && proOnlyThemePresetSet.has(requestedAppearanceThemePreset) ? 'classic' : requestedAppearanceThemePreset;
   const appearanceThemePresetOverrides = normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides);
-  delete appearanceThemePresetOverrides.FINAL;
+  if (!proThemeUnlocked) {
+    for (const preset of proOnlyThemePresets) {
+      delete appearanceThemePresetOverrides[preset];
+    }
+  }
   const downloadsFeatureUnlocked = settings.downloadsFeatureUnlocked === true;
 
   return {
@@ -1661,7 +1666,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
     appearanceThemePresetOverrides,
     appearanceCustomThemes,
     appearanceThemeCustomId,
-    finalThemeUnlockVersion: finalThemeUnlocked ? finalThemeUnlockVersion : null,
+    finalThemeUnlockVersion: proThemeUnlocked ? finalThemeUnlockVersion : null,
     appearanceThemePresetsExpanded: settings.appearanceThemePresetsExpanded === true,
     appearanceThemeCustomExpanded: settings.appearanceThemeCustomExpanded === true,
     appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,
@@ -2000,18 +2005,23 @@ export const setFinalThemeUnlockAvailable = (available: boolean): void => {
   cachedSettings = null;
 };
 
-const containsFinalThemeCustomTheme = (themes: unknown): boolean =>
+const containsProThemeCustomTheme = (themes: unknown): boolean =>
   Array.isArray(themes) && themes.some((theme) =>
-    Boolean(theme && typeof theme === 'object' && !Array.isArray(theme) && (theme as Partial<AppThemeCustomTheme>).basePreset === 'FINAL'),
+    Boolean(
+      theme &&
+      typeof theme === 'object' &&
+      !Array.isArray(theme) &&
+      proOnlyThemePresetSet.has((theme as Partial<AppThemeCustomTheme>).basePreset as AppThemePreset),
+    ),
   );
 
 const containsFinalThemePresetOverride = (overrides: unknown): boolean =>
   Boolean(overrides && typeof overrides === 'object' && !Array.isArray(overrides) && Object.prototype.hasOwnProperty.call(overrides, 'FINAL'));
 
 const shouldPersistFinalThemeRelock = (source: Partial<AppSettings>, normalized: AppSettings): boolean =>
-  (source.appearanceThemePreset === 'FINAL' && normalized.appearanceThemePreset !== 'FINAL') ||
+  (proOnlyThemePresetSet.has(source.appearanceThemePreset as AppThemePreset) && normalized.appearanceThemePreset !== source.appearanceThemePreset) ||
   (typeof source.finalThemeUnlockVersion === 'string' && source.finalThemeUnlockVersion !== normalized.finalThemeUnlockVersion) ||
-  containsFinalThemeCustomTheme(source.appearanceCustomThemes) ||
+  containsProThemeCustomTheme(source.appearanceCustomThemes) ||
   containsFinalThemePresetOverride(source.appearanceThemePresetOverrides);
 
 const persistNormalizedSettings = (settings: AppSettings): void => {

@@ -251,7 +251,9 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scroll-shell {');
     expect(css).toContain('scrollbar-gutter: stable;');
     expect(css).toContain('overflow-anchor: none;');
-    expect(css).toContain('html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card {\n  overflow-anchor: none;');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .page-surface:has(.album-detail-page) {');
+    expect(css).toContain('overflow-y: auto !important;');
+    expect(css).toMatch(/html\[data-theme-preset="FINAL"\] \.artists-page \.artist-wall > \.artist-card \{[\s\S]*?overflow-anchor: none;/);
     expect(css).toContain('html[data-theme-preset="FINAL"] .artists-page .artist-wall :is(');
     expect(css).toContain('.artist-avatar[data-visual="avatar"],');
     expect(css).toContain('clip-path: none !important;');

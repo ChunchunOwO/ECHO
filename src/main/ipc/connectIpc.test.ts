@@ -25,11 +25,20 @@ const mocks = vi.hoisted(() => {
     setEnabled: vi.fn(async () => ({})),
     stopPlayback: vi.fn(),
   };
+  const echoLinkService = {
+    getServerStatus: vi.fn(() => ({})),
+    setEnabled: vi.fn(async () => ({})),
+    rotateToken: vi.fn(() => ({})),
+  };
   const airPlayReceiverService = {
     getStatus: vi.fn(),
     on: vi.fn(),
     setEnabled: vi.fn(async () => ({})),
     stopPlayback: vi.fn(),
+  };
+  const unlockService = {
+    assertUnlocked: vi.fn(),
+    getStatus: vi.fn(() => ({ unlocked: true })),
   };
   const settings = {
     current: {
@@ -40,10 +49,12 @@ const mocks = vi.hoisted(() => {
   return {
     airPlayReceiverService,
     connectService,
+    echoLinkService,
     handle,
     handlers,
     receiverService,
     settings,
+    unlockService,
   };
 });
 
@@ -73,6 +84,14 @@ vi.mock('../connect/AirPlayReceiverSpikeService', () => ({
   getAirPlayReceiverSpikeService: () => mocks.airPlayReceiverService,
 }));
 
+vi.mock('../connect/EchoLinkService', () => ({
+  getEchoLinkService: () => mocks.echoLinkService,
+}));
+
+vi.mock('../plugins/ConnectDonatorUnlockService', () => ({
+  getConnectDonatorUnlockService: () => mocks.unlockService,
+}));
+
 describe('connect IPC receiver autostart', () => {
   beforeEach(() => {
     for (const key of Object.keys(mocks.handlers)) {
@@ -82,6 +101,8 @@ describe('connect IPC receiver autostart', () => {
     mocks.settings.current = {
       connectAutoStartReceiversEnabled: false,
     };
+    mocks.unlockService.assertUnlocked.mockImplementation(() => undefined);
+    mocks.unlockService.getStatus.mockReturnValue({ unlocked: true });
   });
 
   it('leaves receivers off when startup autostart is disabled', async () => {
@@ -105,5 +126,18 @@ describe('connect IPC receiver autostart', () => {
 
     expect(mocks.receiverService.setEnabled).toHaveBeenCalledWith(true);
     expect(mocks.airPlayReceiverService.setEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('blocks active connect handlers when the donator unlock is missing', async () => {
+    mocks.unlockService.assertUnlocked.mockImplementation(() => {
+      throw new Error('connect_donator_unlock_required');
+    });
+    const { registerConnectIpc } = await import('./connectIpc');
+
+    registerConnectIpc();
+
+    expect(mocks.handlers[IpcChannels.ConnectGetDonatorUnlockStatus]!(null)).toEqual({ unlocked: true });
+    expect(() => mocks.handlers[IpcChannels.ConnectListDevices]!(null)).toThrow('connect_donator_unlock_required');
+    expect(mocks.connectService.listDevices).not.toHaveBeenCalled();
   });
 });

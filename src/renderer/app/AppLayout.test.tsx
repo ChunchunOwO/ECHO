@@ -84,6 +84,18 @@ const routesWithQueue: AppRoute[] = [
   },
 ];
 
+const unlockedDonatorStatus = {
+  featureId: 'connect',
+  pluginId: 'echo.connect-donator-unlock',
+  requiredVersion: 'plugin:echo.connect-donator-unlock:v1',
+  unlocked: true,
+  pluginInstalled: true,
+  pluginEnabled: true,
+  hwidHash: 'a'.repeat(64),
+  reason: 'unlocked',
+  checkedAt: '2026-06-11T00:00:00.000Z',
+};
+
 const setViewportSize = (width: number, height: number): void => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
@@ -465,6 +477,68 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() =>
       expect(screen.getByRole('status').textContent).toContain('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。'),
     );
+  });
+
+  it('shows an upper-left thank-you notice when the donator unlock is verified', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({}),
+      },
+      connect: {
+        getDonatorUnlockStatus: vi.fn().mockResolvedValue(unlockedDonatorStatus),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Pro 已解锁，感谢你的赞助。'));
+  });
+
+  it('does not repeat the Pro thank-you notice after the same machine was already thanked', async () => {
+    window.localStorage.setItem(
+      'echo-next.pro-unlock-thanks:echo.connect-donator-unlock:plugin:echo.connect-donator-unlock:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'shown',
+    );
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({}),
+      },
+      connect: {
+        getDonatorUnlockStatus: vi.fn().mockResolvedValue(unlockedDonatorStatus),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('ECHO Pro unlocked').textContent).toBe('Pro'));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('shows a Pro badge in the titlebar when the donator unlock is verified', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({}),
+      },
+      connect: {
+        getDonatorUnlockStatus: vi.fn().mockResolvedValue(unlockedDonatorStatus),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('ECHO Pro unlocked').textContent).toBe('Pro'));
   });
 
   it('shows an upper-left notice for Windows audio default format warnings', async () => {

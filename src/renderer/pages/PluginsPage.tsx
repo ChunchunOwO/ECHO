@@ -280,6 +280,7 @@ export const PluginsPage = (): JSX.Element => {
         await action();
         setMessage(success);
         await refresh();
+        window.dispatchEvent(new Event('plugins:changed'));
         await refreshLogs(selectedPlugin?.id);
       } catch (error) {
         setMessage(formatError(error));
@@ -306,6 +307,7 @@ export const PluginsPage = (): JSX.Element => {
         setSelectedPluginId(result.pluginId);
         setMessage(`已导入插件包：${result.pluginId}`);
         await refresh();
+        window.dispatchEvent(new Event('plugins:changed'));
         await refreshLogs(result.pluginId);
       } catch (error) {
         setMessage(formatError(error));

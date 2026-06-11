@@ -129,7 +129,7 @@ const detectAudioDrawerPlatform = (): NodeJS.Platform | 'unknown' =>
 
 const getSystemAudioPlatformLabel = (platform: NodeJS.Platform | 'unknown'): string => {
   if (platform === 'win32') {
-    return 'WASAPI';
+    return 'SAFE';
   }
   if (platform === 'linux') {
     return 'Linux';
@@ -864,11 +864,7 @@ export const AudioSettingsDrawer = ({
   const windowsAudioServiceRestartAvailable = rendererPlatform === 'win32';
   const systemAudioPlatformLabel = useMemo(() => getSystemAudioPlatformLabel(rendererPlatform), [rendererPlatform]);
   const wasapiExclusive = outputMode === 'exclusive';
-  const systemAudioActive = !hqPlayerTakeoverEnabled && (
-    rendererPlatform === 'win32'
-      ? outputMode === 'shared' && status?.outputMode !== 'system' && !status?.outputDeviceName && sharedBackend !== 'directsound'
-      : outputMode === 'system' || status?.outputMode === 'system'
-  );
+  const systemAudioActive = !hqPlayerTakeoverEnabled && (outputMode === 'system' || status?.outputMode === 'system');
   const lockWasapiExclusive = !advancedNativeOutputAvailable || outputMode === 'asio' || outputMode === 'system';
   const statusDevice = useMemo(() => {
     if (!status) {
@@ -1410,8 +1406,8 @@ export const AudioSettingsDrawer = ({
 
   const applySystemAudio = (): void => {
     const remembered = readRememberedAudioOutput();
-    const nextMode: AudioOutputMode = rendererPlatform === 'win32' ? 'shared' : 'system';
-    const nextSharedBackend: AudioSharedBackend = rendererPlatform === 'win32' ? 'windows' : 'auto';
+    const nextMode: AudioOutputMode = 'system';
+    const nextSharedBackend: AudioSharedBackend = 'auto';
     const settings = createOutputSettings(
       nextMode,
       null,

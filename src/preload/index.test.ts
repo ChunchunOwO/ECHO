@@ -1419,6 +1419,144 @@ describe('preload SMTC API', () => {
     });
   });
 
+  it('leaves system audio mode when switching to explicit WASAPI shared output', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string, settings?: unknown) => {
+      if (channel === IpcChannels.AudioSetOutput) {
+        return Promise.resolve({
+          outputMode: (settings as { outputMode?: string }).outputMode ?? 'shared',
+          sharedBackend: 'auto',
+          outputBackend: 'wasapi-shared',
+          playbackRate: 1,
+          playbackSpeedMode: 'nightcore',
+          volume: 1,
+          warnings: [],
+        });
+      }
+      if (channel === IpcChannels.AudioGetStatus) {
+        return Promise.resolve({
+          outputMode: 'shared',
+          sharedBackend: 'auto',
+          outputBackend: 'wasapi-shared',
+          playbackRate: 1,
+          playbackSpeedMode: 'nightcore',
+          volume: 1,
+          warnings: [],
+        });
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const nextStatus = await exposedApi!.audio.setOutput({ outputMode: 'shared', sharedBackend: 'auto' });
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioSetOutput, { outputMode: 'shared', sharedBackend: 'auto' });
+    expect(nextStatus).toMatchObject({
+      outputMode: 'shared',
+      outputBackend: 'wasapi-shared',
+    });
+    await expect(exposedApi!.audio.getStatus()).resolves.toMatchObject({
+      outputMode: 'shared',
+      outputBackend: 'wasapi-shared',
+    });
+  });
+
+  it('hands off active native playback to HTMLAudio when switching to system output', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    const nativeStatus = {
+      state: 'playing',
+      outputMode: 'shared',
+      sharedBackend: 'auto',
+      outputBackend: 'wasapi-shared',
+      activeOutputBackendImpl: 'juce',
+      currentFilePath: 'D:\\Music\\song.flac',
+      currentTrackId: 'track-1',
+      currentTrackTitle: 'Song',
+      currentTrackArtist: 'Artist',
+      currentTrackAlbum: 'Album',
+      currentTrackAlbumArtist: 'Album Artist',
+      currentTrackCoverUrl: 'echo-cover://track-1',
+      durationSeconds: 180,
+      positionSeconds: 18,
+      fileSampleRate: 48000,
+      channels: 2,
+      codec: 'flac',
+      bitDepth: 24,
+      bitrate: 1712,
+      playbackRate: 1,
+      playbackSpeedMode: 'nightcore',
+      volume: 1,
+      useJuceOutputRequested: true,
+      useJuceDecodeRequested: true,
+      activeDecodeBackendImpl: null,
+      outputDeviceId: null,
+      outputDeviceName: null,
+      outputDeviceType: null,
+      decoderOutputSampleRate: 48000,
+      requestedOutputSampleRate: 48000,
+      actualDeviceSampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      resampling: false,
+      bitPerfectCandidate: true,
+      sampleRateMismatch: false,
+      eqEnabled: false,
+      channelBalanceEnabled: false,
+      dspActive: false,
+      preampDb: 0,
+      eqPresetName: null,
+      clippingRisk: false,
+      bitPerfectDisabledReason: null,
+      warnings: [],
+      error: null,
+    };
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioGetStatus) {
+        return Promise.resolve(nativeStatus);
+      }
+      if (channel === IpcChannels.AudioSetOutput) {
+        return Promise.resolve({
+          ...nativeStatus,
+          outputMode: 'system',
+          outputBackend: 'system-audio',
+        });
+      }
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/handoff-token');
+      }
+      if (channel === IpcChannels.PlaybackStop) {
+        return Promise.resolve({ state: 'stopped', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null });
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.audio.getStatus();
+    const status = await exposedApi!.audio.setOutput({ outputMode: 'system' });
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackStop);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioCreateSystemStreamUrl, {
+      url: 'D:\\Music\\song.flac',
+      headers: undefined,
+      mimeType: null,
+    });
+    expect(fakeAudioInstances).toHaveLength(1);
+    expect(fakeAudioInstances[0].src).toBe('echo-audio://system/handoff-token');
+    expect(fakeAudioInstances[0].currentTime).toBe(18);
+    expect(fakeAudioInstances[0].play).toHaveBeenCalledTimes(1);
+    expect(status).toMatchObject({
+      outputMode: 'system',
+      outputBackend: 'system-audio',
+      currentFilePath: 'D:\\Music\\song.flac',
+      currentTrackId: 'track-1',
+      state: 'playing',
+    });
+  });
+
   it('lets system Nightcore pitch follow playback speed like osu!', async () => {
     vi.resetModules();
     exposedApi = null;

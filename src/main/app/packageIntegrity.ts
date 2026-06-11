@@ -23,6 +23,7 @@ export type PackageIntegrityVerificationResult = {
   ok: boolean;
   skipped: boolean;
   verified: string[];
+  warnings: string[];
   errors: string[];
 };
 
@@ -78,10 +79,11 @@ export const verifyPackageIntegrity = async ({
   env?: NodeJS.ProcessEnv;
 } = {}): Promise<PackageIntegrityVerificationResult> => {
   if (!isPackageIntegrityEnforced(isPackaged, env)) {
-    return { ok: true, skipped: true, verified: [], errors: [] };
+    return { ok: true, skipped: true, verified: [], warnings: [], errors: [] };
   }
 
   const verified: string[] = [];
+  const warnings: string[] = [];
   const errors: string[] = [];
   let manifest: PackageIntegrityManifest;
 
@@ -92,6 +94,7 @@ export const verifyPackageIntegrity = async ({
       ok: false,
       skipped: false,
       verified,
+      warnings,
       errors: [`manifest: ${error instanceof Error ? error.message : String(error)}`],
     };
   }
@@ -106,6 +109,12 @@ export const verifyPackageIntegrity = async ({
     try {
       const info = await stat(filePath);
       if (!info.isFile()) {
+        if (file.path === 'app.asar' && info.isDirectory()) {
+          warnings.push('app.asar: loose directory layout; legacy file hash skipped');
+          verified.push('app.asar/');
+          continue;
+        }
+
         errors.push(`${file.path}: not a file`);
         continue;
       }
@@ -131,6 +140,7 @@ export const verifyPackageIntegrity = async ({
     ok: errors.length === 0,
     skipped: false,
     verified,
+    warnings,
     errors,
   };
 };

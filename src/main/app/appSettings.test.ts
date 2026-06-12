@@ -1731,6 +1731,29 @@ describe('app settings normalization', () => {
     });
   });
 
+  it('normalizes desktop lyrics primary and translation font sizes separately', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({ desktopLyricsFontSizePx: 46 })).toMatchObject({
+      desktopLyricsFontSizePx: 46,
+      desktopLyricsSecondaryFontSizePx: 26,
+    });
+    expect(normalizeSettings({
+      desktopLyricsFontSizePx: 80,
+      desktopLyricsSecondaryFontSizePx: 4,
+    })).toMatchObject({
+      desktopLyricsFontSizePx: 72,
+      desktopLyricsSecondaryFontSizePx: 12,
+    });
+    expect(normalizeSettings({
+      desktopLyricsFontSizePx: 20,
+      desktopLyricsSecondaryFontSizePx: 60,
+    })).toMatchObject({
+      desktopLyricsFontSizePx: 20,
+      desktopLyricsSecondaryFontSizePx: 48,
+    });
+  });
+
   it('adds new lyrics providers when saved settings still use the old default source list', async () => {
     const { normalizeSettings } = await import('./appSettings');
 

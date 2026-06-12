@@ -167,7 +167,40 @@ const clampPositionMs = (positionMs: number, durationMs?: number | null): number
     : safePositionMs;
 };
 
+const defaultImplicitLastWordDurationMs = 900;
+const minImplicitLastWordDurationMs = 420;
 const maxImplicitLastWordDurationMs = 1800;
+
+const getKnownWordDurationsMs = (words: readonly LyricWordTiming[], ignoredIndex: number): number[] =>
+  words
+    .map((word, index) => {
+      if (index === ignoredIndex) {
+        return null;
+      }
+
+      const endMs = word.endMs ?? words[index + 1]?.startMs ?? null;
+      return endMs !== null && endMs > word.startMs ? endMs - word.startMs : null;
+    })
+    .filter((duration): duration is number => duration !== null && Number.isFinite(duration) && duration > 0);
+
+const getEstimatedImplicitWordDurationMs = (
+  words: readonly LyricWordTiming[],
+  wordIndex: number,
+): number => {
+  const durations = getKnownWordDurationsMs(words, wordIndex).sort((a, b) => a - b);
+  if (durations.length === 0) {
+    return defaultImplicitLastWordDurationMs;
+  }
+
+  const middle = Math.floor(durations.length / 2);
+  const median = durations.length % 2 === 0
+    ? (durations[middle - 1] + durations[middle]) / 2
+    : durations[middle];
+  return Math.round(Math.max(
+    minImplicitLastWordDurationMs,
+    Math.min(maxImplicitLastWordDurationMs, median * 1.2),
+  ));
+};
 
 const getWordEndMs = (
   words: readonly LyricWordTiming[],
@@ -186,7 +219,7 @@ const getWordEndMs = (
 
   const implicitEndMs = fallbackLineEndMs && fallbackLineEndMs > word.startMs
     ? fallbackLineEndMs
-    : word.startMs + maxImplicitLastWordDurationMs;
+    : word.startMs + getEstimatedImplicitWordDurationMs(words, wordIndex);
   return Math.min(implicitEndMs, word.startMs + maxImplicitLastWordDurationMs);
 };
 
@@ -220,10 +253,9 @@ const getLinePlaybackPositionMs = (
     return adjustedPositionMs;
   }
 
-  const firstWord = words[0];
   const naturalEndMs = getWordEndMs(words, words.length - 1, nextLine?.timeMs);
 
-  return Math.max(firstWord.startMs, Math.min(adjustedPositionMs, naturalEndMs));
+  return Math.min(adjustedPositionMs, naturalEndMs);
 };
 
 const getCurrentWordIndex = (

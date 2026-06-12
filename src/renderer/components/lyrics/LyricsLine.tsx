@@ -60,7 +60,7 @@ const getLyricDensity = (
   return 'short';
 };
 
-const maxRawWordHighlightSegments = 48;
+const maxRawWordHighlightSegments = 72;
 const maxRenderedWordHighlightSegments = 18;
 const minRenderableWordHighlightSegments = 2;
 const minTimedWordDurationMs = 40;
@@ -71,6 +71,7 @@ const phraseTargetChars = 3;
 const phraseMinDurationMs = 260;
 const phraseMaxDurationMs = 900;
 const phraseGapBoundaryMs = 210;
+const phraseBoundaryPattern = /[,.!?;:)\u3001\u3002\uff0c\uff01\uff1f\uff1b\uff1a\u2026]\s*$/u;
 
 const renderableWordsCache = new WeakMap<LyricLineType, readonly LyricWordTiming[] | null>();
 
@@ -78,7 +79,7 @@ const lyricTextLength = (value: string): number => Array.from(value.replace(/\s+
 
 const hasWhitespace = (value: string): boolean => /\s/u.test(value);
 
-const isPhraseBoundary = (value: string): boolean => /[,.!?;:，。！？、；：…)]\s*$/u.test(value);
+const isPhraseBoundary = (value: string): boolean => phraseBoundaryPattern.test(value);
 
 const normalizeTimingText = (value: string): string => value.replace(/\s+/gu, ' ').trim();
 const normalizeCompactTimingText = (value: string): string => value.replace(/\s+/gu, '').trim();
@@ -147,11 +148,62 @@ const shouldCoalesceWordTimings = (words: readonly LyricWordTiming[], lineText: 
   return true;
 };
 
-const coalesceWordTimings = (words: readonly LyricWordTiming[]): LyricWordTiming[] => {
+const mergeOverflowingWordTimingPhrases = (
+  phrases: readonly LyricWordTiming[],
+  maxSegments: number,
+): LyricWordTiming[] => {
+  const merged = [...phrases];
+
+  while (merged.length > maxSegments) {
+    let bestIndex = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < merged.length - 1; index += 1) {
+      const current = merged[index];
+      const next = merged[index + 1];
+      const currentEndMs = current.endMs ?? next.startMs;
+      const gapMs = Math.max(0, next.startMs - currentEndMs);
+      const combinedEndMs = next.endMs ?? currentEndMs;
+      const combinedDurationMs = Math.max(0, combinedEndMs - current.startMs);
+      const combinedChars = lyricTextLength(current.text) + lyricTextLength(next.text);
+      const punctuationPenalty = isPhraseBoundary(current.text) ? 500 : 0;
+      const score = gapMs * 4 + combinedDurationMs + combinedChars * 18 + punctuationPenalty;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    }
+
+    const current = merged[bestIndex];
+    const next = merged[bestIndex + 1];
+    merged.splice(bestIndex, 2, {
+      text: `${current.text}${next.text}`,
+      startMs: current.startMs,
+      endMs: next.endMs ?? current.endMs,
+    });
+  }
+
+  return merged;
+};
+
+const coalesceWordTimings = (
+  words: readonly LyricWordTiming[],
+  maxSegments = maxRenderedWordHighlightSegments,
+): LyricWordTiming[] => {
   const phrases: LyricWordTiming[] = [];
   let phraseStart = 0;
   let phraseText = '';
   let phraseChars = 0;
+  const totalChars = Math.max(1, words.reduce((total, word) => total + lyricTextLength(word.text), 0));
+  const firstStartMs = words[0]?.startMs ?? 0;
+  const lastEndMs = getSegmentEndMs(words, words.length - 1) ?? words[words.length - 1]?.startMs ?? firstStartMs;
+  const totalDurationMs = Math.max(phraseMinDurationMs, lastEndMs - firstStartMs);
+  const dynamicTargetChars = Math.max(phraseTargetChars, Math.ceil(totalChars / Math.max(1, maxSegments)));
+  const dynamicMinDurationMs = Math.max(
+    phraseMinDurationMs,
+    Math.min(620, Math.round((totalDurationMs / Math.max(1, maxSegments)) * 0.9)),
+  );
 
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index];
@@ -169,7 +221,7 @@ const coalesceWordTimings = (words: readonly LyricWordTiming[]): LyricWordTiming
     const shouldClose =
       index === words.length - 1 ||
       nextGapMs >= phraseGapBoundaryMs ||
-      (phraseChars >= phraseTargetChars && phraseDurationMs >= phraseMinDurationMs) ||
+      (phraseChars >= dynamicTargetChars && phraseDurationMs >= dynamicMinDurationMs) ||
       phraseDurationMs >= phraseMaxDurationMs ||
       isPhraseBoundary(word.text);
 
@@ -184,7 +236,7 @@ const coalesceWordTimings = (words: readonly LyricWordTiming[]): LyricWordTiming
     }
   }
 
-  return phrases;
+  return mergeOverflowingWordTimingPhrases(phrases, maxSegments);
 };
 
 export const getRenderableLyricWords = (line: LyricLineType): readonly LyricWordTiming[] | null => {
@@ -242,7 +294,7 @@ export const getRenderableLyricWords = (line: LyricLineType): readonly LyricWord
 
   const spacedSourceWords = preserveLineSpacingInWordTimings(line.text, sourceWords);
   const renderableWords = shouldCoalesceWordTimings(spacedSourceWords, line.text)
-    ? coalesceWordTimings(spacedSourceWords)
+    ? coalesceWordTimings(spacedSourceWords, maxRenderedWordHighlightSegments)
     : [...spacedSourceWords];
 
   const result =

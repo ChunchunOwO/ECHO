@@ -139,6 +139,79 @@ describe('LyricsView', () => {
     });
   });
 
+  it('keeps all words upcoming before the first word timing starts', async () => {
+    const delayedWordsLyrics: LyricsState = {
+      kind: 'synced',
+      source: 'placeholder',
+      offsetMs: 0,
+      lines: [
+        {
+          timeMs: 1000,
+          text: 'Hello world',
+          words: [
+            { text: 'Hello ', startMs: 1200, endMs: 1500 },
+            { text: 'world', startMs: 1500, endMs: 2000 },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <LyricsView
+        durationMs={3000}
+        hideEmptyState={false}
+        lyrics={delayedWordsLyrics}
+        playbackState="paused"
+        positionMs={1100}
+        positionUpdatedAtMs={0}
+        onSeek={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.lyrics-word[data-word-state="current"]')).toBeNull();
+      const words = Array.from(container.querySelectorAll<HTMLElement>('.lyrics-word'));
+      expect(words.map((word) => word.dataset.wordState)).toEqual(['future', 'future']);
+      expect(words.map((word) => word.style.getPropertyValue('--lyrics-word-progress'))).toEqual(['0', '0']);
+    });
+  });
+
+  it('estimates an open-ended last word from nearby word durations when there is no next line', async () => {
+    const openEndedLyrics: LyricsState = {
+      kind: 'synced',
+      source: 'placeholder',
+      offsetMs: 0,
+      lines: [
+        {
+          timeMs: 1000,
+          text: 'Hello world',
+          words: [
+            { text: 'Hello ', startMs: 1000, endMs: 1500 },
+            { text: 'world', startMs: 1500, endMs: null },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(
+      <LyricsView
+        durationMs={4000}
+        hideEmptyState={false}
+        lyrics={openEndedLyrics}
+        playbackState="paused"
+        positionMs={2000}
+        positionUpdatedAtMs={0}
+        onSeek={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      const currentWord = container.querySelector<HTMLElement>('.lyrics-word[data-word-state="current"]');
+      expect(currentWord?.textContent).toBe('world');
+      expect(currentWord?.style.getPropertyValue('--lyrics-word-progress')).toBe('0.8333');
+    });
+  });
+
   it('keeps ordinary line rendering when word highlight is disabled', () => {
     const { container } = render(
       <LyricsView

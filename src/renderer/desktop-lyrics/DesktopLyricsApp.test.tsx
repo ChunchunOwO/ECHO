@@ -20,6 +20,7 @@ const makeDesktopLyricsSettingsBase = (locked: boolean) => ({
   desktopLyricsEnabled: true,
   desktopLyricsLocked: locked,
   desktopLyricsFontSizePx: 34,
+  desktopLyricsSecondaryFontSizePx: 19,
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
@@ -463,6 +464,26 @@ describe('desktop lyrics text fitting', () => {
 
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTextDirection: 'vertical' }));
     expect(app?.getAttribute('data-text-direction')).toBe('vertical');
+  });
+
+  it('adjusts primary and translation font sizes independently from the floating menu', async () => {
+    const { container, setStyle } = renderDesktopLyricsApp(false, {
+      settings: {
+        desktopLyricsFontSizePx: 46,
+        desktopLyricsSecondaryFontSizePx: 24,
+      },
+    });
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('.desktop-lyrics-menu button'));
+
+    await waitFor(() => expect(app?.style.getPropertyValue('--desktop-lyrics-font-size')).toBe('46px'));
+    expect(app?.style.getPropertyValue('--desktop-lyrics-secondary-font-size')).toBe('24px');
+
+    fireEvent.click(buttons[2]);
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsFontSizePx: 48 }));
+
+    fireEvent.click(buttons[3]);
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsSecondaryFontSizePx: 23 }));
   });
 
   it('keeps romanization and translation grouped with vertical desktop lyrics', async () => {

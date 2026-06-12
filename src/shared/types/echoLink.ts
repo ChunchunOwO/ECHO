@@ -17,6 +17,17 @@ export type EchoLinkTrackPreview = {
   canPlayOnPhone: boolean;
 };
 
+export type EchoLinkAlbumPreview = {
+  id: string;
+  title: string;
+  albumArtist: string;
+  artworkUrl: string | null;
+  trackCount: number;
+  durationMs: number;
+  sourceLabel: string;
+  year: number | null;
+};
+
 export type EchoLinkQueuePreview = {
   currentTrackId: string | null;
   items: EchoLinkTrackPreview[];
@@ -43,6 +54,17 @@ export type EchoLinkLibraryTracksResponse = {
   totalCount: number;
 };
 
+export type EchoLinkLibraryAlbumsResponse = {
+  albums: EchoLinkAlbumPreview[];
+  totalCount: number;
+};
+
+export type EchoLinkLibraryAlbumTracksResponse = {
+  album: EchoLinkAlbumPreview;
+  tracks: EchoLinkTrackPreview[];
+  totalCount: number;
+};
+
 export type EchoLinkStreamResponse = {
   streamUrl: string;
   expiresAtEpochMs: number;
@@ -56,6 +78,7 @@ export type EchoLinkServerStatus = {
   host: string;
   addresses: string[];
   pairingUri: string | null;
+  webControlUrl: string | null;
   token: string;
   deviceName: string;
   deviceId: string;

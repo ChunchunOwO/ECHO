@@ -398,6 +398,7 @@ const officialWebsiteUrl = 'https://echonext.moe';
 const userDocumentationUrl = 'https://echonext.moe/zh/docs/';
 const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
 const bilibiliSpaceUrl = 'https://space.bilibili.com/25265128';
+const afdianSponsorUrl = 'https://afdian.com/a/echonext';
 const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
   { source: 'official', label: 'GitHub', description: '官方直连' },
   { source: 'ghfast', label: 'ghfast.top', description: '实测可读 latest.yml' },
@@ -14811,6 +14812,12 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow title={t('settings.about.version.title')} description={t('settings.about.version.description')}>
                 <StatusText tone={appVersion ? 'neutral' : 'muted'}>{appVersion ?? t('common.checking')}</StatusText>
               </SettingRow>
+              <SettingRow title={t('settings.about.pro.title')} description={t('settings.about.pro.description')}>
+                <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(afdianSponsorUrl)}>
+                  <ExternalLink size={15} />
+                  {t('settings.about.pro.action')}
+                </button>
+              </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title={t('settings.about.updates.title')}
@@ -14945,7 +14952,7 @@ export const SettingsPage = (): JSX.Element => {
                     <button
                       className="settings-action-button"
                       type="button"
-                      onClick={() => void handleOpenExternalUrl('https://afdian.com/a/echonext')}
+                      onClick={() => void handleOpenExternalUrl(afdianSponsorUrl)}
                     >
                       <ExternalLink size={15} />
                       {t('settings.about.updates.action.afdian')}

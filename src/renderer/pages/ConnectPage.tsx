@@ -113,6 +113,7 @@ const defaultEchoLinkStatus: EchoLinkServerStatus = {
   host: '127.0.0.1',
   addresses: [],
   pairingUri: null,
+  webControlUrl: null,
   token: '',
   deviceName: 'PC ECHO',
   deviceId: '',
@@ -230,6 +231,15 @@ const createEchoLinkPairingUri = (status: EchoLinkServerStatus, host: string): s
     ['scheme', 'http'],
   ];
   return `echo://pair?${entries.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')}`;
+};
+
+const createEchoLinkWebControlUrl = (status: EchoLinkServerStatus, host: string): string | null => {
+  if (!status.enabled || !status.running || !status.token) {
+    return null;
+  }
+  const url = new URL(`http://${host}:${status.port}/echo-link/web`);
+  url.searchParams.set('token', status.token);
+  return url.toString();
 };
 
 const hqPlayerStateLabel: Record<HqPlayerStatus['state'], TranslationKey> = {
@@ -954,6 +964,7 @@ export const ConnectPage = (): JSX.Element => {
   const [echoLinkStatus, setEchoLinkStatus] = useState<EchoLinkServerStatus>(defaultEchoLinkStatus);
   const [isEchoLinkBusy, setIsEchoLinkBusy] = useState(false);
   const [copiedEchoLinkPairing, setCopiedEchoLinkPairing] = useState(false);
+  const [copiedEchoLinkWebControl, setCopiedEchoLinkWebControl] = useState(false);
   const [showEchoLinkToken, setShowEchoLinkToken] = useState(false);
   const [selectedEchoLinkHost, setSelectedEchoLinkHost] = useState<string | null>(null);
   const [echoLinkQrDataUrl, setEchoLinkQrDataUrl] = useState<string | null>(null);
@@ -1109,6 +1120,7 @@ export const ConnectPage = (): JSX.Element => {
     ? selectedEchoLinkHost
     : echoLinkStatus.host;
   const echoLinkPairingUri = createEchoLinkPairingUri(echoLinkStatus, echoLinkSelectedHost) ?? echoLinkStatus.pairingUri;
+  const echoLinkWebControlUrl = createEchoLinkWebControlUrl(echoLinkStatus, echoLinkSelectedHost) ?? echoLinkStatus.webControlUrl;
   const echoLinkAddressLabel = echoLinkHosts.length > 0
     ? echoLinkHosts.map((address) => `${address}:${echoLinkStatus.port}`).join(' / ')
     : `${echoLinkStatus.host}:${echoLinkStatus.port}`;
@@ -1459,6 +1471,24 @@ export const ConnectPage = (): JSX.Element => {
     setCopiedEchoLinkPairing(true);
     window.setTimeout(() => setCopiedEchoLinkPairing(false), 1400);
   }, [echoLinkPairingUri]);
+
+  const copyEchoLinkWebControl = useCallback(async (): Promise<void> => {
+    const value = echoLinkWebControlUrl ?? '';
+    if (!value || !navigator.clipboard?.writeText) {
+      return;
+    }
+    await navigator.clipboard.writeText(value);
+    setCopiedEchoLinkWebControl(true);
+    window.setTimeout(() => setCopiedEchoLinkWebControl(false), 1400);
+  }, [echoLinkWebControlUrl]);
+
+  const openEchoLinkWebControl = useCallback(async (): Promise<void> => {
+    const value = echoLinkWebControlUrl ?? '';
+    if (!value) {
+      return;
+    }
+    await window.echo?.app?.openExternalUrl?.(value);
+  }, [echoLinkWebControlUrl]);
 
   const rotateEchoLinkToken = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -2096,6 +2126,24 @@ export const ConnectPage = (): JSX.Element => {
               {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
               {copiedEchoLinkPairing ? '已复制' : '复制'}
             </button>
+          </div>
+          <div className="connect-echo-link-web">
+            <div>
+              <span>网页控制端</span>
+              <strong>{echoLinkWebControlUrl ? 'Album Sea 已就绪' : '开启 ECHO Link 后可用'}</strong>
+              <small>浏览器打开后可控制播放，并用专辑墙选择专辑。</small>
+            </div>
+            <code>{echoLinkWebControlUrl ?? 'http://LAN-IP:26789/echo-link/web'}</code>
+            <div className="connect-echo-link-web__actions">
+              <button className="settings-action-button" type="button" onClick={() => void openEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
+                <Smartphone size={15} />
+                打开
+              </button>
+              <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
+                {copiedEchoLinkWebControl ? <Check size={15} /> : <Copy size={15} />}
+                {copiedEchoLinkWebControl ? '已复制' : '复制网页'}
+              </button>
+            </div>
           </div>
           {echoLinkStatus.error ? (
             <div className="connect-alert connect-alert--inline" role="alert">

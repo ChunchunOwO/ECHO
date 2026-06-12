@@ -58,6 +58,7 @@ describe('desktop lyrics IPC', () => {
     handlers[IpcChannels.DesktopLyricsSetStyle]!(null, {
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
+      desktopLyricsSecondaryFontSizePx: '24',
       desktopLyricsColorMode: 'custom',
       ignored: true,
     });
@@ -65,6 +66,7 @@ describe('desktop lyrics IPC', () => {
     expect(setDesktopLyricsStyleMock).toHaveBeenCalledWith({
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
+      desktopLyricsSecondaryFontSizePx: 24,
       desktopLyricsColorMode: 'custom',
     });
   });

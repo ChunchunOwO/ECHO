@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AudioStatus } from '../../shared/types/audio';
-import type { LibraryPage, LibraryTrack } from '../../shared/types/library';
+import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
 import type { TrackLyrics } from '../../shared/types/lyrics';
 import { EchoLinkService } from './EchoLinkService';
 
@@ -74,6 +74,20 @@ const makeTrack = (patch: Partial<LibraryTrack> = {}): LibraryTrack => ({
   ...patch,
 });
 
+const makeAlbum = (patch: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
+  id: 'album-1',
+  mediaType: 'local',
+  albumKey: 'album-key-1',
+  title: 'Album',
+  albumArtist: 'Artist',
+  year: null,
+  trackCount: 2,
+  duration: 480,
+  coverId: null,
+  coverThumb: null,
+  ...patch,
+});
+
 const makeLyrics = (patch: Partial<TrackLyrics> = {}): TrackLyrics => ({
   id: 'lyrics-1',
   trackId: 'track-1',
@@ -127,7 +141,7 @@ class FakeAudioSession {
 }
 
 class FakeLibraryService {
-  constructor(private readonly tracks: LibraryTrack[]) {}
+  constructor(private readonly tracks: LibraryTrack[], private readonly albums: LibraryAlbum[] = [makeAlbum()]) {}
 
   getTrack = vi.fn((trackId: string): LibraryTrack | null => this.tracks.find((track) => track.id === trackId) ?? null);
 
@@ -145,6 +159,40 @@ class FakeLibraryService {
       page,
       pageSize,
       hasMore: offset + pageSize < filtered.length,
+    };
+  });
+
+  getAlbums = vi.fn((query = {}): LibraryPage<LibraryAlbum> => {
+    const page = Math.max(1, Number(query.page ?? 1));
+    const pageSize = Math.max(1, Number(query.pageSize ?? 12));
+    const search = typeof query.search === 'string' ? query.search.toLowerCase() : '';
+    const filtered = search
+      ? this.albums.filter((album) => `${album.title} ${album.albumArtist}`.toLowerCase().includes(search))
+      : this.albums;
+    const offset = (page - 1) * pageSize;
+    return {
+      items: filtered.slice(offset, offset + pageSize),
+      total: filtered.length,
+      page,
+      pageSize,
+      hasMore: offset + pageSize < filtered.length,
+    };
+  });
+
+  getAlbum = vi.fn((albumId: string): LibraryAlbum | null => this.albums.find((album) => album.id === albumId) ?? null);
+
+  getAlbumTracks = vi.fn((albumId: string, query = {}): LibraryPage<LibraryTrack> => {
+    const album = this.getAlbum(albumId);
+    const page = Math.max(1, Number(query.page ?? 1));
+    const pageSize = Math.max(1, Number(query.pageSize ?? 12));
+    const items = album ? this.tracks.filter((track) => track.album === album.title) : [];
+    const offset = (page - 1) * pageSize;
+    return {
+      items: items.slice(offset, offset + pageSize),
+      total: items.length,
+      page,
+      pageSize,
+      hasMore: offset + pageSize < items.length,
     };
   });
 
@@ -253,6 +301,46 @@ describe('EchoLinkService', () => {
     expect(body.playback.track.albumArtist).toBe('Artist');
   });
 
+  it('serves the web control page through the Echo Link token URL', async () => {
+    const status = service.getServerStatus();
+    expect(status.webControlUrl).toContain('/echo-link/web?token=');
+
+    const denied = await fetch(`${baseUrl()}/echo-link/web`);
+    const response = await fetch(status.webControlUrl!);
+    const body = await response.text();
+
+    expect(denied.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/html');
+    expect(body).toContain('ECHO Web Control');
+    expect(body).toContain('/echo-link/v1/library/albums');
+    expect(body).toContain("pageSize: '500'");
+    expect(body).toContain("addEventListener('dblclick'");
+    expect(body).toContain("addEventListener('pointerdown'");
+    expect(body).toContain("addEventListener('wheel'");
+    expect(body).toContain('requestAnimationFrame');
+    expect(body).toContain('transition: none');
+    expect(body).toContain('clearClickTimer');
+    expect(body).toContain('handleAlbumTap');
+    expect(body).toContain('albumFromPoint');
+    expect(body).toContain('albumRequestId');
+    expect(body).toContain('page <= 8');
+    expect(body).toContain('pageSize = 500');
+    expect(body).toContain("addEventListener('error'");
+    expect(body).toContain('data-selected="true"');
+    expect(body).toContain('data-busy="true"');
+    expect(body).toContain('data-now="true"');
+    expect(body).toContain("document.addEventListener('keydown'");
+    expect(body).toContain("loading=\"lazy\"");
+    expect(body).toContain('track-list');
+    expect(body).toContain('track-row');
+    expect(body).toContain('safeStartTrackId');
+    expect(body).toContain('syncNowPlayingAlbum');
+    expect(body).toContain('prefers-reduced-motion: reduce');
+    expect(body).toContain('没有找到专辑');
+    expect(body).toContain('}, 650)');
+  });
+
   it('generates and rotates pairing tokens', () => {
     const before = service.getServerStatus();
     const rotated = service.rotateToken();
@@ -277,6 +365,30 @@ describe('EchoLinkService', () => {
       tracks: [expect.objectContaining({ id: 'track-1', durationMs: 240000 })],
     });
     expect(body.tracks).toHaveLength(1);
+  });
+
+  it('returns album wall previews and album tracks for web control', async () => {
+    const albumsResponse = await fetch(`${baseUrl()}/echo-link/v1/library/albums?page=1&pageSize=12&sort=random`, {
+      headers: authHeaders(),
+    });
+    const albumsBody = await albumsResponse.json();
+    const tracksResponse = await fetch(`${baseUrl()}/echo-link/v1/library/albums/album-1/tracks?page=1&pageSize=200`, {
+      headers: authHeaders(),
+    });
+    const tracksBody = await tracksResponse.json();
+
+    expect(albumsResponse.status).toBe(200);
+    expect(libraryService.getAlbums).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 12, sort: 'random' }));
+    expect(albumsBody).toMatchObject({
+      totalCount: 1,
+      albums: [expect.objectContaining({ id: 'album-1', title: 'Album', trackCount: 2 })],
+    });
+    expect(tracksResponse.status).toBe(200);
+    expect(libraryService.getAlbumTracks).toHaveBeenCalledWith('album-1', { page: 1, pageSize: 200 });
+    expect(tracksBody).toMatchObject({
+      album: expect.objectContaining({ id: 'album-1' }),
+      tracks: [expect.objectContaining({ id: 'track-1' }), expect.objectContaining({ id: 'track-2' })],
+    });
   });
 
   it('returns track lyrics for Android linked playback', async () => {

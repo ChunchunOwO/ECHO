@@ -346,6 +346,7 @@ export type AppSettings = {
   desktopLyricsEnabled?: boolean;
   desktopLyricsLocked?: boolean;
   desktopLyricsFontSizePx?: number;
+  desktopLyricsSecondaryFontSizePx?: number;
   desktopLyricsScalePercent?: number;
   desktopLyricsFontFamily?: string;
   desktopLyricsFontFilePath?: string | null;

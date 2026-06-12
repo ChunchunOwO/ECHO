@@ -100,17 +100,17 @@ type ChannelBalancePreset = {
   createdAt: string;
 };
 
-const echoSrcModeOptions: Array<{ mode: AudioEchoSrcMode; title: string; detail: string }> = [
-  { mode: 'off', title: '关闭', detail: '保持源采样率，Bit-perfect 条件不受 SRC 影响。' },
-  { mode: 'family2x', title: '2x PCM', detail: '44.1k 家族升到 88.2k，48k 家族升到 96k。' },
-  { mode: 'family4x', title: '4x PCM', detail: '44.1k 家族升到 176.4k，48k 家族升到 192k。' },
-  { mode: 'family8x', title: '8x Ultra', detail: '实验档：44.1k 家族升到 352.8k，48k 家族升到 384k。' },
+const echoSrcModeOptions: Array<{ mode: AudioEchoSrcMode; titleKey: string; detailKey: string }> = [
+  { mode: 'off', titleKey: 'dsp.panel.src.mode.off', detailKey: 'dsp.panel.src.mode.offDetail' },
+  { mode: 'family2x', titleKey: 'dsp.panel.src.mode.family2x', detailKey: 'dsp.panel.src.mode.family2xDetail' },
+  { mode: 'family4x', titleKey: 'dsp.panel.src.mode.family4x', detailKey: 'dsp.panel.src.mode.family4xDetail' },
+  { mode: 'family8x', titleKey: 'dsp.panel.src.mode.family8x', detailKey: 'dsp.panel.src.mode.family8xDetail' },
 ];
 
-const echoSrcQualityOptions: Array<{ profile: AudioEchoSrcQualityProfile; title: string; detail: string; precision: string }> = [
-  { profile: 'transparent', title: 'Transparent', detail: '最高精度 SOXR，优先透明和低失真。', precision: 'SOXR precision 28' },
-  { profile: 'balanced', title: 'Balanced', detail: '保持原有 SOXR 档位，兼顾稳定和开销。', precision: 'SOXR precision 20' },
-  { profile: 'lowLatency', title: 'Low latency', detail: '降低 SRC 开销，适合低延迟输出。', precision: 'SOXR precision 16' },
+const echoSrcQualityOptions: Array<{ profile: AudioEchoSrcQualityProfile; titleKey: string; detailKey: string; precision: string }> = [
+  { profile: 'transparent', titleKey: 'dsp.panel.src.quality.transparent', detailKey: 'dsp.panel.src.quality.transparentDetail', precision: 'SOXR precision 28' },
+  { profile: 'balanced', titleKey: 'dsp.panel.src.quality.balanced', detailKey: 'dsp.panel.src.quality.balancedDetail', precision: 'SOXR precision 20' },
+  { profile: 'lowLatency', titleKey: 'dsp.panel.src.quality.lowLatency', detailKey: 'dsp.panel.src.quality.lowLatencyDetail', precision: 'SOXR precision 16' },
 ];
 
 const normalizeEchoSrcMode = (mode: unknown): AudioEchoSrcMode =>
@@ -119,7 +119,7 @@ const normalizeEchoSrcMode = (mode: unknown): AudioEchoSrcMode =>
 const normalizeEchoSrcQualityProfile = (profile: unknown): AudioEchoSrcQualityProfile =>
   profile === 'balanced' || profile === 'lowLatency' ? profile : 'transparent';
 
-const dspLocalText: Record<string, string> = {
+const dspLocalTextZhCN: Record<string, string> = {
   'dsp.action.clear': '清除',
   'dsp.action.disableChannel': '关闭声道补偿',
   'dsp.action.disableFir': '关闭 FIR',
@@ -146,11 +146,25 @@ const dspLocalText: Record<string, string> = {
   'dsp.panel.src.engine': '引擎',
   'dsp.panel.src.kicker': '采样率转换',
   'dsp.panel.src.mode': '模式',
+  'dsp.panel.src.mode.family2x': '2x PCM',
+  'dsp.panel.src.mode.family2xDetail': '44.1k 家族升到 88.2k，48k 家族升到 96k。',
+  'dsp.panel.src.mode.family4x': '4x PCM',
+  'dsp.panel.src.mode.family4xDetail': '44.1k 家族升到 176.4k，48k 家族升到 192k。',
+  'dsp.panel.src.mode.family8x': '8x Ultra',
+  'dsp.panel.src.mode.family8xDetail': '实验档：44.1k 家族升到 352.8k，48k 家族升到 384k。',
+  'dsp.panel.src.mode.off': '关闭',
+  'dsp.panel.src.mode.offDetail': '保持源采样率，Bit-perfect 条件不受 SRC 影响。',
   'dsp.panel.src.native': '原生直通',
   'dsp.panel.src.note': '只处理 PCM。共享输出、DSD 输出或 HQPlayer 接管时不会叠加升频。',
   'dsp.panel.src.pending': '等待下一次播放规划',
   'dsp.panel.src.precision': '精度',
   'dsp.panel.src.quality': '质量策略',
+  'dsp.panel.src.quality.balanced': 'Balanced',
+  'dsp.panel.src.quality.balancedDetail': '保持原有 SOXR 档位，兼顾稳定和开销。',
+  'dsp.panel.src.quality.lowLatency': 'Low latency',
+  'dsp.panel.src.quality.lowLatencyDetail': '降低 SRC 开销，适合低延迟输出。',
+  'dsp.panel.src.quality.transparent': 'Transparent',
+  'dsp.panel.src.quality.transparentDetail': '最高精度 SOXR，优先透明和低失真。',
   'dsp.panel.src.route': '路径',
   'dsp.panel.src.sourceRate': '源采样率',
   'dsp.panel.src.targetRate': '目标采样率',
@@ -389,21 +403,315 @@ const dspLocalText: Record<string, string> = {
   'dsp.status.systemOutput': '系统输出',
 };
 
+const dspLocalTextEnUS: Record<string, string> = {
+  ...dspLocalTextZhCN,
+  'dsp.action.clear': 'Clear',
+  'dsp.action.disableChannel': 'Disable channel compensation',
+  'dsp.action.disableFir': 'Disable FIR',
+  'dsp.action.enableChannel': 'Enable channel compensation',
+  'dsp.action.enableFir': 'Enable FIR',
+  'dsp.action.enableFirSafely': 'Enable safely',
+  'dsp.action.importIr': 'Import IR',
+  'dsp.action.refresh': 'Refresh status',
+  'dsp.action.reset': 'Reset',
+  'dsp.action.save': 'Save',
+  'dsp.aria.chain': 'DSP module chain',
+  'dsp.aria.modules': 'DSP modules',
+  'dsp.aria.pipeline': 'DSP pipeline',
+  'dsp.aria.workspace': 'DSP workspace',
+  'dsp.brand.subtitle': 'Signal Control',
+  'dsp.module.src.description': 'PCM sample-rate conversion',
+  'dsp.module.src.title': 'SRC / Upsampling',
+  'dsp.panel.src.abBypass': 'A/B native',
+  'dsp.panel.src.abRestore': 'Restore upsampling',
+  'dsp.panel.src.active': 'Upsampling active',
+  'dsp.panel.src.bypassDsd': 'DSD output bypass',
+  'dsp.panel.src.bypassShared': 'Shared output bypass',
+  'dsp.panel.src.detail': 'A local PCM SRC engine independent from HQPlayer. It is off by default; once enabled it enters the DSP path and no longer reports bit-perfect.',
+  'dsp.panel.src.engine': 'Engine',
+  'dsp.panel.src.kicker': 'Sample-rate conversion',
+  'dsp.panel.src.mode': 'Mode',
+  'dsp.panel.src.mode.family2x': '2x PCM',
+  'dsp.panel.src.mode.family2xDetail': 'Upsample the 44.1k family to 88.2k and the 48k family to 96k.',
+  'dsp.panel.src.mode.family4x': '4x PCM',
+  'dsp.panel.src.mode.family4xDetail': 'Upsample the 44.1k family to 176.4k and the 48k family to 192k.',
+  'dsp.panel.src.mode.family8x': '8x Ultra',
+  'dsp.panel.src.mode.family8xDetail': 'Experimental: upsample the 44.1k family to 352.8k and the 48k family to 384k.',
+  'dsp.panel.src.mode.off': 'Off',
+  'dsp.panel.src.mode.offDetail': 'Keep the source sample rate. SRC does not affect bit-perfect conditions.',
+  'dsp.panel.src.native': 'Native direct',
+  'dsp.panel.src.note': 'PCM only. Upsampling is not stacked when shared output, DSD output, or HQPlayer takes over.',
+  'dsp.panel.src.pending': 'Waiting for the next playback plan',
+  'dsp.panel.src.precision': 'Precision',
+  'dsp.panel.src.quality': 'Quality profile',
+  'dsp.panel.src.quality.balanced': 'Balanced',
+  'dsp.panel.src.quality.balancedDetail': 'Keep the existing SOXR profile while balancing stability and cost.',
+  'dsp.panel.src.quality.lowLatency': 'Low latency',
+  'dsp.panel.src.quality.lowLatencyDetail': 'Reduce SRC cost for low-latency output.',
+  'dsp.panel.src.quality.transparent': 'Transparent',
+  'dsp.panel.src.quality.transparentDetail': 'Highest precision SOXR, prioritizing transparency and low distortion.',
+  'dsp.panel.src.route': 'Route',
+  'dsp.panel.src.sourceRate': 'Source rate',
+  'dsp.panel.src.targetRate': 'Target rate',
+  'dsp.stage.src': 'Sample rate',
+  'dsp.error.channelBridge': 'Channel tools are unavailable.',
+  'dsp.error.desktopBridge': 'Desktop bridge is unavailable.',
+  'dsp.error.dspBridge': 'DSP bridge is unavailable.',
+  'dsp.error.firBridge': 'FIR bridge is unavailable.',
+  'dsp.label.bitPerfect': 'Bit-perfect',
+  'dsp.label.currentModule': 'Current module',
+  'dsp.label.module': 'DSP module',
+  'dsp.label.moduleStatus': 'Module status',
+  'dsp.label.output': 'Output',
+  'dsp.metric.bitPerfect': 'Bit-perfect',
+  'dsp.metric.clipping': 'Clipping',
+  'dsp.metric.dsp': 'DSP',
+  'dsp.metric.inputPeak': 'Input peak',
+  'dsp.metric.ir': 'IR',
+  'dsp.metric.latency': 'Latency',
+  'dsp.metric.liveHeadroom': 'Live headroom',
+  'dsp.metric.mode': 'Mode',
+  'dsp.metric.outputEstimate': 'Output estimate',
+  'dsp.metric.reason': 'Reason',
+  'dsp.metric.sampleRate': 'Sample rate',
+  'dsp.metric.taps': 'Taps',
+  'dsp.module.channel.description': 'Balance, delay, mono',
+  'dsp.module.channel.title': 'Channel tools',
+  'dsp.module.eq.description': 'Bands, preamp, presets',
+  'dsp.module.eq.title': 'Parametric EQ',
+  'dsp.module.headroom.description': 'Reserve DSP headroom',
+  'dsp.module.headroom.title': 'Headroom',
+  'dsp.module.headphone.description': 'OPRA headphone curves',
+  'dsp.module.headphone.title': 'Headphone correction',
+  'dsp.module.room.description': 'IR convolution only',
+  'dsp.module.room.title': 'FIR / Room correction',
+  'dsp.module.safety.description': 'Final output monitor',
+  'dsp.module.safety.title': 'Output safety',
+  'dsp.panel.channel.advanced': 'Advanced channel',
+  'dsp.panel.channel.balance': 'Stereo balance',
+  'dsp.panel.channel.bandCompensation': 'Band compensation',
+  'dsp.panel.channel.bandHigh': 'High',
+  'dsp.panel.channel.bandLow': 'Low',
+  'dsp.panel.channel.bandMid': 'Mid',
+  'dsp.panel.channel.centered': 'Centered',
+  'dsp.panel.channel.compare': 'A/B compare',
+  'dsp.panel.channel.compareActive': 'Bypassing',
+  'dsp.panel.channel.compareHint': 'Temporarily bypass channel processing to compare the stereo image before and after compensation.',
+  'dsp.panel.channel.compensationDetail': 'Defaults to attenuating the louder side, useful for headphone channel imbalance that cannot be repaired.',
+  'dsp.panel.channel.compensationOff': 'Off',
+  'dsp.panel.channel.compensationOn': 'On',
+  'dsp.panel.channel.compensationTitle': 'Imbalance compensation',
+  'dsp.panel.channel.constantPower': 'Constant power',
+  'dsp.panel.channel.delaySkew': 'Delay skew',
+  'dsp.panel.channel.he90Hint': 'Start from 0.25 dB and fine tune while listening to centered vocals.',
+  'dsp.panel.channel.invertLeft': 'Invert left',
+  'dsp.panel.channel.invertRight': 'Invert right',
+  'dsp.panel.channel.kicker': 'Channel tools',
+  'dsp.panel.channel.leansLeft': 'Left {value}',
+  'dsp.panel.channel.leansRight': 'Right {value}',
+  'dsp.panel.channel.leftDelay': 'Left delay',
+  'dsp.panel.channel.leftGain': 'Left gain',
+  'dsp.panel.channel.leftOutput': 'Left output',
+  'dsp.panel.channel.leftTooLoud': 'Left side louder',
+  'dsp.panel.channel.modePro': 'Pro',
+  'dsp.panel.channel.modeSimple': 'Simple',
+  'dsp.panel.channel.mono.left': 'Left only',
+  'dsp.panel.channel.mono.off': 'Mono off',
+  'dsp.panel.channel.mono.right': 'Right only',
+  'dsp.panel.channel.mono.sum': 'Sum mono',
+  'dsp.panel.channel.monoHint': 'Sum mono plays both sides; left-only or right-only mutes the other side.',
+  'dsp.panel.channel.monoTools': 'Mono / Check',
+  'dsp.panel.channel.note': 'Channel tools are separated from Parametric EQ, for checking stereo image, left/right differences, and mono compatibility.',
+  'dsp.panel.channel.phaseTools': 'Phase / Routing',
+  'dsp.panel.channel.presetDefaultName': 'Headphone imbalance compensation',
+  'dsp.panel.channel.presetEmpty': 'No saved channel profiles yet.',
+  'dsp.panel.channel.presetName': 'Profile name',
+  'dsp.panel.channel.presetPrompt': 'Name this headphone profile',
+  'dsp.panel.channel.presets': 'Headphone profiles',
+  'dsp.panel.channel.removePreset': 'Remove',
+  'dsp.panel.channel.renamePreset': 'Rename',
+  'dsp.panel.channel.renamePrompt': 'Rename this headphone profile',
+  'dsp.panel.channel.rightDelay': 'Right delay',
+  'dsp.panel.channel.rightGain': 'Right gain',
+  'dsp.panel.channel.rightOutput': 'Right output',
+  'dsp.panel.channel.rightTooLoud': 'Right side louder',
+  'dsp.panel.channel.safeAttenuation': 'For electrostatic headphones, prefer attenuation compensation to avoid raising output level.',
+  'dsp.panel.channel.saveCurrent': 'Save current settings',
+  'dsp.panel.channel.selectPreset': 'Select profile',
+  'dsp.panel.channel.step': 'Step',
+  'dsp.panel.channel.swap': 'Swap left/right',
+  'dsp.panel.channel.swapCompensation': 'Swap compensation direction',
+  'dsp.panel.channel.switchPreset': 'Switch',
+  'dsp.panel.channel.trimCenter': 'Clear imbalance',
+  'dsp.panel.headroom.applyRecommended': 'Apply recommendation',
+  'dsp.panel.headroom.budgetAria': 'Headroom budget',
+  'dsp.panel.headroom.clipCount': 'Clip count',
+  'dsp.panel.headroom.clipCountValue': '{count} times',
+  'dsp.panel.headroom.guardActive': 'Active',
+  'dsp.panel.headroom.guardDirect': 'Direct',
+  'dsp.panel.headroom.guardStandby': 'Standby',
+  'dsp.panel.headroom.guardState': 'Guard state',
+  'dsp.panel.headroom.kicker': 'Headroom management',
+  'dsp.panel.headroom.lastClip': 'Last clip',
+  'dsp.panel.headroom.makeConservative': 'Set to -6 dB',
+  'dsp.panel.headroom.makeSafe': 'Set to {value}',
+  'dsp.panel.headroom.modeAria': 'Headroom mode',
+  'dsp.panel.headroom.modeDaily': 'Daily',
+  'dsp.panel.headroom.modeDailyDetail': 'Light DSP reserve.',
+  'dsp.panel.headroom.modeDirect': 'Direct',
+  'dsp.panel.headroom.modeDirectDetail': 'No extra level reduction.',
+  'dsp.panel.headroom.modeDsp': 'DSP',
+  'dsp.panel.headroom.modeDspDetail': 'Leave safe space for EQ/FIR.',
+  'dsp.panel.headroom.nextDirect': 'Keep direct',
+  'dsp.panel.headroom.nextDirectDetail': 'No DSP reserve risk is currently needed.',
+  'dsp.panel.headroom.nextHoldRisk': 'Reduce headroom first',
+  'dsp.panel.headroom.nextHoldRiskDetail': 'Clipping risk detected. Reserve headroom first.',
+  'dsp.panel.headroom.nextProtect': 'Apply protection headroom',
+  'dsp.panel.headroom.nextProtectDetail': 'Output is near full scale. Reduce level immediately.',
+  'dsp.panel.headroom.nextReady': 'Keep monitoring',
+  'dsp.panel.headroom.nextReadyDetail': 'DSP already has safe headroom.',
+  'dsp.panel.headroom.nextStandby': 'Keep standby',
+  'dsp.panel.headroom.nextStandbyDetail': 'DSP modules are enabled, but no risk is detected yet.',
+  'dsp.panel.headroom.nextStep': 'Next step',
+  'dsp.panel.headroom.nextWatch': 'Watch output',
+  'dsp.panel.headroom.nextWatchDetail': 'Output is close to the limit. Watch for clipping.',
+  'dsp.panel.headroom.noClip': 'No record',
+  'dsp.panel.headroom.note': 'Headroom only reserves level space; it no longer mixes specific EQ or FIR tuning here.',
+  'dsp.panel.headroom.presetsAria': 'Headroom presets',
+  'dsp.panel.headroom.primaryAction': 'Apply {value}',
+  'dsp.panel.headroom.reasonChannel': 'Channel tools may increase level.',
+  'dsp.panel.headroom.reasonClipping': 'Clipping detected.',
+  'dsp.panel.headroom.reasonDirect': 'Headroom only works in the DSP path; when EQ, FIR, and channel tools are all off, native direct is not processed by it.',
+  'dsp.panel.headroom.reasonEq': 'EQ curves may increase level.',
+  'dsp.panel.headroom.reasonLive': 'Live headroom is low.',
+  'dsp.panel.headroom.reasonOutput': 'Estimated output is near full scale.',
+  'dsp.panel.headroom.reasonRoom': 'FIR / room correction may increase level.',
+  'dsp.panel.headroom.reasonSafe': 'Current signal is safe.',
+  'dsp.panel.headroom.recommendation': 'Recommendation',
+  'dsp.panel.headroom.recommendationSafe': 'Safe',
+  'dsp.panel.headroom.reserve': 'Reserve headroom',
+  'dsp.panel.headroom.safePolicy': 'Safety first',
+  'dsp.panel.headroom.safetyActions': 'Quick protection',
+  'dsp.panel.headroom.status': 'Status',
+  'dsp.panel.headroom.statusClose': 'Near limit',
+  'dsp.panel.headroom.statusRisk': 'Risk detected',
+  'dsp.panel.headroom.statusSafe': 'Safe',
+  'dsp.panel.room.future.recent': 'Recent IR',
+  'dsp.panel.room.future.response': 'Response preview',
+  'dsp.panel.room.hero.activeDetail': 'Convolution is participating in the output chain.',
+  'dsp.panel.room.hero.activeTitle': 'FIR enabled',
+  'dsp.panel.room.hero.emptyDetail': 'Import an IR before enabling room correction.',
+  'dsp.panel.room.hero.emptyTitle': 'No IR loaded',
+  'dsp.panel.room.hero.loadedDetail': 'IR is loaded and ready to enable.',
+  'dsp.panel.room.hero.loadedTitle': 'IR loaded',
+  'dsp.panel.room.hero.state': 'State',
+  'dsp.panel.room.kicker': 'Spatial processing',
+  'dsp.panel.room.nextEnable': 'Enable FIR',
+  'dsp.panel.room.nextEnableDetail': 'IR is ready. Try listening.',
+  'dsp.panel.room.nextImport': 'Import IR',
+  'dsp.panel.room.nextImportDetail': 'Choose a convolution file first.',
+  'dsp.panel.room.nextListen': 'Keep listening',
+  'dsp.panel.room.nextListenDetail': 'Confirm volume and phase are normal after correction.',
+  'dsp.panel.room.nextTrim': 'Lower trim',
+  'dsp.panel.room.nextTrimDetail': 'FIR output has clipping risk.',
+  'dsp.panel.room.note': 'FIR / room correction only handles convolution and IR; it is no longer mixed with EQ presets.',
+  'dsp.panel.room.quickTrim': 'Quick trim',
+  'dsp.panel.room.routeTitle': 'Route',
+  'dsp.panel.room.safeEnableHint': 'Reserve -6 dB headroom before enabling FIR.',
+  'dsp.panel.room.safetyRisk': 'Lower Trim or Headroom.',
+  'dsp.panel.room.safetySafe': 'The output chain is currently safe.',
+  'dsp.panel.room.safetyTitle': 'Safety',
+  'dsp.panel.room.trim': 'Trim',
+  'dsp.panel.safety.kicker': 'Output safety',
+  'dsp.panel.safety.heroProtectedTitle': 'Output chain protected',
+  'dsp.panel.safety.heroProtectedDetail': 'DSP is participating in playback, so output safety continues monitoring clipping, headroom, and bit-perfect route status.',
+  'dsp.panel.safety.heroRiskTitle': 'Output risk detected',
+  'dsp.panel.safety.heroRiskDetail': 'The current chain has clipping or headroom risk. Lower Headroom, EQ gain, or FIR Trim first.',
+  'dsp.panel.safety.heroDirectTitle': 'Native direct',
+  'dsp.panel.safety.heroDirectDetail': 'When no DSP module is enabled, playback stays on the bit-perfect candidate route and output safety only observes status.',
+  'dsp.panel.safety.chainTitle': 'Current chain',
+  'dsp.panel.safety.checkTitle': 'Safety check',
+  'dsp.panel.safety.nextTitle': 'Suggested action',
+  'dsp.panel.safety.nextRisk': 'Handle headroom first',
+  'dsp.panel.safety.nextRiskDetail': 'Do not keep stacking EQ / FIR gain while risk exists. Lower Headroom or the related module Trim first.',
+  'dsp.panel.safety.nextProtected': 'Keep monitoring',
+  'dsp.panel.safety.nextProtectedDetail': 'The chain is in the DSP path and no clipping risk was found. Continue watching live output.',
+  'dsp.panel.safety.nextDirect': 'Keep direct',
+  'dsp.panel.safety.nextDirectDetail': 'No DSP processing is active. This is suitable for checking original output, device sample rate, and bit-perfect candidate status.',
+  'dsp.panel.safety.routeInput': 'Input',
+  'dsp.panel.safety.routeHeadroom': 'Headroom',
+  'dsp.panel.safety.routeProcess': 'Process',
+  'dsp.panel.safety.routeOutput': 'Output',
+  'dsp.panel.safety.checkBitPerfect': 'Bit-perfect',
+  'dsp.panel.safety.checkLimiter': 'Protection limiter',
+  'dsp.panel.safety.disableLimiter': 'Disable protection limiter',
+  'dsp.panel.safety.enableLimiter': 'Enable protection limiter',
+  'dsp.panel.safety.limiterBypassed': 'Bypassed',
+  'dsp.panel.safety.limiterBypassedDetail': 'The final protection limiter is off. Hot output may clip or distort.',
+  'dsp.panel.safety.limiterToggleTitle': 'Protection limiter',
+  'dsp.panel.safety.checkRoom': 'FIR',
+  'dsp.panel.safety.checkChannel': 'Channel tools',
+  'dsp.panel.safety.note': 'Output safety only reports final-chain status; it does not change EQ, FIR, or channel parameters.',
+  'dsp.room.status.active': 'Active',
+  'dsp.room.status.empty': 'Not loaded',
+  'dsp.room.status.error': 'Error',
+  'dsp.room.status.loaded': 'Loaded',
+  'dsp.stage.input': 'Input',
+  'dsp.stage.output': 'Output',
+  'dsp.stage.shape': 'Shape',
+  'dsp.stage.space': 'Space',
+  'dsp.stage.stereo': 'Stereo',
+  'dsp.status.active': 'Enabled',
+  'dsp.status.auto': 'Auto',
+  'dsp.status.balanceActive': 'Channel processing',
+  'dsp.status.bypassed': 'Bypassed',
+  'dsp.status.candidate': 'Candidate',
+  'dsp.status.clear': 'Clear',
+  'dsp.status.direct': 'Direct',
+  'dsp.status.disabledByDsp': 'DSP path',
+  'dsp.status.dspPath': 'DSP path',
+  'dsp.status.flat': 'Flat',
+  'dsp.status.headroomRisk': 'Headroom risk',
+  'dsp.status.limiterArmed': 'Armed',
+  'dsp.status.limiting': 'Limiting',
+  'dsp.status.modulesActive': '{count} modules active',
+  'dsp.status.nativeDirect': 'Bit-perfect path',
+  'dsp.status.noIr': 'No IR',
+  'dsp.status.none': 'None',
+  'dsp.status.protected': 'Protected',
+  'dsp.status.ready': 'Ready',
+  'dsp.status.risk': 'Risk',
+  'dsp.status.riskDetected': 'Risk detected',
+  'dsp.status.shared': 'shared',
+  'dsp.status.signalProtected': 'Signal protected',
+  'dsp.status.stereoDirect': 'Stereo direct',
+  'dsp.status.systemOutput': 'System output',
+};
+
+const dspLocalTexts = {
+  'zh-CN': dspLocalTextZhCN,
+  'zh-TW': dspLocalTextZhCN,
+  'en-US': dspLocalTextEnUS,
+  'ja-JP': dspLocalTextEnUS,
+} as const;
+
 type DspTranslate = (key: string, options?: Parameters<ReturnType<typeof useI18n>['t']>[1]) => string;
 
 const useDspI18n = (): { t: DspTranslate } => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const localText = dspLocalTexts[locale] ?? dspLocalTextZhCN;
+
   return {
     t: useCallback((key, options) => {
-      if (dspLocalText[key]) {
+      if (localText[key]) {
         return Object.entries(options ?? {}).reduce(
           (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
-          dspLocalText[key],
+          localText[key],
         );
       }
 
       return t(key as TranslationKey, options);
-    }, [t]),
+    }, [localText, t]),
   };
 };
 
@@ -686,7 +994,7 @@ const EchoSrcPanel = ({
       <p className="dsp-module-kicker">{t('dsp.panel.src.kicker')}</p>
       <div className="dsp-module-heading">
         <span><RadioTower size={18} />{t('dsp.module.src.title')}</span>
-        <strong>{echoSrcMode === 'off' ? 'Off' : modeOption.title}</strong>
+        <strong>{echoSrcMode === 'off' ? t('dsp.panel.src.mode.off') : t(modeOption.titleKey)}</strong>
       </div>
       <p className="dsp-module-note">{t('dsp.panel.src.detail')}</p>
 
@@ -695,7 +1003,7 @@ const EchoSrcPanel = ({
         <DspMetric label={t('dsp.panel.src.sourceRate')} value={formatRate(sourceRate, '--')} />
         <DspMetric label={t('dsp.panel.src.targetRate')} value={formatRate(targetRate, '--')} tone={active ? 'good' : undefined} />
         <DspMetric label={t('dsp.panel.src.engine')} value={active ? 'SOXR' : '--'} tone={active ? 'good' : undefined} />
-        <DspMetric label={t('dsp.panel.src.quality')} value={qualityOption.title} tone={active ? 'good' : undefined} />
+        <DspMetric label={t('dsp.panel.src.quality')} value={t(qualityOption.titleKey)} tone={active ? 'good' : undefined} />
         <DspMetric label={t('dsp.panel.src.precision')} value={active ? qualityOption.precision.replace('SOXR ', '') : qualityOption.precision} />
       </div>
 
@@ -709,7 +1017,7 @@ const EchoSrcPanel = ({
             onClick={() => onEchoSrcModeChange(option.mode)}
           >
             <RadioTower size={14} aria-hidden="true" />
-            {option.title}
+            {t(option.titleKey)}
           </button>
         ))}
         <button type="button" disabled={busy} onClick={onRefresh}>
@@ -732,7 +1040,7 @@ const EchoSrcPanel = ({
             onClick={() => onEchoSrcQualityProfileChange(option.profile)}
           >
             <ShieldCheck size={14} aria-hidden="true" />
-            {option.title}
+            {t(option.titleKey)}
           </button>
         ))}
       </div>
@@ -740,8 +1048,8 @@ const EchoSrcPanel = ({
       <div className="dsp-module-grid">
         {echoSrcQualityOptions.map((option) => (
           <label key={option.profile}>
-            <span>{option.title}</span>
-            <input readOnly value={`${option.detail} / ${option.precision}`} />
+            <span>{t(option.titleKey)}</span>
+            <input readOnly value={`${t(option.detailKey)} / ${option.precision}`} />
           </label>
         ))}
       </div>
@@ -2103,7 +2411,7 @@ export const DspPage = (): JSX.Element => {
   const echoSrcSubtitle = echoSrcActive
     ? formatRate(audioStatus?.echoSrcTargetSampleRate, t('dsp.status.auto'))
     : echoSrcMode !== 'off'
-      ? echoSrcModeOption.title
+      ? t(echoSrcModeOption.titleKey)
       : t('dsp.status.bypassed');
 
   const modules = useMemo<DspModule[]>(

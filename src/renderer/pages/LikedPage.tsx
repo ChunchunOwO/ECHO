@@ -9,7 +9,7 @@ import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/u
 import { StyledSelect } from '../components/ui/StyledSelect';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
 import { type QueueSource, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
-import { useI18n } from '../i18n';
+import { useI18n } from '../i18n/I18nProvider';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 100;
@@ -328,27 +328,27 @@ export const LikedPage = (): JSX.Element => {
   const handlePlayAll = useCallback(async (): Promise<void> => {
     const playable = tracks.filter((track) => !track.unavailable && track.path);
     if (playable.length === 0) {
-      setError('没有可播放的喜欢歌曲。');
+      setError(t('likedPage.message.noPlayableTracks'));
       return;
     }
 
     replaceQueue(playable, { startTrackId: playable[0].id, source: likedQueueSource });
     await playTrack(playable[0], { source: likedQueueSource });
     if (playable.length < tracks.length) {
-      setError('部分文件不可用，播放时已跳过。');
+      setError(t('likedPage.message.skippedUnavailable'));
     }
-  }, [likedQueueSource, playTrack, replaceQueue, tracks]);
+  }, [likedQueueSource, playTrack, replaceQueue, t, tracks]);
 
   const handleShuffleAll = useCallback(async (): Promise<void> => {
     const playable = tracks.filter((track) => !track.unavailable && track.path).sort(() => Math.random() - 0.5);
     if (playable.length === 0) {
-      setError('没有可播放的喜欢歌曲。');
+      setError(t('likedPage.message.noPlayableTracks'));
       return;
     }
 
     replaceQueue(playable, { startTrackId: playable[0].id, source: likedQueueSource });
     await playTrack(playable[0], { source: likedQueueSource });
-  }, [likedQueueSource, playTrack, replaceQueue, tracks]);
+  }, [likedQueueSource, playTrack, replaceQueue, t, tracks]);
 
   const selectTrackSourceProvider = useCallback((provider: LikedTrackSourceProvider): void => {
     trackSourceProviderRef.current = provider;
@@ -360,11 +360,11 @@ export const LikedPage = (): JSX.Element => {
   const handleSyncLikedSongs = useCallback(
     async (provider: LikedSyncProvider): Promise<void> => {
       const streaming = window.echo?.streaming;
-      const providerLabel = likedSyncProviders.find((item) => item.provider === provider)?.label ?? provider;
+      const providerLabel = getLikedSyncProviderLabel(provider);
       selectTrackSourceProvider(provider);
       setTab('tracks');
       if (!streaming?.syncLikedSongs) {
-        setError('当前环境无法同步流媒体我喜欢。');
+        setError(t('likedPage.message.syncUnavailable'));
         return;
       }
 
@@ -375,12 +375,12 @@ export const LikedPage = (): JSX.Element => {
         const result = await streaming.syncLikedSongs(provider);
         const providerResult = result.providers.find((item) => item.provider === provider);
         if (providerResult && !providerResult.success) {
-          throw new Error(providerResult.error ?? `${providerLabel} 我喜欢同步失败。`);
+          throw new Error(providerResult.error ?? t('likedPage.message.syncFailed', { provider: providerLabel }));
         }
 
         const importedCount = providerResult?.importedCount ?? result.importedCount;
         const addedCount = providerResult?.addedCount ?? result.addedCount;
-        setSyncStatus(`${providerLabel} 我喜欢已同步：${importedCount} 首，新增 ${addedCount} 首。`);
+        setSyncStatus(t('likedPage.message.synced', { provider: providerLabel, imported: importedCount, added: addedCount }));
         window.dispatchEvent(new Event(likedTracksChangedEvent));
         window.dispatchEvent(new Event(likedChangedEvent));
       } catch (syncError) {
@@ -389,7 +389,7 @@ export const LikedPage = (): JSX.Element => {
         setSyncingLikedProvider(null);
       }
     },
-    [selectTrackSourceProvider],
+    [getLikedSyncProviderLabel, selectTrackSourceProvider, t],
   );
 
   const handleTrackSourceClick = useCallback(
@@ -409,7 +409,7 @@ export const LikedPage = (): JSX.Element => {
     if (track.mediaType === 'streaming' && isLikedStreamingProvider(track.provider) && track.providerTrackId) {
       const streaming = window.echo?.streaming;
       if (!streaming?.setTrackLiked) {
-        throw new Error('Streaming liked tracks are unavailable.');
+        throw new Error(t('likedPage.error.streamingUnavailable'));
       }
 
       await streaming.setTrackLiked({
@@ -424,12 +424,12 @@ export const LikedPage = (): JSX.Element => {
     setTrackTotal((current) => Math.max(0, current - 1));
     window.dispatchEvent(new Event(likedTracksChangedEvent));
     window.dispatchEvent(new Event(likedChangedEvent));
-  }, []);
+  }, [t]);
 
   const handleExportLikedTracks = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
     if (!library?.getLikedSongsPlaylist || !library.exportPlaylist) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to export liked tracks.');
+      setError(t('likedPage.message.exportBridgeUnavailable'));
       setSyncStatus(null);
       return;
     }
@@ -444,15 +444,15 @@ export const LikedPage = (): JSX.Element => {
         format: likedExportFormat,
         sourceProvider: trackSourceProvider,
       });
-      const sourceLabel = likedTrackSourceProviders.find((item) => item.provider === trackSourceProvider)?.label ?? trackSourceProvider;
-      setSyncStatus(exportedPath ? `${sourceLabel}我喜欢已导出：${exportedPath}` : '已取消导出。');
+      const sourceLabel = getLikedTrackSourceLabel(trackSourceProvider);
+      setSyncStatus(exportedPath ? t('likedPage.message.exported', { source: sourceLabel, path: exportedPath }) : t('likedPage.message.exportCancelled'));
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : String(exportError));
       setSyncStatus(null);
     } finally {
       setIsExportingLikedTracks(false);
     }
-  }, [likedExportFormat, trackSourceProvider]);
+  }, [getLikedTrackSourceLabel, likedExportFormat, t, trackSourceProvider]);
 
   const handleToggleAlbumLiked = useCallback(async (album: LibraryAlbum): Promise<void> => {
     await window.echo.library.unlikeAlbum(album.id);
@@ -464,7 +464,7 @@ export const LikedPage = (): JSX.Element => {
 
   const handleClear = useCallback(async (): Promise<void> => {
     if (tab === 'tracks') {
-      if (!window.confirm('清空喜欢的歌曲？')) {
+      if (!window.confirm(t('likedPage.confirm.clearTracks'))) {
         return;
       }
       await window.echo.library.clearLikedTracks({ sourceProvider: 'local' });
@@ -472,7 +472,7 @@ export const LikedPage = (): JSX.Element => {
       setTrackTotal(0);
       window.dispatchEvent(new Event(likedTracksChangedEvent));
     } else {
-      if (!window.confirm('清空喜欢的专辑？')) {
+      if (!window.confirm(t('likedPage.confirm.clearAlbums'))) {
         return;
       }
       await window.echo.library.clearLikedAlbums({ sourceProvider: 'local' });
@@ -481,7 +481,7 @@ export const LikedPage = (): JSX.Element => {
       window.dispatchEvent(new Event(likedAlbumsChangedEvent));
     }
     window.dispatchEvent(new Event(likedChangedEvent));
-  }, [tab]);
+  }, [t, tab]);
 
   if (selectedAlbum) {
     return <AlbumDetailView album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />;
@@ -491,9 +491,9 @@ export const LikedPage = (): JSX.Element => {
     <div ref={pageRootRef} className={`liked-page liked-page--${tab}`}>
       <header className="liked-hero">
         <div>
-          <span className="queue-kicker">Library</span>
-          <h1>喜欢</h1>
-          <p>{trackTotal} 首歌曲 · {albumTotal} 张专辑</p>
+          <span className="queue-kicker">{t('likedPage.kicker')}</span>
+          <h1>{t('likedPage.title')}</h1>
+          <p>{t('likedPage.summary', { tracks: trackTotal, albums: albumTotal })}</p>
         </div>
       </header>
 
@@ -505,17 +505,17 @@ export const LikedPage = (): JSX.Element => {
           aria-selected={tab === 'tracks'}
           onClick={() => setTab('tracks')}
         >
-          喜欢的歌曲
+          {t('likedPage.tab.tracks')}
         </button>
         <button className={tab === 'albums' ? 'is-active' : ''} type="button" role="tab" aria-selected={tab === 'albums'} onClick={() => setTab('albums')}>
-          喜欢的专辑
+          {t('likedPage.tab.albums')}
         </button>
       </div>
 
       <div className="songs-control-row">
         <label className="search-box">
           <Search size={18} aria-hidden="true" />
-          <input type="search" placeholder="搜索喜欢的音乐" {...searchInputProps} />
+          <input type="search" placeholder={t('likedPage.search.placeholder')} {...searchInputProps} />
         </label>
 
         <StyledSelect
@@ -523,15 +523,15 @@ export const LikedPage = (): JSX.Element => {
           value={sort}
           options={sortOptions}
           onChange={setSort}
-          ariaLabel="鍠滄鎺掑簭"
+          ariaLabel={t('likedPage.sort.aria')}
         />
       </div>
 
       <div className="liked-actions">
         {tab === 'tracks' ? (
           <>
-            <div className="liked-sync-actions" aria-label="选择喜欢歌曲来源">
-              {likedTrackSourceProviders.map((item) => {
+            <div className="liked-sync-actions" aria-label={t('likedPage.source.aria')}>
+              {likedTrackSourceOptions.map((item) => {
                 const isLocal = item.provider === 'local';
                 const isActive = trackSourceProvider === item.provider;
                 const isSyncing = !isLocal && syncingLikedProvider === item.provider;
@@ -542,7 +542,7 @@ export const LikedPage = (): JSX.Element => {
                     key={item.provider}
                     disabled={syncingLikedProvider !== null}
                     aria-pressed={isActive}
-                    title={isLocal ? '只显示本地喜欢' : `同步并只显示${item.label}账号的我喜欢`}
+                    title={isLocal ? t('likedPage.source.localTitle') : t('likedPage.source.syncTitle', { provider: item.label })}
                     onClick={() => handleTrackSourceClick(item.provider)}
                   >
                     {isSyncing ? <Loader2 className="spinning-icon" size={16} /> : isLocal ? <Disc3 size={16} /> : <RefreshCw size={16} />}
@@ -552,21 +552,21 @@ export const LikedPage = (): JSX.Element => {
               })}
             </div>
             <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handlePlayAll()}>
-              <Play size={16} fill="currentColor" /> 播放全部
+              <Play size={16} fill="currentColor" /> {t('likedPage.action.playAll')}
             </button>
             <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handleShuffleAll()}>
-              <Shuffle size={16} /> 随机播放
+              <Shuffle size={16} /> {t('likedPage.action.shuffle')}
             </button>
             <StyledSelect
               className="liked-sort-control"
               value={likedExportFormat}
               options={likedExportOptions}
               onChange={setLikedExportFormat}
-              ariaLabel="导出格式"
+              ariaLabel={t('likedPage.export.aria')}
             />
             <button className="queue-tool-button" type="button" disabled={isExportingLikedTracks} onClick={() => void handleExportLikedTracks()}>
               {isExportingLikedTracks ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
-              {isExportingLikedTracks ? '导出中' : '导出'}
+              {isExportingLikedTracks ? t('likedPage.action.exporting') : t('likedPage.action.export')}
             </button>
           </>
         ) : null}
@@ -576,7 +576,7 @@ export const LikedPage = (): JSX.Element => {
           disabled={tab === 'tracks' ? trackSourceProvider !== 'local' || trackTotal === 0 : albumTotal === 0}
           onClick={() => void handleClear()}
         >
-          <Trash2 size={16} /> 清空
+          <Trash2 size={16} /> {t('likedPage.action.clear')}
         </button>
       </div>
 
@@ -596,11 +596,11 @@ export const LikedPage = (): JSX.Element => {
             onToggleLiked={(track) => void handleToggleTrackLiked(track)}
           />
         ) : (
-          <div className="queue-empty-state"><Heart size={24} /><strong>还没有喜欢的歌曲</strong><span>在歌曲或专辑页面点击爱心即可收藏到这里</span></div>
+          <div className="queue-empty-state"><Heart size={24} /><strong>{t('likedPage.empty.tracks.title')}</strong><span>{t('likedPage.empty.description')}</span></div>
         )
       ) : (
         <>
-          <section ref={likedAlbumWallRef} className="album-wall liked-album-wall" aria-label="喜欢的专辑">
+          <section ref={likedAlbumWallRef} className="album-wall liked-album-wall" aria-label={t('likedPage.albumWall.aria')}>
             {albums.length > 0 ? albums.map((album) => {
               const item = albumItems.find((candidate) => (candidate.mediaId ?? candidate.id) === album.id);
               const unavailable = item?.unavailable === true || !item?.album;
@@ -612,20 +612,20 @@ export const LikedPage = (): JSX.Element => {
                   <div className="album-copy">
                     <strong>{album.title}</strong>
                     <span>{album.albumArtist}</span>
-                    <small>{unavailable ? '专辑不可用' : `${album.trackCount} tracks`}</small>
+                    <small>{unavailable ? t('likedPage.album.unavailable') : t('likedPage.album.trackCount', { count: album.trackCount })}</small>
                   </div>
-                  <button className="album-card-like is-liked" type="button" aria-label={`Unlike ${album.title}`} aria-pressed="true" onClick={(event) => { event.stopPropagation(); void handleToggleAlbumLiked(album); }}>
+                  <button className="album-card-like is-liked" type="button" aria-label={t('likedPage.album.unlikeAria', { title: album.title })} aria-pressed="true" onClick={(event) => { event.stopPropagation(); void handleToggleAlbumLiked(album); }}>
                     <Heart size={16} fill="currentColor" />
                   </button>
                 </article>
               );
-            }) : <div className="queue-empty-state"><Heart size={24} /><strong>还没有喜欢的专辑</strong><span>在歌曲或专辑页面点击爱心即可收藏到这里</span></div>}
+            }) : <div className="queue-empty-state"><Heart size={24} /><strong>{t('likedPage.empty.albums.title')}</strong><span>{t('likedPage.empty.description')}</span></div>}
           </section>
           <InfiniteScrollSentinel canLoadMore={albumHasMore} isLoading={isAlbumLoading} onLoadMore={handleLoadMoreAlbums} />
         </>
       )}
 
-      {error || syncStatus || isLoading || isExportingLikedTracks ? <div className="list-footer"><span>{error ?? syncStatus ?? (isExportingLikedTracks ? '正在导出我喜欢...' : '正在读取喜欢的音乐...')}</span></div> : null}
+      {error || syncStatus || isLoading || isExportingLikedTracks ? <div className="list-footer"><span>{error ?? syncStatus ?? (isExportingLikedTracks ? t('likedPage.message.exporting') : t('likedPage.message.loading'))}</span></div> : null}
       {tab === 'albums' ? <MediaWallScrollSpacer height={likedAlbumSpacerHeight} /> : null}
     </div>
   );

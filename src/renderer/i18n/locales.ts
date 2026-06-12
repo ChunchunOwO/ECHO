@@ -602,14 +602,17 @@ export type TranslationKey =
   | 'desktopLyrics.control.colorSwatch'
   | 'desktopLyrics.control.customColor'
   | 'desktopLyrics.control.decreaseFontSize'
+  | 'desktopLyrics.control.decreaseSecondaryFontSize'
   | 'desktopLyrics.control.decreaseScale'
   | 'desktopLyrics.control.increaseFontSize'
+  | 'desktopLyrics.control.increaseSecondaryFontSize'
   | 'desktopLyrics.control.increaseScale'
   | 'desktopLyrics.control.lock'
   | 'desktopLyrics.control.pause'
   | 'desktopLyrics.control.play'
   | 'desktopLyrics.control.resetPosition'
   | 'desktopLyrics.control.romanization'
+  | 'desktopLyrics.control.secondaryFontSizeValue'
   | 'desktopLyrics.control.themeColor'
   | 'desktopLyrics.control.textDirection'
   | 'desktopLyrics.control.translation'
@@ -1565,7 +1568,11 @@ export type TranslationKey =
   | 'lyricsSettings.display.desktopLyricsDescription'
   | 'lyricsSettings.display.desktopOpacity'
   | 'lyricsSettings.display.desktopOpacityDescription'
+  | 'lyricsSettings.display.desktopPrimaryFontSize'
+  | 'lyricsSettings.display.desktopPrimaryFontSizeDescription'
   | 'lyricsSettings.display.desktopRomanization'
+  | 'lyricsSettings.display.desktopSecondaryFontSize'
+  | 'lyricsSettings.display.desktopSecondaryFontSizeDescription'
   | 'lyricsSettings.display.desktopTextDirection'
   | 'lyricsSettings.display.desktopTranslation'
   | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
@@ -1932,6 +1939,9 @@ export type TranslationKey =
   | 'settings.about.devMode.title'
   | 'settings.about.nativeSqlite.description'
   | 'settings.about.nativeSqlite.title'
+  | 'settings.about.pro.action'
+  | 'settings.about.pro.description'
+  | 'settings.about.pro.title'
   | 'settings.about.updates.action.afdian'
   | 'settings.about.updates.action.check'
   | 'settings.about.updates.action.checking'
@@ -4757,14 +4767,17 @@ const zhCN: TranslationMap = {
   'desktopLyrics.control.colorSwatch': '颜色 {color}',
   'desktopLyrics.control.customColor': '自定义颜色',
   'desktopLyrics.control.decreaseFontSize': '减小字号',
+  'desktopLyrics.control.decreaseSecondaryFontSize': '减小翻译字号',
   'desktopLyrics.control.decreaseScale': '缩小',
   'desktopLyrics.control.increaseFontSize': '增大字号',
+  'desktopLyrics.control.increaseSecondaryFontSize': '增大翻译字号',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '锁定',
   'desktopLyrics.control.pause': '暂停',
   'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重置位置',
   'desktopLyrics.control.romanization': '桌面歌词显示罗马音',
+  'desktopLyrics.control.secondaryFontSizeValue': '译 {size}px',
   'desktopLyrics.control.themeColor': '跟随主题颜色',
   'desktopLyrics.control.textDirection': '切换横排 / 竖排',
   'desktopLyrics.control.translation': '桌面歌词显示翻译',
@@ -6035,7 +6048,11 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.desktopLyricsDescription': '开启后用独立透明窗口在桌面置顶显示当前歌词。',
   'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
   'lyricsSettings.display.desktopOpacityDescription': '当前 {opacity}%，调低可减少遮挡。',
+  'lyricsSettings.display.desktopPrimaryFontSize': '桌面歌词主字号',
+  'lyricsSettings.display.desktopPrimaryFontSizeDescription': '当前 {size}px，影响外语原文。',
   'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
+  'lyricsSettings.display.desktopSecondaryFontSize': '桌面歌词翻译字号',
+  'lyricsSettings.display.desktopSecondaryFontSizeDescription': '当前 {size}px，影响中文翻译和罗马音。',
   'lyricsSettings.display.desktopTextDirection': '桌面歌词排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
@@ -6404,6 +6421,9 @@ const zhCN: TranslationMap = {
   'settings.about.nativeSqlite.title': '原生 SQLite',
   'settings.about.version.title': '版本号',
   'settings.about.version.description': '当前安装的 ECHO Next 版本。',
+  'settings.about.pro.title': 'ECHO Pro',
+  'settings.about.pro.description': '赞助后可获得 ECHO Pro，解锁连接功能（HQPlayer / AirPlay / 广播），并获得最新支持。',
+  'settings.about.pro.action': '赞助 / 解锁 ECHO Pro',
   'settings.about.updates.title': '自动更新',
   'settings.about.updates.description': '启动后自动检查 GitHub Release，下载完成后自动重启安装。',
   'settings.about.updates.currentVersion': '当前版本',
@@ -8020,14 +8040,17 @@ const zhTW: TranslationMap = {
   'desktopLyrics.control.colorSwatch': '顏色 {color}',
   'desktopLyrics.control.customColor': '自訂顏色',
   'desktopLyrics.control.decreaseFontSize': '縮小字號',
+  'desktopLyrics.control.decreaseSecondaryFontSize': '縮小翻譯字號',
   'desktopLyrics.control.decreaseScale': '縮小',
   'desktopLyrics.control.increaseFontSize': '放大字號',
+  'desktopLyrics.control.increaseSecondaryFontSize': '放大翻譯字號',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '鎖定',
   'desktopLyrics.control.pause': '暫停',
   'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重設位置',
   'desktopLyrics.control.romanization': '桌面歌詞顯示羅馬音',
+  'desktopLyrics.control.secondaryFontSizeValue': '譯 {size}px',
   'desktopLyrics.control.themeColor': '跟隨主題顏色',
   'desktopLyrics.control.textDirection': '切換橫排 / 直排',
   'desktopLyrics.control.translation': '桌面歌詞顯示翻譯',
@@ -9230,7 +9253,11 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.desktopLyricsDescription': '開啟後用獨立透明視窗在桌面置頂顯示目前歌詞。',
   'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
   'lyricsSettings.display.desktopOpacityDescription': '目前 {opacity}%，調低可減少遮擋。',
+  'lyricsSettings.display.desktopPrimaryFontSize': '桌面歌詞主字號',
+  'lyricsSettings.display.desktopPrimaryFontSizeDescription': '目前 {size}px，影響外語原文。',
   'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
+  'lyricsSettings.display.desktopSecondaryFontSize': '桌面歌詞翻譯字號',
+  'lyricsSettings.display.desktopSecondaryFontSizeDescription': '目前 {size}px，影響中文翻譯和羅馬音。',
   'lyricsSettings.display.desktopTextDirection': '桌面歌詞排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
@@ -9633,6 +9660,9 @@ const zhTW: TranslationMap = {
   'settings.general.language.description': '選擇選單、應用程式內設定與系統對話框的顯示語言。',
   'settings.about.version.title': '版本號',
   'settings.about.version.description': '目前安裝的 ECHO Next 版本。',
+  'settings.about.pro.title': 'ECHO Pro',
+  'settings.about.pro.description': '贊助後可獲得 ECHO Pro，解鎖連接功能（HQPlayer / AirPlay / 廣播），並獲得最新支援。',
+  'settings.about.pro.action': '贊助 / 解鎖 ECHO Pro',
   'settings.about.updates.title': '自動更新',
   'settings.about.updates.description': '啟動後自動檢查 GitHub Release，下載完成後自動重新啟動安裝。',
   'settings.about.updates.currentVersion': '目前版本',
@@ -11029,14 +11059,17 @@ const jaJP: TranslationMap = {
   'desktopLyrics.control.colorSwatch': '色 {color}',
   'desktopLyrics.control.customColor': 'カスタムカラー',
   'desktopLyrics.control.decreaseFontSize': '文字サイズを小さく',
+  'desktopLyrics.control.decreaseSecondaryFontSize': '翻訳サイズを小さく',
   'desktopLyrics.control.decreaseScale': '縮小',
   'desktopLyrics.control.increaseFontSize': '文字サイズを大きく',
+  'desktopLyrics.control.increaseSecondaryFontSize': '翻訳サイズを大きく',
   'desktopLyrics.control.increaseScale': '拡大',
   'desktopLyrics.control.lock': 'ロック',
   'desktopLyrics.control.pause': '一時停止',
   'desktopLyrics.control.play': '再生',
   'desktopLyrics.control.resetPosition': '位置をリセット',
   'desktopLyrics.control.romanization': 'デスクトップ歌詞にローマ字を表示',
+  'desktopLyrics.control.secondaryFontSizeValue': '訳 {size}px',
   'desktopLyrics.control.themeColor': 'テーマ色に合わせる',
   'desktopLyrics.control.textDirection': '横書き / 縦書きを切り替え',
   'desktopLyrics.control.translation': 'デスクトップ歌詞に翻訳を表示',
@@ -12255,7 +12288,11 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.desktopLyricsDescription': '独立した透明ウィンドウで現在の歌詞をデスクトップ最前面に表示します。',
   'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
   'lyricsSettings.display.desktopOpacityDescription': '現在 {opacity}%。下げると画面を遮りにくくなります。',
+  'lyricsSettings.display.desktopPrimaryFontSize': 'デスクトップ歌詞の主文字サイズ',
+  'lyricsSettings.display.desktopPrimaryFontSizeDescription': '現在 {size}px。原文に適用します。',
   'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
+  'lyricsSettings.display.desktopSecondaryFontSize': 'デスクトップ歌詞の翻訳サイズ',
+  'lyricsSettings.display.desktopSecondaryFontSizeDescription': '現在 {size}px。翻訳とローマ字に適用します。',
   'lyricsSettings.display.desktopTextDirection': 'デスクトップ歌詞の組み方向',
   'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
@@ -13765,6 +13802,9 @@ const jaJP: TranslationMap = {
   'settings.about.audioHost.description': 'echo-audio-host.exe は現在ローカル移行検証用です。正式リリース後は extraResources に含めます。',
   'settings.about.version.title': 'バージョン',
   'settings.about.version.description': '現在インストールされている ECHO Next のバージョンです。',
+  'settings.about.pro.title': 'ECHO Pro',
+  'settings.about.pro.description': 'スポンサーになると ECHO Pro を入手でき、接続機能（HQPlayer / AirPlay / Broadcast）を解除し、最新サポートを受けられます。',
+  'settings.about.pro.action': 'スポンサー / ECHO Pro を解除',
   'settings.about.updates.title': '自動更新',
   'settings.about.updates.description': '起動後に GitHub Release を自動確認し、ダウンロード完了後は自動で再起動してインストールします。',
   'settings.about.updates.currentVersion': '現在のバージョン',
@@ -14118,14 +14158,17 @@ const enUS: TranslationMap = {
   'desktopLyrics.control.colorSwatch': 'Color {color}',
   'desktopLyrics.control.customColor': 'Custom color',
   'desktopLyrics.control.decreaseFontSize': 'Decrease font size',
+  'desktopLyrics.control.decreaseSecondaryFontSize': 'Decrease translation font size',
   'desktopLyrics.control.decreaseScale': 'Scale down',
   'desktopLyrics.control.increaseFontSize': 'Increase font size',
+  'desktopLyrics.control.increaseSecondaryFontSize': 'Increase translation font size',
   'desktopLyrics.control.increaseScale': 'Scale up',
   'desktopLyrics.control.lock': 'Lock',
   'desktopLyrics.control.pause': 'Pause',
   'desktopLyrics.control.play': 'Play',
   'desktopLyrics.control.resetPosition': 'Reset position',
   'desktopLyrics.control.romanization': 'Show romanization in desktop lyrics',
+  'desktopLyrics.control.secondaryFontSizeValue': 'T {size}px',
   'desktopLyrics.control.themeColor': 'Follow theme color',
   'desktopLyrics.control.textDirection': 'Toggle horizontal / vertical',
   'desktopLyrics.control.translation': 'Show translation in desktop lyrics',
@@ -15344,7 +15387,11 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.desktopLyricsDescription': 'Shows the current lyrics in an independent transparent always-on-top desktop window.',
   'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
   'lyricsSettings.display.desktopOpacityDescription': 'Currently {opacity}%; lower it to reduce visual blocking.',
+  'lyricsSettings.display.desktopPrimaryFontSize': 'Desktop lyrics main font size',
+  'lyricsSettings.display.desktopPrimaryFontSizeDescription': 'Currently {size}px; applies to the original lyric line.',
   'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
+  'lyricsSettings.display.desktopSecondaryFontSize': 'Desktop lyrics translation font size',
+  'lyricsSettings.display.desktopSecondaryFontSizeDescription': 'Currently {size}px; applies to translation and romanization.',
   'lyricsSettings.display.desktopTextDirection': 'Desktop lyrics direction',
   'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
@@ -17034,6 +17081,9 @@ const enUS: TranslationMap = {
   'settings.about.audioHost.description': 'echo-audio-host.exe is currently used for local migration validation. Production builds will ship it through extraResources.',
   'settings.about.version.title': 'Version',
   'settings.about.version.description': 'The currently installed ECHO Next version.',
+  'settings.about.pro.title': 'ECHO Pro',
+  'settings.about.pro.description': 'Sponsor to receive ECHO Pro, unlock Connect features (HQPlayer / AirPlay / Broadcast), and get the latest support.',
+  'settings.about.pro.action': 'Sponsor / Unlock ECHO Pro',
   'settings.about.updates.title': 'Automatic Updates',
   'settings.about.updates.description': 'Check GitHub Release automatically after launch, then restart and install after the download completes.',
   'settings.about.updates.currentVersion': 'Current Version',

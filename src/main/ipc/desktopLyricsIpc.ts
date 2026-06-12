@@ -23,6 +23,9 @@ const normalizeStylePatch = (value: unknown): DesktopLyricsStylePatch => {
   const input = value as Record<string, unknown>;
   return {
     ...(input.desktopLyricsFontSizePx !== undefined ? { desktopLyricsFontSizePx: Number(input.desktopLyricsFontSizePx) } : {}),
+    ...(input.desktopLyricsSecondaryFontSizePx !== undefined
+      ? { desktopLyricsSecondaryFontSizePx: Number(input.desktopLyricsSecondaryFontSizePx) }
+      : {}),
     ...(input.desktopLyricsScalePercent !== undefined ? { desktopLyricsScalePercent: Number(input.desktopLyricsScalePercent) } : {}),
     ...(typeof input.desktopLyricsFontFamily === 'string' ? { desktopLyricsFontFamily: input.desktopLyricsFontFamily } : {}),
     ...(typeof input.desktopLyricsFontFilePath === 'string' || input.desktopLyricsFontFilePath === null

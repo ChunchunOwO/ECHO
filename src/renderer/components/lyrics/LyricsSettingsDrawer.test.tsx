@@ -195,6 +195,7 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
     desktopLyricsEnabled: false,
     desktopLyricsLocked: false,
     desktopLyricsFontSizePx: 34,
+    desktopLyricsSecondaryFontSizePx: 19,
     desktopLyricsScalePercent: 100,
     desktopLyricsFontFamily: 'Microsoft YaHei',
     desktopLyricsFontFilePath: null,
@@ -401,6 +402,16 @@ describe('LyricsSettingsDrawer', () => {
 
     fireEvent.click(within(screen.getByLabelText('桌面歌词排版')).getByRole('button', { name: '竖排' }));
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsTextDirection: 'vertical' }));
+
+    const primarySizeSlider = container.querySelector<HTMLInputElement>('.lyrics-desktop-primary-size-control input[type="range"]');
+    expect(primarySizeSlider).toBeTruthy();
+    fireEvent.change(primarySizeSlider as HTMLInputElement, { target: { value: '46' } });
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsFontSizePx: 46 }));
+
+    const secondarySizeSlider = container.querySelector<HTMLInputElement>('.lyrics-desktop-secondary-size-control input[type="range"]');
+    expect(secondarySizeSlider).toBeTruthy();
+    fireEvent.change(secondarySizeSlider as HTMLInputElement, { target: { value: '24' } });
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsSecondaryFontSizePx: 24 }));
 
     const opacitySlider = container.querySelector<HTMLInputElement>('.lyrics-desktop-opacity-control input[type="range"]');
     expect(opacitySlider).toBeTruthy();

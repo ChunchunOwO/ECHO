@@ -118,6 +118,8 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsCoverBlurPx'
   | 'lyricsCoverBrightnessPercent'
   | 'lyricsBackgroundScalePercent'
+  | 'desktopLyricsFontSizePx'
+  | 'desktopLyricsSecondaryFontSizePx'
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
   | 'desktopLyricsOpacityPercent'
@@ -179,6 +181,8 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsBackgroundScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
+  desktopLyricsFontSizePx: 34,
+  desktopLyricsSecondaryFontSizePx: 19,
   desktopLyricsOpacityPercent: 96,
   desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
@@ -691,6 +695,10 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsBackgroundScalePercent: settings.lyricsBackgroundScalePercent,
   desktopLyricsFontFamily: settings.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
+  desktopLyricsFontSizePx: settings.desktopLyricsFontSizePx ?? fallbackSettings.desktopLyricsFontSizePx,
+  desktopLyricsSecondaryFontSizePx:
+    settings.desktopLyricsSecondaryFontSizePx ??
+    Math.round((settings.desktopLyricsFontSizePx ?? fallbackSettings.desktopLyricsFontSizePx ?? 34) * 0.56),
   desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent ?? fallbackSettings.desktopLyricsOpacityPercent,
   desktopLyricsTextDirection: settings.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
@@ -763,6 +771,15 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
     effectiveSettings.desktopLyricsFontFilePath ??
     fallbackSettings.desktopLyricsFontFilePath ??
     null;
+  const desktopLyricsFontSizePx =
+    desktopLyricsState?.settings.desktopLyricsFontSizePx ??
+    effectiveSettings.desktopLyricsFontSizePx ??
+    fallbackSettings.desktopLyricsFontSizePx ??
+    34;
+  const desktopLyricsSecondaryFontSizePx =
+    desktopLyricsState?.settings.desktopLyricsSecondaryFontSizePx ??
+    effectiveSettings.desktopLyricsSecondaryFontSizePx ??
+    Math.round(desktopLyricsFontSizePx * 0.56);
   const desktopLyricsOpacityPercent =
     desktopLyricsState?.settings.desktopLyricsOpacityPercent ??
     effectiveSettings.desktopLyricsOpacityPercent ??
@@ -2075,6 +2092,48 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
                   </button>
                 ))}
               </div>
+
+              <label className="mv-threshold-control lyrics-desktop-primary-size-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('lyricsSettings.display.desktopPrimaryFontSize')}</strong>
+                  <em>{t('lyricsSettings.display.desktopPrimaryFontSizeDescription', { size: desktopLyricsFontSizePx })}</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="18"
+                    max="72"
+                    step="1"
+                    value={desktopLyricsFontSizePx}
+                    aria-label={t('lyricsSettings.display.desktopPrimaryFontSize')}
+                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                    onChange={(event) =>
+                      patchDesktopLyricsStyle({ desktopLyricsFontSizePx: Number(event.currentTarget.value) })}
+                  />
+                  <output>{desktopLyricsFontSizePx}px</output>
+                </span>
+              </label>
+
+              <label className="mv-threshold-control lyrics-desktop-secondary-size-control">
+                <span className="mv-threshold-copy">
+                  <strong>{t('lyricsSettings.display.desktopSecondaryFontSize')}</strong>
+                  <em>{t('lyricsSettings.display.desktopSecondaryFontSizeDescription', { size: desktopLyricsSecondaryFontSizePx })}</em>
+                </span>
+                <span className="mv-threshold-slider">
+                  <input
+                    type="range"
+                    min="12"
+                    max="48"
+                    step="1"
+                    value={desktopLyricsSecondaryFontSizePx}
+                    aria-label={t('lyricsSettings.display.desktopSecondaryFontSize')}
+                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                    onChange={(event) =>
+                      patchDesktopLyricsStyle({ desktopLyricsSecondaryFontSizePx: Number(event.currentTarget.value) })}
+                  />
+                  <output>{desktopLyricsSecondaryFontSizePx}px</output>
+                </span>
+              </label>
 
               <label className="mv-threshold-control lyrics-desktop-opacity-control">
                 <span className="mv-threshold-copy">

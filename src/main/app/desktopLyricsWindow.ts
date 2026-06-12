@@ -43,6 +43,7 @@ const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
     desktopLyricsEnabled: settings.desktopLyricsEnabled,
     desktopLyricsLocked: settings.desktopLyricsLocked,
     desktopLyricsFontSizePx: settings.desktopLyricsFontSizePx,
+    desktopLyricsSecondaryFontSizePx: settings.desktopLyricsSecondaryFontSizePx,
     desktopLyricsScalePercent: settings.desktopLyricsScalePercent,
     desktopLyricsFontFamily: settings.desktopLyricsFontFamily,
     desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath,

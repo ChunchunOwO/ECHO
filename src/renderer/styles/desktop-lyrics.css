@@ -9,6 +9,7 @@ body:has(.desktop-lyrics-app),
 
 .desktop-lyrics-app {
   --desktop-lyrics-font-size: 34px;
+  --desktop-lyrics-secondary-font-size: 19px;
   --desktop-lyrics-scale: 1;
   --desktop-lyrics-color: #ffffff;
   --desktop-lyrics-stroke-color: #111827;
@@ -157,11 +158,11 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
 }
 
 .desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span {
-  width: calc(var(--desktop-lyrics-font-size) * 0.72);
+  width: calc(var(--desktop-lyrics-secondary-font-size) * 1.28);
 }
 
 .desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span[data-secondary-kind="romanization"] {
-  width: calc(var(--desktop-lyrics-font-size) * 0.84);
+  width: calc(var(--desktop-lyrics-secondary-font-size) * 1.5);
 }
 
 .desktop-lyrics-upright-character {
@@ -300,13 +301,13 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
 
 .desktop-lyrics-line-text > span {
   color: color-mix(in srgb, var(--desktop-lyrics-color) 82%, transparent);
-  font-size: calc(var(--desktop-lyrics-font-size) * 0.56);
+  font-size: var(--desktop-lyrics-secondary-font-size);
   font-weight: 600;
   line-height: 1.2;
 }
 
 .desktop-lyrics-app[data-text-direction="vertical"] .desktop-lyrics-line-text > span {
-  font-size: calc(var(--desktop-lyrics-font-size) * 0.56);
+  font-size: var(--desktop-lyrics-secondary-font-size);
   line-height: 1.16;
 }
 

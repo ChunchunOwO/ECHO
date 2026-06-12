@@ -528,6 +528,7 @@ export const defaultSettings: AppSettings = {
   desktopLyricsEnabled: false,
   desktopLyricsLocked: false,
   desktopLyricsFontSizePx: 34,
+  desktopLyricsSecondaryFontSizePx: 19,
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: defaultDesktopLyricsFontFamily,
   desktopLyricsFontFilePath: null,
@@ -1616,6 +1617,10 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
   const lyricsCoverBrightnessPercent = Number(settings.lyricsCoverBrightnessPercent);
   const lyricsBackgroundScalePercent = Number(settings.lyricsBackgroundScalePercent);
   const desktopLyricsFontSizePx = Number(settings.desktopLyricsFontSizePx);
+  const normalizedDesktopLyricsFontSizePx = Number.isFinite(desktopLyricsFontSizePx)
+    ? Math.round(clamp(desktopLyricsFontSizePx, 18, 72))
+    : (defaultSettings.desktopLyricsFontSizePx ?? 34);
+  const desktopLyricsSecondaryFontSizePx = Number(settings.desktopLyricsSecondaryFontSizePx);
   const desktopLyricsScalePercent = Number(settings.desktopLyricsScalePercent);
   const desktopLyricsOpacityPercent = Number(settings.desktopLyricsOpacityPercent);
   const lyricsProviderTimeoutMs = Number(settings.lyricsProviderTimeoutMs);
@@ -1880,9 +1885,10 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
       : defaultSettings.lyricsBackgroundScalePercent,
     desktopLyricsEnabled: settings.desktopLyricsEnabled === true,
     desktopLyricsLocked: settings.desktopLyricsLocked === true,
-    desktopLyricsFontSizePx: Number.isFinite(desktopLyricsFontSizePx)
-      ? Math.round(clamp(desktopLyricsFontSizePx, 18, 72))
-      : defaultSettings.desktopLyricsFontSizePx,
+    desktopLyricsFontSizePx: normalizedDesktopLyricsFontSizePx,
+    desktopLyricsSecondaryFontSizePx: Number.isFinite(desktopLyricsSecondaryFontSizePx)
+      ? Math.round(clamp(desktopLyricsSecondaryFontSizePx, 12, 48))
+      : Math.round(clamp(normalizedDesktopLyricsFontSizePx * 0.56, 12, 48)),
     desktopLyricsScalePercent: Number.isFinite(desktopLyricsScalePercent)
       ? Math.round(clamp(desktopLyricsScalePercent, 75, 170))
       : defaultSettings.desktopLyricsScalePercent,

@@ -23,6 +23,7 @@ type DesktopLyricsSettings = Required<Pick<
   | 'desktopLyricsEnabled'
   | 'desktopLyricsLocked'
   | 'desktopLyricsFontSizePx'
+  | 'desktopLyricsSecondaryFontSizePx'
   | 'desktopLyricsScalePercent'
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
@@ -69,6 +70,7 @@ const fallbackSettings: DesktopLyricsSettings = {
   desktopLyricsEnabled: false,
   desktopLyricsLocked: false,
   desktopLyricsFontSizePx: 34,
+  desktopLyricsSecondaryFontSizePx: 19,
   desktopLyricsScalePercent: 100,
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
@@ -275,6 +277,9 @@ const pickDesktopLyricsSettings = (settings: Partial<AppSettings> | null | undef
   desktopLyricsEnabled: settings?.desktopLyricsEnabled === true,
   desktopLyricsLocked: settings?.desktopLyricsLocked === true,
   desktopLyricsFontSizePx: settings?.desktopLyricsFontSizePx ?? fallbackSettings.desktopLyricsFontSizePx,
+  desktopLyricsSecondaryFontSizePx:
+    settings?.desktopLyricsSecondaryFontSizePx ??
+    Math.round((settings?.desktopLyricsFontSizePx ?? fallbackSettings.desktopLyricsFontSizePx) * 0.56),
   desktopLyricsScalePercent: settings?.desktopLyricsScalePercent ?? fallbackSettings.desktopLyricsScalePercent,
   desktopLyricsFontFamily: settings?.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings?.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
@@ -1384,7 +1389,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
         text,
         availableWidthPx: availableTextWidthPx,
         availableHeightPx: availableTextHeightPx,
-        fontSizePx: settings.desktopLyricsFontSizePx * 0.56,
+        fontSizePx: settings.desktopLyricsSecondaryFontSizePx,
         fontFamily: desktopLyricsFontFamily,
         fontWeight: 600,
         scalePercent: settings.desktopLyricsScalePercent,
@@ -1462,6 +1467,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
     primaryText,
     settings.desktopLyricsFontFamily,
     settings.desktopLyricsFontSizePx,
+    settings.desktopLyricsSecondaryFontSizePx,
     settings.desktopLyricsScalePercent,
     visibleSecondaryTextKey,
     viewportSizePx.height,
@@ -1490,6 +1496,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
 
   const style = {
     '--desktop-lyrics-font-size': `${settings.desktopLyricsFontSizePx}px`,
+    '--desktop-lyrics-secondary-font-size': `${settings.desktopLyricsSecondaryFontSizePx}px`,
     '--desktop-lyrics-scale': (settings.desktopLyricsScalePercent / 100).toFixed(2),
     '--desktop-lyrics-font-family': desktopLyricsFontFamily,
     '--desktop-lyrics-color': desktopLyricsColor,
@@ -1553,6 +1560,23 @@ export const DesktopLyricsApp = (): JSX.Element => {
               title={t('desktopLyrics.control.increaseFontSize')}
               aria-label={t('desktopLyrics.control.increaseFontSize')}
               onClick={() => void patchStyle({ desktopLyricsFontSizePx: settings.desktopLyricsFontSizePx + 2 })}
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              type="button"
+              title={t('desktopLyrics.control.decreaseSecondaryFontSize')}
+              aria-label={t('desktopLyrics.control.decreaseSecondaryFontSize')}
+              onClick={() => void patchStyle({ desktopLyricsSecondaryFontSizePx: settings.desktopLyricsSecondaryFontSizePx - 1 })}
+            >
+              <Minus size={14} />
+            </button>
+            <output>{t('desktopLyrics.control.secondaryFontSizeValue', { size: settings.desktopLyricsSecondaryFontSizePx })}</output>
+            <button
+              type="button"
+              title={t('desktopLyrics.control.increaseSecondaryFontSize')}
+              aria-label={t('desktopLyrics.control.increaseSecondaryFontSize')}
+              onClick={() => void patchStyle({ desktopLyricsSecondaryFontSizePx: settings.desktopLyricsSecondaryFontSizePx + 1 })}
             >
               <Plus size={14} />
             </button>

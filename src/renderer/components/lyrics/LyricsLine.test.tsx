@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { LyricsLine } from './LyricsLine';
+import { LyricsLine, getRenderableLyricWords } from './LyricsLine';
 
 afterEach(() => {
   cleanup();
@@ -144,6 +144,25 @@ describe('LyricsLine', () => {
     expect(words.length).toBeGreaterThanOrEqual(2);
     expect(words.length).toBeLessThan(Array.from(text).length);
     expect(words.map((word) => word.textContent).join('')).toBe(text);
+  });
+
+  it('coalesces long word-timed lines instead of dropping highlighting', () => {
+    const tokens = Array.from({ length: 30 }, (_, index) => `word${index + 1}`);
+    const timedLine = {
+      timeMs: 1000,
+      text: tokens.join(' '),
+      words: tokens.map((token, index) => ({
+        text: index === tokens.length - 1 ? token : `${token} `,
+        startMs: 1000 + index * 240,
+        endMs: 1000 + (index + 1) * 240,
+      })),
+    };
+
+    const renderableWords = getRenderableLyricWords(timedLine);
+
+    expect(renderableWords).not.toBeNull();
+    expect(renderableWords?.length).toBeLessThanOrEqual(18);
+    expect(renderableWords?.map((word) => word.text).join('')).toBe(timedLine.text);
   });
 
   it('falls back to plain text when word timings are too jittery', () => {

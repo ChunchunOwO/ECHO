@@ -5,6 +5,7 @@ import type { PlaybackStatus } from './playback';
 export type DesktopLyricsStylePatch = Partial<Pick<
   AppSettings,
   | 'desktopLyricsFontSizePx'
+  | 'desktopLyricsSecondaryFontSizePx'
   | 'desktopLyricsScalePercent'
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
@@ -26,6 +27,7 @@ export type DesktopLyricsState = {
     | 'desktopLyricsEnabled'
     | 'desktopLyricsLocked'
     | 'desktopLyricsFontSizePx'
+    | 'desktopLyricsSecondaryFontSizePx'
     | 'desktopLyricsScalePercent'
     | 'desktopLyricsFontFamily'
     | 'desktopLyricsFontFilePath'

@@ -765,6 +765,54 @@ describe('LyricsService', () => {
     expect(readFileSync(sidecarPath, 'utf8')).toBe('[00:01.00]Line\n');
   });
 
+  it('auto-saves cached online lyrics when sidecar saving is enabled later', async () => {
+    const root = makeTempRoot();
+    const audioPath = join(root, 'Echo Song.flac');
+    const sidecarPath = join(root, 'Echo Song.lrc');
+    writeFileSync(audioPath, 'audio');
+    const { database, online, service } = createHarness({
+      currentTrack: track(audioPath),
+      appSettings: settings({
+        lyricsAutoSaveSidecarEnabled: true,
+        lyricsRomanizationEnabled: false,
+        lyricsTranslationEnabled: false,
+      }),
+    });
+    database
+      .prepare(
+        `INSERT INTO lyrics_cache (
+          id, cache_key, track_id, provider, provider_lyrics_id, title, artist, album,
+          duration_seconds, kind, plain_lyrics, synced_lyrics, lines_json, offset_ms, score,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'cached-sidecar-1',
+        'lrclib|echo song|echo artist|echo album|120|',
+        'track-1',
+        'lrclib',
+        'lrclib-1',
+        'Echo Song',
+        'Echo Artist',
+        'Echo Album',
+        120,
+        'synced',
+        'Cached line',
+        '[00:01.00]Cached line',
+        JSON.stringify([{ timeMs: 1000, text: 'Cached line' }]),
+        0,
+        0.99,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.provider).toBe('lrclib');
+    expect(online.getLyrics).not.toHaveBeenCalled();
+    expect(readFileSync(sidecarPath, 'utf8')).toBe('[00:01.00]Cached line\n');
+  });
+
   it('prefers local TTML sidecar over network', async () => {
     const root = makeTempRoot();
     const audioPath = join(root, 'Echo Song.flac');

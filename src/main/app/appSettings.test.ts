@@ -167,6 +167,8 @@ describe('app settings normalization', () => {
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsSmartReadableColorsEnabled).toBe(false);
     expect(settings.lyricsImmersiveCoverStyleEnabled).toBe(false);
+    expect(settings.lyricsImmersiveCoverGlassEnabled).toBe(false);
+    expect(settings.lyricsImmersiveCoverGlassBlurPx).toBe(16);
     expect(settings.lyricsHighResolutionNetworkCoverEnabled).toBe(false);
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
@@ -1580,6 +1582,8 @@ describe('app settings normalization', () => {
         lyricsColor: 'red',
         lyricsSmartReadableColorsEnabled: 'yes' as never,
         lyricsImmersiveCoverStyleEnabled: 'yes' as never,
+        lyricsImmersiveCoverGlassEnabled: 'yes' as never,
+        lyricsImmersiveCoverGlassBlurPx: 999,
         lyricsHighResolutionNetworkCoverEnabled: 'yes' as never,
         lyricsBackgroundMode: 'album' as never,
         lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
@@ -1632,6 +1636,8 @@ describe('app settings normalization', () => {
       lyricsColor: '#314054',
       lyricsSmartReadableColorsEnabled: false,
       lyricsImmersiveCoverStyleEnabled: false,
+      lyricsImmersiveCoverGlassEnabled: false,
+      lyricsImmersiveCoverGlassBlurPx: 32,
       lyricsHighResolutionNetworkCoverEnabled: false,
       lyricsBackgroundMode: 'theme',
       lyricsCustomWallpaperPath: null,
@@ -1663,6 +1669,8 @@ describe('app settings normalization', () => {
         lyricsColor: '#ff3366',
         lyricsSmartReadableColorsEnabled: true,
         lyricsImmersiveCoverStyleEnabled: true,
+        lyricsImmersiveCoverGlassEnabled: true,
+        lyricsImmersiveCoverGlassBlurPx: 12.5,
         lyricsSmartAlignmentEnabled: true,
         lyricsHighResolutionNetworkCoverEnabled: true,
         lyricsBackgroundMode: 'cover',
@@ -1690,6 +1698,8 @@ describe('app settings normalization', () => {
       lyricsColor: '#FF3366',
       lyricsSmartReadableColorsEnabled: true,
       lyricsImmersiveCoverStyleEnabled: true,
+      lyricsImmersiveCoverGlassEnabled: true,
+      lyricsImmersiveCoverGlassBlurPx: 13,
       lyricsSmartAlignmentEnabled: true,
       lyricsHighResolutionNetworkCoverEnabled: true,
       lyricsBackgroundMode: 'cover',

@@ -162,6 +162,8 @@ const makeAppSettings = (
   lyricsColor: "#314054",
   lyricsSmartReadableColorsEnabled: false,
   lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
@@ -553,6 +555,8 @@ describe("LyricsPage", () => {
     expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page\[data-immersive-cover-style="true"\]\[data-background="cover"\]\[data-view-mode="lyrics"\] > \.lyrics-track-header-floating \{[\s\S]*?background: transparent !important;[\s\S]*?box-shadow: none !important;[\s\S]*?backdrop-filter: none !important;/);
     expect(css).toContain('--lyrics-immersive-cover-bleed: max(42px, 4.5vw);');
     expect(css).toContain('inset: calc(-1 * var(--lyrics-immersive-cover-bleed));');
+    expect(css).toMatch(/\.lyrics-page\[data-immersive-cover-style="true"\]\[data-background="cover"\]\[data-immersive-cover-glass="true"\]:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\)::after \{[\s\S]*?inset: 0;[\s\S]*?backdrop-filter: blur\(var\(--lyrics-immersive-glass-blur, 16px\)\) saturate\(1\.16\);/);
+    expect(css).not.toContain('width: min(1220px, 72vw);');
     expect(css).not.toContain('text-shadow: 0 3px 16px rgba(0, 0, 0, 0.54);');
     expect(css).not.toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
     expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: 58px minmax\(0, 1fr\);/);
@@ -2024,6 +2028,7 @@ describe("LyricsPage", () => {
     const page = container.querySelector(".lyrics-page") as HTMLElement;
 
     expect(page.dataset.immersiveCoverStyle).toBe("true");
+    expect(page.dataset.immersiveCoverGlass).toBeUndefined();
     expect(page.dataset.background).toBe("cover");
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
       'url("echo-cover://original/cover%201")',
@@ -2057,6 +2062,31 @@ describe("LyricsPage", () => {
       'url("echo-cover://original/cover%201")',
     );
     expect(container.querySelector(".lyrics-mv-panel")?.getAttribute("data-lyrics-readability")).toBe("true");
+  });
+
+  it("adds the optional immersive cover glass layer with the configured blur", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "theme",
+      lyricsImmersiveCoverStyleEnabled: true,
+      lyricsImmersiveCoverGlassEnabled: true,
+      lyricsImmersiveCoverGlassBlurPx: 24,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findAllByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.immersiveCoverStyle).toBe("true");
+    expect(page.dataset.immersiveCoverGlass).toBe("true");
+    expect(page.style.getPropertyValue("--lyrics-immersive-glass-blur")).toBe("24px");
   });
 
   it("falls back to the theme background when immersive cover style has no album artwork", async () => {

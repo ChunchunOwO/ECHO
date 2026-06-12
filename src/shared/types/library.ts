@@ -744,6 +744,20 @@ export type CreatePlaylistRequest = {
   description?: string | null;
 };
 
+export type SmartPlaylistGenerateRequest = {
+  name?: string | null;
+  limit?: number;
+  recentDays?: number;
+};
+
+export type SmartPlaylistGenerateResult = {
+  playlist: LibraryPlaylist;
+  items: LibraryPlaylistItem[];
+  candidateCount: number;
+  requestedLimit: number;
+  recentDays: number;
+};
+
 export type ImportStreamingPlaylistResult = {
   playlist: LibraryPlaylist;
   importedCount: number;

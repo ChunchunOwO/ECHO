@@ -332,6 +332,26 @@ const installLibraryService = () => {
       createdAt: '2026-05-18T00:00:00.000Z',
       updatedAt: '2026-05-18T00:00:00.000Z',
     })),
+    createSmartPlaylistFromListeningHistory: vi.fn(() => ({
+      playlist: {
+        id: 'playlist-smart',
+        name: 'Smart Mix',
+        description: null,
+        kind: 'manual',
+        sourceProvider: 'local',
+        sourcePlaylistId: null,
+        coverId: null,
+        coverThumb: null,
+        sortMode: 'manual',
+        itemCount: 2,
+        createdAt: '2026-05-18T00:00:00.000Z',
+        updatedAt: '2026-05-18T00:00:00.000Z',
+      },
+      items: [],
+      candidateCount: 12,
+      requestedLimit: 30,
+      recentDays: 180,
+    })),
     resolveCoverAsset: vi.fn<(_coverId?: string, _variant?: string) => { filePath: string; mimeType: string } | null>(() => null),
     addFolder: vi.fn(),
     getFolders: vi.fn(),
@@ -887,6 +907,27 @@ describe('library IPC', () => {
       pageSize: 100,
       search: undefined,
       name: 'Inbox Picks',
+    });
+  });
+
+  it('routes smart playlist generation through bounded IPC input', async () => {
+    const service = installLibraryService();
+
+    const result = await handlers[IpcChannels.LibraryCreateSmartPlaylist]!(null, {
+      name: null,
+      limit: Number.POSITIVE_INFINITY,
+      recentDays: 90,
+    });
+
+    expect(service.createSmartPlaylistFromListeningHistory).toHaveBeenCalledWith({
+      name: null,
+      limit: undefined,
+      recentDays: 90,
+    });
+    expect(result).toMatchObject({
+      playlist: { id: 'playlist-smart' },
+      requestedLimit: 30,
+      recentDays: 180,
     });
   });
 

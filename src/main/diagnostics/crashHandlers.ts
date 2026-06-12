@@ -341,11 +341,17 @@ const createRendererCrashRecoveryHtml = (message: string, details: unknown): str
 
 export const isClosedPipeWriteError = (error: Error): boolean => {
   const code = (error as NodeJS.ErrnoException).code;
-  if (code === 'EPIPE' || code === 'EOF' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END') {
+  if (
+    code === 'EPIPE' ||
+    code === 'EOF' ||
+    code === 'ECANCELED' ||
+    code === 'ERR_STREAM_DESTROYED' ||
+    code === 'ERR_STREAM_WRITE_AFTER_END'
+  ) {
     return true;
   }
 
-  return /^(?:write\s+)?(?:EOF|EPIPE)$/iu.test(error.message.trim()) ||
+  return /^(?:write\s+)?(?:EOF|EPIPE|ECANCELED)$/iu.test(error.message.trim()) ||
     /write after end|stream (?:has been|was) destroyed|cannot call write after a stream was destroyed/iu.test(error.message);
 };
 

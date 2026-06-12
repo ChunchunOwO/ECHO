@@ -841,6 +841,7 @@ export class LyricsService {
     if (cached) {
       const enrichedCached = await this.fillCachedRomanization(query, cached);
       const kanaCached = await this.fillCachedUtatenKana(query, enrichedCached, settings);
+      this.autoSaveSidecarLyrics(query, kanaCached, settings);
       this.refreshCachedLyricsInBackground(query, kanaCached, settings);
       return kanaCached;
     }

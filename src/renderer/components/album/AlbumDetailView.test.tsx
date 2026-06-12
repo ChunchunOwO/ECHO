@@ -2,13 +2,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { StreamingAlbum, StreamingAlbumDetail } from '../../../shared/types/streaming';
 import { AlbumDetailView } from './AlbumDetailView';
 
 const queueMock = {
+  appendToQueue: vi.fn(),
   appendTracksToQueue: vi.fn(),
   currentTrackId: null as string | null,
   playTrack: vi.fn().mockResolvedValue({}),
+  playTrackNext: vi.fn(),
+  removeTrackFromQueue: vi.fn(),
   replaceQueue: vi.fn(),
+  updateTrackSnapshot: vi.fn(),
 };
 
 let mockAlbumTracks: LibraryTrack[] = [];
@@ -323,10 +328,52 @@ const relatedAlbum = (): LibraryAlbum => ({
   coverThumb: 'echo-cover://album/cover-2',
 });
 
-const installLibrary = (): {
+const streamingAlbum = (): StreamingAlbum => ({
+  id: 'streaming:netease:album:online-1',
+  provider: 'netease',
+  providerAlbumId: 'online-1',
+  title: 'Online Echo Album',
+  artist: 'Echo Unit',
+  artists: [{ id: 'streaming:netease:artist:echo', provider: 'netease', providerArtistId: 'echo', name: 'Echo Unit' }],
+  coverUrl: 'https://img.example/online.jpg',
+  coverThumb: null,
+  releaseDate: '2026-06-01',
+  trackCount: 1,
+});
+
+const streamingAlbumDetail = (): StreamingAlbumDetail => ({
+  ...streamingAlbum(),
+  tracks: [
+    {
+      id: 'streaming:netease:track:online-track-1',
+      provider: 'netease',
+      providerTrackId: 'online-track-1',
+      stableKey: 'streaming:netease:online-track-1',
+      title: 'Online Echo Track',
+      artist: 'Echo Unit',
+      artists: [{ id: 'streaming:netease:artist:echo', provider: 'netease', providerArtistId: 'echo', name: 'Echo Unit' }],
+      album: 'Online Echo Album',
+      albumId: 'online-1',
+      albumArtist: 'Echo Unit',
+      duration: 201,
+      coverUrl: null,
+      coverThumb: null,
+      qualities: ['lossless'],
+      explicit: false,
+      playable: true,
+      unavailableReason: null,
+      lyricsStatus: 'unknown',
+      mvStatus: 'unknown',
+    },
+  ],
+});
+
+const installLibrary = (options: { streamingAlbums?: StreamingAlbum[] } = {}): {
   getAlbumOnlineInfo: ReturnType<typeof vi.fn>;
   getArtists: ReturnType<typeof vi.fn>;
   getArtistAlbums: ReturnType<typeof vi.fn>;
+  searchStreaming: ReturnType<typeof vi.fn>;
+  getStreamingAlbum: ReturnType<typeof vi.fn>;
   addTracksToPlaylist: ReturnType<typeof vi.fn>;
   copyAlbumCover: ReturnType<typeof vi.fn>;
 } => {
@@ -349,8 +396,23 @@ const installLibrary = (): {
   });
   const addTracksToPlaylist = vi.fn().mockResolvedValue([]);
   const copyAlbumCover = vi.fn().mockResolvedValue(true);
+  const searchStreaming = vi.fn().mockResolvedValue({
+    provider: 'netease',
+    query: 'Echo Unit',
+    page: 1,
+    pageSize: 8,
+    total: options.streamingAlbums?.length ?? 0,
+    hasMore: false,
+    tracks: [],
+    albums: options.streamingAlbums ?? [],
+    artists: [],
+    playlists: [],
+    mvs: [],
+  });
+  const getStreamingAlbum = vi.fn().mockResolvedValue(streamingAlbumDetail());
   window.echo = {
     app: {
+      getSettings: vi.fn().mockResolvedValue({ artistStreamingAlbumsEnabled: true, artistStreamingAlbumsProvider: 'netease' }),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
     },
     library: {
@@ -373,8 +435,24 @@ const installLibrary = (): {
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
       openTrackInFolder: vi.fn().mockResolvedValue(undefined),
     },
+    streaming: {
+      search: searchStreaming,
+      getAlbum: getStreamingAlbum,
+      getProviders: vi.fn().mockResolvedValue([
+        {
+          name: 'netease',
+          label: 'NetEase',
+          enabled: true,
+          supportsSearch: true,
+          supportsPlaylistImport: true,
+          status: 'ready',
+          requiresAccount: false,
+          accountConnected: false,
+        },
+      ]),
+    },
   } as unknown as Window['echo'];
-  return { getAlbumOnlineInfo, getArtists, getArtistAlbums, addTracksToPlaylist, copyAlbumCover };
+  return { getAlbumOnlineInfo, getArtists, getArtistAlbums, searchStreaming, getStreamingAlbum, addTracksToPlaylist, copyAlbumCover };
 };
 
 afterEach(() => {
@@ -382,9 +460,13 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   queueMock.appendTracksToQueue.mockReset();
+  queueMock.appendToQueue.mockReset();
   queueMock.playTrack.mockReset();
   queueMock.playTrack.mockResolvedValue({});
+  queueMock.playTrackNext.mockReset();
+  queueMock.removeTrackFromQueue.mockReset();
   queueMock.replaceQueue.mockReset();
+  queueMock.updateTrackSnapshot.mockReset();
   mockAlbumTracks = [];
 });
 
@@ -654,5 +736,34 @@ describe('AlbumDetailView', () => {
     expect(screen.getByText('This album')).toBeTruthy();
     expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Echo Unit', sort: 'default', sourceProvider: 'local' });
     expect(getArtistAlbums).toHaveBeenCalledWith('artist-1', { page: 1, pageSize: 8, sort: 'recent' });
+  });
+
+  it('loads the streaming library from the album more menu only after the user asks', async () => {
+    const { searchStreaming, getStreamingAlbum } = installLibrary({ streamingAlbums: [streamingAlbum()] });
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    await screen.findByText('Mock album tracks');
+    expect(searchStreaming).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'More album actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '加载流媒体曲库' }));
+
+    await waitFor(() =>
+      expect(searchStreaming).toHaveBeenCalledWith({
+        provider: 'netease',
+        query: 'Echo Unit',
+        mediaTypes: ['album'],
+        page: 1,
+        pageSize: 8,
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: '流媒体曲库' })).toBeTruthy();
+    expect(screen.getByText('Online Echo Album')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Online Echo Album/ }));
+
+    await waitFor(() => expect(getStreamingAlbum).toHaveBeenCalledWith({ provider: 'netease', providerAlbumId: 'online-1' }));
+    expect(await screen.findByText('Online Echo Track')).toBeTruthy();
   });
 });

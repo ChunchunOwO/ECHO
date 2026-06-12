@@ -24,6 +24,8 @@ describe('crashHandlers', () => {
   it('classifies closed helper pipe writes as non-fatal', () => {
     expect(isClosedPipeWriteError(new Error('write EOF'))).toBe(true);
     expect(isClosedPipeWriteError(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).toBe(true);
+    expect(isClosedPipeWriteError(Object.assign(new Error('write ECANCELED'), { code: 'ECANCELED' }))).toBe(true);
+    expect(isClosedPipeWriteError(new Error('write ECANCELED'))).toBe(true);
     expect(isClosedPipeWriteError(Object.assign(new Error('stream was destroyed'), { code: 'ERR_STREAM_DESTROYED' }))).toBe(true);
     expect(isClosedPipeWriteError(Object.assign(new Error('write after end'), { code: 'ERR_STREAM_WRITE_AFTER_END' }))).toBe(true);
     expect(isClosedPipeWriteError(new Error('Cannot call write after a stream was destroyed'))).toBe(true);

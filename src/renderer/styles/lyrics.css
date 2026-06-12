@@ -678,6 +678,15 @@ html:not([data-theme="dark"]) .lyrics-page[data-background="customWallpaper"]:ha
   accent-color: var(--theme-success-text);
 }
 
+.lyrics-immersive-glass-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.lyrics-immersive-glass-controls .lyrics-drawer-range {
+  margin-top: 2px;
+}
+
 .lyrics-drawer-range[hidden],
 .lyrics-style-range-grid[hidden],
 .lyrics-color-panel[hidden],
@@ -3550,7 +3559,24 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
   opacity: 0.96;
 }
 
+.lyrics-page[data-immersive-cover-style="true"][data-background="cover"][data-immersive-cover-glass="true"]:has(.lyrics-mv-panel[data-mv-enabled="false"])::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(255, 255, 255, 0.08), transparent 56%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(8, 12, 18, 0.08));
+  box-shadow: none;
+  content: "";
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(var(--lyrics-immersive-glass-blur, 16px)) saturate(1.16);
+  backdrop-filter: blur(var(--lyrics-immersive-glass-blur, 16px)) saturate(1.16);
+}
+
 .lyrics-page[data-immersive-cover-style="true"][data-background="cover"]:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-left-panel {
+  position: relative;
+  z-index: 2;
   margin: 0;
   grid-template-rows: clamp(54px, 8vh, 82px) minmax(0, 1fr) clamp(88px, 10vh, 124px);
   border: 0;

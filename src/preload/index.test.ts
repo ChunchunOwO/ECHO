@@ -281,6 +281,7 @@ describe('preload SMTC API', () => {
     await exposedApi!.library.getLibraryInboxBatches();
     await exposedApi!.library.getLibraryInboxTracks({ scope: 'latest', filter: 'all' });
     await exposedApi!.library.createPlaylistFromLibraryInbox({ scope: 'latest', filter: 'missing_cover' });
+    await exposedApi!.library.createSmartPlaylist({ limit: 30, recentDays: 180 });
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryChooseImportFiles);
@@ -289,6 +290,7 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetInboxBatches);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetInboxTracks, { scope: 'latest', filter: 'all' });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryCreateInboxPlaylist, { scope: 'latest', filter: 'missing_cover' });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryCreateSmartPlaylist, { limit: 30, recentDays: 180 });
   });
 
   it('exposes custom artist avatar helpers through IPC', async () => {

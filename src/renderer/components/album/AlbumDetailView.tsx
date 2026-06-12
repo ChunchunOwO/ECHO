@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ChevronRight, Disc3, ExternalLink, FolderOpen, Heart, Info, ListEnd, Loader2, MoreHorizontal, Play, Plus, RefreshCw, Star } from 'lucide-react';
+import { defaultArtistStreamingAlbumsProvider, type AppSettings, type ArtistStreamingAlbumsProvider } from '../../../shared/types/appSettings';
 import type { AlbumOnlineInfo, AlbumOnlineInfoRequestOptions, EditableTrackTags, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { StreamingAlbum, StreamingAlbumDetail, StreamingProviderDescriptor, StreamingTrack } from '../../../shared/types/streaming';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
-import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { readStreamingQualityPreference } from '../../preferences/streamingQualityPreference';
+import { isPlaybackCancellationError, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
@@ -117,6 +120,13 @@ type RelatedAlbumsState = {
   loadedForAlbumId: string | null;
 };
 
+type StreamingAlbumsState = {
+  loading: boolean;
+  albums: StreamingAlbum[];
+  error: string | null;
+  loadedForAlbumId: string | null;
+};
+
 const emptyOnlineInfoState = (): OnlineInfoState => ({
   loading: false,
   info: null,
@@ -132,7 +142,15 @@ const emptyRelatedAlbumsState = (): RelatedAlbumsState => ({
   loadedForAlbumId: null,
 });
 
+const emptyStreamingAlbumsState = (): StreamingAlbumsState => ({
+  loading: false,
+  albums: [],
+  error: null,
+  loadedForAlbumId: null,
+});
+
 const albumOnlineInfoProviders: OnlineInfoProvider[] = ['wikipedia', 'musicbrainz'];
+const albumStreamingAlbumPageSize = 8;
 const albumMenuWidth = 218;
 const albumMenuViewportPadding = 8;
 const albumMenuOffset = 6;
@@ -348,6 +366,102 @@ const findMatchingArtist = (artists: LibraryArtist[], name: string): LibraryArti
   return artists.find((artist) => normalizeArtistName(artist.name) === normalizedName) ?? (artists.length === 1 ? artists[0] : null);
 };
 
+const normalizeStreamingAlbumText = (value: string): string =>
+  value.normalize('NFKC').toLocaleLowerCase().replace(/\s*\([^)]*\)|\s*（[^）]*）/gu, '').replace(/[\s._'’"-]+/gu, '');
+
+const streamingAlbumArtistTokens = (value: string): string[] =>
+  value
+    .split(/\s*(?:,|、|\/|&|;|，|\|| feat\.? | featuring | with | x |×|\+|／)\s*/iu)
+    .map(normalizeStreamingAlbumText)
+    .filter(Boolean);
+
+const streamingAlbumMatchesArtist = (streamingAlbum: StreamingAlbum, artistName: string): boolean => {
+  const expected = normalizeStreamingAlbumText(artistName);
+  if (!expected) {
+    return false;
+  }
+
+  const candidates = new Set([
+    streamingAlbum.artist,
+    ...streamingAlbum.artists.map((artist) => artist.name),
+  ].flatMap(streamingAlbumArtistTokens));
+  return candidates.has(expected);
+};
+
+const normalizeStreamingAlbumProvider = (value: unknown): ArtistStreamingAlbumsProvider =>
+  value === 'qqmusic' ? 'qqmusic' : defaultArtistStreamingAlbumsProvider;
+
+const isStreamingAlbumProviderAvailable = (
+  providerName: ArtistStreamingAlbumsProvider,
+  providers: StreamingProviderDescriptor[],
+): boolean => {
+  const descriptor = providers.find((provider) => provider.name === providerName);
+  if (!descriptor) {
+    return true;
+  }
+
+  return (
+    descriptor.enabled &&
+    descriptor.supportsSearch &&
+    descriptor.status !== 'disabled' &&
+    (descriptor.requiresAccount !== true || descriptor.accountConnected === true)
+  );
+};
+
+const streamingAlbumMeta = (streamingAlbum: StreamingAlbum): string =>
+  [
+    streamingAlbum.provider,
+    streamingAlbum.trackCount ? `${streamingAlbum.trackCount} 首歌` : null,
+    streamingAlbum.releaseDate,
+  ].filter(Boolean).join(' / ');
+
+const streamingAlbumCoverFailureKey = (streamingAlbum: StreamingAlbum, coverUrl: string): string => `${streamingAlbum.id}\n${coverUrl}`;
+
+const mergeUniqueStreamingAlbums = (albums: StreamingAlbum[]): StreamingAlbum[] =>
+  Array.from(new Map(albums.map((streamingAlbum) => [`${streamingAlbum.provider}:${streamingAlbum.providerAlbumId || streamingAlbum.id}`, streamingAlbum])).values());
+
+const formatStreamingTrackDuration = (duration: number): string => {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return '--:--';
+  }
+
+  const totalSeconds = Math.round(duration);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+const streamingTrackToLibraryTrack = (track: StreamingTrack): LibraryTrack => ({
+  id: track.stableKey || `${track.provider}:${track.providerTrackId}`,
+  mediaType: 'streaming',
+  path: track.stableKey,
+  provider: track.provider,
+  providerTrackId: track.providerTrackId,
+  streamingQuality: readStreamingQualityPreference(),
+  stableKey: track.stableKey,
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  albumArtist: track.albumArtist ?? track.artist,
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: track.duration ?? 0,
+  codec: null,
+  sampleRate: null,
+  bitDepth: null,
+  bitrate: null,
+  coverId: null,
+  coverThumb: track.coverThumb ?? track.coverUrl,
+  fieldSources: {
+    title: track.provider,
+    artist: track.provider,
+    album: track.provider,
+  },
+  unavailable: !track.playable,
+});
+
 const formatConfidence = (value: number): string => `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 
 const creditRoleTitle = (role: string, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
@@ -519,9 +633,21 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [onlineInfoState, setOnlineInfoState] = useState<OnlineInfoState>(() => emptyOnlineInfoState());
   const [relatedAlbumsState, setRelatedAlbumsState] = useState<RelatedAlbumsState>(() => emptyRelatedAlbumsState());
   const [failedRelatedCoverUrls, setFailedRelatedCoverUrls] = useState<Record<string, true>>({});
+  const [streamingAlbumsEnabled, setStreamingAlbumsEnabled] = useState(true);
+  const [streamingAlbumProvider, setStreamingAlbumProvider] = useState<ArtistStreamingAlbumsProvider>(defaultArtistStreamingAlbumsProvider);
+  const [streamingAlbumsRequestedForAlbumId, setStreamingAlbumsRequestedForAlbumId] = useState<string | null>(null);
+  const [streamingAlbumsState, setStreamingAlbumsState] = useState<StreamingAlbumsState>(() => emptyStreamingAlbumsState());
+  const [failedStreamingAlbumCoverUrls, setFailedStreamingAlbumCoverUrls] = useState<Record<string, true>>({});
+  const [selectedStreamingAlbum, setSelectedStreamingAlbum] = useState<StreamingAlbum | null>(null);
+  const [selectedStreamingAlbumDetail, setSelectedStreamingAlbumDetail] = useState<StreamingAlbumDetail | null>(null);
+  const [isStreamingAlbumDetailLoading, setIsStreamingAlbumDetailLoading] = useState(false);
+  const [streamingAlbumDetailError, setStreamingAlbumDetailError] = useState<string | null>(null);
+  const [resolvingStreamingTrackKey, setResolvingStreamingTrackKey] = useState<string | null>(null);
+  const [queuedStreamingTrackKey, setQueuedStreamingTrackKey] = useState<string | null>(null);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const onlineInfoRequestRef = useRef(0);
   const relatedAlbumsRequestRef = useRef(0);
+  const streamingAlbumsRequestRef = useRef(0);
   const albumPlaylistLoadStartedRef = useRef(false);
   const likedTrackIds = useLikedTrackIds(loadedTracks.map((track) => track.id));
   const duration = formatDuration(album.duration, t);
@@ -772,6 +898,123 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     }
   }, [album.id, album.mediaType, albumArtistLookupName]);
 
+  const loadStreamingAlbums = useCallback(async (): Promise<void> => {
+    const artistName = albumArtistLookupName?.trim() ?? '';
+
+    if (!streamingAlbumsEnabled || !artistName) {
+      setStreamingAlbumsState({
+        loading: false,
+        albums: [],
+        error: null,
+        loadedForAlbumId: album.id,
+      });
+      return;
+    }
+
+    const streaming = window.echo?.streaming;
+    if (!streaming?.search) {
+      setStreamingAlbumsState({
+        loading: false,
+        albums: [],
+        error: '桌面桥接不可用。请在 ECHO Next 桌面版中搜索流媒体专辑。',
+        loadedForAlbumId: album.id,
+      });
+      return;
+    }
+
+    const requestId = streamingAlbumsRequestRef.current + 1;
+    streamingAlbumsRequestRef.current = requestId;
+    setStreamingAlbumsState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      loadedForAlbumId: album.id,
+    }));
+
+    try {
+      const providers = streaming.getProviders ? await streaming.getProviders() : [];
+      if (streamingAlbumsRequestRef.current !== requestId) {
+        return;
+      }
+
+      if (!isStreamingAlbumProviderAvailable(streamingAlbumProvider, providers)) {
+        setStreamingAlbumsState({
+          loading: false,
+          albums: [],
+          error: null,
+          loadedForAlbumId: album.id,
+        });
+        return;
+      }
+
+      const result = await streaming.search({
+        provider: streamingAlbumProvider,
+        query: artistName,
+        mediaTypes: ['album'],
+        page: 1,
+        pageSize: albumStreamingAlbumPageSize,
+      });
+      if (streamingAlbumsRequestRef.current !== requestId) {
+        return;
+      }
+
+      setStreamingAlbumsState({
+        loading: false,
+        albums: mergeUniqueStreamingAlbums(result.albums.filter((streamingAlbum) => streamingAlbumMatchesArtist(streamingAlbum, artistName))),
+        error: null,
+        loadedForAlbumId: album.id,
+      });
+    } catch (error) {
+      if (streamingAlbumsRequestRef.current === requestId) {
+        setStreamingAlbumsState({
+          loading: false,
+          albums: [],
+          error: error instanceof Error ? error.message : String(error),
+          loadedForAlbumId: album.id,
+        });
+      }
+    }
+  }, [album.id, albumArtistLookupName, streamingAlbumProvider, streamingAlbumsEnabled]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (isCancelled) {
+        return;
+      }
+
+      if (!settings || Object.prototype.hasOwnProperty.call(settings, 'artistStreamingAlbumsEnabled')) {
+        setStreamingAlbumsEnabled(settings?.artistStreamingAlbumsEnabled !== false);
+      }
+      if (!settings || Object.prototype.hasOwnProperty.call(settings, 'artistStreamingAlbumsProvider')) {
+        setStreamingAlbumProvider(normalizeStreamingAlbumProvider(settings?.artistStreamingAlbumsProvider));
+      }
+    };
+
+    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => applySettings(null));
+
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? event.detail as Partial<AppSettings> : null;
+      if (
+        detail &&
+        (
+          Object.prototype.hasOwnProperty.call(detail, 'artistStreamingAlbumsEnabled') ||
+          Object.prototype.hasOwnProperty.call(detail, 'artistStreamingAlbumsProvider')
+        )
+      ) {
+        applySettings(detail);
+      }
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
   useEffect(() => {
     setActiveTab('tracks');
     setOnlineInfoState(emptyOnlineInfoState());
@@ -783,6 +1026,25 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     setFailedRelatedCoverUrls({});
     void loadRelatedAlbums();
   }, [album.id, loadRelatedAlbums]);
+
+  useEffect(() => {
+    setStreamingAlbumsState(emptyStreamingAlbumsState());
+    setFailedStreamingAlbumCoverUrls({});
+    setStreamingAlbumsRequestedForAlbumId(null);
+    setSelectedStreamingAlbum(null);
+    setSelectedStreamingAlbumDetail(null);
+    setStreamingAlbumDetailError(null);
+    setResolvingStreamingTrackKey(null);
+    setQueuedStreamingTrackKey(null);
+  }, [album.id]);
+
+  useEffect(() => {
+    if (streamingAlbumsRequestedForAlbumId !== album.id) {
+      return;
+    }
+
+    void loadStreamingAlbums();
+  }, [album.id, loadStreamingAlbums, streamingAlbumsRequestedForAlbumId]);
 
   const refreshAlbumLiked = useCallback(async (): Promise<void> => {
     try {
@@ -903,6 +1165,16 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       y: Math.max(albumMenuViewportPadding, rect.bottom + albumMenuOffset),
     });
   }, []);
+
+  const handleLoadStreamingLibrary = useCallback((): void => {
+    closeAlbumMenu();
+    setActiveTab('tracks');
+    if (streamingAlbumsRequestedForAlbumId === album.id) {
+      void loadStreamingAlbums();
+      return;
+    }
+    setStreamingAlbumsRequestedForAlbumId(album.id);
+  }, [album.id, closeAlbumMenu, loadStreamingAlbums, streamingAlbumsRequestedForAlbumId]);
 
   const handleAddAlbumToQueue = useCallback(async (): Promise<void> => {
     closeAlbumMenu();
@@ -1332,6 +1604,136 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     window.dispatchEvent(new CustomEvent(albumDetailNavigationEvent, { detail: { album: relatedAlbum } }));
   }, [album.id]);
 
+  const handleSelectStreamingAlbum = useCallback((streamingAlbum: StreamingAlbum): void => {
+    setSelectedStreamingAlbum(streamingAlbum);
+    setSelectedStreamingAlbumDetail(null);
+    setStreamingAlbumDetailError(null);
+    setResolvingStreamingTrackKey(null);
+    setQueuedStreamingTrackKey(null);
+  }, []);
+
+  const handleStreamingAlbumKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>, streamingAlbum: StreamingAlbum): void => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleSelectStreamingAlbum(streamingAlbum);
+    }
+  }, [handleSelectStreamingAlbum]);
+
+  const handleStreamingAlbumCoverError = useCallback((streamingAlbum: StreamingAlbum, coverUrl: string): void => {
+    setFailedStreamingAlbumCoverUrls((current) => ({ ...current, [streamingAlbumCoverFailureKey(streamingAlbum, coverUrl)]: true }));
+  }, []);
+
+  const handleBackFromStreamingAlbum = useCallback((): void => {
+    setSelectedStreamingAlbum(null);
+    setSelectedStreamingAlbumDetail(null);
+    setStreamingAlbumDetailError(null);
+    setResolvingStreamingTrackKey(null);
+    setQueuedStreamingTrackKey(null);
+  }, []);
+
+  const handlePlayStreamingTrack = useCallback(async (track: StreamingTrack): Promise<void> => {
+    if (!track.playable || resolvingStreamingTrackKey === track.stableKey) {
+      return;
+    }
+
+    setResolvingStreamingTrackKey(track.stableKey);
+    setStreamingAlbumDetailError(null);
+    try {
+      await playTrack(streamingTrackToLibraryTrack(track), {
+        source: { type: 'streaming', label: `${track.album} / ${track.provider}`, provider: track.provider },
+        forceNewQueueItem: true,
+      });
+    } catch (error) {
+      if (!isPlaybackCancellationError(error)) {
+        setStreamingAlbumDetailError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      setResolvingStreamingTrackKey((current) => (current === track.stableKey ? null : current));
+    }
+  }, [playTrack, resolvingStreamingTrackKey]);
+
+  const handleQueueStreamingTrack = useCallback((track: StreamingTrack): void => {
+    if (!track.playable) {
+      setStreamingAlbumDetailError(track.unavailableReason ?? '这首流媒体歌曲暂时不可播放。');
+      return;
+    }
+
+    appendToQueue(streamingTrackToLibraryTrack(track), { type: 'streaming', label: `${track.album} / ${track.provider}`, provider: track.provider });
+    setQueuedStreamingTrackKey(track.stableKey);
+    window.setTimeout(() => setQueuedStreamingTrackKey((current) => (current === track.stableKey ? null : current)), 1400);
+  }, [appendToQueue]);
+
+  const handlePlayStreamingAlbum = useCallback(async (): Promise<void> => {
+    const detail = selectedStreamingAlbumDetail;
+    const playableTracks = detail?.tracks.filter((track) => track.playable).map(streamingTrackToLibraryTrack) ?? [];
+    const firstPlayableTrack = playableTracks[0];
+    if (!detail || !firstPlayableTrack) {
+      setStreamingAlbumDetailError('这张流媒体专辑暂时没有可播放的歌曲。');
+      return;
+    }
+
+    try {
+      setStreamingAlbumDetailError(null);
+      await playTrack(firstPlayableTrack, {
+        replaceQueueWith: playableTracks,
+        source: { type: 'streaming', label: `${detail.title} / ${detail.provider}`, provider: detail.provider },
+      });
+    } catch (error) {
+      if (!isPlaybackCancellationError(error)) {
+        setStreamingAlbumDetailError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }, [playTrack, selectedStreamingAlbumDetail]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const streamingAlbum = selectedStreamingAlbum;
+    const streaming = window.echo?.streaming;
+
+    const loadStreamingAlbumDetail = async (): Promise<void> => {
+      if (!streamingAlbum) {
+        setSelectedStreamingAlbumDetail(null);
+        setStreamingAlbumDetailError(null);
+        setIsStreamingAlbumDetailLoading(false);
+        return;
+      }
+
+      if (!streaming?.getAlbum) {
+        setSelectedStreamingAlbumDetail(null);
+        setStreamingAlbumDetailError('桌面桥接不可用。请在 ECHO Next 桌面版中读取流媒体专辑。');
+        setIsStreamingAlbumDetailLoading(false);
+        return;
+      }
+
+      setIsStreamingAlbumDetailLoading(true);
+      setStreamingAlbumDetailError(null);
+      try {
+        const detail = await streaming.getAlbum({
+          provider: streamingAlbum.provider,
+          providerAlbumId: streamingAlbum.providerAlbumId,
+        });
+        if (!isCancelled) {
+          setSelectedStreamingAlbumDetail(detail);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setSelectedStreamingAlbumDetail(null);
+          setStreamingAlbumDetailError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsStreamingAlbumDetailLoading(false);
+        }
+      }
+    };
+
+    void loadStreamingAlbumDetail();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedStreamingAlbum]);
+
   const handleExternalLinkClick = useCallback((event: MouseEvent<HTMLAnchorElement>, url: string): void => {
     event.preventDefault();
     event.stopPropagation();
@@ -1436,6 +1838,76 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             );
           })}
         </div>
+      </section>
+    );
+  };
+
+  const renderStreamingAlbums = (): JSX.Element | null => {
+    if (!displayAlbumArtist || streamingAlbumsRequestedForAlbumId !== album.id) {
+      return null;
+    }
+
+    const isLoading = streamingAlbumsState.loadedForAlbumId !== album.id || streamingAlbumsState.loading;
+
+    return (
+      <section className="album-related-library album-streaming-library" aria-label={`${displayAlbumArtist} 流媒体曲库`}>
+        <header>
+          <div>
+            <span>{displayAlbumArtist}</span>
+            <h2>流媒体曲库</h2>
+          </div>
+          <small>{isLoading ? '搜索中...' : `${streamingAlbumsState.albums.length} 张专辑`}</small>
+        </header>
+        {isLoading ? (
+          <div className="album-related-loading">
+            <Loader2 className="spinning-icon" size={16} />
+          </div>
+        ) : streamingAlbumsState.albums.length > 0 ? (
+          <div className="album-related-album-strip">
+            {streamingAlbumsState.albums.map((streamingAlbum) => {
+              const coverUrl = streamingAlbum.coverUrl && !failedStreamingAlbumCoverUrls[streamingAlbumCoverFailureKey(streamingAlbum, streamingAlbum.coverUrl)]
+                ? streamingAlbum.coverUrl
+                : streamingAlbum.coverThumb && !failedStreamingAlbumCoverUrls[streamingAlbumCoverFailureKey(streamingAlbum, streamingAlbum.coverThumb)]
+                  ? streamingAlbum.coverThumb
+                  : null;
+              const shouldShowCover = Boolean(coverUrl);
+
+              return (
+                <article
+                  className="album-related-album-card album-streaming-album-card"
+                  key={streamingAlbum.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSelectStreamingAlbum(streamingAlbum)}
+                  onKeyDown={(event) => handleStreamingAlbumKeyDown(event, streamingAlbum)}
+                >
+                  <div className="album-related-album-cover" data-empty={!shouldShowCover} aria-hidden="true">
+                    {shouldShowCover ? (
+                      <img
+                        alt=""
+                        decoding="async"
+                        draggable={false}
+                        height={260}
+                        loading="lazy"
+                        src={coverUrl!}
+                        width={260}
+                        onError={() => handleStreamingAlbumCoverError(streamingAlbum, coverUrl!)}
+                      />
+                    ) : (
+                      <Disc3 size={24} />
+                    )}
+                  </div>
+                  <div className="album-related-album-copy">
+                    <strong>{streamingAlbum.title}</strong>
+                    <span>{streamingAlbumMeta(streamingAlbum)}</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="album-streaming-state">{streamingAlbumsState.error ?? '暂未找到匹配的流媒体专辑。'}</p>
+        )}
       </section>
     );
   };
@@ -1788,6 +2260,12 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
               <span>{t('albumDetail.action.showInFolder')}</span>
             </button>
           ) : null}
+          {displayAlbumArtist && streamingAlbumsEnabled ? (
+            <button className="album-menu-item" role="menuitem" type="button" onClick={handleLoadStreamingLibrary}>
+              <RefreshCw size={16} />
+              <span>加载流媒体曲库</span>
+            </button>
+          ) : null}
         </div>
         {albumPlaylistSubmenuOpen ? (
           <div
@@ -1822,6 +2300,93 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       document.body,
     );
   };
+
+  if (selectedStreamingAlbum) {
+    const streamingAlbum = selectedStreamingAlbumDetail ?? selectedStreamingAlbum;
+    const detailTracks = selectedStreamingAlbumDetail?.tracks ?? [];
+    const coverSrc = selectedStreamingAlbumDetail
+      ? selectedStreamingAlbumDetail.coverUrl ?? selectedStreamingAlbumDetail.coverThumb ?? selectedStreamingAlbum.coverThumb ?? selectedStreamingAlbum.coverUrl ?? null
+      : selectedStreamingAlbum.coverThumb ?? selectedStreamingAlbum.coverUrl ?? null;
+
+    return (
+      <div className="album-detail-page artist-streaming-album-detail" ref={detailRootRef}>
+        <button className="album-back-button" type="button" onClick={handleBackFromStreamingAlbum}>
+          <ArrowLeft size={17} />
+          流媒体曲库
+        </button>
+
+        <section className="album-detail-hero" aria-label={`${streamingAlbum.title} 流媒体专辑详情`}>
+          <div className="album-detail-cover" data-empty={!coverSrc}>
+            {coverSrc ? <img alt="" decoding="async" draggable={false} height={320} src={coverSrc} width={320} /> : <Disc3 size={58} />}
+          </div>
+
+          <div className="album-detail-console">
+            <div className="album-detail-copy">
+              <span className="album-detail-kicker">流媒体专辑</span>
+              <h1>{streamingAlbum.title}</h1>
+              <p>{streamingAlbum.artist}</p>
+              <div className="album-detail-meta" aria-label="流媒体专辑信息">
+                {[streamingAlbum.provider, streamingAlbum.releaseDate, streamingAlbum.trackCount ? `${streamingAlbum.trackCount} 首歌` : null].filter(Boolean).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="album-detail-actions">
+              <button className="album-primary-action" type="button" disabled={isStreamingAlbumDetailLoading || detailTracks.length === 0} onClick={() => void handlePlayStreamingAlbum()}>
+                <Play size={16} fill="currentColor" />
+                {isStreamingAlbumDetailLoading ? '读取中' : '播放整张'}
+              </button>
+            </div>
+
+            {streamingAlbumDetailError ? <p className="album-detail-error">{streamingAlbumDetailError}</p> : null}
+          </div>
+        </section>
+
+        <section className="album-detail-track-console" aria-label={`${streamingAlbum.title} 流媒体歌曲`}>
+          <header className="album-detail-tabs" aria-label="流媒体专辑分区">
+            <button className="album-detail-tab" type="button" aria-current="page">
+              歌曲
+            </button>
+          </header>
+
+          {isStreamingAlbumDetailLoading && detailTracks.length === 0 ? <div className="album-streaming-state">正在读取专辑...</div> : null}
+          {!isStreamingAlbumDetailLoading && detailTracks.length === 0 && !streamingAlbumDetailError ? <div className="album-streaming-state">这张专辑没有可显示的歌曲。</div> : null}
+          {detailTracks.length > 0 ? (
+            <div className="album-streaming-track-list">
+              {detailTracks.map((track) => {
+                const isResolving = resolvingStreamingTrackKey === track.stableKey;
+                const isQueued = queuedStreamingTrackKey === track.stableKey;
+                const trackCover = track.coverThumb ?? track.coverUrl ?? coverSrc;
+
+                return (
+                  <article className="album-streaming-track-row" data-unavailable={!track.playable} key={track.stableKey} onDoubleClick={() => void handlePlayStreamingTrack(track)}>
+                    <div className="album-streaming-track-cover" data-empty={!trackCover}>
+                      {trackCover ? <img alt="" decoding="async" draggable={false} height={48} loading="lazy" src={trackCover} width={48} /> : <Disc3 size={18} />}
+                    </div>
+                    <div className="album-streaming-track-main">
+                      <strong>{track.title}</strong>
+                      <span>{track.artist} / {track.album}</span>
+                      <small>{track.playable ? `${track.provider} / ${track.qualities.join(' / ') || 'standard'}` : (track.unavailableReason ?? '暂时不可播放')}</small>
+                    </div>
+                    <span className="album-streaming-track-duration">{formatStreamingTrackDuration(track.duration ?? 0)}</span>
+                    <div className="album-streaming-track-actions" onDoubleClick={(event) => event.stopPropagation()}>
+                      <button type="button" title="播放" disabled={!track.playable || Boolean(resolvingStreamingTrackKey)} onClick={() => void handlePlayStreamingTrack(track)}>
+                        {isResolving ? <RefreshCw className="spinning-icon" size={16} /> : <Play size={16} />}
+                      </button>
+                      <button type="button" title="加入队列" disabled={!track.playable} onClick={() => handleQueueStreamingTrack(track)}>
+                        {isQueued ? <ListEnd size={16} /> : <Plus size={16} />}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className={`album-detail-page ${isReturning ? 'is-returning' : ''}`} ref={detailRootRef}>
@@ -1928,7 +2493,12 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
         ) : (
           renderInformation()
         )}
-        {activeTab === 'tracks' ? renderRelatedAlbums() : null}
+        {activeTab === 'tracks' ? (
+          <>
+            {renderRelatedAlbums()}
+            {renderStreamingAlbums()}
+          </>
+        ) : null}
       </section>
 
       {trackMenu ? (

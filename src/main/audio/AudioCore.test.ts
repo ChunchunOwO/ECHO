@@ -8022,7 +8022,10 @@ describe('AudioSession host availability', () => {
     }
   });
 
-  it('uses native dual-deck Automix only when armed near the transition window', async () => {
+  it.each([
+    ['WASAPI exclusive', { outputMode: 'exclusive' as const }, { asio: false, exclusive: true }],
+    ['ASIO', { outputMode: 'asio' as const, deviceName: 'TEAC ASIO USB DRIVER' }, { asio: true, exclusive: false }],
+  ])('keeps ffmpeg-premix Automix on %s output from playback start', async (_label, output, expectedStartOptions) => {
     const decoder = new AutomixPairDecoder(new Map([
       ['current.flac', probe('current.flac', 44100)],
       ['next.flac', probe('next.flac', 44100)],
@@ -8036,11 +8039,54 @@ describe('AudioSession host availability', () => {
       logger: noopLogger,
       disableWatchdogTimer: true,
     });
-    const advanceEvents: Array<{ toTrackId?: string; nextStartSeconds?: number }> = [];
-    session.on('automix-advance', (event) => {
-      advanceEvents.push(event as { toTrackId?: string; nextStartSeconds?: number });
-    });
 
+    try {
+      const status = await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        output,
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+        },
+      });
+
+      expect(status.automix?.engine).toBe('ffmpegPremix');
+      expect(bridge.startOptions).toMatchObject(expectedStartOptions);
+      expect(decoder.automixRequests).toHaveLength(1);
+      expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('keeps late-arm Automix on the ffmpeg premix path instead of native dual-deck', async () => {
+    const decoder = new AutomixPairDecoder(new Map([
+      ['current.flac', probe('current.flac', 44100)],
+      ['next.flac', probe('next.flac', 44100)],
+    ]));
+    const bridge = new NativeAutomixBridge();
+    const session = createAudioSessionForTest({
+      decoder,
+      automixAnalyzer: { analyze: vi.fn(() => Promise.resolve(createEstimatedAutomixAnalysis({ durationSeconds: 120 }))) },
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
     try {
       await session.playLocalFile({
         filePath: 'current.flac',
@@ -8066,6 +8112,7 @@ describe('AudioSession host availability', () => {
 
       expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
       expect(session.getStatus().automix?.engine).toBe('ffmpegPremix');
+      expect(decoder.automixRequests).toHaveLength(1);
       await session.stop();
 
       await session.playLocalFile({
@@ -8091,37 +8138,80 @@ describe('AudioSession host availability', () => {
         },
       });
 
-      expect(bridge.prepareAutomixPlan).toHaveBeenCalledTimes(1);
-      expect(session.getStatus().automix?.engine).toBe('nativeDualDeck');
+      expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
+      expect(session.getStatus().automix?.engine).toBe('ffmpegPremix');
       expect(bridge.sessionBeginOptions.at(-1)).toMatchObject({ startSeconds: 80 });
-      expect(bridge.sessionBeginOptions.at(-1)?.durationSeconds).toBeGreaterThan(220);
-      const nativeCurrentDecode = decoder.decodeRequests.find((request) => request.filePath === 'current.flac' && request.startSeconds === 80);
-      const nativeNextDecode = decoder.decodeRequests.find((request) => request.filePath === 'next.flac');
-      expect(nativeCurrentDecode).toMatchObject({
+      expect(decoder.automixRequests).toHaveLength(2);
+      const lateArmRequest = decoder.automixRequests.at(-1);
+      expect(lateArmRequest?.current).toMatchObject({
         filePath: 'current.flac',
         startSeconds: 80,
         durationSeconds: expect.any(Number),
       });
-      expect(nativeCurrentDecode?.durationSeconds).toBeLessThan(40);
-      expect(nativeNextDecode).toMatchObject({
+      expect(lateArmRequest?.next).toMatchObject({
         filePath: 'next.flac',
         startSeconds: expect.any(Number),
+        durationSeconds: expect.any(Number),
       });
-      expect(nativeNextDecode?.durationSeconds).toBeUndefined();
+    } finally {
+      session.dispose();
+    }
+  });
 
-      const [plan, prepareOptions] = bridge.prepareAutomixPlan.mock.calls.at(-1) ?? [];
-      expect(plan).toBeDefined();
-      expect(prepareOptions).toBeDefined();
-      const fadeStartSeconds = prepareOptions?.fadeStartSeconds ?? 0;
-      const overlapSeconds = plan?.overlapSeconds ?? 0;
-      const outputSampleRate = bridge.startOptions?.requestedOutputSampleRate ?? 48000;
-      bridge.emit('position', Math.floor((fadeStartSeconds + (overlapSeconds * 0.49)) * outputSampleRate));
-      expect(advanceEvents).toHaveLength(0);
+  it.each([
+    ['WASAPI exclusive', { outputMode: 'exclusive' as const }, { asio: false, exclusive: true }],
+    ['ASIO', { outputMode: 'asio' as const, deviceName: 'TEAC ASIO USB DRIVER' }, { asio: true, exclusive: false }],
+  ])('keeps late-arm ffmpeg-premix Automix on %s output', async (_label, output, expectedStartOptions) => {
+    const decoder = new AutomixPairDecoder(new Map([
+      ['current.flac', probe('current.flac', 44100)],
+      ['next.flac', probe('next.flac', 44100)],
+    ]));
+    const bridge = new NativeAutomixBridge();
+    const session = createAudioSessionForTest({
+      decoder,
+      automixAnalyzer: { analyze: vi.fn(() => Promise.resolve(createEstimatedAutomixAnalysis({ durationSeconds: 120 }))) },
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
 
-      bridge.emit('position', Math.ceil((fadeStartSeconds + (overlapSeconds * 0.5)) * outputSampleRate));
-      expect(advanceEvents).toHaveLength(1);
-      expect(advanceEvents[0]).toMatchObject({ toTrackId: 'next-track' });
-      expect(advanceEvents[0]?.nextStartSeconds).toBeGreaterThan(plan?.nextStartSeconds ?? 0);
+    try {
+      const status = await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        startSeconds: 80,
+        output,
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+        },
+      });
+
+      expect(status.automix?.engine).toBe('ffmpegPremix');
+      expect(bridge.startOptions).toMatchObject(expectedStartOptions);
+      expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
+      expect(decoder.automixRequests).toHaveLength(1);
+      expect(decoder.automixRequests[0]?.current).toMatchObject({
+        filePath: 'current.flac',
+        startSeconds: 80,
+      });
+      expect(decoder.automixRequests[0]?.next).toMatchObject({
+        filePath: 'next.flac',
+      });
     } finally {
       session.dispose();
     }

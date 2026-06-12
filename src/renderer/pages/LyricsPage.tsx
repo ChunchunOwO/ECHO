@@ -171,6 +171,8 @@ type LyricsDisplaySettings = Pick<
   | "lyricsCoverOpacityPercent"
   | "lyricsSmartReadableColorsEnabled"
   | "lyricsImmersiveCoverStyleEnabled"
+  | "lyricsImmersiveCoverGlassEnabled"
+  | "lyricsImmersiveCoverGlassBlurPx"
   | "lyricsHighResolutionNetworkCoverEnabled"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
@@ -227,6 +229,8 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsCoverOpacityPercent: 100,
   lyricsSmartReadableColorsEnabled: false,
   lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
@@ -1069,6 +1073,8 @@ const selectLyricsDisplaySettings = (
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
   lyricsImmersiveCoverStyleEnabled: settings.lyricsImmersiveCoverStyleEnabled === true,
+  lyricsImmersiveCoverGlassEnabled: settings.lyricsImmersiveCoverGlassEnabled === true,
+  lyricsImmersiveCoverGlassBlurPx: settings.lyricsImmersiveCoverGlassBlurPx ?? fallbackLyricsDisplaySettings.lyricsImmersiveCoverGlassBlurPx,
   lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
@@ -1191,6 +1197,8 @@ const lyricsDisplaySettingsKeys = [
   "lyricsCoverOpacityPercent",
   "lyricsSmartReadableColorsEnabled",
   "lyricsImmersiveCoverStyleEnabled",
+  "lyricsImmersiveCoverGlassEnabled",
+  "lyricsImmersiveCoverGlassBlurPx",
   "lyricsHighResolutionNetworkCoverEnabled",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
@@ -1999,6 +2007,10 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         : requestedLyricsBackgroundMode === "coverColor" && coverColorSampleUrls.length === 0
           ? "theme"
           : requestedLyricsBackgroundMode;
+  const shouldUseImmersiveCoverGlass =
+    shouldUseImmersiveCoverStyle &&
+    effectiveLyricsBackgroundMode === "cover" &&
+    lyricsDisplaySettings.lyricsImmersiveCoverGlassEnabled === true;
   const effectiveLyricsBackgroundScalePercent =
     effectiveLyricsBackgroundMode === "cover"
       ? Math.max(100, lyricsDisplaySettings.lyricsBackgroundScalePercent)
@@ -2110,6 +2122,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         ).toFixed(2),
         "--lyrics-cover-blur": `${lyricsDisplaySettings.lyricsCoverBlurPx}px`,
         "--lyrics-cover-brightness": `${lyricsDisplaySettings.lyricsCoverBrightnessPercent}%`,
+        "--lyrics-immersive-glass-blur": `${lyricsDisplaySettings.lyricsImmersiveCoverGlassBlurPx}px`,
         "--lyrics-background-scale": (effectiveLyricsBackgroundScalePercent / 100).toFixed(2),
         "--lyrics-background-bleed": `-${lyricsDisplaySettings.lyricsCoverBlurPx * 2}px`,
         ...(coverColorCssVars ?? {}),
@@ -2123,6 +2136,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsDisplaySettings.lyricsColor,
       lyricsDisplaySettings.lyricsCoverBlurPx,
       lyricsDisplaySettings.lyricsCoverBrightnessPercent,
+      lyricsDisplaySettings.lyricsImmersiveCoverGlassBlurPx,
       lyricsDisplaySettings.lyricsCoverOpacityPercent,
       lyricsDisplaySettings.lyricsFontFamily,
       lyricsDisplaySettings.lyricsFontSizePx,
@@ -4405,6 +4419,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       className="lyrics-page"
       data-background={effectiveLyricsBackgroundMode}
       data-immersive-cover-style={shouldUseImmersiveCoverStyle ? "true" : undefined}
+      data-immersive-cover-glass={shouldUseImmersiveCoverGlass ? "true" : undefined}
       data-lyrics-color-mode={lyricsUsesManualColor ? "manual" : "theme"}
       data-smart-readable={smartReadableColors ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}

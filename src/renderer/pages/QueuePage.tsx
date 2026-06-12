@@ -34,7 +34,7 @@ import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
 import { getPageScrollContainer } from '../components/ui/InfiniteScrollSentinel';
 
-const automixTemporarilyDisabled = true;
+const automixTemporarilyDisabled = false;
 const randomQueuePageSize = 96;
 const locateCurrentTrackEvent = 'app:locate-current-track';
 const queuePagePerfWarnThresholdMs = 120;
@@ -1023,7 +1023,7 @@ export const QueuePage = (): JSX.Element => {
           onClick={() => queue.setAutomixEnabled(!queue.automixEnabled)}
         >
           <Wand2 size={16} />
-          智能下一首
+          Automix 实验
         </button>
         <button className="queue-tool-button" type="button" disabled={queue.items.length === 0} onClick={handleSaveQueueSnapshot}>
           <Save size={16} />

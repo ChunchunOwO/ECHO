@@ -934,6 +934,113 @@
   color: var(--theme-muted-text);
 }
 
+.album-streaming-library {
+  padding-top: 20px;
+}
+
+.album-streaming-album-card {
+  cursor: pointer;
+}
+
+.album-streaming-state {
+  display: grid;
+  min-height: 96px;
+  place-items: center;
+  margin: 0;
+  padding: 18px;
+  color: var(--theme-muted-text);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.album-streaming-track-list {
+  display: grid;
+}
+
+.album-streaming-track-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(48px, auto) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 70px;
+  padding: 10px var(--album-detail-track-content-x);
+  border-top: 1px solid color-mix(in srgb, var(--theme-panel-border) 64%, transparent);
+  color: var(--theme-page-text);
+}
+
+.album-streaming-track-row[data-unavailable='true'] {
+  opacity: 0.58;
+}
+
+.album-streaming-track-cover {
+  display: grid;
+  width: 48px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  place-items: center;
+  color: var(--theme-subtle-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 4px;
+  background: var(--theme-panel-bg-muted);
+}
+
+.album-streaming-track-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.album-streaming-track-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.album-streaming-track-main strong,
+.album-streaming-track-main span,
+.album-streaming-track-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-streaming-track-main strong {
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.album-streaming-track-main span,
+.album-streaming-track-main small,
+.album-streaming-track-duration {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.album-streaming-track-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.album-streaming-track-actions button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--theme-muted-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 999px;
+  background: var(--theme-button-bg);
+}
+
+.album-streaming-track-actions button:not(:disabled):hover {
+  color: var(--theme-accent-text-strong);
+  border-color: var(--theme-accent-border);
+  background: var(--theme-button-hover-bg);
+}
+
 .album-information-articles {
   display: grid;
   gap: 16px;

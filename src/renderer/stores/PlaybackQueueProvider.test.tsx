@@ -2051,6 +2051,8 @@ describe('PlaybackQueueProvider playback history session', () => {
     fireEvent.click(screen.getByRole('button', { name: 'enable' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'enable' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(window.localStorage.getItem('echo-next:automix-experimental-opt-in')).toBe('true');
+    expect(window.localStorage.getItem('echo-next:automix-enabled')).toBe('true');
     expect(playLocalFile).toHaveBeenCalledTimes(1);
     await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: second.id,
@@ -3512,7 +3514,7 @@ describe('PlaybackQueueProvider playback modes', () => {
       mode: {
         isShuffleEnabled: true,
         repeatMode: 'all',
-        automixEnabled: false,
+        automixEnabled: true,
       },
     });
     const saveQueueSession = vi.fn(async (snapshot) => snapshot);
@@ -4707,6 +4709,32 @@ describe('PlaybackQueueProvider persisted queue session', () => {
     expect(screen.getByLabelText('automix-mode').textContent).toBe('off');
   });
 
+  it('restores Automix from the main process session only after experimental opt-in', async () => {
+    const tracks = [makeTrack(1), makeTrack(2)];
+    const session = makePersistedQueueSession(tracks, {
+      currentQueueId: 'queue-2',
+      currentTrackId: tracks[1].id,
+      mode: {
+        isShuffleEnabled: true,
+        repeatMode: 'one',
+        automixEnabled: true,
+      },
+    });
+    window.localStorage.setItem('echo-next:automix-experimental-opt-in', 'true');
+    window.localStorage.setItem('echo-next:automix-enabled', 'true');
+    window.echo = {
+      playback: {
+        getQueueSession: vi.fn().mockResolvedValue(session),
+        saveQueueSession: vi.fn(async (snapshot) => snapshot),
+      },
+    } as unknown as Window['echo'];
+
+    renderSessionProbe();
+
+    await waitFor(() => expect(screen.getByLabelText('queue-size').textContent).toBe('2'));
+    expect(screen.getByLabelText('automix-mode').textContent).toBe('on');
+  });
+
   it('does not write an empty queue before main-process hydration finishes', () => {
     vi.useFakeTimers();
     const saveQueueSession = vi.fn(async (snapshot) => snapshot);
@@ -4735,7 +4763,7 @@ describe('PlaybackQueueProvider persisted queue session', () => {
       mode: {
         isShuffleEnabled: true,
         repeatMode: 'all',
-        automixEnabled: false,
+        automixEnabled: true,
       },
     });
     window.localStorage.setItem('echo-next:playback-queue', JSON.stringify({
@@ -4776,6 +4804,7 @@ describe('PlaybackQueueProvider persisted queue session', () => {
     expect(window.localStorage.getItem('echo-next:playback-queue')).toBeNull();
     expect(window.localStorage.getItem('echo-next:playback-mode')).toBeNull();
     expect(window.localStorage.getItem('echo-next:automix-enabled')).toBeNull();
+    expect(window.localStorage.getItem('echo-next:automix-experimental-opt-in')).toBeNull();
   });
 
   it('starts the restored current queue item from the persisted resume position', async () => {

@@ -338,8 +338,9 @@ const PlaybackQueueContext = createContext<PlaybackQueueContextValue | null>(nul
 
 const playbackModeMemoryKey = 'echo-next:playback-mode';
 const automixEnabledMemoryKey = 'echo-next:automix-enabled';
+const automixExperimentOptInMemoryKey = 'echo-next:automix-experimental-opt-in';
 const playbackQueueMemoryKey = 'echo-next:playback-queue';
-const automixTemporarilyDisabled = true;
+const automixTemporarilyDisabled = false;
 
 const defaultPlaybackModeMemory: PlaybackModeMemory = {
   isShuffleEnabled: false,
@@ -521,7 +522,8 @@ const readAutomixEnabledMemory = (): boolean => {
   }
 
   try {
-    return window.localStorage.getItem(automixEnabledMemoryKey) === 'true';
+    return window.localStorage.getItem(automixExperimentOptInMemoryKey) === 'true' &&
+      window.localStorage.getItem(automixEnabledMemoryKey) === 'true';
   } catch {
     return false;
   }
@@ -529,11 +531,16 @@ const readAutomixEnabledMemory = (): boolean => {
 
 const writeAutomixEnabledMemory = (enabled: boolean): void => {
   try {
-    window.localStorage.setItem(automixEnabledMemoryKey, enabled && !automixTemporarilyDisabled ? 'true' : 'false');
+    const nextValue = enabled && !automixTemporarilyDisabled ? 'true' : 'false';
+    window.localStorage.setItem(automixExperimentOptInMemoryKey, nextValue);
+    window.localStorage.setItem(automixEnabledMemoryKey, nextValue);
   } catch {
     // Automix is optional; storage failures should not block playback.
   }
 };
+
+const canRestoreAutomixEnabled = (enabled: boolean | null | undefined): boolean =>
+  !automixTemporarilyDisabled && enabled === true && readAutomixEnabledMemory();
 
 const readPlaybackQueueMemory = (): PlaybackQueueMemory => {
   if (typeof window === 'undefined') {
@@ -591,9 +598,13 @@ const shouldUseLegacyPlaybackStorage = (): boolean => !hasPlaybackSessionPersist
 
 const clearLegacyPlaybackMemory = (): void => {
   try {
+    const keepAutomixExperimentOptIn = window.localStorage.getItem(automixExperimentOptInMemoryKey) === 'true';
     window.localStorage.removeItem(playbackQueueMemoryKey);
     window.localStorage.removeItem(playbackModeMemoryKey);
-    window.localStorage.removeItem(automixEnabledMemoryKey);
+    if (!keepAutomixExperimentOptIn) {
+      window.localStorage.removeItem(automixEnabledMemoryKey);
+      window.localStorage.removeItem(automixExperimentOptInMemoryKey);
+    }
   } catch {
     // Legacy migration cleanup is best-effort.
   }
@@ -602,7 +613,7 @@ const clearLegacyPlaybackMemory = (): void => {
 const readLegacyPlaybackSession = (): HydratedPlaybackSession => ({
   ...readPlaybackQueueMemory(),
   mode: readPlaybackModeMemory(),
-  automixEnabled: automixTemporarilyDisabled ? false : readAutomixEnabledMemory(),
+  automixEnabled: readAutomixEnabledMemory(),
   playlistPlayback: null,
 });
 
@@ -614,7 +625,7 @@ const hasLegacyPlaybackSession = (session: HydratedPlaybackSession): boolean =>
   session.mode.isShuffleEnabled ||
   session.mode.repeatMode !== 'off' ||
   session.mode.autoFillQueueEnabled ||
-  (!automixTemporarilyDisabled && session.automixEnabled);
+  canRestoreAutomixEnabled(session.automixEnabled);
 
 const isResumeMemory = (
   value: unknown,
@@ -666,7 +677,7 @@ const playlistSnapshotFromPersisted = (
       repeatMode: isRepeatMode(snapshot.mode?.repeatMode) ? snapshot.mode.repeatMode : 'off',
       autoFillQueueEnabled: snapshot.mode?.autoFillQueueEnabled === true,
     },
-    automixEnabled: !automixTemporarilyDisabled && snapshot.mode?.automixEnabled === true,
+    automixEnabled: canRestoreAutomixEnabled(snapshot.mode?.automixEnabled),
   };
 };
 
@@ -721,7 +732,7 @@ const playbackSessionFromPersisted = (session: PersistedPlaybackSessionV1 | null
       repeatMode: isRepeatMode(session.mode?.repeatMode) ? session.mode.repeatMode : 'off',
       autoFillQueueEnabled: session.mode?.autoFillQueueEnabled === true,
     },
-    automixEnabled: !automixTemporarilyDisabled && session.mode?.automixEnabled === true,
+    automixEnabled: canRestoreAutomixEnabled(session.mode?.automixEnabled),
     playlistPlayback: playlistPlaybackFromPersisted(session.playlistPlayback),
   };
 };
@@ -1494,9 +1505,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const setAutomixEnabled = useCallback((enabled: boolean): void => {
     automixEnabledRef.current = enabled;
     setAutomixEnabledState(enabled);
-    if (shouldUseLegacyPlaybackStorage()) {
-      writeAutomixEnabledMemory(enabled);
-    }
+    writeAutomixEnabledMemory(enabled);
     if (enabled) {
       const currentItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
       if (currentItem) {
@@ -1519,7 +1528,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       setRepeatMode(session.mode.repeatMode);
       autoFillQueueEnabledRef.current = session.mode.autoFillQueueEnabled;
       setAutoFillQueueEnabledState(session.mode.autoFillQueueEnabled);
-      const hydratedAutomixEnabled = automixTemporarilyDisabled ? false : session.automixEnabled;
+      const hydratedAutomixEnabled = canRestoreAutomixEnabled(session.automixEnabled);
       automixEnabledRef.current = hydratedAutomixEnabled;
       setAutomixEnabledState(hydratedAutomixEnabled);
       setPlaylistPlaybackStateInternal(session.playlistPlayback ?? defaultPlaylistPlaybackState);
@@ -1556,7 +1565,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       setRepeatMode(snapshot.mode.repeatMode);
       autoFillQueueEnabledRef.current = snapshot.mode.autoFillQueueEnabled;
       setAutoFillQueueEnabledState(snapshot.mode.autoFillQueueEnabled);
-      const nextAutomixEnabled = automixTemporarilyDisabled ? false : snapshot.automixEnabled;
+      const nextAutomixEnabled = canRestoreAutomixEnabled(snapshot.automixEnabled);
       automixEnabledRef.current = nextAutomixEnabled;
       setAutomixEnabledState(nextAutomixEnabled);
     },

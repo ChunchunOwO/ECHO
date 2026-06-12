@@ -56,6 +56,8 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
   lyricsImmersiveCoverStyleEnabled: false,
+  lyricsImmersiveCoverGlassEnabled: false,
+  lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -1236,6 +1238,57 @@ describe('LyricsSettingsDrawer', () => {
     );
     expect(displaySettingsChangedListener).toHaveBeenCalledWith(
       expect.objectContaining({ detail: { lyricsImmersiveCoverStyleEnabled: true } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+  });
+
+  it('shows immersive cover glass controls only after enabling the immersive cover style', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings({
+      lyricsImmersiveCoverStyleEnabled: true,
+      ...patch,
+    }));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({
+          lyricsImmersiveCoverStyleEnabled: true,
+          lyricsImmersiveCoverGlassEnabled: false,
+          lyricsImmersiveCoverGlassBlurPx: 16,
+        })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-immersive-cover-glass-toggle input')).toBeTruthy());
+    const glassToggle = container.querySelector('.lyrics-immersive-cover-glass-toggle input') as HTMLInputElement;
+    expect(glassToggle.checked).toBe(false);
+    expect(container.querySelector('.lyrics-immersive-cover-glass-blur-range input')).toBeNull();
+
+    fireEvent.click(glassToggle);
+
+    expect(glassToggle.checked).toBe(true);
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsImmersiveCoverGlassEnabled: true }));
+    const blurSlider = container.querySelector('.lyrics-immersive-cover-glass-blur-range input') as HTMLInputElement;
+    expect(blurSlider).toBeTruthy();
+    expect(blurSlider.value).toBe('16');
+
+    fireEvent.change(blurSlider, { target: { value: '24' } });
+
+    expect(blurSlider.value).toBe('24');
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsImmersiveCoverGlassBlurPx: 24 }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsImmersiveCoverGlassEnabled: true } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsImmersiveCoverGlassBlurPx: 24 } }),
     );
 
     window.removeEventListener('settings:changed', settingsChangedListener);

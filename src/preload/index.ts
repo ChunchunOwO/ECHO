@@ -1822,6 +1822,7 @@ const echoApi: EchoApi = {
     applyDuplicateTrackCleanup: (request) => ipcRenderer.invoke(IpcChannels.LibraryApplyDuplicateTrackCleanup, request),
     getPlaylists: () => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylists),
     createPlaylist: (request) => ipcRenderer.invoke(IpcChannels.LibraryCreatePlaylist, request),
+    createSmartPlaylist: (request) => ipcRenderer.invoke(IpcChannels.LibraryCreateSmartPlaylist, request),
     updatePlaylist: (request) => ipcRenderer.invoke(IpcChannels.LibraryUpdatePlaylist, request),
     deletePlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryDeletePlaylist, playlistId),
     getPlaylist: (playlistId) => ipcRenderer.invoke(IpcChannels.LibraryGetPlaylist, playlistId),

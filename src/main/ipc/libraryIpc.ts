@@ -46,6 +46,7 @@ import type {
   NetworkTagCandidateSearchRequest,
   NetworkTagProvider,
   PlaybackHistoryQuery,
+  SmartPlaylistGenerateRequest,
   StartPlaybackHistoryRequest,
   BpmAnalysisStartOptions,
   ReplayGainAnalysisStartOptions,
@@ -714,6 +715,19 @@ const normalizeCreatePlaylistRequest = (value: unknown): { name: string; descrip
   return {
     name: requireText(input.name, 'name'),
     description: typeof input.description === 'string' ? input.description : null,
+  };
+};
+
+const normalizeSmartPlaylistGenerateRequest = (value: unknown): SmartPlaylistGenerateRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    name: typeof input.name === 'string' || input.name === null ? input.name : undefined,
+    limit: typeof input.limit === 'number' && Number.isFinite(input.limit) ? input.limit : undefined,
+    recentDays: typeof input.recentDays === 'number' && Number.isFinite(input.recentDays) ? input.recentDays : undefined,
   };
 };
 
@@ -1893,6 +1907,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetPlaylists, () => getLibraryService().getPlaylists());
   ipcMain.handle(IpcChannels.LibraryCreatePlaylist, (_event, request: unknown) =>
     getLibraryService().createPlaylist(normalizeCreatePlaylistRequest(request)),
+  );
+  ipcMain.handle(IpcChannels.LibraryCreateSmartPlaylist, (_event, request: unknown) =>
+    getLibraryService().createSmartPlaylistFromListeningHistory(normalizeSmartPlaylistGenerateRequest(request)),
   );
   ipcMain.handle(IpcChannels.LibraryUpdatePlaylist, (_event, request: unknown) =>
     getLibraryService().updatePlaylistArtwork(normalizeUpdatePlaylistRequest(request)),

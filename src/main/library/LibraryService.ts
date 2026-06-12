@@ -112,6 +112,8 @@ import type {
   StartPlaybackHistoryResult,
   FinishPlaybackHistoryRequest,
   CreatePlaylistRequest,
+  SmartPlaylistGenerateRequest,
+  SmartPlaylistGenerateResult,
   UpdatePlaylistRequest,
   DuplicateTrackCleanupPreview,
   DuplicateTrackGroup,
@@ -537,6 +539,10 @@ export class LibraryService {
 
   createPlaylist(request: CreatePlaylistRequest): LibraryPlaylist {
     return this.store.createPlaylist(request);
+  }
+
+  createSmartPlaylistFromListeningHistory(request: SmartPlaylistGenerateRequest): SmartPlaylistGenerateResult {
+    return this.store.createSmartPlaylistFromListeningHistory(request);
   }
 
   updatePlaylist(request: UpdatePlaylistRequest): LibraryPlaylist {

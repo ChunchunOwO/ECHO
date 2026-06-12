@@ -161,6 +161,7 @@ export const IpcChannels = {
   LibraryApplyDuplicateTrackCleanup: 'library:apply-duplicate-track-cleanup',
   LibraryGetPlaylists: 'library:get-playlists',
   LibraryCreatePlaylist: 'library:create-playlist',
+  LibraryCreateSmartPlaylist: 'library:create-smart-playlist',
   LibraryUpdatePlaylist: 'library:update-playlist',
   LibraryDeletePlaylist: 'library:delete-playlist',
   LibraryGetPlaylist: 'library:get-playlist',

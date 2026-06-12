@@ -192,7 +192,7 @@ import {
 } from '../utils/echoBridge';
 import { isImeComposingKeyEvent } from '../utils/imeInput';
 
-const automixTemporarilyDisabled = true;
+const automixTemporarilyDisabled = false;
 
 const normalizeAsioOutputChannelStart = (value: unknown): number | undefined => {
   const numeric = Number(value);

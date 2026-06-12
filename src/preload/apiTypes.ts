@@ -139,6 +139,8 @@ import type {
   PlaybackHistoryRefreshResult,
   PlaybackHistorySummary,
   PlaybackStatsDashboard,
+  SmartPlaylistGenerateRequest,
+  SmartPlaylistGenerateResult,
   StartPlaybackHistoryRequest,
   StartPlaybackHistoryResult,
   FinishPlaybackHistoryRequest,
@@ -397,6 +399,7 @@ export type EchoApi = {
     applyDuplicateTrackCleanup: (request: DuplicateTrackCleanupApplyRequest) => Promise<DuplicateTrackCleanupResult>;
     getPlaylists: () => Promise<LibraryPlaylist[]>;
     createPlaylist: (request: CreatePlaylistRequest) => Promise<LibraryPlaylist>;
+    createSmartPlaylist: (request?: SmartPlaylistGenerateRequest) => Promise<SmartPlaylistGenerateResult>;
     updatePlaylist: (request: UpdatePlaylistRequest) => Promise<LibraryPlaylist>;
     deletePlaylist: (playlistId: string) => Promise<void>;
     getPlaylist: (playlistId: string) => Promise<LibraryPlaylist | null>;

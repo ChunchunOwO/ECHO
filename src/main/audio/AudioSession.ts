@@ -1018,6 +1018,7 @@ const clampAutomixTransitionSeconds = (value: unknown): number =>
     ? Math.max(2, Math.min(16, value))
     : 16;
 
+const nativeAutomixDualDeckEnabled = false;
 const nativeAutomixDualDeckLateArmWindowSeconds = 60;
 const automixAdvanceAudibleRatio = 0.5;
 
@@ -4115,6 +4116,7 @@ export class AudioSession extends EventEmitter {
     const automix = request.automix;
     const next = automix?.next ?? null;
     if (
+      !nativeAutomixDualDeckEnabled ||
       automix?.enabled !== true ||
       !next ||
       (automix.following?.length ?? 0) > 0 ||

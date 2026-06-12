@@ -6709,6 +6709,120 @@ export class LibraryStore {
     return this.ensureSystemPlaylist(likedAlbumsSourcePlaylistId, 'Liked Albums', 'Albums you liked in ECHO Next.');
   }
 
+  createSmartPlaylistFromListeningHistory(
+    input: { name?: string | null; limit?: number; recentDays?: number } = {},
+    timestamp = nowIso(),
+  ): {
+    playlist: LibraryPlaylist;
+    items: LibraryPlaylistItem[];
+    candidateCount: number;
+    requestedLimit: number;
+    recentDays: number;
+  } {
+    const requestedLimit = Math.max(10, Math.min(100, Math.floor(Number(input.limit) || 30)));
+    const recentDays = Math.max(7, Math.min(3650, Math.floor(Number(input.recentDays) || 180)));
+    const since = new Date(Date.now() - recentDays * 24 * 60 * 60 * 1000).toISOString();
+    const generatedDate = timestamp.slice(0, 10);
+    const name = textOrNull(input.name) ?? `智能歌单 ${generatedDate}`;
+    const candidateRows = this.allRows(
+      `SELECT
+         tracks.id AS track_id,
+         COALESCE(NULLIF(TRIM(tracks.artist), ''), NULLIF(TRIM(playback_history_stats.artist), ''), 'Unknown Artist') AS artist,
+         COALESCE(NULLIF(TRIM(tracks.album), ''), NULLIF(TRIM(playback_history_stats.album), ''), '') AS album,
+         COALESCE(playback_history_stats.play_count, 0) AS play_count,
+         COALESCE(playback_history_stats.total_played_seconds, 0) AS played_seconds,
+         playback_history_stats.last_started_at AS last_started_at,
+         (
+           COALESCE(playback_history_stats.play_count, 0) * 12.0 +
+           MIN(COALESCE(playback_history_stats.total_played_seconds, 0), 7200) / 240.0 +
+           CASE
+             WHEN playback_history_stats.last_started_at >= ? THEN 36.0
+             WHEN playback_history_stats.last_started_at >= ? THEN 18.0
+             WHEN playback_history_stats.last_started_at >= ? THEN 8.0
+             ELSE 0.0
+           END
+         ) AS score
+       FROM playback_history_stats
+       INNER JOIN tracks ON tracks.id = playback_history_stats.track_id
+       WHERE playback_history_stats.media_type = 'local'
+         AND playback_history_stats.track_id IS NOT NULL
+         AND tracks.missing = 0
+         AND playback_history_stats.last_started_at >= ?
+       ORDER BY score DESC, playback_history_stats.last_started_at DESC, tracks.title COLLATE NOCASE
+       LIMIT ?`,
+      new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+      since,
+      since,
+      Math.max(requestedLimit * 8, 120),
+    );
+
+    const selectedTrackIds: string[] = [];
+    const overflowTrackIds: string[] = [];
+    const artistCounts = new Map<string, number>();
+    const albumCounts = new Map<string, number>();
+    const seenTrackIds = new Set<string>();
+
+    for (const row of candidateRows) {
+      const trackId = textOrNull(row.track_id);
+      if (!trackId || seenTrackIds.has(trackId)) {
+        continue;
+      }
+
+      seenTrackIds.add(trackId);
+      const artistKey = String(row.artist ?? 'Unknown Artist').trim().toLocaleLowerCase();
+      const albumKey = String(row.album ?? '').trim().toLocaleLowerCase();
+      const artistCount = artistCounts.get(artistKey) ?? 0;
+      const albumCount = albumKey ? (albumCounts.get(albumKey) ?? 0) : 0;
+      if (artistCount >= 3 || (albumKey && albumCount >= 2)) {
+        overflowTrackIds.push(trackId);
+        continue;
+      }
+
+      selectedTrackIds.push(trackId);
+      artistCounts.set(artistKey, artistCount + 1);
+      if (albumKey) {
+        albumCounts.set(albumKey, albumCount + 1);
+      }
+
+      if (selectedTrackIds.length >= requestedLimit) {
+        break;
+      }
+    }
+
+    for (const trackId of overflowTrackIds) {
+      if (selectedTrackIds.length >= requestedLimit) {
+        break;
+      }
+      if (!selectedTrackIds.includes(trackId)) {
+        selectedTrackIds.push(trackId);
+      }
+    }
+
+    if (selectedTrackIds.length === 0) {
+      throw new Error('Not enough listening history to generate a smart playlist.');
+    }
+
+    return this.transaction(() => {
+      const playlist = this.createPlaylist(
+        {
+          name,
+          description: `根据最近 ${recentDays} 天播放历史、常听次数和播放时长生成。`,
+        },
+        timestamp,
+      );
+      const items = this.addTracksToPlaylist(playlist.id, selectedTrackIds, timestamp);
+      const refreshedPlaylist = this.getPlaylist(playlist.id) ?? playlist;
+      return {
+        playlist: refreshedPlaylist,
+        items,
+        candidateCount: candidateRows.length,
+        requestedLimit,
+        recentDays,
+      };
+    });
+  }
+
   createPlaylist(input: { name: string; description?: string | null }, timestamp = nowIso()): LibraryPlaylist {
     const id = randomUUID();
     const name = input.name.trim();

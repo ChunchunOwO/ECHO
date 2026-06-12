@@ -1075,7 +1075,8 @@
   color: var(--theme-accent-text);
 }
 
-.playlist-daily-recommend {
+.playlist-daily-recommend,
+.playlist-smart-generate {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
@@ -1090,40 +1091,54 @@
   text-align: left;
 }
 
-.playlist-daily-recommend:hover {
+.playlist-smart-generate {
+  color: var(--theme-page-text);
+  border-color: var(--theme-card-border);
+  background: var(--theme-panel-bg);
+}
+
+.playlist-daily-recommend:hover,
+.playlist-smart-generate:hover {
   border-color: var(--theme-accent-border);
   background: var(--theme-accent-bg-strong);
 }
 
-.playlist-daily-recommend:disabled {
+.playlist-daily-recommend:disabled,
+.playlist-smart-generate:disabled {
   cursor: default;
   opacity: 0.62;
 }
 
-.playlist-daily-recommend > svg {
+.playlist-daily-recommend > svg,
+.playlist-smart-generate > svg {
   justify-self: center;
 }
 
-.playlist-daily-recommend span {
+.playlist-daily-recommend span,
+.playlist-smart-generate span {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
 .playlist-daily-recommend strong,
-.playlist-daily-recommend small {
+.playlist-daily-recommend small,
+.playlist-smart-generate strong,
+.playlist-smart-generate small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.playlist-daily-recommend strong {
+.playlist-daily-recommend strong,
+.playlist-smart-generate strong {
   color: var(--theme-heading-text);
   font-size: 13px;
   font-weight: 860;
 }
 
-.playlist-daily-recommend small {
+.playlist-daily-recommend small,
+.playlist-smart-generate small {
   color: var(--theme-muted-text);
   font-size: 11px;
   font-weight: 720;
@@ -5181,6 +5196,7 @@ html[data-theme="dark"] .playlist-detail {
 
 html[data-theme="dark"] .playlist-list-item,
 html[data-theme="dark"] .playlist-daily-recommend,
+html[data-theme="dark"] .playlist-smart-generate,
 html[data-theme="dark"] .playlist-create-form input,
 html[data-theme="dark"] .playlist-import-box label,
 html[data-theme="dark"] .playlist-import-box .secondary-action,
@@ -5205,6 +5221,7 @@ html[data-theme="dark"] .playlist-cover-reset {
 
 html[data-theme="dark"] .playlist-list-item:hover,
 html[data-theme="dark"] .playlist-daily-recommend:hover,
+html[data-theme="dark"] .playlist-smart-generate:hover,
 html[data-theme="dark"] .playlist-list-item[data-active="true"],
 html[data-theme="dark"] .playlist-import-box .secondary-action:hover:not(:disabled),
 html[data-theme="dark"] .secondary-action:hover:not(:disabled),

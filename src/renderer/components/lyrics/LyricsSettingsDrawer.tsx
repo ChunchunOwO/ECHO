@@ -681,7 +681,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
   lyricsImmersiveCoverStyleEnabled: settings.lyricsImmersiveCoverStyleEnabled === true,
   lyricsImmersiveCoverGlassEnabled: settings.lyricsImmersiveCoverGlassEnabled === true,
-  lyricsImmersiveCoverGlassBlurPx: settings.lyricsImmersiveCoverGlassBlurPx,
+  lyricsImmersiveCoverGlassBlurPx: settings.lyricsImmersiveCoverGlassBlurPx ?? fallbackSettings.lyricsImmersiveCoverGlassBlurPx,
   lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
@@ -2703,6 +2703,40 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
             />
           </label>
           <p>{t('lyricsSettings.background.immersiveCoverStyleDescription')}</p>
+
+          {effectiveSettings.lyricsImmersiveCoverStyleEnabled ? (
+            <div className="lyrics-immersive-glass-controls">
+              <label className="audio-toggle-row lyrics-immersive-cover-glass-toggle">
+                <span>
+                  <SlidersHorizontal size={17} />
+                  <strong>{t('lyricsSettings.background.immersiveCoverGlass')}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={effectiveSettings.lyricsImmersiveCoverGlassEnabled === true}
+                  disabled={isBusy}
+                  onChange={(event) => void patchSettings({ lyricsImmersiveCoverGlassEnabled: event.currentTarget.checked })}
+                />
+              </label>
+              <p>{t('lyricsSettings.background.immersiveCoverGlassDescription')}</p>
+              {effectiveSettings.lyricsImmersiveCoverGlassEnabled ? (
+                <label className="lyrics-drawer-range lyrics-immersive-cover-glass-blur-range">
+                  <span>
+                    <strong>{t('lyricsSettings.background.immersiveCoverGlassBlur')}</strong>
+                    <em>{effectiveSettings.lyricsImmersiveCoverGlassBlurPx}px</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={32}
+                    step={1}
+                    value={effectiveSettings.lyricsImmersiveCoverGlassBlurPx}
+                    onChange={(event) => patchSettingsDebounced({ lyricsImmersiveCoverGlassBlurPx: Number(event.currentTarget.value) })}
+                  />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
 
           <label className="audio-toggle-row lyrics-smart-readable-toggle">
             <span>

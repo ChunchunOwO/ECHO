@@ -53,6 +53,27 @@ const seedTrack = (store: LibraryStore, id: string, overrides: Record<string, un
   });
 };
 
+const recordCompletedPlay = (store: LibraryStore, trackId: string, startedAt: string, overrides: Record<string, unknown> = {}): void => {
+  const entry = store.createPlaybackHistoryEntry({
+    trackId,
+    trackPath: `D:/Music/${trackId}.flac`,
+    title: String(overrides.title ?? `Track ${trackId}`),
+    artist: String(overrides.artist ?? 'Artist'),
+    album: String(overrides.album ?? 'Album'),
+    albumArtist: String(overrides.albumArtist ?? overrides.artist ?? 'Artist'),
+    coverId: null,
+    durationSeconds: 180,
+    startedAt,
+  });
+
+  store.finishPlaybackHistoryEntry(entry.id, {
+    playedSeconds: 180,
+    durationSeconds: 180,
+    completed: true,
+    endedAt: startedAt,
+  });
+};
+
 const seedAlbum = (store: LibraryStore, id: string, overrides: Record<string, unknown> = {}): void => {
   const database = (store as unknown as { database: EchoDatabase }).database;
   database
@@ -81,6 +102,50 @@ afterEach(() => {
 });
 
 describe('LibraryStore liked media', () => {
+  it('generates a local smart playlist from frequent recent history', () => {
+    const store = createStore();
+    for (let index = 1; index <= 5; index += 1) {
+      const trackId = `heavy-${index}`;
+      seedTrack(store, trackId, { artist: 'Repeat Artist', album: 'Repeat Album' });
+      for (let play = 0; play < 4; play += 1) {
+        recordCompletedPlay(store, trackId, `2026-01-${String(index + play).padStart(2, '0')}T00:00:00.000Z`, {
+          artist: 'Repeat Artist',
+          album: 'Repeat Album',
+        });
+      }
+    }
+
+    for (let index = 1; index <= 9; index += 1) {
+      const trackId = `varied-${index}`;
+      seedTrack(store, trackId, { artist: `Artist ${index}`, album: `Album ${index}` });
+      recordCompletedPlay(store, trackId, `2026-02-${String(index).padStart(2, '0')}T00:00:00.000Z`, {
+        artist: `Artist ${index}`,
+        album: `Album ${index}`,
+      });
+    }
+
+    seedTrack(store, 'missing-hot', { artist: 'Missing Artist', album: 'Missing Album', missing: 1 });
+    for (let play = 0; play < 8; play += 1) {
+      recordCompletedPlay(store, 'missing-hot', `2026-03-${String(play + 1).padStart(2, '0')}T00:00:00.000Z`, {
+        artist: 'Missing Artist',
+        album: 'Missing Album',
+      });
+    }
+
+    const result = store.createSmartPlaylistFromListeningHistory({
+      name: 'Smart Mix',
+      limit: 10,
+      recentDays: 3650,
+    });
+    const page = store.getPlaylistItems(result.playlist.id);
+    const repeatedAlbumCount = page.items.filter((item) => item.albumSnapshot === 'Repeat Album').length;
+
+    expect(result.playlist.name).toBe('Smart Mix');
+    expect(page.total).toBe(10);
+    expect(page.items.map((item) => item.mediaId)).not.toContain('missing-hot');
+    expect(repeatedAlbumCount).toBeLessThanOrEqual(2);
+  });
+
   it('creates liked system playlists and protects them from deletion', () => {
     const store = createStore();
 
@@ -159,4 +224,3 @@ describe('LibraryStore liked media', () => {
     expect(likedAlbum.album).toBeNull();
   });
 });
-

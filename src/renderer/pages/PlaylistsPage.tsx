@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, GripVertical, Heart, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, GripVertical, Heart, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, SlidersHorizontal, Sparkles, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
@@ -566,6 +566,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [isImportingPlaylistFile, setIsImportingPlaylistFile] = useState(false);
   const [isAddingLocalFiles, setIsAddingLocalFiles] = useState(false);
   const [isRefreshingStreamingPlaylist, setIsRefreshingStreamingPlaylist] = useState(false);
+  const [isGeneratingSmartPlaylist, setIsGeneratingSmartPlaylist] = useState(false);
   const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
   const [downloadingTrackId, setDownloadingTrackId] = useState<string | null>(null);
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
@@ -1154,6 +1155,34 @@ export const PlaylistsPage = (): JSX.Element => {
       window.dispatchEvent(new Event('library:playlists-changed'));
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : String(createError));
+    }
+  };
+
+  const handleGenerateSmartPlaylist = async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.createSmartPlaylist) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to generate smart playlists.');
+      setStatusMessage(null);
+      return;
+    }
+
+    setIsGeneratingSmartPlaylist(true);
+    setError(null);
+    setStatusMessage('正在根据最近常听生成歌单...');
+    try {
+      const result = await library.createSmartPlaylist({ limit: 30, recentDays: 180 });
+      await loadPlaylists();
+      setSelectedPlaylistId(result.playlist.id);
+      setPlaylistSearchInput('');
+      setPlaylistSearch('');
+      await loadItems(result.playlist.id, 1, 'replace', '');
+      setStatusMessage(`已生成智能歌单：${result.playlist.name}（${result.items.length} 首）`);
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : String(generateError));
+      setStatusMessage(null);
+    } finally {
+      setIsGeneratingSmartPlaylist(false);
     }
   };
 
@@ -2409,6 +2438,19 @@ export const PlaylistsPage = (): JSX.Element => {
               <span>
                 <strong>{t('playlistsPage.daily.title')}</strong>
                 <small>{t('playlistsPage.daily.subtitle')}</small>
+              </span>
+            </button>
+
+            <button
+              className="playlist-smart-generate"
+              type="button"
+              disabled={isGeneratingSmartPlaylist}
+              onClick={() => void handleGenerateSmartPlaylist()}
+            >
+              {isGeneratingSmartPlaylist ? <Loader2 className="spinning-icon" size={16} /> : <Sparkles size={16} />}
+              <span>
+                <strong>智能生成</strong>
+                <small>根据最近常听 / 历史高频</small>
               </span>
             </button>
 

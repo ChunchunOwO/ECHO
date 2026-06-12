@@ -9,16 +9,17 @@ import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/u
 import { StyledSelect } from '../components/ui/StyledSelect';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
 import { type QueueSource, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { useI18n } from '../i18n';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 100;
-const sortOptions: Array<{ value: LibrarySort; label: string }> = [
-  { value: 'recent', label: '最近喜欢' },
-  { value: 'default', label: '手动排序' },
-  { value: 'titleAsc', label: '标题 A-Z' },
-  { value: 'titleDesc', label: '标题 Z-A' },
-  { value: 'artist', label: '艺人' },
-  { value: 'album', label: '专辑' },
+const sortOptionKeys: Array<{ value: LibrarySort; labelKey: `likedPage.sort.${string}` }> = [
+  { value: 'recent', labelKey: 'likedPage.sort.recent' },
+  { value: 'default', labelKey: 'likedPage.sort.default' },
+  { value: 'titleAsc', labelKey: 'likedPage.sort.titleAsc' },
+  { value: 'titleDesc', labelKey: 'likedPage.sort.titleDesc' },
+  { value: 'artist', labelKey: 'likedPage.sort.artist' },
+  { value: 'album', labelKey: 'likedPage.sort.album' },
 ];
 const likedExportOptions: Array<{ value: PlaylistExportFormat; label: string }> = [
   { value: 'json', label: 'JSON' },
@@ -30,21 +31,22 @@ const likedExportOptions: Array<{ value: PlaylistExportFormat; label: string }> 
 type LikedTab = 'tracks' | 'albums';
 type LikedSyncProvider = Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
 type LikedTrackSourceProvider = 'local' | LikedSyncProvider;
+type I18nT = ReturnType<typeof useI18n>['t'];
 
-const likedSyncProviders: Array<{ provider: LikedSyncProvider; label: string }> = [
-  { provider: 'netease', label: '网易云' },
-  { provider: 'qqmusic', label: 'QQ音乐' },
+const likedSyncProviders: Array<{ provider: LikedSyncProvider; labelKey: `likedPage.provider.${string}` }> = [
+  { provider: 'netease', labelKey: 'likedPage.provider.netease' },
+  { provider: 'qqmusic', labelKey: 'likedPage.provider.qqmusic' },
 ];
 
-const likedTrackSourceProviders: Array<{ provider: LikedTrackSourceProvider; label: string }> = [
-  { provider: 'local', label: '本地' },
+const likedTrackSourceProviders: Array<{ provider: LikedTrackSourceProvider; labelKey: `likedPage.provider.${string}` }> = [
+  { provider: 'local', labelKey: 'likedPage.provider.local' },
   ...likedSyncProviders,
 ];
 
 const isLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
   provider === 'netease' || provider === 'qqmusic';
 
-const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
+const itemToTrack = (item: LibraryPlaylistItem, t: I18nT): LibraryTrack => {
   if (item.track) {
     return { ...item.track, unavailable: item.unavailable, playlistItemId: item.id };
   }
@@ -85,7 +87,7 @@ const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
   return {
     id: item.mediaId ?? item.id,
     path: '',
-    title: item.titleSnapshot ?? '不可用歌曲',
+    title: item.titleSnapshot ?? t('likedPage.track.unavailable'),
     artist: item.artistSnapshot ?? 'Unknown Artist',
     album: item.albumSnapshot ?? '',
     albumArtist: item.artistSnapshot ?? '',
@@ -106,7 +108,7 @@ const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
   };
 };
 
-const itemToAlbum = (item: LibraryPlaylistItem): LibraryAlbum => {
+const itemToAlbum = (item: LibraryPlaylistItem, t: I18nT): LibraryAlbum => {
   if (item.album) {
     return item.album;
   }
@@ -114,7 +116,7 @@ const itemToAlbum = (item: LibraryPlaylistItem): LibraryAlbum => {
   return {
     id: item.mediaId ?? item.id,
     albumKey: item.mediaId ?? item.id,
-    title: item.titleSnapshot ?? item.albumSnapshot ?? '不可用专辑',
+    title: item.titleSnapshot ?? item.albumSnapshot ?? t('likedPage.album.unavailableTitle'),
     albumArtist: item.artistSnapshot ?? 'Unknown Artist',
     year: null,
     trackCount: 0,
@@ -125,6 +127,7 @@ const itemToAlbum = (item: LibraryPlaylistItem): LibraryAlbum => {
 };
 
 export const LikedPage = (): JSX.Element => {
+  const { t } = useI18n();
   const [tab, setTab] = useState<LikedTab>('tracks');
   const [trackItems, setTrackItems] = useState<LibraryPlaylistItem[]>([]);
   const [albumItems, setAlbumItems] = useState<LibraryPlaylistItem[]>([]);
@@ -153,18 +156,29 @@ export const LikedPage = (): JSX.Element => {
   const trackSourceProviderRef = useRef<LikedTrackSourceProvider>('local');
   const { currentTrackId, playTrack, replaceQueue } = usePlaybackQueue();
 
-  const tracks = useMemo(() => trackItems.map(itemToTrack), [trackItems]);
-  const albums = useMemo(() => albumItems.map(itemToAlbum), [albumItems]);
+  const sortOptions = useMemo(() => sortOptionKeys.map((option) => ({ value: option.value, label: t(option.labelKey) })), [t]);
+  const likedTrackSourceOptions = useMemo(() => likedTrackSourceProviders.map((item) => ({ ...item, label: t(item.labelKey) })), [t]);
+  const likedSyncProviderOptions = useMemo(() => likedSyncProviders.map((item) => ({ ...item, label: t(item.labelKey) })), [t]);
+  const getLikedTrackSourceLabel = useCallback(
+    (provider: LikedTrackSourceProvider): string => likedTrackSourceOptions.find((item) => item.provider === provider)?.label ?? provider,
+    [likedTrackSourceOptions],
+  );
+  const getLikedSyncProviderLabel = useCallback(
+    (provider: LikedSyncProvider): string => likedSyncProviderOptions.find((item) => item.provider === provider)?.label ?? provider,
+    [likedSyncProviderOptions],
+  );
+  const tracks = useMemo(() => trackItems.map((item) => itemToTrack(item, t)), [t, trackItems]);
+  const albums = useMemo(() => albumItems.map((item) => itemToAlbum(item, t)), [albumItems, t]);
   const likedQueueSource = useMemo<QueueSource>(() => {
-    const sourceLabel = likedTrackSourceProviders.find((item) => item.provider === trackSourceProvider)?.label ?? trackSourceProvider;
+    const sourceLabel = getLikedTrackSourceLabel(trackSourceProvider);
     return {
       type: 'liked',
-      label: `${sourceLabel} 我喜欢`,
+      label: t('likedPage.queue.label', { source: sourceLabel }),
       sourceProvider: trackSourceProvider,
       search: search || undefined,
       sort,
     };
-  }, [search, sort, trackSourceProvider]);
+  }, [getLikedTrackSourceLabel, search, sort, t, trackSourceProvider]);
   const likedTrackMap = useMemo(() => Object.fromEntries(tracks.map((track) => [track.id, true])), [tracks]);
   const isLoading = isTrackLoading || isAlbumLoading;
   const { wallRef: likedAlbumWallRef, spacerHeight: likedAlbumSpacerHeight } = useMediaWallScrollSpacer<HTMLElement>({

@@ -93,6 +93,8 @@ type StreamingFavoriteListEntry =
   | { type: 'provider'; id: string; provider: StreamingFavoriteProviderName; label: string; count: number }
   | { type: 'collection'; id: string; collection: StreamingFavoriteCollection; providerLabel: string; count: number };
 
+type PlaylistSourceFilter = 'all' | 'local' | 'streaming';
+
 const yieldToUi = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 0));
 const playlistDownloadMemoryKey = 'echo-next.playlist-download-session.v1';
 
@@ -541,6 +543,7 @@ const favoriteToTrack = (item: StreamingFavoriteTrack, streamingQuality: Streami
 export const PlaylistsPage = (): JSX.Element => {
   const { t } = useI18n();
   const [playlistPanelView, setPlaylistPanelView] = useState<'local' | 'streamingFavorites'>('local');
+  const [playlistSourceFilter, setPlaylistSourceFilter] = useState<PlaylistSourceFilter>('all');
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [playlistOrderIds, setPlaylistOrderIds] = useState<string[]>(() => readPlaylistListOrderMemory());
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
@@ -594,6 +597,19 @@ export const PlaylistsPage = (): JSX.Element => {
   const playlistMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrack, currentTrackId, playlistPlayback, playPlaylistSequence, exitPlaylistSequence, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
   const orderedPlaylists = useMemo(() => orderPlaylists(playlists, playlistOrderIds), [playlistOrderIds, playlists]);
+  const filteredOrderedPlaylists = useMemo(
+    () =>
+      orderedPlaylists.filter((playlist) => {
+        if (playlistSourceFilter === 'local') {
+          return playlist.sourceProvider === 'local';
+        }
+        if (playlistSourceFilter === 'streaming') {
+          return playlist.sourceProvider !== 'local';
+        }
+        return true;
+      }),
+    [orderedPlaylists, playlistSourceFilter],
+  );
   const favoriteListEntries = useMemo<StreamingFavoriteListEntry[]>(() => {
     const providerEntries = streamingFavoriteProviders.map((providerItem) => ({
       type: 'provider' as const,
@@ -616,10 +632,10 @@ export const PlaylistsPage = (): JSX.Element => {
     [favoriteListEntries, favoriteListOrderIds],
   );
   const selectedPlaylist = useMemo(
-    () => orderedPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? orderedPlaylists[0] ?? null,
-    [orderedPlaylists, selectedPlaylistId],
+    () => filteredOrderedPlaylists.find((playlist) => playlist.id === selectedPlaylistId) ?? filteredOrderedPlaylists[0] ?? null,
+    [filteredOrderedPlaylists, selectedPlaylistId],
   );
-  const canReorderPlaylistList = playlistPanelView === 'local' && orderedPlaylists.length > 1;
+  const canReorderPlaylistList = playlistPanelView === 'local' && filteredOrderedPlaylists.length > 1;
   const canReorderFavoriteList = playlistPanelView === 'streamingFavorites' && orderedFavoriteListEntries.length > 1;
   const isSelectedPlaylistNeteaseDailyRecommend =
     selectedPlaylist?.sourceProvider === 'netease' && selectedPlaylist.sourcePlaylistId === neteaseDailyRecommendSourcePlaylistId;
@@ -913,6 +929,21 @@ export const PlaylistsPage = (): JSX.Element => {
     window.addEventListener('library:playlists-changed', handleChanged);
     return () => window.removeEventListener('library:playlists-changed', handleChanged);
   }, [loadPlaylists]);
+
+  useEffect(() => {
+    if (playlistPanelView !== 'local') {
+      return;
+    }
+
+    if (filteredOrderedPlaylists.length === 0) {
+      setSelectedPlaylistId((current) => (current === null ? current : null));
+      return;
+    }
+
+    if (!filteredOrderedPlaylists.some((playlist) => playlist.id === selectedPlaylistId)) {
+      setSelectedPlaylistId(filteredOrderedPlaylists[0]?.id ?? null);
+    }
+  }, [filteredOrderedPlaylists, playlistPanelView, selectedPlaylistId]);
 
   useEffect(() => {
     const streaming = getStreamingBridge();
@@ -2454,8 +2485,20 @@ export const PlaylistsPage = (): JSX.Element => {
               </span>
             </button>
 
+            <div className="playlist-source-filter" role="group" aria-label="歌单来源筛选">
+              <button type="button" data-active={playlistSourceFilter === 'all'} onClick={() => setPlaylistSourceFilter('all')}>
+                全部
+              </button>
+              <button type="button" data-active={playlistSourceFilter === 'local'} onClick={() => setPlaylistSourceFilter('local')}>
+                仅显示本地歌单
+              </button>
+              <button type="button" data-active={playlistSourceFilter === 'streaming'} onClick={() => setPlaylistSourceFilter('streaming')}>
+                仅显示流媒体
+              </button>
+            </div>
+
             <div className="playlist-list">
-              {orderedPlaylists.map((playlist) => {
+              {filteredOrderedPlaylists.map((playlist) => {
                 const sourceLabel = playlistSourceProviderLabel(playlist);
 
                 return (
@@ -2485,7 +2528,13 @@ export const PlaylistsPage = (): JSX.Element => {
                   </button>
                 );
               })}
-              {orderedPlaylists.length === 0 ? <p className="playlist-empty">{t('playlistsPage.empty.local')}</p> : null}
+              {filteredOrderedPlaylists.length === 0 ? (
+                <p className="playlist-empty">
+                  {playlistSourceFilter === 'streaming'
+                    ? '还没有流媒体歌单。'
+                    : t('playlistsPage.empty.local')}
+                </p>
+              ) : null}
             </div>
 
             <form

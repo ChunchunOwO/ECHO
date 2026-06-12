@@ -71,18 +71,19 @@ const songsHideDuplicatesStorageKey = 'echo-next.songs.hide-duplicates';
 const validSortValues = new Set<LibrarySort>(sortOptions.map((option) => option.value));
 const scanPollIntervalMs = 500;
 const finishedScanStatuses = new Set<LibraryScanStatus['status']>(['completed', 'cancelled', 'failed']);
-const streamingPlaylistSeparationMessage = '流媒体歌曲不能加入本地歌单，请在流媒体歌单中单独管理。';
-const scanPhaseLabels: Record<LibraryScanStatus['phase'], string> = {
-  queued: '排队中',
-  discovering: '发现音乐文件',
-  checking_cache: '检查增量缓存',
-  reading_metadata: '读取新增/变更歌曲',
-  extracting_covers: '修复封面缓存',
-  grouping_albums: '整理专辑',
-  writing_database: '写入曲库',
-  finished: '完成',
-  failed: '失败',
-  cancelled: '已取消',
+type Translate = ReturnType<typeof useI18n>['t'];
+
+const scanPhaseLabelKeys: Record<LibraryScanStatus['phase'], TranslationKey> = {
+  queued: 'songs.scan.phase.queued',
+  discovering: 'songs.scan.phase.discovering',
+  checking_cache: 'songs.scan.phase.checkingCache',
+  reading_metadata: 'songs.scan.phase.readingMetadata',
+  extracting_covers: 'songs.scan.phase.extractingCovers',
+  grouping_albums: 'songs.scan.phase.groupingAlbums',
+  writing_database: 'songs.scan.phase.writingDatabase',
+  finished: 'songs.scan.phase.finished',
+  failed: 'songs.scan.phase.failed',
+  cancelled: 'songs.scan.phase.cancelled',
 };
 
 const readStoredSort = (): LibrarySort => {
@@ -124,17 +125,17 @@ const uniqueIds = (ids: string[]): string[] => Array.from(new Set(ids.filter(Boo
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-const summarizeScanJobs = (statuses: LibraryScanStatus[]): string => {
+const summarizeScanJobs = (statuses: LibraryScanStatus[], t: Translate): string => {
   const active = statuses.find((status) => !finishedScanStatuses.has(status.status)) ?? statuses[statuses.length - 1];
   const processedFiles = statuses.reduce((sum, status) => sum + status.processedFiles, 0);
   const totalFiles = statuses.reduce((sum, status) => sum + status.totalFiles, 0);
   const addedTracks = statuses.reduce((sum, status) => sum + status.addedTracks, 0);
   const updatedTracks = statuses.reduce((sum, status) => sum + status.updatedTracks, 0);
   const skippedFiles = statuses.reduce((sum, status) => sum + status.skippedFiles, 0);
-  const phase = active ? scanPhaseLabels[active.phase] : '增量扫描';
+  const phase = active ? t(scanPhaseLabelKeys[active.phase]) : t('songs.scan.phase.incremental');
   const progress = totalFiles > 0 ? `${processedFiles}/${totalFiles}` : `${processedFiles}`;
 
-  return `正在${phase}... ${progress} 个文件，新增 ${addedTracks}，更新 ${updatedTracks}，跳过 ${skippedFiles}`;
+  return t('songs.scan.progress', { phase, progress, added: addedTracks, updated: updatedTracks, skipped: skippedFiles });
 };
 
 type InitialSongsState = {
@@ -596,12 +597,12 @@ export const SongsPage = (): JSX.Element => {
       setDuplicateSummary(summary);
 
       if (settings.duplicateTracksEnabled && summary.duplicateGroups === 0) {
-        setDuplicateMessage('需要先分析重复歌曲');
+        setDuplicateMessage(t('songs.message.needAnalyzeDuplicates'));
       }
     } catch {
       // Duplicate controls are optional around the core song list.
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void loadDuplicateSettings();
@@ -707,7 +708,7 @@ export const SongsPage = (): JSX.Element => {
 
     setIsMaintainingLibrary(true);
     setError(null);
-    setStatusMessage('正在扫描失效歌曲和 5 秒及以下短音频...');
+    setStatusMessage(t('songs.maintenance.scanning'));
 
     try {
       const cleanup = library.pruneInvalidTracks
@@ -724,23 +725,29 @@ export const SongsPage = (): JSX.Element => {
 
       if (scanJobs.length > 0) {
         let statuses = scanJobs;
-        setStatusMessage(summarizeScanJobs(statuses));
+        setStatusMessage(summarizeScanJobs(statuses, t));
 
         while (statuses.some((status) => !finishedScanStatuses.has(status.status))) {
           await sleep(scanPollIntervalMs);
           statuses = await Promise.all(statuses.map((status) => library.getScanStatus(status.id)));
-          setStatusMessage(summarizeScanJobs(statuses));
+          setStatusMessage(summarizeScanJobs(statuses, t));
         }
 
         const failedJob = statuses.find((status) => status.status === 'failed');
         if (failedJob) {
-          throw new Error(`增量扫描失败：${failedJob.errors[0] ?? 'unknown error'}`);
+          throw new Error(t('songs.maintenance.error.incrementalFailed', { error: failedJob.errors[0] ?? 'unknown error' }));
         }
       }
       await loadTracks(1, 'replace');
       window.dispatchEvent(new Event('library:changed'));
       setStatusMessage(
-        `维护完成：检查 ${cleanup.scannedCount} 首，移除失效 ${cleanup.missingRemovedCount} 首，移除 ${cleanup.shortDurationThresholdSeconds} 秒及以下短音频 ${cleanup.shortRemovedCount} 首，增量扫描 ${scanJobs.length} 个文件夹。`,
+        t('songs.maintenance.completed', {
+          scanned: cleanup.scannedCount,
+          missing: cleanup.missingRemovedCount,
+          seconds: cleanup.shortDurationThresholdSeconds,
+          short: cleanup.shortRemovedCount,
+          folders: scanJobs.length,
+        }),
       );
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : String(scanError));
@@ -757,7 +764,7 @@ export const SongsPage = (): JSX.Element => {
       return;
     }
 
-    if (!window.confirm(`清空歌曲列表？\n这会从列表移除 ${total} 首歌曲，不会删除本地音乐文件。`)) {
+    if (!window.confirm(t('songs.confirm.clearList', { total }))) {
       return;
     }
 
@@ -774,7 +781,7 @@ export const SongsPage = (): JSX.Element => {
       setVisibleTrackIds([]);
       clearListMetadataCache();
       window.dispatchEvent(new Event('library:changed'));
-      setStatusMessage(`已清空 ${result.removedCount} 首歌曲。`);
+      setStatusMessage(t('songs.message.clearedList', { count: result.removedCount }));
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));
     } finally {
@@ -1092,7 +1099,7 @@ export const SongsPage = (): JSX.Element => {
     const localTracks = uniqueTracks.filter((item) => item.mediaType !== 'streaming');
     const skippedStreamingCount = uniqueTracks.length - localTracks.length;
     if (localTracks.length === 0) {
-      setError(streamingPlaylistSeparationMessage);
+      setError(t('songs.error.streamingPlaylistSeparation'));
       return;
     }
 
@@ -1113,14 +1120,14 @@ export const SongsPage = (): JSX.Element => {
         }
       }
       window.dispatchEvent(new Event('library:playlists-changed'));
-      setStatusMessage(`已加入歌单：${playlist.name}（${uniqueTracks.length} 首）`);
+      setStatusMessage(t('songs.message.addedToPlaylist', { playlist: playlist.name, count: uniqueTracks.length }));
       if (skippedStreamingCount > 0) {
-        setStatusMessage(`已加入歌单：${playlist.name}（${localTrackIds.length} 首；已跳过 ${skippedStreamingCount} 首流媒体）`);
+        setStatusMessage(t('songs.message.addedToPlaylistSkippedStreaming', { playlist: playlist.name, count: localTrackIds.length, skipped: skippedStreamingCount }));
       }
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
     }
-  }, [resolveTargetLocalPlaylist]);
+  }, [resolveTargetLocalPlaylist, t]);
 
   const handleAddTrackToPlaylist = useCallback(async (track: LibraryTrack): Promise<void> => {
     await handleAddTracksToPlaylist([track]);
@@ -1187,7 +1194,7 @@ export const SongsPage = (): JSX.Element => {
       }
 
       if (Object.keys(optimisticPatch).length === 0) {
-        setStatusMessage(`已喜欢 ${uniqueTracks.length} 首歌`);
+        setStatusMessage(t('songs.message.likedTracks', { count: uniqueTracks.length }));
         return;
       }
 
@@ -1199,12 +1206,12 @@ export const SongsPage = (): JSX.Element => {
       );
       window.dispatchEvent(new Event(likedTracksChangedEvent));
       window.dispatchEvent(new Event(likedChangedEvent));
-      setStatusMessage(`已喜欢 ${uniqueTracks.length} 首歌`);
+      setStatusMessage(t('songs.message.likedTracks', { count: uniqueTracks.length }));
     } catch (likeError) {
       mergeLikedTrackIds(previousStates);
       setError(likeError instanceof Error ? likeError.message : String(likeError));
     }
-  }, [mergeLikedTrackIds, resolveTrackLikedBeforeToggle]);
+  }, [mergeLikedTrackIds, resolveTrackLikedBeforeToggle, t]);
 
   const handleTrackMenuAction = useCallback(
     async (action: TrackMenuAction, track: LibraryTrack, playlistTarget?: LibraryPlaylist): Promise<void> => {
@@ -1223,7 +1230,7 @@ export const SongsPage = (): JSX.Element => {
           setError(null);
           await Promise.all(actionTracks.map((item) => lyricsApi.clearCache(item.id)));
           window.dispatchEvent(new CustomEvent('lyrics:rematch-requested', { detail: { trackId: track.id } }));
-          setStatusMessage(actionTracks.length > 1 ? `已清理歌词缓存：${actionTracks.length} 首` : `已清理歌词缓存：${track.title}`);
+          setStatusMessage(actionTracks.length > 1 ? t('songs.message.lyricsCacheClearedCount', { count: actionTracks.length }) : t('songs.message.lyricsCacheClearedTrack', { title: track.title }));
         } catch (actionError) {
           setError(actionError instanceof Error ? actionError.message : String(actionError));
         }
@@ -1248,7 +1255,7 @@ export const SongsPage = (): JSX.Element => {
             action === 'open-system' ||
             action === 'delete-song')
         ) {
-          setError('远程歌曲暂不支持本地文件操作。');
+          setError(t('songs.error.remoteFileAction'));
           return;
         }
 
@@ -1258,13 +1265,13 @@ export const SongsPage = (): JSX.Element => {
               playTrackNext(item, queueSource);
             }
             if (actionTracks.length > 1) {
-              setStatusMessage(`已加入下一首播放：${actionTracks.length} 首`);
+              setStatusMessage(t('songs.message.addedPlayNext', { count: actionTracks.length }));
             }
             return;
           case 'add-to-queue':
             if (actionTracks.length > 1) {
               appendTracksToQueue(actionTracks, queueSource);
-              setStatusMessage(`已加入队列：${actionTracks.length} 首`);
+              setStatusMessage(t('songs.message.addedToQueue', { count: actionTracks.length }));
             } else {
               appendToQueue(track, queueSource);
             }
@@ -1281,8 +1288,8 @@ export const SongsPage = (): JSX.Element => {
               const removedCount = actionTracks.reduce((sum, item) => sum + removeTrackFromQueue(item.id), 0);
               setStatusMessage(
                 removedCount > 0
-                  ? `已从播放队列移除：${removedCount} 首`
-                  : `播放队列里没有选中的歌曲`,
+                  ? t('songs.message.removedFromQueue', { count: removedCount })
+                  : t('songs.message.noSelectedQueueTracks'),
               );
             }
             return;
@@ -1306,7 +1313,7 @@ export const SongsPage = (): JSX.Element => {
               if (editingTrack?.id === result.track.id) {
                 setEditingTrack(result.track);
               }
-              setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
+              setStatusMessage(t('songs.message.reloadedEmbeddedTags', { title: result.track.title }));
               dispatchLibraryChangedPreservingScroll();
             }
             return;
@@ -1329,16 +1336,16 @@ export const SongsPage = (): JSX.Element => {
             return;
           case 'copy-cover':
             if (!(await library?.copyTrackCover(track.id))) {
-              setError('这首歌没有可复制的歌曲卡片图片。');
+              setError(t('songs.error.noCoverToCopy'));
             }
             return;
           case 'save-cover':
             if (!(await library?.saveTrackCover(track.id))) {
-              setError('没有保存歌曲卡片图片。');
+              setError(t('songs.error.noCoverSaved'));
             }
             return;
           case 'delete-song':
-            if (!window.confirm(`删除歌曲文件？\n${track.title}`)) {
+            if (!window.confirm(t('songs.confirm.deleteSong', { title: track.title }))) {
               return;
             }
             await library?.deleteTrackFile(track.id);
@@ -1356,13 +1363,13 @@ export const SongsPage = (): JSX.Element => {
             }
             return;
           default:
-            setError('歌单功能还在接入中。');
+            setError(t('songs.error.playlistFeaturePending'));
         }
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [appendToQueue, appendTracksToQueue, editingTrack, handleAddTracksToPlaylist, handleLikeTracks, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue, total, trackMenu, tracks.length],
+    [appendToQueue, appendTracksToQueue, editingTrack, handleAddTracksToPlaylist, handleLikeTracks, handleToggleLiked, playTrackNext, queueSource, removeTrackFromQueue, t, total, trackMenu, tracks.length],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -1412,12 +1419,12 @@ export const SongsPage = (): JSX.Element => {
     <div className="songs-page">
       <header className="songs-header">
         <div className="songs-title-group">
-          <h1>歌曲</h1>
-          <span>{total} 首</span>
+          <h1>{t('route.songs.label')}</h1>
+          <span>{t('songs.count.tracks', { count: total })}</span>
         </div>
 
-        <div className="songs-tools" aria-label="歌曲工具">
-          <button className="tool-button" type="button" aria-label="导入文件夹" title="导入文件夹" onClick={handleImportFolder}>
+        <div className="songs-tools" aria-label={t('songs.tools.aria')}>
+          <button className="tool-button" type="button" aria-label={t('route.importFolder.label')} title={t('route.importFolder.label')} onClick={handleImportFolder}>
             <FolderPlus size={17} />
           </button>
           <button className="tool-button" type="button" aria-label={t('route.importFile.label')} title={t('route.importFile.label')} onClick={handleImportFile}>
@@ -1426,8 +1433,8 @@ export const SongsPage = (): JSX.Element => {
           <button
             className="tool-button"
             type="button"
-            aria-label="扫描失效歌曲、短音频并增量扫描"
-            title="扫描失效歌曲、移除 5 秒及以下短音频，并增量扫描新增歌曲"
+            aria-label={t('songs.maintenance.action.aria')}
+            title={t('songs.maintenance.action.title')}
             onClick={() => void handleMaintainLibrary()}
             disabled={isMaintainingLibrary}
           >
@@ -1597,7 +1604,7 @@ export const SongsPage = (): JSX.Element => {
           className="duplicate-version-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="重复歌曲版本"
+          aria-label={t('songs.duplicates.dialogAria')}
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               setVersionTrack(null);
@@ -1609,14 +1616,14 @@ export const SongsPage = (): JSX.Element => {
               <div>
                 <span>Duplicate Track Merge View</span>
                 <h2>{versionTrack.title}</h2>
-                <p>{duplicateSummary ? `${duplicateSummary.duplicateGroups} 组 / 隐藏 ${duplicateSummary.hiddenTracks} 首` : 'strict 模式'}</p>
+                <p>{duplicateSummary ? t('songs.duplicates.summary', { groups: duplicateSummary.duplicateGroups, hidden: duplicateSummary.hiddenTracks }) : t('songs.duplicates.strictMode')}</p>
               </div>
-              <button className="row-action" type="button" aria-label="关闭版本面板" onClick={() => setVersionTrack(null)}>
+              <button className="row-action" type="button" aria-label={t('songs.duplicates.action.close')} onClick={() => setVersionTrack(null)}>
                 <X size={17} />
               </button>
             </header>
-            {versionsBusy ? <p className="duplicate-version-empty">读取版本中...</p> : null}
-            {!versionsBusy && versionMembers.length === 0 ? <p className="duplicate-version-empty">没有找到隐藏版本。需要先分析重复歌曲。</p> : null}
+            {versionsBusy ? <p className="duplicate-version-empty">{t('songs.duplicates.loading')}</p> : null}
+            {!versionsBusy && versionMembers.length === 0 ? <p className="duplicate-version-empty">{t('songs.duplicates.empty')}</p> : null}
             <div className="duplicate-version-list">
               {versionMembers.map((member) => (
                 <article className="duplicate-version-row" key={member.track.id}>
@@ -1635,15 +1642,15 @@ export const SongsPage = (): JSX.Element => {
                   <div className="duplicate-version-rank">
                     <span>score {Math.round(member.qualityScore)}</span>
                     <strong>#{member.rank}</strong>
-                    {member.hidden ? <em>hidden</em> : <em>当前显示版本</em>}
+                    {member.hidden ? <em>hidden</em> : <em>{t('songs.duplicates.currentVisible')}</em>}
                   </div>
-                  <button className="row-action" type="button" title="播放这个版本" onClick={() => void handlePlayTrack(member.track)}>
+                  <button className="row-action" type="button" title={t('songs.duplicates.action.playVersion')} onClick={() => void handlePlayTrack(member.track)}>
                     <Play size={16} />
                   </button>
                 </article>
               ))}
             </div>
-            <p className="duplicate-version-todo">TODO: 手动指定代表版本。</p>
+            <p className="duplicate-version-todo">{t('songs.duplicates.todo')}</p>
           </section>
         </div>
       ) : null}

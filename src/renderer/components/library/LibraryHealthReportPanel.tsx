@@ -1,7 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Clipboard, Download, FileText, RefreshCw } from 'lucide-react';
 import type { LibraryHealthReport } from '../../../shared/types/library';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { getLibraryBridge } from '../../utils/echoBridge';
+
+type TranslateOptions = Record<string, string | number>;
+type Translate = (key: TranslationKey, options?: TranslateOptions) => string;
+const fallbackT: Translate = translateFallback;
 
 const formatBytes = (value: number): string => {
   if (!Number.isFinite(value) || value <= 0) {
@@ -17,37 +23,58 @@ const formatBytes = (value: number): string => {
   return `${nextValue >= 10 || unitIndex === 0 ? nextValue.toFixed(0) : nextValue.toFixed(1)} ${units[unitIndex] ?? 'B'}`;
 };
 
-const summarizeReport = (report: LibraryHealthReport): string => [
-  `ECHO Next 曲库体检报告 ${new Date(report.generatedAt).toLocaleString()}`,
-  `曲库：${report.summary.songCount} 首 / ${report.summary.albumCount} 张专辑 / ${report.summary.artistCount} 位艺人 / ${report.summary.folderCount} 个文件夹`,
-  `数据库：${report.database.status} / ${report.database.healthStatus} / 建议 ${report.database.recommendedAction}`,
-  `扫描：${report.scan.status} / 错误 ${report.scan.errorCount}`,
-  `资料质量：${report.quality.reduce((total, item) => total + item.count, 0)} 个问题`,
-  `缓存：${formatBytes(report.cache.totalSizeBytes)} / ${report.cache.items.length} 类`,
-  `实时更新：${report.watcher.enabled ? '开启' : '关闭'} / 待处理 ${report.watcher.pendingPathCount}`,
-  `远程源：${report.remoteSources.total} 个 / 启用 ${report.remoteSources.enabled} / 错误 ${report.remoteSources.error}`,
-  `警告：${report.warnings.length}`,
+const summarizeReport = (report: LibraryHealthReport, t: Translate): string => [
+  t('mediaLibrary.health.summary.reportTitle', { time: new Date(report.generatedAt).toLocaleString() }),
+  t('mediaLibrary.health.summary.library', {
+    songs: report.summary.songCount,
+    albums: report.summary.albumCount,
+    artists: report.summary.artistCount,
+    folders: report.summary.folderCount,
+  }),
+  t('mediaLibrary.health.summary.database', {
+    status: report.database.status,
+    health: report.database.healthStatus,
+    action: report.database.recommendedAction,
+  }),
+  t('mediaLibrary.health.summary.scan', { status: report.scan.status, errors: report.scan.errorCount }),
+  t('mediaLibrary.health.summary.quality', { count: report.quality.reduce((total, item) => total + item.count, 0) }),
+  t('mediaLibrary.health.summary.cache', { size: formatBytes(report.cache.totalSizeBytes), count: report.cache.items.length }),
+  t('mediaLibrary.health.summary.watcher', {
+    state: report.watcher.enabled ? t('mediaLibrary.health.value.enabled') : t('mediaLibrary.health.value.disabled'),
+    pending: report.watcher.pendingPathCount,
+  }),
+  t('mediaLibrary.health.summary.remote', {
+    total: report.remoteSources.total,
+    enabled: report.remoteSources.enabled,
+    errors: report.remoteSources.error,
+  }),
+  t('mediaLibrary.health.summary.warnings', { count: report.warnings.length }),
 ].join('\n');
 
 const qualityTotal = (report: LibraryHealthReport | null): number =>
   report?.quality.reduce((total, item) => total + item.count, 0) ?? 0;
 
 export const LibraryHealthReportPanel = (): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? fallbackT;
   const [expanded, setExpanded] = useState(false);
   const [report, setReport] = useState<LibraryHealthReport | null>(null);
   const [busyAction, setBusyAction] = useState<'refresh' | 'copy' | 'export' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const summaryLabel = useMemo(() => {
     if (!report) {
-      return '尚未刷新';
+      return t('mediaLibrary.health.summary.notRefreshed');
     }
-    return `${report.summary.songCount} 首 · ${report.warnings.length} 个警告 · ${qualityTotal(report)} 个资料问题`;
-  }, [report]);
+    return t('mediaLibrary.health.summary.short', {
+      songs: report.summary.songCount,
+      warnings: report.warnings.length,
+      issues: qualityTotal(report),
+    });
+  }, [report, t]);
 
   const refreshReport = useCallback(async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.getHealthReport) {
-      setMessage('桌面桥接暂不可用，无法读取曲库体检报告。');
+      setMessage(t('mediaLibrary.health.error.bridgeRead'));
       return;
     }
 
@@ -60,7 +87,7 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
     } finally {
       setBusyAction(null);
     }
-  }, []);
+  }, [t]);
 
   const handleToggleExpanded = useCallback((): void => {
     const nextExpanded = !expanded;
@@ -76,26 +103,26 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
       return;
     }
     if (!navigator.clipboard?.writeText) {
-      setMessage('系统剪贴板暂不可用。');
+      setMessage(t('mediaLibrary.health.error.clipboard'));
       return;
     }
 
     setBusyAction('copy');
     setMessage(null);
     try {
-      await navigator.clipboard.writeText(summarizeReport(report));
-      setMessage('体检摘要已复制。');
+      await navigator.clipboard.writeText(summarizeReport(report, t));
+      setMessage(t('mediaLibrary.health.message.copied'));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusyAction(null);
     }
-  }, [refreshReport, report]);
+  }, [refreshReport, report, t]);
 
   const handleExport = useCallback(async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.exportHealthReport) {
-      setMessage('桌面桥接暂不可用，无法导出曲库体检报告。');
+      setMessage(t('mediaLibrary.health.error.bridgeExport'));
       return;
     }
 
@@ -103,7 +130,7 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
     setMessage(null);
     try {
       const exportedPath = await library.exportHealthReport();
-      setMessage(exportedPath ? `已导出：${exportedPath}` : '已取消导出。');
+      setMessage(exportedPath ? t('mediaLibrary.health.message.exported', { path: exportedPath }) : t('mediaLibrary.health.message.exportCancelled'));
       if (exportedPath && library.getHealthReport) {
         setReport(await library.getHealthReport());
       }
@@ -112,7 +139,7 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
     } finally {
       setBusyAction(null);
     }
-  }, []);
+  }, [t]);
 
   return (
     <div className="settings-cache-panel settings-cache-panel--library-health">
@@ -123,8 +150,8 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
         type="button"
       >
         <span>
-          <strong>曲库体检报告</strong>
-          <em>{busyAction === 'refresh' ? '正在刷新...' : summaryLabel}</em>
+          <strong>{t('mediaLibrary.health.title')}</strong>
+          <em>{busyAction === 'refresh' ? t('mediaLibrary.health.message.refreshing') : summaryLabel}</em>
         </span>
         <FileText size={16} />
       </button>
@@ -133,28 +160,28 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
         <>
           <div className="settings-status-grid settings-library-health-grid">
             <span>
-              <em>数据库</em>
-              <strong>{report ? `${report.database.status} / ${report.database.recommendedAction}` : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.database')}</em>
+              <strong>{report ? `${report.database.status} / ${report.database.recommendedAction}` : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
             <span>
-              <em>扫描错误</em>
-              <strong>{report ? report.scan.errorCount : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.scanErrors')}</em>
+              <strong>{report ? report.scan.errorCount : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
             <span>
-              <em>资料问题</em>
-              <strong>{report ? qualityTotal(report) : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.qualityIssues')}</em>
+              <strong>{report ? qualityTotal(report) : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
             <span>
-              <em>缓存</em>
-              <strong>{report ? formatBytes(report.cache.totalSizeBytes) : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.cache')}</em>
+              <strong>{report ? formatBytes(report.cache.totalSizeBytes) : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
             <span>
-              <em>实时更新</em>
-              <strong>{report ? (report.watcher.enabled ? '已开启' : '已关闭') : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.liveUpdates')}</em>
+              <strong>{report ? (report.watcher.enabled ? t('mediaLibrary.health.value.enabled') : t('mediaLibrary.health.value.disabled')) : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
             <span>
-              <em>远程源</em>
-              <strong>{report ? `${report.remoteSources.total} 个` : '未读取'}</strong>
+              <em>{t('mediaLibrary.health.metric.remoteSources')}</em>
+              <strong>{report ? t('mediaLibrary.health.value.remoteCount', { count: report.remoteSources.total }) : t('mediaLibrary.health.value.notRead')}</strong>
             </span>
           </div>
 
@@ -169,15 +196,15 @@ export const LibraryHealthReportPanel = (): JSX.Element => {
           <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
             <button className="settings-action-button" type="button" disabled={busyAction !== null} onClick={() => void refreshReport()}>
               <RefreshCw className={busyAction === 'refresh' ? 'spinning-icon' : undefined} size={15} />
-              刷新体检
+              {t('mediaLibrary.health.action.refresh')}
             </button>
             <button className="settings-action-button" type="button" disabled={busyAction !== null || !report} onClick={() => void handleCopy()}>
               <Clipboard size={15} />
-              复制摘要
+              {t('mediaLibrary.health.action.copy')}
             </button>
             <button className="settings-action-button" type="button" disabled={busyAction !== null} onClick={() => void handleExport()}>
               <Download size={15} />
-              导出 Markdown
+              {t('mediaLibrary.health.action.export')}
             </button>
           </div>
 

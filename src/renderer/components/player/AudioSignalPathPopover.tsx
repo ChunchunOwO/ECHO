@@ -13,6 +13,8 @@ import type { AudioStatus } from '../../../shared/types/audio';
 import type { ConnectSessionStatus } from '../../../shared/types/connect';
 import type { HqPlayerRemotePlaybackStatus, HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { isHqPlayerConnectStatus } from '../../utils/connectPlayback';
 
 type AudioSignalPathPopoverProps = {
@@ -58,8 +60,12 @@ type RoonSignalNode = {
   variant?: 'circle' | 'process';
 };
 
+type TranslateOptions = Record<string, string | number>;
+type Translate = (key: TranslationKey, options?: TranslateOptions) => string;
+
 const signalPathPopoverExitMs = 170;
-const unknown = '等待信号';
+const fallbackT: Translate = translateFallback;
+const unknown = (t: Translate = fallbackT): string => t('audioSignalPath.unknown');
 
 const trimTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 
@@ -189,29 +195,32 @@ const normalizeCodec = (value: string | null | undefined): string | null => {
 
 const cleanReason = (value: string | null | undefined): string | null => value?.replaceAll('_', ' ') ?? null;
 
-const joinSpec = (parts: Array<string | null | undefined>, fallback = unknown): string =>
+const joinSpec = (parts: Array<string | null | undefined>, fallback = unknown()): string =>
   parts.filter((part): part is string => Boolean(part?.trim())).join(' / ') || fallback;
 
 const isHqPlayerSignalPath = (connectStatus: ConnectSessionStatus | null | undefined): connectStatus is ConnectSessionStatus =>
   isHqPlayerConnectStatus(connectStatus) && connectStatus.state !== 'idle' && connectStatus.state !== 'unsupported';
 
-const hqPlayerStateLabel = (state: ConnectSessionStatus['state'] | HqPlayerRemotePlaybackStatus['state'] | null | undefined): string => {
+const hqPlayerStateLabel = (
+  state: ConnectSessionStatus['state'] | HqPlayerRemotePlaybackStatus['state'] | null | undefined,
+  t: Translate = fallbackT,
+): string => {
   switch (state) {
     case 'connecting':
-      return '连接中';
+      return t('audioSignalPath.hqPlayer.state.connecting');
     case 'ready':
-      return '已就绪';
+      return t('audioSignalPath.hqPlayer.state.ready');
     case 'playing':
-      return '播放中';
+      return t('audioSignalPath.hqPlayer.state.playing');
     case 'paused':
-      return '已暂停';
+      return t('audioSignalPath.hqPlayer.state.paused');
     case 'stopped':
     case 'stop-requested':
-      return '已停止';
+      return t('audioSignalPath.hqPlayer.state.stopped');
     case 'error':
-      return '异常';
+      return t('audioSignalPath.status.error');
     default:
-      return '外部处理';
+      return t('audioSignalPath.hqPlayer.externalProcessing');
   }
 };
 
@@ -240,6 +249,7 @@ const hqPlayerSourceLabel = (
   connectStatus: ConnectSessionStatus,
   track: LibraryTrack | null,
   playbackStatus: HqPlayerRemotePlaybackStatus | null,
+  t: Translate = fallbackT,
 ): string => {
   const metadata = playbackStatus?.metadata ?? null;
   const codec = normalizeHqPlayerCodec(track, playbackStatus, connectStatus);
@@ -247,7 +257,7 @@ const hqPlayerSourceLabel = (
   const bitDepth = formatRoonBitDepth(track?.bitDepth ?? metadata?.bits);
   const channels = metadata?.channels && Number.isFinite(metadata.channels) ? `${Math.round(metadata.channels)}ch` : null;
 
-  return joinSpec([codec, sampleRate, bitDepth, channels], connectStatus.metadata ? 'PCM' : 'HQPlayer 输入').replaceAll(' / ', ' ');
+  return joinSpec([codec, sampleRate, bitDepth, channels], connectStatus.metadata ? 'PCM' : t('audioSignalPath.hqPlayer.input')).replaceAll(' / ', ' ');
 };
 
 const hqPlayerCompactSpec = (
@@ -272,14 +282,14 @@ const hqPlayerDspLabel = (status: HqPlayerRemotePlaybackStatus | null): string |
   return modules.length ? modules.join(' / ') : null;
 };
 
-const hqPlayerOutputLabel = (status: HqPlayerRemotePlaybackStatus | null): string => {
+const hqPlayerOutputLabel = (status: HqPlayerRemotePlaybackStatus | null, t: Translate = fallbackT): string => {
   const outputFormat = joinSpec([
     formatHqPlayerOutputRate(status?.activeRate),
     formatRoonBitDepth(status?.activeBits),
     status?.activeChannels && Number.isFinite(status.activeChannels) ? `${Math.round(status.activeChannels)}ch` : null,
   ], '');
 
-  return outputFormat || '由 HQPlayer 决定';
+  return outputFormat || t('audioSignalPath.hqPlayer.outputDecided');
 };
 
 const hasHqPlayerPlaybackDetails = (
@@ -295,17 +305,17 @@ const hasHqPlayerPlaybackDetails = (
     || status.metadata
   ));
 
-const outputModeLabel = (mode: AudioStatus['outputMode'] | null | undefined): string => {
+const outputModeLabel = (mode: AudioStatus['outputMode'] | null | undefined, t: Translate = fallbackT): string => {
   if (mode === 'asio') {
     return 'ASIO';
   }
   if (mode === 'exclusive') {
-    return '独占';
+    return t('audioSignalPath.outputMode.exclusive');
   }
   if (mode === 'system') {
-    return '系统音频';
+    return t('audioSignalPath.outputMode.system');
   }
-  return '共享';
+  return t('audioSignalPath.outputMode.shared');
 };
 
 const outputBackendLabel = (backend: string | null | undefined): string | null => {
@@ -330,33 +340,33 @@ const outputBackendLabel = (backend: string | null | undefined): string | null =
   return normalized;
 };
 
-const sourceLabel = (status: AudioStatus | null, track: LibraryTrack | null): string => {
+const sourceLabel = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): string => {
   const codec = normalizeCodec(track?.codec ?? status?.codec);
   const sampleRate = formatRate(track?.sampleRate ?? status?.fileSampleRate);
   const bitDepth = formatBitDepth(track?.bitDepth ?? status?.bitDepth);
 
-  return joinSpec([codec, sampleRate, bitDepth], status ? '音频源' : unknown);
+  return joinSpec([codec, sampleRate, bitDepth], status ? t('audioSignalPath.source.audioSource') : unknown(t));
 };
 
-const roonSourceLabel = (status: AudioStatus | null, track: LibraryTrack | null): string => {
+const roonSourceLabel = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): string => {
   const codec = normalizeCodec(track?.codec ?? status?.codec);
   const sampleRate = formatRoonRate(track?.sampleRate ?? status?.fileSampleRate);
   const bitDepth = formatRoonBitDepth(track?.bitDepth ?? status?.bitDepth);
   const channels = status?.channels && Number.isFinite(status.channels) ? `${Math.round(status.channels)}ch` : null;
 
-  return joinSpec([codec, sampleRate, bitDepth, channels], status ? '音频源' : unknown).replaceAll(' / ', ' ');
+  return joinSpec([codec, sampleRate, bitDepth, channels], status ? t('audioSignalPath.source.audioSource') : unknown(t)).replaceAll(' / ', ' ');
 };
 
-const sourceCompactSpec = (status: AudioStatus | null, track: LibraryTrack | null): string => {
+const sourceCompactSpec = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): string => {
   const codec = normalizeCodec(track?.codec ?? status?.codec);
   const sampleRate = compactRate(track?.sampleRate ?? status?.fileSampleRate);
   const bitDepth = track?.bitDepth ?? status?.bitDepth;
   const bitDepthLabel = bitDepth && Number.isFinite(bitDepth) ? `${Math.round(bitDepth)}` : null;
 
-  return joinSpec([codec, sampleRate, bitDepthLabel ? `${bitDepthLabel}b` : null], 'Signal');
+  return joinSpec([codec, sampleRate, bitDepthLabel ? `${bitDepthLabel}b` : null], t('audioSignalPath.source.signal'));
 };
 
-const buildDspModules = (status: AudioStatus | null): string[] => {
+const buildDspModules = (status: AudioStatus | null, t: Translate = fallbackT): string[] => {
   if (!status) {
     return [];
   }
@@ -367,15 +377,15 @@ const buildDspModules = (status: AudioStatus | null): string[] => {
       : null,
     status.eqEnabled ? status.eqPresetName ? `EQ ${status.eqPresetName}` : 'EQ' : null,
     status.echoSrcActive ? 'ECHO SRC' : null,
-    status.roomCorrectionEnabled ? 'FIR 房间校正' : null,
-    status.channelBalanceEnabled ? '声道平衡' : null,
+    status.roomCorrectionEnabled ? t('audioSignalPath.dsp.roomCorrectionModule') : null,
+    status.channelBalanceEnabled ? t('audioSignalPath.dsp.channelBalance') : null,
     status.replayGainEnabled ? `ReplayGain ${formatDb(status.replayGainAppliedDb) ?? ''}`.trim() : null,
-    status.dspLimiterProtecting ? '安全限幅' : null,
+    status.dspLimiterProtecting ? t('audioSignalPath.dsp.safetyLimiter') : null,
   ].filter((module): module is string => Boolean(module));
 };
 
-export const buildAudioSignalPathNodes = (status: AudioStatus | null, track: LibraryTrack | null): SignalNode[] => {
-  const dspModules = buildDspModules(status);
+export const buildAudioSignalPathNodes = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): SignalNode[] => {
+  const dspModules = buildDspModules(status, t);
   const outputRate = formatRate(status?.actualDeviceSampleRate ?? status?.requestedOutputSampleRate ?? status?.sharedDeviceSampleRate);
   const sourceTone: SignalTone = status ? 'good' : 'muted';
   const decodeTone: SignalTone = status?.resampling ? 'warning' : status ? 'good' : 'muted';
@@ -384,40 +394,40 @@ export const buildAudioSignalPathNodes = (status: AudioStatus | null, track: Lib
 
   return [
     {
-      title: 'Source',
-      value: sourceLabel(status, track),
+      title: t('audioSignalPath.node.source'),
+      value: sourceLabel(status, track, t),
       detail: joinSpec([
         formatChannels(status?.channels),
         formatBitrate(track?.bitrate ?? status?.bitrate),
-        track?.mediaType === 'streaming' ? track.provider ?? '在线源' : track?.mediaType === 'remote' ? '远程媒体' : '本地媒体',
-      ], status ? '源信息准备中' : unknown),
+        track?.mediaType === 'streaming' ? track.provider ?? t('audioSignalPath.source.online') : track?.mediaType === 'remote' ? t('audioSignalPath.source.remote') : t('audioSignalPath.source.local'),
+      ], status ? t('audioSignalPath.source.loading') : unknown(t)),
       icon: Database,
       tone: sourceTone,
     },
     {
-      title: 'Decode',
-      value: status?.activeDecodeBackendImpl ?? status?.outputBackend ?? '自动解码',
+      title: t('audioSignalPath.node.decode'),
+      value: status?.activeDecodeBackendImpl ?? status?.outputBackend ?? t('audioSignalPath.decode.auto'),
       detail: status?.resampling
-        ? `重采样到 ${formatRate(status.decoderOutputSampleRate ?? status.requestedOutputSampleRate) ?? '输出采样率'}`
-        : `保持 ${formatRate(status?.decoderOutputSampleRate ?? status?.fileSampleRate) ?? '原采样率'}`,
+        ? t('audioSignalPath.decode.resamplingTo', { rate: formatRate(status.decoderOutputSampleRate ?? status.requestedOutputSampleRate) ?? t('audioSignalPath.decode.outputRate') })
+        : t('audioSignalPath.decode.keepRate', { rate: formatRate(status?.decoderOutputSampleRate ?? status?.fileSampleRate) ?? t('audioSignalPath.decode.originalRate') }),
       icon: Cpu,
       tone: decodeTone,
     },
     {
-      title: 'Process',
-      value: dspModules.length ? dspModules.join(' + ') : '原生路径',
-      detail: dspModules.length ? '经过 ECHO 处理链' : '未启用 EQ / FIR / 声道处理',
+      title: t('audioSignalPath.node.process'),
+      value: dspModules.length ? dspModules.join(' + ') : t('audioSignalPath.process.nativePath'),
+      detail: dspModules.length ? t('audioSignalPath.process.echoChain') : t('audioSignalPath.process.noProcessing'),
       icon: dspModules.length ? SlidersHorizontal : ShieldCheck,
       tone: dspTone,
     },
     {
-      title: 'Output',
-      value: status?.outputDeviceName ?? '系统默认设备',
+      title: t('audioSignalPath.node.output'),
+      value: status?.outputDeviceName ?? t('audioSignalPath.output.systemDefaultDevice'),
       detail: joinSpec([
-        outputModeLabel(status?.outputMode),
+        outputModeLabel(status?.outputMode, t),
         outputBackendLabel(status?.activeOutputBackendImpl ?? status?.outputBackend),
         outputRate,
-      ], status ? outputModeLabel(status.outputMode) : unknown),
+      ], status ? outputModeLabel(status.outputMode, t) : unknown(t)),
       icon: Speaker,
       tone: outputTone,
     },
@@ -447,46 +457,46 @@ const summaryTone = (status: AudioStatus | null): SignalTone => {
   return 'good';
 };
 
-const getSignalSummary = (status: AudioStatus | null, track: LibraryTrack | null): SignalSummary => {
+const getSignalSummary = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): SignalSummary => {
   const tone = summaryTone(status);
-  const spec = sourceCompactSpec(status, track);
+  const spec = sourceCompactSpec(status, track, t);
   const resamplePath = formatResamplePath(status, track);
 
   if (!status) {
     return {
-      label: '等待播放',
-      detail: '播放后显示链路',
+      label: t('audioSignalPath.summary.waitingPlayback'),
+      detail: t('audioSignalPath.summary.showAfterPlayback'),
       spec,
       tone,
     };
   }
   if (status.error) {
     return {
-      label: '链路异常',
-      detail: cleanReason(status.error) ?? '需要检查输出',
+      label: t('audioSignalPath.summary.pathError'),
+      detail: cleanReason(status.error) ?? t('audioSignalPath.summary.checkOutput'),
       spec,
       tone,
     };
   }
   if (status.sampleRateMismatch) {
     return {
-      label: '采样率不一致',
-      detail: '源与设备不一致',
+      label: t('audioSignalPath.summary.sampleRateMismatch'),
+      detail: t('audioSignalPath.summary.sourceDeviceMismatch'),
       spec,
       tone,
     };
   }
   if (status.dspLimiterProtecting) {
     return {
-      label: '保护中',
-      detail: '限幅保护输出',
+      label: t('audioSignalPath.summary.protecting'),
+      detail: t('audioSignalPath.summary.limiterProtecting'),
       spec,
       tone,
     };
   }
   if (status.echoSrcActive) {
     return {
-      label: '升频',
+      label: t('audioSignalPath.summary.upsampling'),
       detail: formatEchoSrcPath(status, track) ?? 'ECHO SRC active',
       spec,
       tone,
@@ -500,46 +510,46 @@ const getSignalSummary = (status: AudioStatus | null, track: LibraryTrack | null
     || status.replayGainEnabled
   ) {
     return {
-      label: '已强化',
-      detail: buildDspModules(status).slice(0, 2).join(' + ') || 'DSP active',
+      label: t('audioSignalPath.summary.enhanced'),
+      detail: buildDspModules(status, t).slice(0, 2).join(' + ') || 'DSP active',
       spec,
       tone,
     };
   }
   if (status.resampling) {
     return {
-      label: '重采样',
-      detail: resamplePath ?? `到 ${formatRate(status.decoderOutputSampleRate ?? status.requestedOutputSampleRate) ?? '输出采样率'}`,
+      label: t('audioSignalPath.summary.resampling'),
+      detail: resamplePath ?? t('audioSignalPath.summary.toRate', { rate: formatRate(status.decoderOutputSampleRate ?? status.requestedOutputSampleRate) ?? t('audioSignalPath.decode.outputRate') }),
       spec,
       tone,
     };
   }
   if (status.bitPerfectCandidate) {
     return {
-      label: '纯净候选',
-      detail: `${outputModeLabel(status.outputMode)}输出`,
+      label: t('audioSignalPath.summary.bitPerfectCandidate'),
+      detail: t('audioSignalPath.summary.outputModeOutput', { mode: outputModeLabel(status.outputMode, t) }),
       spec,
       tone,
     };
   }
 
   return {
-    label: '原生播放',
-    detail: '未启用 DSP',
+    label: t('audioSignalPath.summary.nativePlayback'),
+    detail: t('audioSignalPath.summary.dspOff'),
     spec,
     tone,
   };
 };
 
-const getRoonPathLabel = (status: AudioStatus | null): string => {
+const getRoonPathLabel = (status: AudioStatus | null, t: Translate = fallbackT): string => {
   if (!status) {
-    return '等待';
+    return t('audioSignalPath.path.waiting');
   }
   if (status.error || status.sampleRateMismatch) {
-    return '异常';
+    return t('audioSignalPath.status.error');
   }
   if (status.dspLimiterProtecting || status.dspClippingRisk) {
-    return '保护中';
+    return t('audioSignalPath.summary.protecting');
   }
   if (
     status.dspActive
@@ -548,31 +558,31 @@ const getRoonPathLabel = (status: AudioStatus | null): string => {
     || status.channelBalanceEnabled
     || status.replayGainEnabled
   ) {
-    return '已强化';
+    return t('audioSignalPath.summary.enhanced');
   }
   if (status.resampling) {
-    return '重采样';
+    return t('audioSignalPath.summary.resampling');
   }
-  return '无损';
+  return t('audioSignalPath.path.lossless');
 };
 
-const getDisplayRoonPathLabel = (status: AudioStatus | null): string =>
-  status?.echoSrcActive ? '升频' : getRoonPathLabel(status);
+const getDisplayRoonPathLabel = (status: AudioStatus | null, t: Translate = fallbackT): string =>
+  status?.echoSrcActive ? t('audioSignalPath.summary.upsampling') : getRoonPathLabel(status, t);
 
-const outputLabel = (status: AudioStatus | null): string => {
+const outputLabel = (status: AudioStatus | null, t: Translate = fallbackT): string => {
   if (!status) {
-    return unknown;
+    return unknown(t);
   }
   if (status.outputMode === 'asio') {
-    return 'ASIO 输出';
+    return t('audioSignalPath.output.asio');
   }
   if (status.outputMode === 'exclusive') {
-    return '独占输出';
+    return t('audioSignalPath.output.exclusive');
   }
   if (status.outputMode === 'system') {
-    return '系统输出';
+    return t('audioSignalPath.output.system');
   }
-  return '共享输出';
+  return t('audioSignalPath.output.shared');
 };
 
 const outputBitDepthLabel = (format: string | null | undefined): string => {
@@ -587,7 +597,7 @@ const outputBitDepthLabel = (format: string | null | undefined): string => {
   return '32bit';
 };
 
-const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrack | null): RoonSignalNode[] => {
+const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): RoonSignalNode[] => {
   if (!status) {
     return [];
   }
@@ -599,7 +609,7 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (echoSrcPath) {
     nodes.push({
       badge: '',
-      title: 'ECHO SRC / 升频',
+      title: t('audioSignalPath.processing.echoSrcUpsampling'),
       value: echoSrcPath,
       tone: 'process',
       variant: 'process',
@@ -609,7 +619,7 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (resamplePath) {
     nodes.push({
       badge: '',
-      title: '重采样',
+      title: t('audioSignalPath.summary.resampling'),
       value: resamplePath,
       tone: 'process',
       variant: 'process',
@@ -619,7 +629,7 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (status.replayGainEnabled) {
     nodes.push({
       badge: '',
-      title: '音量标准化',
+      title: t('audioSignalPath.processing.volumeNormalization'),
       value: joinSpec([
         'ReplayGain',
         formatDb(status.replayGainAppliedDb),
@@ -632,8 +642,8 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (status.channelBalanceEnabled) {
     nodes.push({
       badge: '',
-      title: '声道处理',
-      value: '声道平衡',
+      title: t('audioSignalPath.processing.channelProcessing'),
+      value: t('audioSignalPath.dsp.channelBalance'),
       tone: 'process',
       variant: 'process',
     });
@@ -642,8 +652,8 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (status.roomCorrectionEnabled) {
     nodes.push({
       badge: '',
-      title: '房间校正',
-      value: 'FIR / 声学处理',
+      title: t('audioSignalPath.processing.roomCorrection'),
+      value: t('audioSignalPath.processing.firAcoustic'),
       tone: 'process',
       variant: 'process',
     });
@@ -652,8 +662,8 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (status.eqEnabled) {
     nodes.push({
       badge: '',
-      title: '参数化 EQ',
-      value: '5 个频段',
+      title: t('audioSignalPath.processing.parametricEq'),
+      value: t('audioSignalPath.processing.fiveBands'),
       tone: 'process',
       variant: 'process',
     });
@@ -662,8 +672,8 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   if (nodes.length || status.dspActive) {
     nodes.push({
       badge: '',
-      title: '比特位深转换',
-      value: `64bit Float 至 ${outputBitDepthLabel(status.nativeOutputFormat)}`,
+      title: t('audioSignalPath.processing.bitDepthConversion'),
+      value: t('audioSignalPath.processing.bitDepthTo', { depth: outputBitDepthLabel(status.nativeOutputFormat) }),
       tone: 'process',
       variant: 'process',
     });
@@ -672,36 +682,36 @@ const buildRoonProcessingNodes = (status: AudioStatus | null, track: LibraryTrac
   return nodes;
 };
 
-const buildRoonSignalPathNodes = (status: AudioStatus | null, track: LibraryTrack | null): RoonSignalNode[] => {
+const buildRoonSignalPathNodes = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): RoonSignalNode[] => {
   const codec = normalizeCodec(track?.codec ?? status?.codec) ?? 'SRC';
-  const processingNodes = buildRoonProcessingNodes(status, track);
+  const processingNodes = buildRoonProcessingNodes(status, track, t);
   const transport = joinSpec([
-    outputModeLabel(status?.outputMode),
+    outputModeLabel(status?.outputMode, t),
     outputBackendLabel(status?.activeOutputBackendImpl ?? status?.outputBackend),
-  ], status ? outputModeLabel(status.outputMode) : unknown);
+  ], status ? outputModeLabel(status.outputMode, t) : unknown(t));
   const outputDetail = joinSpec([
-    outputLabel(status),
+    outputLabel(status, t),
     formatRoonRate(status?.actualDeviceSampleRate ?? status?.sharedDeviceSampleRate ?? status?.requestedOutputSampleRate),
-  ], outputLabel(status));
+  ], outputLabel(status, t));
 
   return [
     {
       badge: codec.length > 4 ? codec.slice(0, 4) : codec,
-      title: '数据源',
-      value: roonSourceLabel(status, track),
+      title: t('audioSignalPath.node.dataSource'),
+      value: roonSourceLabel(status, track, t),
       tone: status ? 'good' : 'muted',
     },
     ...processingNodes,
     {
       badge: '',
-      title: status?.outputDeviceName ?? '播放设备',
+      title: status?.outputDeviceName ?? t('audioSignalPath.node.playbackDevice'),
       value: transport,
       icon: Waves,
       tone: status?.sampleRateMismatch || status?.error ? 'danger' : status ? 'good' : 'muted',
     },
     {
       badge: '',
-      title: '输出',
+      title: t('audioSignalPath.node.output'),
       value: outputDetail,
       icon: Speaker,
       tone: status?.sampleRateMismatch || status?.error ? 'danger' : status ? 'good' : 'muted',
@@ -713,19 +723,20 @@ const getHqPlayerSignalSummary = (
   connectStatus: ConnectSessionStatus,
   track: LibraryTrack | null,
   hqPlayerStatus: HqPlayerStatus | null,
+  t: Translate = fallbackT,
 ): SignalSummary => {
   const playbackStatus = hqPlayerStatus?.playbackStatus ?? null;
   const tone = hqPlayerTone(connectStatus);
   const dsp = hqPlayerDspLabel(playbackStatus);
-  const output = hqPlayerOutputLabel(playbackStatus);
+  const output = hqPlayerOutputLabel(playbackStatus, t);
 
   const detail = cleanReason(connectStatus.error)
     ?? (dsp
       ? `${output} / ${dsp}`
-      : `${hqPlayerStateLabel(playbackStatus?.state ?? connectStatus.state)} / 外部处理链`);
+      : `${hqPlayerStateLabel(playbackStatus?.state ?? connectStatus.state, t)} / ${t('audioSignalPath.hqPlayer.externalChain')}`);
 
   return {
-    label: connectStatus.state === 'error' ? 'HQPlayer 异常' : 'HQPlayer',
+    label: connectStatus.state === 'error' ? t('audioSignalPath.hqPlayer.error') : 'HQPlayer',
     detail,
     spec: hqPlayerCompactSpec(connectStatus, track, playbackStatus),
     tone,
@@ -737,44 +748,48 @@ const getResolvedSignalSummary = (
   track: LibraryTrack | null,
   connectStatus: ConnectSessionStatus | null | undefined,
   hqPlayerStatus: HqPlayerStatus | null,
+  t: Translate = fallbackT,
 ): SignalSummary =>
   isHqPlayerSignalPath(connectStatus)
-    ? getHqPlayerSignalSummary(connectStatus, track, hqPlayerStatus)
-    : getSignalSummary(status, track);
+    ? getHqPlayerSignalSummary(connectStatus, track, hqPlayerStatus, t)
+    : getSignalSummary(status, track, t);
 
 const buildHqPlayerSignalPathNodes = (
   connectStatus: ConnectSessionStatus,
   track: LibraryTrack | null,
   hqPlayerStatus: HqPlayerStatus | null,
+  t: Translate = fallbackT,
 ): RoonSignalNode[] => {
   const playbackStatus = hqPlayerStatus?.playbackStatus ?? null;
   const codec = normalizeHqPlayerCodec(track, playbackStatus, connectStatus) ?? 'HQ';
   const product = hqPlayerStatus?.controlInfo?.product?.trim() || 'HQPlayer Desktop';
   const dsp = hqPlayerDspLabel(playbackStatus);
-  const playbackState = hqPlayerStateLabel(playbackStatus?.state ?? connectStatus.state);
-  const output = hqPlayerOutputLabel(playbackStatus);
+  const playbackState = hqPlayerStateLabel(playbackStatus?.state ?? connectStatus.state, t);
+  const output = hqPlayerOutputLabel(playbackStatus, t);
   const sourceTone: SignalTone = connectStatus.state === 'error' ? 'danger' : 'good';
   const processTone: SignalTone = connectStatus.state === 'error' ? 'danger' : 'process';
 
   return [
     {
       badge: codec.length > 4 ? codec.slice(0, 4) : codec,
-      title: '数据源',
-      value: hqPlayerSourceLabel(connectStatus, track, playbackStatus),
+      title: t('audioSignalPath.node.dataSource'),
+      value: hqPlayerSourceLabel(connectStatus, track, playbackStatus, t),
       tone: sourceTone,
     },
     {
       badge: '',
       title: product,
-      value: dsp ?? `${playbackState} / 外部处理链`,
+      value: dsp ?? `${playbackState} / ${t('audioSignalPath.hqPlayer.externalChain')}`,
       icon: SlidersHorizontal,
       tone: processTone,
       variant: 'process',
     },
     {
       badge: '',
-      title: '输出',
-      value: output === '由 HQPlayer 决定' ? `${output} / 外部渲染` : `HQPlayer 输出 / ${output}`,
+      title: t('audioSignalPath.node.output'),
+      value: output === t('audioSignalPath.hqPlayer.outputDecided')
+        ? `${output} / ${t('audioSignalPath.hqPlayer.externalRendering')}`
+        : `${t('audioSignalPath.hqPlayer.output')} / ${output}`,
       icon: Speaker,
       tone: processTone,
     },
@@ -786,17 +801,22 @@ const buildResolvedSignalPathNodes = (
   track: LibraryTrack | null,
   connectStatus: ConnectSessionStatus | null | undefined,
   hqPlayerStatus: HqPlayerStatus | null,
+  t: Translate = fallbackT,
 ): RoonSignalNode[] =>
   isHqPlayerSignalPath(connectStatus)
-    ? buildHqPlayerSignalPathNodes(connectStatus, track, hqPlayerStatus)
-    : buildRoonSignalPathNodes(status, track);
+    ? buildHqPlayerSignalPathNodes(connectStatus, track, hqPlayerStatus, t)
+    : buildRoonSignalPathNodes(status, track, t);
 
-const getDisplaySignalPathLabel = (status: AudioStatus | null, connectStatus: ConnectSessionStatus | null | undefined): string => {
+const getDisplaySignalPathLabel = (
+  status: AudioStatus | null,
+  connectStatus: ConnectSessionStatus | null | undefined,
+  t: Translate = fallbackT,
+): string => {
   if (!isHqPlayerSignalPath(connectStatus)) {
-    return getDisplayRoonPathLabel(status);
+    return getDisplayRoonPathLabel(status, t);
   }
 
-  return connectStatus.state === 'error' ? 'HQPlayer 异常' : 'HQPlayer';
+  return connectStatus.state === 'error' ? t('audioSignalPath.hqPlayer.error') : 'HQPlayer';
 };
 
 export const AudioSignalPathControl = ({
@@ -806,8 +826,9 @@ export const AudioSignalPathControl = ({
   connectStatus,
   onClick,
 }: AudioSignalPathControlProps): JSX.Element => {
-  const summary = getResolvedSignalSummary(status, track, connectStatus, null);
-  const label = `打开音频链路：${summary.label}，${summary.spec}`;
+  const t = useOptionalI18n()?.t ?? fallbackT;
+  const summary = getResolvedSignalSummary(status, track, connectStatus, null, t);
+  const label = t('audioSignalPath.control.openLabel', { label: summary.label, spec: summary.spec });
 
   return (
     <button
@@ -834,6 +855,7 @@ export const AudioSignalPathPopover = ({
   connectStatus,
   onClose,
 }: AudioSignalPathPopoverProps): JSX.Element | null => {
+  const t = useOptionalI18n()?.t ?? fallbackT;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -927,31 +949,31 @@ export const AudioSignalPathPopover = ({
     return null;
   }
 
-  const nodes = buildResolvedSignalPathNodes(status, track, connectStatus, hqPlayerStatus);
-  const summary = getResolvedSignalSummary(status, track, connectStatus, hqPlayerStatus);
-  const pathLabel = getDisplaySignalPathLabel(status, connectStatus);
+  const nodes = buildResolvedSignalPathNodes(status, track, connectStatus, hqPlayerStatus, t);
+  const summary = getResolvedSignalSummary(status, track, connectStatus, hqPlayerStatus, t);
+  const pathLabel = getDisplaySignalPathLabel(status, connectStatus, t);
 
   return (
     <section
       className="signal-path-popover signal-path-popover--roon"
       role="dialog"
-      aria-label="信号路径"
+      aria-label={t('audioSignalPath.title')}
       data-state={isOpen ? 'open' : 'closing'}
       data-tone={summary.tone}
     >
       <header className="signal-path-roon-header">
         <div>
-          <h3>信号路径: {pathLabel}</h3>
+          <h3>{t('audioSignalPath.header', { path: pathLabel })}</h3>
           <p>{summary.detail}</p>
         </div>
-        <button className="signal-path-roon-menu" type="button" aria-label="关闭信号路径" title="关闭" onClick={onClose}>
+        <button className="signal-path-roon-menu" type="button" aria-label={t('audioSignalPath.closeLabel')} title={t('audioSignalPath.closeTitle')} onClick={onClose}>
           <X size={17} />
         </button>
       </header>
 
       <div className="signal-path-roon-name" data-tone={summary.tone}>
         <span title={summary.spec}>{summary.spec}</span>
-        <em>{nodes.length} 层链路</em>
+        <em>{t('audioSignalPath.layers', { count: nodes.length })}</em>
       </div>
 
       <div className="signal-path-roon-chain">
@@ -966,7 +988,7 @@ export const AudioSignalPathPopover = ({
               key={`${node.title}-${index}`}
             >
               <span className="signal-path-roon-node__badge" aria-hidden="true">
-                {Icon ? <Icon size={21} fill={node.title === '输出' ? 'currentColor' : 'none'} /> : node.badge}
+                {Icon ? <Icon size={21} fill={Icon === Speaker ? 'currentColor' : 'none'} /> : node.badge}
               </span>
               <span className="signal-path-roon-node__line" aria-hidden="true" />
               <div className="signal-path-roon-node__copy">

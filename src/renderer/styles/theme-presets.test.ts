@@ -27,6 +27,29 @@ describe('theme presets stylesheet', () => {
     expect(layoutCss).toContain('.app-shell--wallpaper-ready[data-wallpaper-unified-opacity="true"]::before');
   });
 
+  it('keeps acrylic lyrics window controls above the page without adding chrome', () => {
+    const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
+
+    expect(css).toContain(
+      'html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-controls {',
+    );
+    expect(css).toMatch(
+      /html \.app-shell\.app-shell--acrylic:is\(\.app-shell--lyrics, :has\(\.lyrics-page\)\):not\(\.app-shell--wallpaper\) \.app-titlebar \{\r?\n  z-index: 90;[\s\S]*?background: transparent;[\s\S]*?backdrop-filter: none;/,
+    );
+    expect(css).toMatch(
+      /html \.app-shell\.app-shell--acrylic:is\(\.app-shell--lyrics, :has\(\.lyrics-page\)\):not\(\.app-shell--wallpaper\) \.window-controls \{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?backdrop-filter: none;/,
+    );
+    expect(css).toContain(
+      'html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-control {',
+    );
+    expect(css).toMatch(
+      /html \.app-shell\.app-shell--acrylic:not\(\.app-shell--wallpaper\) \.page-surface:has\(\.lyrics-page\[data-immersive-cover-style="true"\]\[data-background="cover"\]\) \{\r?\n  background: transparent;\r?\n  backdrop-filter: none;/,
+    );
+    expect(css).toContain(
+      'html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-control--close:hover {',
+    );
+  });
+
   it('keeps FINAL artist wall avatars as square product tiles', () => {
     const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
 

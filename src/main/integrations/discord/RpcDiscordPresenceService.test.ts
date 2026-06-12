@@ -5,6 +5,7 @@ import type { LibraryTrack } from '../../../shared/types/library';
 import {
   createDiscordActivity,
   createDiscordPresenceTrackFromStatus,
+  DISCORD_APP_LOGO_IMAGE_KEY,
   loadDiscordRpcModule,
   RpcDiscordPresenceService,
 } from './RpcDiscordPresenceService';
@@ -166,7 +167,7 @@ describe('RpcDiscordPresenceService', () => {
     expect(activity).toMatchObject({
       details: 'Moonlit Signal',
       state: 'Echo Artist',
-      largeImageKey: 'echo_logo',
+      largeImageKey: DISCORD_APP_LOGO_IMAGE_KEY,
       largeImageText: 'Night Album',
       smallImageKey: 'playing',
       instance: false,
@@ -184,7 +185,7 @@ describe('RpcDiscordPresenceService', () => {
     expect(activity).toMatchObject({
       details: 'Moonlit Signal',
       state: 'Paused \u00b7 Echo Artist',
-      largeImageKey: 'echo_logo',
+      largeImageKey: DISCORD_APP_LOGO_IMAGE_KEY,
       smallImageKey: 'paused',
     });
     expect(activity?.startTimestamp).toBeUndefined();
@@ -303,7 +304,7 @@ describe('RpcDiscordPresenceService', () => {
     const activity = createDiscordActivity(makeStatus(), presenceTrack, Date.now());
 
     expect(presenceTrack.coverImageKey).toBeNull();
-    expect(activity?.largeImageKey).toBe('echo_logo');
+    expect(activity?.largeImageKey).toBe(DISCORD_APP_LOGO_IMAGE_KEY);
   });
 
   it('uses a stored public network cover for local tracks with echo-cover artwork', () => {

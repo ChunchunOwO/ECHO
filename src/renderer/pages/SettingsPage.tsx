@@ -725,20 +725,20 @@ type ArtistImageProgress = ArtistImageJobStatus & {
 
 const libraryScanRunningStatuses = new Set<LibraryScanStatus['status']>(['queued', 'running']);
 
-const libraryScanPhaseLabels: Record<LibraryScanStatus['phase'], string> = {
-  queued: '排队中',
-  discovering: '发现文件',
-  checking_cache: '检查缓存',
-  reading_metadata: '读取元数据',
-  extracting_covers: '处理封面',
-  grouping_albums: '整理专辑/艺人',
-  writing_database: '写入数据库',
-  finished: '完成',
-  failed: '失败',
-  cancelled: '已取消',
+const libraryScanPhaseLabelKeys: Record<LibraryScanStatus['phase'], TranslationKey> = {
+  queued: 'mediaLibrary.folders.status.queued',
+  discovering: 'mediaLibrary.folders.phase.discovering',
+  checking_cache: 'mediaLibrary.folders.phase.checkingCache',
+  reading_metadata: 'mediaLibrary.folders.phase.readingMetadata',
+  extracting_covers: 'mediaLibrary.folders.phase.extractingCovers',
+  grouping_albums: 'mediaLibrary.settings.scan.phase.grouping',
+  writing_database: 'mediaLibrary.folders.phase.writingDatabase',
+  finished: 'mediaLibrary.folders.phase.finished',
+  failed: 'mediaLibrary.folders.phase.failed',
+  cancelled: 'mediaLibrary.folders.status.cancelled',
 };
 
-const formatLibraryScanProgressMessage = (statuses: LibraryScanStatus[]): string | null => {
+const formatLibraryScanProgressMessage = (statuses: LibraryScanStatus[], t: (key: TranslationKey, options?: Record<string, string | number>) => string): string | null => {
   if (statuses.length === 0) {
     return null;
   }
@@ -754,11 +754,26 @@ const formatLibraryScanProgressMessage = (statuses: LibraryScanStatus[]): string
 
   if (active.length > 0) {
     const current = active.find((status) => status.status === 'running') ?? active[0];
-    const phase = current ? libraryScanPhaseLabels[current.phase] ?? current.phase : '扫描中';
-    return `扫描进度：${processedFiles}/${totalFiles || '?'}，跳过 ${skippedFiles}，错误 ${errorCount}。当前 ${phase}，排队/运行 ${active.length} 个。`;
+    const phase = current ? t(libraryScanPhaseLabelKeys[current.phase] ?? 'mediaLibrary.folders.status.running') : t('mediaLibrary.folders.status.running');
+    return t('mediaLibrary.settings.scan.progressMessage.running', {
+      processed: processedFiles,
+      total: totalFiles || '?',
+      skipped: skippedFiles,
+      errors: errorCount,
+      phase,
+      active: active.length,
+    });
   }
 
-  return `扫描结束：完成 ${completed} 个，取消 ${cancelled} 个，失败 ${failed} 个；已处理 ${processedFiles}/${totalFiles || 0}，跳过 ${skippedFiles}，错误 ${errorCount}。`;
+  return t('mediaLibrary.settings.scan.progressMessage.finished', {
+    completed,
+    cancelled,
+    failed,
+    processed: processedFiles,
+    total: totalFiles || 0,
+    skipped: skippedFiles,
+    errors: errorCount,
+  });
 };
 
 const emptyArtistImageSummary: ArtistImageCacheSummary = {
@@ -3907,16 +3922,16 @@ const ToggleButton = ({
   </button>
 );
 
-const getAccountStatusLabel = (status: AccountStatus | undefined): string => {
+const getAccountStatusLabel = (t: ReturnType<typeof useI18n>['t'], status: AccountStatus | undefined): string => {
   if (!status) {
-    return '检查中';
+    return t('settings.integrations.accounts.status.checking');
   }
 
   if (status.connected && status.error) {
-    return '登录失效';
+    return t('settings.integrations.accounts.status.expired');
   }
 
-  return status.connected ? '已登录' : '未登录';
+  return status.connected ? t('settings.integrations.accounts.status.loggedIn') : t('settings.integrations.accounts.status.loggedOut');
 };
 
 const getAccountBadgeClass = (status: AccountStatus | undefined): string => {
@@ -3940,7 +3955,7 @@ const renderAccountStatusBadge = (
     );
   }
 
-  return <span className={getAccountBadgeClass(status)}>{getAccountStatusLabel(status)}</span>;
+  return <span className={getAccountBadgeClass(status)}>{getAccountStatusLabel(t, status)}</span>;
 };
 
 const AccountCookieCard = ({
@@ -4014,7 +4029,7 @@ const AccountCookieCard = ({
         </button>
         <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login' || busyAction === 'browser'} onClick={onOpenLogin}>
           <Check size={15} />
-          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.checkBusy') : '保存浏览器选择'}
+          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.saveBrowser')}
         </button>
         <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
           {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
@@ -4080,7 +4095,7 @@ const YouTubeAccountCard = ({
         </button>
         <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login' || busyAction === 'browser'} onClick={onOpenLogin}>
           <ExternalLink size={15} />
-          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.loginBusy') : '打开浏览器登录'}
+          {busyAction === 'login' || busyAction === 'browser' ? t('settings.integrations.accounts.loginBusy') : t('settings.integrations.accounts.openBrowserLogin')}
         </button>
         <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
           {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
@@ -4128,7 +4143,7 @@ const SpotifyAccountCard = ({
       <div className="settings-account-actions">
         <button className="settings-action-button" type="button" onClick={onOpenDashboard}>
           <ExternalLink size={15} />
-          打开 Spotify Dashboard
+          {t('settings.integrations.common.openDashboard', { service: 'Spotify' })}
         </button>
         <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
           {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
@@ -4177,31 +4192,31 @@ const TidalAccountCard = ({
         {renderAccountStatusBadge(t, status, onOpenLogin)}
         <div>
           <h3>TIDAL</h3>
-          <p>TIDAL 仅接入官方 catalog 元数据；不会获取音频 URL，也不会进入 ECHO 播放链。</p>
+          <p>{t('settings.integrations.accounts.tidal.description')}</p>
         </div>
       </div>
       <div className="settings-account-actions">
         <button className="settings-action-button" type="button" onClick={onOpenDashboard}>
           <ExternalLink size={15} />
-          打开 TIDAL Dashboard
+          {t('settings.integrations.common.openDashboard', { service: 'TIDAL' })}
         </button>
         <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
           {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
         </button>
         <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
           <ExternalLink size={15} />
-          {busyAction === 'login' ? '等待授权...' : '登录 TIDAL'}
+          {busyAction === 'login' ? t('settings.integrations.accounts.tidal.loginBusy') : t('settings.integrations.accounts.tidal.login')}
         </button>
         <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
           {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
         </button>
       </div>
       <div className="settings-account-meta">
-        <span>{status?.displayName ?? status?.username ?? '使用 OAuth PKCE 授权，不保存 Client Secret；仅用于 TIDAL 元数据。'}</span>
+        <span>{status?.displayName ?? status?.username ?? t('settings.integrations.accounts.tidal.savedStatus')}</span>
         <span>{t('settings.integrations.accounts.loginMeta', { loginAt: status?.lastLoginAt ?? 'n/a', checkedAt: status?.lastCheckedAt ?? 'n/a' })}</span>
       </div>
       <p className="settings-inline-note settings-account-note">
-        默认回调地址是 http://127.0.0.1:43880/tidal/callback，需要在 TIDAL Developer Dashboard 的 app 设置里登记。
+        {t('settings.integrations.accounts.tidal.callbackNote')}
       </p>
       {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
       {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
@@ -4533,7 +4548,7 @@ export const SettingsPage = (): JSX.Element => {
   const libraryScanProgressDone = libraryScanStatusList.reduce((total, scanStatus) => total + scanStatus.processedFiles, 0);
   const libraryScanProgressPercent =
     libraryScanProgressTotal > 0 ? Math.max(0, Math.min(100, Math.round((libraryScanProgressDone / libraryScanProgressTotal) * 100))) : 0;
-  const libraryScanProgressMessage = formatLibraryScanProgressMessage(libraryScanStatusList);
+  const libraryScanProgressMessage = formatLibraryScanProgressMessage(libraryScanStatusList, t);
   const libraryScanHasVisibleProgress = libraryScanStatusList.length > 0 && (libraryScanRunningList.length > 0 || libraryScanMessage !== null);
   const libraryScanActionDisabled = libraryScanBusy || libraryScanRunningList.length > 0;
 
@@ -7737,12 +7752,12 @@ export const SettingsPage = (): JSX.Element => {
     const clientId = spotifyAuthDraft.clientId.trim();
     const redirectUri = spotifyAuthDraft.redirectUri.trim();
     if (!isSpotifyClientIdInputValid(clientId)) {
-      setSpotifyAuthMessage('请填写你自己的 Spotify Developer App Client ID。');
+      setSpotifyAuthMessage(t('settings.integrations.spotifyAuth.message.clientIdRequired'));
       return;
     }
 
     if (!isSpotifyRedirectUriInputValid(redirectUri)) {
-      setSpotifyAuthMessage('Redirect URI 必须是 http://127.0.0.1:端口/路径，且不能包含账号、密码、查询参数或 hash。');
+      setSpotifyAuthMessage(t('settings.integrations.spotifyAuth.message.redirectInvalid'));
       return;
     }
 
@@ -7755,12 +7770,12 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         dispatchSettingsChanged(settings);
-        setSpotifyAuthMessage('已保存。修改 Spotify OAuth 配置后，请重新登录 Spotify。');
+        setSpotifyAuthMessage(t('settings.integrations.spotifyAuth.message.saved'));
       })
       .catch((settingsError) => {
         setSpotifyAuthMessage(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
-  }, [dispatchSettingsChanged, spotifyAuthDraft]);
+  }, [dispatchSettingsChanged, spotifyAuthDraft, t]);
 
   const handleTidalAuthConfigSave = useCallback((): void => {
     const app = getAppBridge();
@@ -7775,22 +7790,22 @@ export const SettingsPage = (): JSX.Element => {
     const redirectUri = tidalAuthDraft.redirectUri.trim();
     const countryCode = tidalAuthDraft.countryCode.trim().toUpperCase();
     if (!isTidalClientIdInputValid(clientId)) {
-      setTidalAuthMessage('Please fill a valid TIDAL Developer App Client ID.');
+      setTidalAuthMessage(t('settings.integrations.tidalAuth.message.clientIdRequired'));
       return;
     }
 
     if (!isTidalClientSecretInputValid(clientSecret)) {
-      setTidalAuthMessage('Please fill your TIDAL Developer App Client Secret.');
+      setTidalAuthMessage(t('settings.integrations.tidalAuth.message.clientSecretRequired'));
       return;
     }
 
     if (!isSpotifyRedirectUriInputValid(redirectUri)) {
-      setTidalAuthMessage('Redirect URI must be an http://127.0.0.1:PORT/path loopback URL.');
+      setTidalAuthMessage(t('settings.integrations.tidalAuth.message.redirectInvalid'));
       return;
     }
 
     if (!isTidalCountryCodeInputValid(countryCode)) {
-      setTidalAuthMessage('Country Code must be a two-letter code such as US, HK, or JP.');
+      setTidalAuthMessage(t('settings.integrations.tidalAuth.message.countryInvalid'));
       return;
     }
 
@@ -7805,12 +7820,12 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         dispatchSettingsChanged(settings);
-        setTidalAuthMessage('Saved. TIDAL catalog search now uses your custom developer credentials.');
+        setTidalAuthMessage(t('settings.integrations.tidalAuth.message.saved'));
       })
       .catch((settingsError) => {
         setTidalAuthMessage(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
-  }, [dispatchSettingsChanged, tidalAuthDraft]);
+  }, [dispatchSettingsChanged, tidalAuthDraft, t]);
 
   const handleNetworkProxySave = useCallback((): void => {
     const app = getAppBridge();
@@ -7824,7 +7839,7 @@ export const SettingsPage = (): JSX.Element => {
       setNetworkProxyTestResult({
         ok: false,
         mode: networkProxyDraft.mode,
-        message: '请先填写手动代理地址。',
+        message: t('settings.integrations.networkProxy.message.manualRequired'),
         resolvedProxy: null,
         status: null,
         elapsedMs: 0,
@@ -7836,7 +7851,7 @@ export const SettingsPage = (): JSX.Element => {
       setNetworkProxyTestResult({
         ok: false,
         mode: networkProxyDraft.mode,
-        message: '请先填写 PAC 地址。',
+        message: t('settings.integrations.networkProxy.message.pacRequired'),
         resolvedProxy: null,
         status: null,
         elapsedMs: 0,
@@ -7859,7 +7874,7 @@ export const SettingsPage = (): JSX.Element => {
         setNetworkProxyTestResult({
           ok: true,
           mode: settings.networkProxyMode ?? 'off',
-          message: '代理设置已保存并应用。',
+          message: t('settings.integrations.networkProxy.message.saved'),
           resolvedProxy: null,
           status: null,
           elapsedMs: 0,
@@ -7878,7 +7893,7 @@ export const SettingsPage = (): JSX.Element => {
         });
       })
       .finally(() => setNetworkProxyBusy(null));
-  }, [dispatchSettingsChanged, networkProxyDraft]);
+  }, [dispatchSettingsChanged, networkProxyDraft, t]);
 
   const handleNetworkProxyTest = useCallback((): void => {
     const app = getAppBridge();
@@ -7892,7 +7907,7 @@ export const SettingsPage = (): JSX.Element => {
       setNetworkProxyTestResult({
         ok: false,
         mode: networkProxyDraft.mode,
-        message: '请先填写手动代理地址。',
+        message: t('settings.integrations.networkProxy.message.manualRequired'),
         resolvedProxy: null,
         status: null,
         elapsedMs: 0,
@@ -7904,7 +7919,7 @@ export const SettingsPage = (): JSX.Element => {
       setNetworkProxyTestResult({
         ok: false,
         mode: networkProxyDraft.mode,
-        message: '请先填写 PAC 地址。',
+        message: t('settings.integrations.networkProxy.message.pacRequired'),
         resolvedProxy: null,
         status: null,
         elapsedMs: 0,
@@ -7933,7 +7948,7 @@ export const SettingsPage = (): JSX.Element => {
         });
       })
       .finally(() => setNetworkProxyBusy(null));
-  }, [networkProxyDraft]);
+  }, [networkProxyDraft, t]);
 
   const togglePlaybackAdvancedPanelExpanded = useCallback((): void => {
     setPlaybackAdvancedPanelExpanded((expanded) => {
@@ -7977,7 +7992,7 @@ export const SettingsPage = (): JSX.Element => {
     };
 
     setOnlineAlbumInfoBusyAction('save');
-    setOnlineAlbumInfoMessage('正在保存 Discogs 专辑评分配置...');
+    setOnlineAlbumInfoMessage(t('settings.integrations.onlineAlbum.message.saving'));
     const app = getAppBridge();
     if (!app) {
       setError('Desktop bridge unavailable. Open ECHO Next in Electron to save Discogs settings.');
@@ -7991,7 +8006,7 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         dispatchSettingsChanged(settings);
-        setOnlineAlbumInfoMessage('Discogs token 已保存。回到专辑页点“刷新在线信息”即可重拉评分。');
+        setOnlineAlbumInfoMessage(t('settings.integrations.onlineAlbum.message.saved'));
       })
       .catch((settingsError) => {
         const message = settingsError instanceof Error ? settingsError.message : String(settingsError);
@@ -7999,7 +8014,7 @@ export const SettingsPage = (): JSX.Element => {
         setOnlineAlbumInfoMessage(message);
       })
       .finally(() => setOnlineAlbumInfoBusyAction(null));
-  }, [dispatchSettingsChanged, onlineAlbumInfoDraft.discogsUserToken]);
+  }, [dispatchSettingsChanged, onlineAlbumInfoDraft.discogsUserToken, t]);
 
   const handleOnlineArtistInfoSave = useCallback((): void => {
     const patch: Partial<AppSettings> = {
@@ -8010,7 +8025,7 @@ export const SettingsPage = (): JSX.Element => {
     };
 
     setOnlineArtistInfoBusyAction('save');
-    setOnlineArtistInfoMessage('正在保存在线歌手信息配置...');
+    setOnlineArtistInfoMessage(t('settings.integrations.onlineArtist.message.saving'));
     const app = getAppBridge();
     if (!app) {
       setError('Desktop bridge unavailable. Open ECHO Next in Electron to save artist info settings.');
@@ -8024,7 +8039,7 @@ export const SettingsPage = (): JSX.Element => {
       .then((settings) => {
         setAppSettings(settings);
         dispatchSettingsChanged(settings);
-        setOnlineArtistInfoMessage('在线歌手信息配置已保存。艺人页会按需后台加载简介和演出。');
+        setOnlineArtistInfoMessage(t('settings.integrations.onlineArtist.message.saved'));
       })
       .catch((settingsError) => {
         const message = settingsError instanceof Error ? settingsError.message : String(settingsError);
@@ -8032,7 +8047,7 @@ export const SettingsPage = (): JSX.Element => {
         setOnlineArtistInfoMessage(message);
       })
       .finally(() => setOnlineArtistInfoBusyAction(null));
-  }, [dispatchSettingsChanged, onlineArtistInfoDraft]);
+  }, [dispatchSettingsChanged, onlineArtistInfoDraft, t]);
 
   const handleArtistOnlineInfoSourceSelect = useCallback((source: ArtistOnlineInfoSource): void => {
     patchAppSettings({ onlineArtistInfoSources: [source] });
@@ -8051,7 +8066,7 @@ export const SettingsPage = (): JSX.Element => {
     void library
       .clearArtistOnlineInfoCache()
       .then((result) => {
-        setOnlineArtistInfoMessage(`已清理 ${result.removedRows} 条在线歌手信息和演出缓存。`);
+        setOnlineArtistInfoMessage(t('settings.integrations.onlineArtist.message.cleared', { count: result.removedRows }));
         window.dispatchEvent(new Event('library:changed'));
       })
       .catch((clearError) => {
@@ -8060,7 +8075,7 @@ export const SettingsPage = (): JSX.Element => {
         setOnlineArtistInfoMessage(message);
       })
       .finally(() => setOnlineArtistInfoBusyAction(null));
-  }, []);
+  }, [t]);
 
   const handleMonoAudioToggle = useCallback((enabled: boolean): void => {
     const eq = getEqBridge();
@@ -8101,28 +8116,30 @@ export const SettingsPage = (): JSX.Element => {
   const mvEnabledProviders = useMemo(() => new Set(appSettings?.mvEnabledProviders ?? mvNetworkProviders), [appSettings?.mvEnabledProviders]);
   const taskbarPlaybackLabel = useMemo(() => {
     if (!taskbarPlaybackStatus) {
-      return '未检测';
+      return t('settings.integrations.common.status.notChecked');
     }
     if (!taskbarPlaybackStatus.supported) {
-      return '非 Windows';
+      return t('settings.integrations.common.status.nonWindows');
     }
     if (!taskbarPlaybackStatus.bound || !taskbarPlaybackStatus.windowAvailable) {
-      return '未绑定窗口';
+      return t('settings.integrations.common.status.windowUnbound');
     }
     if (!taskbarPlaybackStatus.enabled) {
-      return '已关闭';
+      return t('settings.integrations.common.status.disabled');
     }
     if (taskbarPlaybackStatus.lastError) {
-      return `异常: ${taskbarPlaybackStatus.lastError}`;
+      return t('settings.integrations.common.status.error', { error: taskbarPlaybackStatus.lastError });
     }
     if (!taskbarPlaybackStatus.visible) {
-      return taskbarPlaybackStatus.playbackState ? `等待播放 (${taskbarPlaybackStatus.playbackState})` : '等待播放';
+      return taskbarPlaybackStatus.playbackState
+        ? t('settings.integrations.common.status.waitingPlaybackState', { state: taskbarPlaybackStatus.playbackState })
+        : t('settings.integrations.common.status.waitingPlayback');
     }
 
     const progress =
       typeof taskbarPlaybackStatus.progress === 'number' ? ` ${Math.round(taskbarPlaybackStatus.progress * 100)}%` : '';
-    return `已应用${progress}`;
-  }, [taskbarPlaybackStatus]);
+    return t('settings.integrations.common.status.applied', { progress });
+  }, [taskbarPlaybackStatus, t]);
 
   const patchMvSettings = useCallback(
     (patch: Partial<MvSettings>): void => {
@@ -8487,12 +8504,12 @@ export const SettingsPage = (): JSX.Element => {
     const cookie = accountCookies[provider].trim();
 
     if (!accounts) {
-      setAccountErrors((current) => ({ ...current, [provider]: 'Desktop bridge unavailable. Open ECHO Next in Electron to save accounts.' }));
+      setAccountErrors((current) => ({ ...current, [provider]: t('settings.integrations.common.desktopBridge.accounts') }));
       return;
     }
 
     if (!cookie) {
-      setAccountErrors((current) => ({ ...current, [provider]: '请先粘贴 Cookie；或使用“登录并同步”自动保存登录 Cookie。' }));
+      setAccountErrors((current) => ({ ...current, [provider]: t('settings.integrations.accounts.cookieRequired') }));
       return;
     }
 
@@ -8503,7 +8520,7 @@ export const SettingsPage = (): JSX.Element => {
       const status = await accounts.saveCookie(provider, cookie);
       updateAccountStatus(status);
       setAccountCookies((current) => ({ ...current, [provider]: '' }));
-      setAccountMessages((current) => ({ ...current, [provider]: 'Cookie 已保存，账号状态已更新。' }));
+      setAccountMessages((current) => ({ ...current, [provider]: t('settings.integrations.accounts.cookieSaved') }));
     } catch (accountError) {
       setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
     } finally {
@@ -8519,7 +8536,7 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     if (provider !== 'spotify' && provider !== 'tidal' && !accountStatusByProvider[provider]?.connected && accountCookies[provider].trim().length === 0) {
-      setAccountErrors((current) => ({ ...current, [provider]: '尚未保存 Cookie。请先使用“登录并同步”自动保存，或手动粘贴 Cookie 后保存。' }));
+      setAccountErrors((current) => ({ ...current, [provider]: t('settings.integrations.accounts.cookieMissing') }));
       return;
     }
 
@@ -8570,7 +8587,7 @@ export const SettingsPage = (): JSX.Element => {
     try {
       setAccountBusyFor('youtube', 'browser');
       setAccountErrors((current) => ({ ...current, youtube: null }));
-      setAccountMessages((current) => ({ ...current, youtube: browser === 'none' ? null : `${browser} 浏览器登录状态已保存。` }));
+      setAccountMessages((current) => ({ ...current, youtube: browser === 'none' ? null : t('settings.integrations.common.savedBrowser', { browser }) }));
       updateAccountStatus(await accounts.setYouTubeBrowser(browser));
     } catch (accountError) {
       setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -8590,7 +8607,7 @@ export const SettingsPage = (): JSX.Element => {
     try {
       setAccountBusyFor('soundcloud', 'browser');
       setAccountErrors((current) => ({ ...current, soundcloud: null }));
-      setAccountMessages((current) => ({ ...current, soundcloud: browser === 'none' ? null : `${browser} browser login state saved.` }));
+      setAccountMessages((current) => ({ ...current, soundcloud: browser === 'none' ? null : t('settings.integrations.common.browserLoginSaved', { browser }) }));
       updateAccountStatus(await accounts.setBrowser('soundcloud', browser));
     } catch (accountError) {
       setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -8603,13 +8620,13 @@ export const SettingsPage = (): JSX.Element => {
     const accounts = getAccountsBridge();
 
     if (!accounts) {
-      setAccountErrors((current) => ({ ...current, [provider]: 'Desktop bridge unavailable. Open ECHO Next in Electron to sign in.' }));
+      setAccountErrors((current) => ({ ...current, [provider]: t('settings.integrations.common.desktopBridge.signIn') }));
       return;
     }
 
     if (provider === 'youtube') {
       if (youtubeBrowser === 'none') {
-        setAccountErrors((current) => ({ ...current, youtube: '请先选择 Edge、Chrome 或 Firefox。' }));
+        setAccountErrors((current) => ({ ...current, youtube: t('settings.integrations.common.requireBrowser') }));
         return;
       }
 
@@ -8626,7 +8643,7 @@ export const SettingsPage = (): JSX.Element => {
         updateAccountStatus(result?.status ?? status);
         setAccountMessages((current) => ({
           ...current,
-          youtube: result?.message ?? '已打开系统浏览器。ECHO 会让 yt-dlp 读取所选浏览器 Cookie，不会打开 Electron 登录窗口。',
+          youtube: result?.message ?? t('settings.integrations.accounts.youtube.browserOpened'),
         }));
       } catch (accountError) {
         setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -8638,7 +8655,7 @@ export const SettingsPage = (): JSX.Element => {
 
     if (provider === 'soundcloud') {
       if (soundCloudBrowser === 'none' && !accountCookies.soundcloud.trim()) {
-        setAccountErrors((current) => ({ ...current, soundcloud: 'Please select Edge, Chrome, or Firefox, or paste a SoundCloud cookie manually.' }));
+        setAccountErrors((current) => ({ ...current, soundcloud: t('settings.integrations.accounts.soundcloud.requireBrowserOrCookie') }));
         return;
       }
 
@@ -8657,7 +8674,7 @@ export const SettingsPage = (): JSX.Element => {
         updateAccountStatus(result?.status ?? status);
         setAccountMessages((current) => ({
           ...current,
-          soundcloud: result?.message ?? 'Opened SoundCloud in the system browser. ECHO will use the selected browser cookies through yt-dlp.',
+          soundcloud: result?.message ?? t('settings.integrations.accounts.soundcloud.browserOpened'),
         }));
       } catch (accountError) {
         setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -8671,11 +8688,11 @@ export const SettingsPage = (): JSX.Element => {
       window.open(accountLoginUrls[provider], '_blank', 'noopener,noreferrer');
       setAccountErrors((current) => ({
         ...current,
-        [provider]: '当前桌面桥接还是旧版本，自动同步登录不可用。请重启 ECHO Next 后再点“登录并同步”。',
+        [provider]: t('settings.integrations.accounts.legacyLoginUnavailable'),
       }));
       setAccountMessages((current) => ({
         ...current,
-        [provider]: '已先打开网页登录页；重启 ECHO 后会启用自动同步登录窗口。',
+        [provider]: t('settings.integrations.accounts.legacyLoginOpened'),
       }));
       return;
     }
@@ -8683,7 +8700,7 @@ export const SettingsPage = (): JSX.Element => {
     try {
       setAccountBusyFor(provider, 'login');
       setAccountErrors((current) => ({ ...current, [provider]: null }));
-      setAccountMessages((current) => ({ ...current, [provider]: '登录窗口已打开。登录完成后关闭窗口，ECHO 会自动同步。' }));
+      setAccountMessages((current) => ({ ...current, [provider]: t('settings.integrations.accounts.loginWindowOpened') }));
       const result = await accounts.startLogin(provider);
       updateAccountStatus(result.status);
       setAccountMessages((current) => ({ ...current, [provider]: result.message }));
@@ -8821,11 +8838,11 @@ export const SettingsPage = (): JSX.Element => {
   const currentCacheDirectoryLabel = appSettings?.coverCacheDir
     ? appSettings.coverCacheDir
     : defaultCacheDirectory
-      ? `默认：${defaultCacheDirectory}`
-      : '默认目录读取中';
+      ? t('mediaLibrary.settings.coverCache.defaultPath', { path: defaultCacheDirectory })
+      : t('mediaLibrary.settings.coverCache.defaultLoading');
   const pendingResolvedCacheDirectory =
     pendingCacheDirectory === undefined ? null : pendingCacheDirectory ?? defaultCacheDirectory;
-  const currentDownloadDirectoryLabel = downloadSettings?.outputDirectory ?? '尚未选择下载文件夹';
+  const currentDownloadDirectoryLabel = downloadSettings?.outputDirectory ?? t('mediaLibrary.settings.download.path.notSelected');
   const downloadsFeatureUnlocked = appSettings?.downloadsFeatureUnlocked === true;
   const networkMetadataEnabled = appSettings?.networkMetadataEnabled ?? true;
   const lyricsBackfillAutoAcceptScore = appSettings?.lyricsBackfillAutoAcceptScore ?? 0.45;
@@ -8883,12 +8900,12 @@ export const SettingsPage = (): JSX.Element => {
     artistImageProgressTotal > 0 ? Math.max(0, Math.min(100, Math.round((artistImageProgressDone / artistImageProgressTotal) * 100))) : 0;
   const artistImagePaused = artistImageProgress?.paused ?? appSettings?.artistImageFetchPaused ?? false;
   const artistImageStatusLabel = !appSettings?.autoFetchArtistImages
-    ? '未启用'
+    ? t('common.disabled')
     : artistImagePaused
-      ? '已暂停'
+      ? t('mediaLibrary.settings.artistImages.status.paused')
       : artistImageProgress?.running
-        ? '运行中'
-        : '空闲';
+        ? t('mediaLibrary.settings.artistImages.status.running')
+        : t('mediaLibrary.settings.artistImages.status.idle');
 
   const lyricsBackfillRunning = lyricsBackfillJob?.status === 'queued' || lyricsBackfillJob?.status === 'running';
   const lyricsBackfillProgressTotal = Math.max(lyricsBackfillJob?.totalTracks ?? 0, 1);
@@ -8903,20 +8920,20 @@ export const SettingsPage = (): JSX.Element => {
         ? 4
         : 0;
   const lyricsBackfillStatusLabel = !lyricsBackfillJob
-    ? '未开始'
+    ? t('mediaLibrary.settings.lyrics.status.notStarted')
     : lyricsBackfillJob.playbackThrottled
-      ? '播放中，降速补全'
+      ? t('mediaLibrary.settings.lyrics.status.throttled')
       : lyricsBackfillJob.phase === 'collecting'
-      ? `筛选缺失歌词 · 已检查 ${lyricsBackfillJob.scannedTracks} 首`
+      ? t('mediaLibrary.settings.lyrics.status.collecting', { scanned: lyricsBackfillJob.scannedTracks })
       : lyricsBackfillJob.status === 'completed'
-        ? '已完成'
+        ? t('mediaLibrary.folders.status.completed')
         : lyricsBackfillJob.status === 'cancelled'
-          ? '已取消'
+          ? t('mediaLibrary.folders.status.cancelled')
           : lyricsBackfillJob.status === 'failed'
-            ? '失败'
+            ? t('mediaLibrary.folders.status.failed')
             : lyricsBackfillJob.mode === 'complete'
-              ? '完整补全中'
-              : '快速补全中';
+              ? t('mediaLibrary.settings.lyrics.status.completeRunning')
+              : t('mediaLibrary.settings.lyrics.status.quickRunning');
 
   const handleDownloadDirectoryChoose = async (): Promise<void> => {
     try {
@@ -9415,7 +9432,7 @@ export const SettingsPage = (): JSX.Element => {
       const foldersToScan = folders.filter((folder) => !runningFolderIds.has(folder.id));
 
       if (foldersToScan.length === 0) {
-        setLibraryScanMessage('曲库扫描已经在后台运行，下面会持续显示进度。');
+        setLibraryScanMessage(t('mediaLibrary.settings.scan.message.alreadyRunning'));
         return;
       }
 
@@ -9768,22 +9785,34 @@ export const SettingsPage = (): JSX.Element => {
 
   const formatLyricsBackfillMessage = (status: LyricsBackfillJobStatus): string => {
     if (status.phase === 'collecting') {
-      return `正在筛选缺失歌词：已检查 ${status.scannedTracks} 首`;
+      return t('mediaLibrary.settings.lyrics.message.collecting', { scanned: status.scannedTracks });
     }
 
     if (status.status === 'completed') {
-      return `歌词补全完成：命中 ${status.matchedTracks} 首，未找到 ${status.notFoundTracks} 首，跳过已有 ${status.alreadyCachedTracks} 首`;
+      return t('mediaLibrary.settings.lyrics.message.completed', {
+        matched: status.matchedTracks,
+        notFound: status.notFoundTracks,
+        cached: status.alreadyCachedTracks,
+      });
     }
 
     if (status.status === 'cancelled') {
-      return `歌词补全已取消：已处理 ${status.processedTracks}/${status.totalTracks} 首`;
+      return t('mediaLibrary.settings.lyrics.message.cancelled', { processed: status.processedTracks, total: status.totalTracks });
     }
 
     if (status.status === 'failed') {
-      return `歌词补全失败：已处理 ${status.processedTracks}/${status.totalTracks} 首，失败 ${status.errorCount} 首`;
+      return t('mediaLibrary.settings.lyrics.message.failed', {
+        processed: status.processedTracks,
+        total: status.totalTracks,
+        errors: status.errorCount,
+      });
     }
 
-    return `歌词补全中：${status.processedTracks}/${status.totalTracks}，命中 ${status.matchedTracks} 首`;
+    return t('mediaLibrary.settings.lyrics.message.running', {
+      processed: status.processedTracks,
+      total: status.totalTracks,
+      matched: status.matchedTracks,
+    });
   };
 
   const pollLyricsBackfillJob = async (jobId: string, generation: number): Promise<void> => {
@@ -9949,7 +9978,7 @@ export const SettingsPage = (): JSX.Element => {
       return true;
     }
 
-    setDangerMessage(`${message} 需要先在确认词输入框输入“${word}”。`);
+    setDangerMessage(t('settings.danger.message.confirmRequired', { message, word }));
     return false;
   };
 
@@ -9970,7 +9999,7 @@ export const SettingsPage = (): JSX.Element => {
       setDangerMessage(null);
       setError(null);
       await refreshDatabaseProtectionStatus({ deepCheck: true });
-      setDatabaseProtectionMessage('数据库健康状态已刷新。');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.healthRefreshed'));
     } catch (refreshError) {
       setDatabaseProtectionFailure(refreshError);
     } finally {
@@ -9981,7 +10010,7 @@ export const SettingsPage = (): JSX.Element => {
   const handleCreateDatabaseSnapshot = async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.createDatabaseSnapshot) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里创建健康快照。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeCreateSnapshot'));
       return;
     }
 
@@ -9990,10 +10019,10 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在创建健康快照...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.creatingSnapshot'));
       const nextStatus = await library.createDatabaseSnapshot();
       setDatabaseProtectionStatus(nextStatus);
-      setDatabaseProtectionMessage('已创建新的健康快照。');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.snapshotCreated'));
     } catch (snapshotError) {
       setDatabaseProtectionFailure(snapshotError);
     } finally {
@@ -10004,18 +10033,18 @@ export const SettingsPage = (): JSX.Element => {
   const handleRestoreDatabaseSnapshot = async (): Promise<void> => {
     const snapshot = databaseProtectionStatus?.latestHealthySnapshot;
     if (!snapshot) {
-      setDatabaseProtectionFailure('没有可恢复的健康快照。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.noSnapshot'));
       return;
     }
-    if (!requireDangerConfirmWord('恢复曲库', '恢复最近健康快照会先归档当前数据库，再复制快照数据库；音乐文件不会被删除。')) {
-      setDatabaseProtectionMessage('已取消恢复。需要输入确认词“恢复曲库”后才会执行。');
+    if (!requireDangerConfirmWord(t('settings.danger.database.confirm.restore'), t('settings.danger.database.confirm.restoreMessage'))) {
+      setDatabaseProtectionMessage(t('settings.danger.database.message.restoreCancelled'));
       setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.restoreDatabaseSnapshot) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里恢复曲库数据库。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeRestore'));
       return;
     }
 
@@ -10025,9 +10054,9 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在恢复最近健康快照...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.restoringSnapshot'));
       const result = await library.restoreDatabaseSnapshot(snapshot.id);
-      setDatabaseProtectionMessage(`已从健康快照恢复曲库数据库。当前库检查：${getDatabaseHealthLabel(result.health.status)}。`);
+      setDatabaseProtectionMessage(t('settings.danger.database.message.restoredSnapshot', { status: t(getDatabaseHealthLabel(result.health.status)) }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (restoreError) {
@@ -10039,15 +10068,15 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleScrubQuarantinedDatabase = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('修复隔离曲库', 'ECHO 会先修复隔离库的副本，验证通过后才替换当前曲库；原隔离库和当前库都会保留归档，音乐文件不会被删除。')) {
-      setDatabaseProtectionMessage('已取消修复。需要输入确认词“修复隔离曲库”后才会执行。');
+    if (!requireDangerConfirmWord(t('settings.danger.database.confirm.scrub'), t('settings.danger.database.confirm.scrubMessage'))) {
+      setDatabaseProtectionMessage(t('settings.danger.database.message.scrubCancelled'));
       setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.scrubQuarantinedDatabase) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里修复隔离曲库副本。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeScrub'));
       return;
     }
 
@@ -10057,9 +10086,9 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在修复隔离曲库副本...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.scrubbingCopy'));
       const result = await library.scrubQuarantinedDatabase();
-      setDatabaseProtectionMessage(`已修复隔离曲库副本并恢复：清理 ${result.scrubbedRows} 行，当前检查：${getDatabaseHealthLabel(result.health.status)}。`);
+      setDatabaseProtectionMessage(t('settings.danger.database.message.scrubbedCopy', { rows: result.scrubbedRows, status: t(getDatabaseHealthLabel(result.health.status)) }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (scrubError) {
@@ -10071,15 +10100,15 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDiscardQuarantinedProblemTracks = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('归档问题曲目', 'ECHO 会复制隔离库副本，把含有危险元数据的曲目记录归档成 JSON 后从曲库数据库移除；音乐文件不会被删除。')) {
-      setDatabaseProtectionMessage('已取消归档。需要输入确认词“归档问题曲目”后才会执行。');
+    if (!requireDangerConfirmWord(t('settings.danger.database.confirm.discard'), t('settings.danger.database.confirm.discardMessage'))) {
+      setDatabaseProtectionMessage(t('settings.danger.database.message.discardCancelled'));
       setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.discardQuarantinedProblemTracks) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里归档问题曲目。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeDiscard'));
       return;
     }
 
@@ -10089,9 +10118,9 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在归档问题曲目...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.discardingTracks'));
       const result = await library.discardQuarantinedProblemTracks();
-      setDatabaseProtectionMessage(`已归档并移除 ${result.discardedTracks} 首问题曲目，当前检查：${getDatabaseHealthLabel(result.health.status)}。归档：${result.discardArchivePath}`);
+      setDatabaseProtectionMessage(t('settings.danger.database.message.discardedTracks', { count: result.discardedTracks, status: t(getDatabaseHealthLabel(result.health.status)), path: result.discardArchivePath }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (discardError) {
@@ -10103,15 +10132,15 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleRelaunchLibraryRecoveryMode = async (): Promise<void> => {
-    if (!window.confirm('退出 ECHO Next 并重启到恢复模式？重启时会先关闭当前实例，再在播放、扫描、歌词和 MV 服务占用数据库前检查并自动修复曲库。音乐文件不会被删除。')) {
-      setDatabaseProtectionMessage('已取消重启到恢复模式。');
+    if (!window.confirm(t('settings.danger.database.confirm.relaunchRecovery'))) {
+      setDatabaseProtectionMessage(t('settings.danger.database.message.relaunchCancelled'));
       setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.relaunchRecoveryMode) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里重启到恢复模式。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeRelaunch'));
       return;
     }
 
@@ -10120,7 +10149,7 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在安排退出并重启到恢复模式...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.relaunchingRecovery'));
       try {
         window.localStorage.setItem(pendingRouteStorageKey, 'settings');
         window.localStorage.setItem(pendingSettingsSectionStorageKey, 'danger');
@@ -10136,15 +10165,15 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleRebuildEmptyLibraryDatabase = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('重建空库', '数据库无法从健康快照恢复。此操作会先归档当前坏库和数据库三件套，再重建为空库；音乐文件不会被删除。')) {
-      setDatabaseProtectionMessage('已取消重建。需要输入确认词“重建空库”后才会执行。');
+    if (!requireDangerConfirmWord(t('settings.danger.database.confirm.rebuildEmpty'), t('settings.danger.database.confirm.rebuildEmptyMessage'))) {
+      setDatabaseProtectionMessage(t('settings.danger.database.message.rebuildCancelled'));
       setDatabaseProtectionError(null);
       return;
     }
 
     const library = getLibraryBridge();
     if (!library?.repairDatabase) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里重建曲库数据库。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeRebuild'));
       return;
     }
 
@@ -10154,10 +10183,10 @@ export const SettingsPage = (): JSX.Element => {
       clearDatabaseProtectionFeedback();
       setDangerMessage(null);
       setError(null);
-      setDatabaseProtectionMessage('正在归档坏库并重建空库...');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.rebuildingEmpty'));
       const result = await library.repairDatabase();
-      const archived = result.archivePath ? `已归档坏库：${result.archivePath}` : '没有发现可归档的数据库文件。';
-      setDatabaseProtectionMessage(`已归档坏库并重建为空库。${archived} 请重新添加曲库文件夹并扫描；如果重扫后再次报错，请导出诊断。`);
+      const archived = result.archivePath ? t('settings.danger.database.message.badArchivePath', { path: result.archivePath }) : t('settings.danger.database.message.noArchiveFound');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.rebuiltEmpty', { archived }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (rebuildError) {
@@ -10171,7 +10200,7 @@ export const SettingsPage = (): JSX.Element => {
   const handleOpenDataProtectionFolder = async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.openDataProtectionFolder) {
-      setDatabaseProtectionFailure('桌面桥接不可用：请在 ECHO Next 桌面端里打开保护目录。');
+      setDatabaseProtectionFailure(t('settings.danger.database.error.bridgeOpenProtection'));
       return;
     }
 
@@ -10181,7 +10210,7 @@ export const SettingsPage = (): JSX.Element => {
       setDangerMessage(null);
       setError(null);
       await library.openDataProtectionFolder();
-      setDatabaseProtectionMessage('已请求打开保护目录。');
+      setDatabaseProtectionMessage(t('settings.danger.database.message.openProtectionRequested'));
     } catch (openError) {
       setDatabaseProtectionFailure(openError);
     } finally {
@@ -10190,7 +10219,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleClearLibraryCache = async (): Promise<void> => {
-    if (!window.confirm('清空曲库缓存？这会移除曲库索引、扫描缓存和封面缓存，不会删除你的音乐文件。')) {
+    if (!window.confirm(t('settings.danger.clearCache.confirm'))) {
       return;
     }
 
@@ -10207,7 +10236,11 @@ export const SettingsPage = (): JSX.Element => {
       setError(null);
       const result = await library.clearCache();
       setDangerMessage(
-        `曲库缓存已清空：移除 ${result.removedCount}/${result.scannedCount} 首索引，删除 ${result.deletedCoverCacheFiles} 个封面缓存文件。`,
+        t('settings.danger.clearCache.message.cleared', {
+          removed: result.removedCount,
+          scanned: result.scannedCount,
+          deleted: result.deletedCoverCacheFiles,
+        }),
       );
       window.dispatchEvent(new Event('library:changed'));
     } catch (clearError) {
@@ -10219,11 +10252,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleRepairLibraryDatabase = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('重建曲库', '重建会归档并移除当前曲库数据库索引，随后需要重新扫描；音乐文件不会被删除。')) {
+    if (!requireDangerConfirmWord(t('settings.danger.repair.confirmWord'), t('settings.danger.repair.confirmMessage'))) {
       return;
     }
 
-    if (!window.confirm('重建曲库数据库？这会归档当前曲库数据库并删除正在使用的数据库索引，不会删除你的音乐文件。重建后需要重新添加歌曲文件夹并扫描。')) {
+    if (!window.confirm(t('settings.danger.repair.confirm'))) {
       return;
     }
 
@@ -10239,8 +10272,8 @@ export const SettingsPage = (): JSX.Element => {
       setDangerMessage(null);
       setError(null);
       const result = await library.repairDatabase();
-      const archived = result.archivePath ? `已归档旧数据库：${result.archivePath}` : '没有发现旧数据库文件。';
-      setDangerMessage(`曲库数据库已重建为空库。${archived} 请重新添加歌曲文件夹并扫描；如果重扫后再次报错，请直接导出诊断。`);
+      const archived = result.archivePath ? t('settings.danger.database.message.oldArchivePath', { path: result.archivePath }) : t('settings.danger.database.message.noOldDatabase');
+      setDangerMessage(t('settings.danger.repair.message.rebuilt', { archived }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (repairError) {
@@ -10252,11 +10285,11 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDeleteLibraryDatabase = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('删除曲库', '删除会归档并移除当前数据库文件；音乐文件不会被删除。')) {
+    if (!requireDangerConfirmWord(t('settings.danger.deleteDatabase.confirmWord'), t('settings.danger.deleteDatabase.confirmMessage'))) {
       return;
     }
 
-    if (!window.confirm('删除曲库数据库？这会归档并删除当前数据库文件，不会主动重建数据库，也不会删除你的音乐文件。删除后请重启 ECHO Next，再重新添加歌曲文件夹并扫描。')) {
+    if (!window.confirm(t('settings.danger.deleteDatabase.confirm'))) {
       return;
     }
 
@@ -10272,9 +10305,9 @@ export const SettingsPage = (): JSX.Element => {
       setDangerMessage(null);
       setError(null);
       const result = await library.deleteDatabase();
-      const archived = result.archivePath ? `已归档旧数据库：${result.archivePath}` : '没有发现旧数据库文件。';
-      const removed = result.removedDatabaseFiles.length > 0 ? `已删除 ${result.removedDatabaseFiles.join('、')}。` : '没有需要删除的数据库文件。';
-      setDangerMessage(`曲库数据库已删除。${removed}${archived} 请重启 ECHO Next 后重新添加歌曲文件夹并扫描。`);
+      const archived = result.archivePath ? t('settings.danger.database.message.oldArchivePath', { path: result.archivePath }) : t('settings.danger.database.message.noOldDatabase');
+      const removed = result.removedDatabaseFiles.length > 0 ? t('settings.danger.deleteDatabase.message.removedFiles', { files: result.removedDatabaseFiles.join('、') }) : t('settings.danger.deleteDatabase.message.noFiles');
+      setDangerMessage(t('settings.danger.deleteDatabase.message.deleted', { removed, archived }));
       window.dispatchEvent(new Event('library:changed'));
       await refreshDatabaseProtectionStatus();
     } catch (deleteError) {
@@ -10286,13 +10319,13 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDeleteAllUserData = async (): Promise<void> => {
-    if (!requireDangerConfirmWord('删除所有内容', '这会删除 ECHO Next 的设置、账号、插件、曲库数据库、播放记录、缓存、日志、壁纸和保护快照；音乐文件不会被删除。')) {
+    if (!requireDangerConfirmWord(t('settings.danger.deleteAll.confirmWord'), t('settings.danger.deleteAll.confirmMessage'))) {
       return;
     }
 
     if (
       !window.confirm(
-        '彻底删除所有 ECHO Next 本地内容？这会清空 ECHO 的 userData 和外部封面缓存目录，删除后需要重启应用；音乐文件夹和下载输出目录不会被主动删除。',
+        t('settings.danger.deleteAll.confirm'),
       )
     ) {
       return;
@@ -10312,8 +10345,8 @@ export const SettingsPage = (): JSX.Element => {
       const result = await library.deleteAllUserData();
       const removed = result.removedPaths.length;
       const failed = result.failedPaths.length;
-      const failedText = failed > 0 ? ` 有 ${failed} 个路径删除失败，请关闭 ECHO 后手动检查。` : '';
-      setDangerMessage(`ECHO 本地内容已清理：删除 ${removed} 个路径。${failedText}请立即重启 ECHO Next。`);
+      const failedText = failed > 0 ? t('settings.danger.deleteAll.message.failed', { failed }) : '';
+      setDangerMessage(t('settings.danger.deleteAll.message.deleted', { removed, failedText }));
       window.dispatchEvent(new Event('library:changed'));
     } catch (deleteError) {
       setDangerMessage(null);
@@ -10324,7 +10357,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleResetDefaultSettings = async (): Promise<void> => {
-    if (!window.confirm('恢复默认设置？这会重置应用偏好、封面缓存目录和外观偏好，不会删除音乐文件或曲库文件夹。')) {
+    if (!window.confirm(t('settings.danger.reset.confirm'))) {
       return;
     }
 
@@ -10348,7 +10381,7 @@ export const SettingsPage = (): JSX.Element => {
       setPendingAlbumMergeStrategy(settings.albumMergeStrategy);
       setPendingArtistMergeStrategy(settings.artistMergeStrategy ?? 'standard');
       setDefaultCacheDirectory(await app.getDefaultCacheDirectory());
-      setDangerMessage('默认设置已恢复。');
+      setDangerMessage(t('settings.danger.reset.message.restored'));
       window.dispatchEvent(new Event('settings:changed'));
       window.dispatchEvent(new Event('library:changed'));
     } catch (resetError) {
@@ -10770,19 +10803,19 @@ export const SettingsPage = (): JSX.Element => {
     }).format(date);
   };
   const discordPresenceLabel = !discordPresenceStatus?.enabled
-    ? 'Disabled'
+    ? t('common.disabled')
     : discordPresenceStatus.connected
-      ? 'Connected'
+      ? t('settings.integrations.discord.status.connected')
       : discordPresenceStatus.lastError
-        ? `Error: ${discordPresenceStatus.lastError}`
+        ? t('settings.integrations.discord.status.error', { error: discordPresenceStatus.lastError })
         : discordPresenceStatus.available
-          ? 'Enabled'
-          : 'Discord not running';
+          ? t('common.enabled')
+          : t('settings.integrations.discord.status.notRunning');
   const smtcLabel = !appSettings?.smtcEnabled
     ? t('common.disabled')
     : smtcDiagnostics?.recoveryInFlight
-      ? 'Recovering'
-      : smtcDiagnostics?.hostState ?? 'Not checked';
+      ? t('settings.integrations.smtc.status.recovering')
+      : smtcDiagnostics?.hostState ?? t('settings.integrations.common.status.notChecked');
   const lastFmLabel = !lastFmStatus?.enabled
     ? t('common.disabled')
     : lastFmStatus.connected
@@ -11144,8 +11177,8 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-signal-path-control"
                 highlighted={highlightedSettingId === 'settings-row-signal-path-control'}
-                title="底栏信号路径"
-                description="在底部播放栏显示 Signal Path 入口。默认开启，歌词页始终隐藏。"
+                title={t('settings.general.signalPathControl.title')}
+                description={t('settings.general.signalPathControl.description')}
               >
                 <ToggleButton
                   active={appSettings?.signalPathControlEnabled !== false}
@@ -12457,8 +12490,8 @@ export const SettingsPage = (): JSX.Element => {
                   {networkProxyTestResult ? (
                     <p className={`settings-inline-note settings-proxy-result ${networkProxyTestResult.ok ? 'is-ok' : 'is-error'}`}>
                       {networkProxyTestResult.message}
-                      {networkProxyTestResult.resolvedProxy ? `；${networkProxyTestResult.resolvedProxy}` : ''}
-                      {networkProxyTestResult.elapsedMs ? `；${networkProxyTestResult.elapsedMs}ms` : ''}
+                      {networkProxyTestResult.resolvedProxy ? `${t('settings.integrations.networkProxy.result.separator')}${networkProxyTestResult.resolvedProxy}` : ''}
+                      {networkProxyTestResult.elapsedMs ? `${t('settings.integrations.networkProxy.result.separator')}${networkProxyTestResult.elapsedMs}ms` : ''}
                     </p>
                   ) : null}
                 </div>
@@ -12486,17 +12519,17 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--credential"
                 id="settings-row-online-album-info"
                 highlighted={highlightedSettingId === 'settings-row-online-album-info'}
-                title="Discogs 专辑评分"
-                description="专辑评分兜底；可留空，填 token 更稳定。"
+                title={t('settings.integrations.onlineAlbum.title')}
+                description={t('settings.integrations.onlineAlbum.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--online-album-info">
                   <div className="settings-proxy-grid">
                     <label className="settings-proxy-field">
-                      <span>Discogs personal access token</span>
+                      <span>{t('settings.integrations.onlineAlbum.token')}</span>
                       <input
                         type="password"
                         value={onlineAlbumInfoDraft.discogsUserToken}
-                        placeholder="可留空；粘贴 Discogs User Token"
+                        placeholder={t('settings.integrations.onlineAlbum.placeholder')}
                         disabled={!appSettings || onlineAlbumInfoBusyAction !== null}
                         autoComplete="off"
                         onChange={(event) => {
@@ -12509,15 +12542,15 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={!appSettings || onlineAlbumInfoBusyAction !== null} onClick={handleOnlineAlbumInfoSave}>
                       <Save size={15} />
-                      {onlineAlbumInfoBusyAction === 'save' ? '保存中...' : '保存 Discogs Token'}
+                      {onlineAlbumInfoBusyAction === 'save' ? t('settings.integrations.common.saving') : t('settings.integrations.onlineAlbum.save')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(discogsDeveloperSettingsUrl)}>
                       <ExternalLink size={15} />
-                      打开 Discogs Token 页面
+                      {t('settings.integrations.onlineAlbum.openToken')}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    Discogs Settings &gt; Developers 复制 Personal access token；仅用于评分查询。
+                    {t('settings.integrations.onlineAlbum.note')}
                   </p>
                   {onlineAlbumInfoMessage ? <p className="settings-inline-note">{onlineAlbumInfoMessage}</p> : null}
                 </div>
@@ -12528,8 +12561,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--credential"
                 id="settings-row-online-artist-info"
                 highlighted={highlightedSettingId === 'settings-row-online-artist-info'}
-                title="在线歌手信息"
-                description="演出和歌手补强数据源；留空则跳过对应来源。"
+                title={t('settings.integrations.onlineArtist.title')}
+                description={t('settings.integrations.onlineArtist.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--online-artist-info">
                   <div className="settings-proxy-grid">
@@ -12538,7 +12571,7 @@ export const SettingsPage = (): JSX.Element => {
                       <input
                         type="password"
                         value={onlineArtistInfoDraft.bandsintownAppId}
-                        placeholder="留空则不启用"
+                        placeholder={t('settings.integrations.onlineArtist.placeholder')}
                         disabled={!appSettings}
                         onChange={(event) => {
                           setOnlineArtistInfoDraft((current) => ({ ...current, bandsintownAppId: event.target.value }));
@@ -12551,7 +12584,7 @@ export const SettingsPage = (): JSX.Element => {
                       <input
                         type="password"
                         value={onlineArtistInfoDraft.ticketmasterApiKey}
-                        placeholder="留空则不启用"
+                        placeholder={t('settings.integrations.onlineArtist.placeholder')}
                         disabled={!appSettings}
                         onChange={(event) => {
                           setOnlineArtistInfoDraft((current) => ({ ...current, ticketmasterApiKey: event.target.value }));
@@ -12564,7 +12597,7 @@ export const SettingsPage = (): JSX.Element => {
                       <input
                         type="password"
                         value={onlineArtistInfoDraft.seatGeekClientId}
-                        placeholder="留空则不启用"
+                        placeholder={t('settings.integrations.onlineArtist.placeholder')}
                         disabled={!appSettings}
                         onChange={(event) => {
                           setOnlineArtistInfoDraft((current) => ({ ...current, seatGeekClientId: event.target.value }));
@@ -12573,11 +12606,11 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </label>
                     <label className="settings-proxy-field">
-                      <span>地区过滤</span>
+                      <span>{t('settings.integrations.onlineArtist.region')}</span>
                       <input
                         type="text"
                         value={onlineArtistInfoDraft.region}
-                        placeholder="例如 HK、Tokyo、US；留空为全球"
+                        placeholder={t('settings.integrations.onlineArtist.regionPlaceholder')}
                         disabled={!appSettings}
                         onChange={(event) => {
                           setOnlineArtistInfoDraft((current) => ({ ...current, region: event.target.value }));
@@ -12589,15 +12622,15 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={!appSettings || onlineArtistInfoBusyAction !== null} onClick={handleOnlineArtistInfoSave}>
                       <Save size={15} />
-                      {onlineArtistInfoBusyAction === 'save' ? '保存中...' : '保存配置'}
+                      {onlineArtistInfoBusyAction === 'save' ? t('settings.integrations.common.saving') : t('settings.integrations.onlineArtist.save')}
                     </button>
                     <button className="settings-action-button" type="button" disabled={onlineArtistInfoBusyAction !== null} onClick={handleClearArtistOnlineInfoCache}>
                       <Trash2 size={15} />
-                      {onlineArtistInfoBusyAction === 'clear' ? '清理中...' : '清理艺人资料缓存'}
+                      {onlineArtistInfoBusyAction === 'clear' ? t('settings.integrations.onlineArtist.clearing') : t('settings.integrations.onlineArtist.clearCache')}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    地区可填 HK、Tokyo、US；艺人页按需缓存，不伪造内容。
+                    {t('settings.integrations.onlineArtist.note')}
                   </p>
                   {onlineArtistInfoMessage ? <p className="settings-inline-note">{onlineArtistInfoMessage}</p> : null}
                 </div>
@@ -12674,7 +12707,7 @@ export const SettingsPage = (): JSX.Element => {
                     {taskbarPlaybackLabel}
                   </StatusText>
                   <button className="settings-action-button" type="button" onClick={() => void refreshTaskbarPlaybackStatus()}>
-                    刷新状态
+                    {t('settings.integrations.discord.action.refresh')}
                   </button>
                   <ToggleButton
                     active={appSettings?.taskbarPlaybackControlsEnabled ?? false}
@@ -12709,7 +12742,7 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-lastfm-connection"
                 highlighted={highlightedSettingId === 'settings-row-lastfm'}
                 title={t('settings.integrations.lastfm.connection.title')}
-                description="浏览器授权后回到 ECHO 完成连接。"
+                description={t('settings.integrations.lastfm.connection.description.browser')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bpm-analysis">
                   <div className="settings-chip-row settings-chip-row--left">
@@ -12808,8 +12841,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--credential"
                 id="settings-row-spotify-auth-config"
                 highlighted={highlightedSettingId === 'settings-row-spotify-auth-config'}
-                title="Spotify OAuth 配置"
-                description="填自己的 Developer App；保存后重新登录。"
+                title={t('settings.integrations.spotifyAuth.title')}
+                description={t('settings.integrations.spotifyAuth.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--spotify-auth">
                   <div className="settings-proxy-grid">
@@ -12818,7 +12851,7 @@ export const SettingsPage = (): JSX.Element => {
                       <input
                         type="text"
                         value={spotifyAuthDraft.clientId}
-                        placeholder="必填：Spotify Developer App 的 Client ID"
+                        placeholder={t('settings.integrations.spotifyAuth.clientIdPlaceholder')}
                         disabled={!appSettings}
                         onChange={(event) => {
                           setSpotifyAuthDraft((current) => ({ ...current, clientId: event.target.value }));
@@ -12843,15 +12876,15 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleSpotifyAuthConfigSave}>
                       <Save size={15} />
-                      保存 Spotify 配置
+                      {t('settings.integrations.common.saveConfig', { service: 'Spotify' })}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(spotifyDeveloperDashboardUrl)}>
                       <ExternalLink size={15} />
-                      打开 Spotify Dashboard
+                      {t('settings.integrations.common.openDashboard', { service: 'Spotify' })}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    Dashboard 回调地址填：{defaultSpotifyRedirectUri}
+                    {t('settings.integrations.common.dashboardCallback', { uri: defaultSpotifyRedirectUri })}
                   </p>
                   {spotifyAuthMessage ? <p className="settings-inline-note">{spotifyAuthMessage}</p> : null}
                 </div>
@@ -12862,8 +12895,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--credential"
                 id="settings-row-tidal-auth-config"
                 highlighted={highlightedSettingId === 'settings-row-tidal-auth-config'}
-                title="TIDAL Developer 配置"
-                description="用于 catalog 元数据搜索；不接入播放流。"
+                title={t('settings.integrations.tidalAuth.title')}
+                description={t('settings.integrations.tidalAuth.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--tidal-auth">
                   <div className="settings-proxy-grid">
@@ -12923,15 +12956,15 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleTidalAuthConfigSave}>
                       <Save size={15} />
-                      保存 TIDAL 配置
+                      {t('settings.integrations.tidalAuth.save')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(tidalDeveloperDashboardUrl)}>
                       <ExternalLink size={15} />
-                      打开 TIDAL Dashboard
+                      {t('settings.integrations.common.openDashboard', { service: 'TIDAL' })}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    Dashboard 回调地址填：{defaultTidalRedirectUri}
+                    {t('settings.integrations.common.dashboardCallback', { uri: defaultTidalRedirectUri })}
                   </p>
                   {tidalAuthMessage ? <p className="settings-inline-note">{tidalAuthMessage}</p> : null}
                 </div>
@@ -12952,10 +12985,10 @@ export const SettingsPage = (): JSX.Element => {
                       type="button"
                       aria-controls="settings-account-list"
                       aria-expanded={accountPanelExpanded}
-                      aria-label={accountPanelExpanded ? '收起账号登录' : '展开账号登录'}
+                      aria-label={accountPanelExpanded ? t('settings.integrations.accountPanel.collapse') : t('settings.integrations.accountPanel.expand')}
                       onClick={toggleAccountPanelExpanded}
                     >
-                      {accountPanelExpanded ? '收起账号登录' : '展开账号登录'}
+                      {accountPanelExpanded ? t('settings.integrations.accountPanel.collapse') : t('settings.integrations.accountPanel.expand')}
                       <ChevronDown size={15} />
                     </button>
                   </div>
@@ -13753,7 +13786,7 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-window-acrylic"
                 highlighted={highlightedSettingId === 'settings-row-window-acrylic'}
-                title={t('settings.appearance.windowAcrylic.title')}
+                title={`${t('settings.appearance.windowAcrylic.title')} · ${t('settings.appearance.windowAcrylic.experimental')}`}
                 description={t('settings.appearance.windowAcrylic.description')}
               >
                 <div className="settings-acrylic-control">
@@ -13784,6 +13817,7 @@ export const SettingsPage = (): JSX.Element => {
                       </div>
                     </div>
                   ) : null}
+                  <p className="settings-acrylic-warning">{t('settings.appearance.windowAcrylic.themeWarning')}</p>
                 </div>
               </SettingRow>
               <SettingRow
@@ -14088,8 +14122,8 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-live-library-updates"
                 highlighted={highlightedSettingId === 'settings-row-live-library-updates'}
-                title={'\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93'}
-                description={'\u5f00\u542f\u540e\u4f1a\u76d1\u542c\u5df2\u6dfb\u52a0\u7684\u672c\u5730\u66f2\u5e93\u6587\u4ef6\u5939\uff0c\u65b0\u589e\u6216\u4fee\u6539\u97f3\u9891\u6587\u4ef6\u4f1a\u81ea\u52a8\u8fdb\u5165\u66f2\u5e93\uff1b\u9ed8\u8ba4\u5173\u95ed\u3002'}
+                title={t('mediaLibrary.settings.liveUpdates.title')}
+                description={t('mediaLibrary.settings.liveUpdates.description')}
               >
                 <ToggleButton
                   active={appSettings?.liveLibraryUpdatesEnabled ?? false}
@@ -14100,11 +14134,11 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-native-file-scanner"
                 highlighted={highlightedSettingId === 'settings-row-native-file-scanner'}
-                title={'Native File Scanner\uff08\u5b9e\u9a8c\uff09'}
-                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u53d1\u73b0\u97f3\u9891\u6587\u4ef6\uff1b\u4e0d\u8bfb\u53d6\u5143\u6570\u636e\u3001\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\u3002'}
+                title={t('mediaLibrary.settings.nativeFileScanner.title')}
+                description={t('mediaLibrary.settings.nativeFileScanner.description')}
               >
                 <div className="settings-inline-toggle settings-inline-toggle--compact">
-                  <span>{appSettings?.nativeFileScannerEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u6587\u4ef6\u53d1\u73b0' : '\u4f7f\u7528 TypeScript \u626b\u63cf\u5668'}</span>
+                  <span>{appSettings?.nativeFileScannerEnabled ? t('mediaLibrary.settings.nativeFileScanner.enabled') : t('mediaLibrary.settings.nativeFileScanner.typescript')}</span>
                   <ToggleButton
                     active={appSettings?.nativeFileScannerEnabled === true}
                     disabled={!appSettings}
@@ -14115,11 +14149,11 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-native-metadata-reader"
                 highlighted={highlightedSettingId === 'settings-row-native-metadata-reader'}
-                title={'Native Metadata Reader\uff08\u5b9e\u9a8c\uff09'}
-                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u8bfb\u53d6 FLAC\u3001MP3\u3001M4A \u57fa\u7840\u6807\u7b7e\uff1b\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199 SQLite\uff0c\u5931\u8d25\u65f6\u81ea\u52a8\u56de\u9000 TypeScript\u3002'}
+                title={t('mediaLibrary.settings.nativeMetadataReader.title')}
+                description={t('mediaLibrary.settings.nativeMetadataReader.description')}
               >
                 <div className="settings-inline-toggle settings-inline-toggle--compact">
-                  <span>{appSettings?.nativeMetadataReaderEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u5143\u6570\u636e\u8bfb\u53d6' : '\u4f7f\u7528 TypeScript \u5143\u6570\u636e\u8bfb\u53d6'}</span>
+                  <span>{appSettings?.nativeMetadataReaderEnabled ? t('mediaLibrary.settings.nativeMetadataReader.enabled') : t('mediaLibrary.settings.nativeMetadataReader.typescript')}</span>
                   <ToggleButton
                     active={appSettings?.nativeMetadataReaderEnabled === true}
                     disabled={!appSettings}
@@ -14131,8 +14165,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-library-quality"
                 highlighted={highlightedSettingId === 'settings-row-library-quality'}
-                title={'\u8d44\u6599\u8d28\u91cf\u6574\u7406'}
-                description={'\u7edf\u8ba1\u7f3a\u5c01\u9762\u3001\u56de\u9000\u5143\u6570\u636e\u548c\u7f51\u7edc\u5019\u9009\uff0c\u53ea\u505a\u5b9a\u5411\u67e5\u770b\u548c\u624b\u52a8\u8865\u5168\u5165\u53e3\u3002'}
+                title={t('mediaLibrary.quality.title')}
+                description={t('mediaLibrary.settings.quality.description')}
               >
                 <LibraryQualityPanel autoRefresh={libraryDeferredRefreshReady} networkMetadataEnabled={networkMetadataEnabled} />
               </SettingRow>
@@ -14140,12 +14174,12 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-library-lyrics-backfill"
                 highlighted={highlightedSettingId === 'settings-row-library-lyrics-backfill'}
-                title="一键歌词补全"
-                description="后台筛选缺失歌词并分批补全；快速模式优先网易、QQ、LRCLIB 等高命中源，完整模式会继续扩大来源。"
+                title={t('mediaLibrary.settings.lyrics.title')}
+                description={t('mediaLibrary.settings.lyrics.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--lyrics-backfill">
                   <div className="settings-inline-control">
-                    <span>命中率</span>
+                    <span>{t('mediaLibrary.settings.lyrics.hitRate')}</span>
                     <NumberRangeField
                       min={30}
                       max={95}
@@ -14163,7 +14197,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleStartLyricsBackfill('quick')}
                     >
                       <Zap size={15} />
-                      快速补全缺失歌词
+                      {t('mediaLibrary.settings.lyrics.action.quick')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14172,7 +14206,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleStartLyricsBackfill('complete')}
                     >
                       <Search size={15} />
-                      完整补全
+                      {t('mediaLibrary.settings.lyrics.action.complete')}
                     </button>
                     {lyricsBackfillRunning ? (
                       <button
@@ -14181,7 +14215,7 @@ export const SettingsPage = (): JSX.Element => {
                         onClick={() => void handleCancelLyricsBackfill()}
                       >
                         <X size={15} />
-                        取消
+                        {t('mediaLibrary.settings.action.cancel')}
                       </button>
                     ) : null}
                   </div>
@@ -14189,7 +14223,7 @@ export const SettingsPage = (): JSX.Element => {
                   {lyricsBackfillJob ? (
                     <div className="settings-update-progress settings-lyrics-backfill-progress" role="status" aria-live="polite">
                       <div className="settings-update-progress-label">
-                        <strong>歌词补全进度 · {lyricsBackfillStatusLabel}</strong>
+                        <strong>{t('mediaLibrary.settings.lyrics.progressTitle', { status: lyricsBackfillStatusLabel })}</strong>
                         <span>
                           {lyricsBackfillProgressDone} / {lyricsBackfillJob.totalTracks || 0}
                         </span>
@@ -14197,7 +14231,7 @@ export const SettingsPage = (): JSX.Element => {
                       <div
                         className="settings-update-progress-track"
                         role="progressbar"
-                        aria-label="歌词补全进度"
+                        aria-label={t('mediaLibrary.settings.lyrics.progressAria')}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={lyricsBackfillProgressPercent}
@@ -14206,9 +14240,14 @@ export const SettingsPage = (): JSX.Element => {
                       </div>
                       <div className="settings-update-progress-meta">
                         <span>
-                          命中 {lyricsBackfillJob.matchedTracks} · 未找到 {lyricsBackfillJob.notFoundTracks} · 已有 {lyricsBackfillJob.alreadyCachedTracks} · 失败 {lyricsBackfillJob.errorCount}
+                          {t('mediaLibrary.settings.lyrics.progressMeta', {
+                            matched: lyricsBackfillJob.matchedTracks,
+                            notFound: lyricsBackfillJob.notFoundTracks,
+                            cached: lyricsBackfillJob.alreadyCachedTracks,
+                            errors: lyricsBackfillJob.errorCount,
+                          })}
                         </span>
-                        <span>{lyricsBackfillJob.currentTrackTitle ?? (lyricsBackfillJob.mode === 'complete' ? '完整模式' : '快速模式')}</span>
+                        <span>{lyricsBackfillJob.currentTrackTitle ?? (lyricsBackfillJob.mode === 'complete' ? t('mediaLibrary.settings.lyrics.mode.complete') : t('mediaLibrary.settings.lyrics.mode.quick'))}</span>
                       </div>
                     </div>
                   ) : null}
@@ -14218,8 +14257,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-library-health-report"
                 highlighted={highlightedSettingId === 'settings-row-library-health-report'}
-                title={'曲库体检报告'}
-                description={'汇总数据库、扫描、缓存、资料质量、实时更新和远程源状态；只读导出，不自动修复。'}
+                title={t('mediaLibrary.health.title')}
+                description={t('mediaLibrary.settings.health.description')}
               >
                 <LibraryHealthReportPanel />
               </SettingRow>
@@ -14229,8 +14268,8 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 id="settings-row-artist-wall-artwork"
                 highlighted={highlightedSettingId === 'settings-row-artist-wall-artwork'}
-                title="艺术家墙封面"
-                description="用艺术家的一张专辑封面替代字母占位。"
+                title={t('mediaLibrary.settings.artistWallArtwork.title')}
+                description={t('mediaLibrary.settings.artistWallArtwork.description')}
               >
                 <ToggleButton active={appSettings?.artistWallAlbumArtwork ?? false} disabled={!appSettings} onClick={handleArtistWallAlbumArtworkToggle} />
               </SettingRow>
@@ -14277,7 +14316,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleArtistImagePauseToggle()}
                     >
                       {artistImagePaused ? <Play size={15} /> : <Pause size={15} />}
-                      {artistImagePaused ? '继续获取' : '暂停获取'}
+                      {artistImagePaused ? t('mediaLibrary.settings.artistImages.action.resume') : t('mediaLibrary.settings.artistImages.action.pause')}
                     </button>
                     <button
                       className="settings-danger-button"
@@ -14293,7 +14332,7 @@ export const SettingsPage = (): JSX.Element => {
                   {artistImageProgress ? (
                     <div className="settings-update-progress settings-artist-image-progress" role="status" aria-live="polite">
                       <div className="settings-update-progress-label">
-                        <strong>头像获取进度 · {artistImageStatusLabel}</strong>
+                        <strong>{t('mediaLibrary.settings.artistImages.progressTitle', { status: artistImageStatusLabel })}</strong>
                         <span>
                           {artistImageProgressDone} / {artistImageProgressTotal}
                         </span>
@@ -14301,7 +14340,7 @@ export const SettingsPage = (): JSX.Element => {
                       <div
                         className="settings-update-progress-track"
                         role="progressbar"
-                        aria-label="头像获取进度"
+                        aria-label={t('mediaLibrary.settings.artistImages.progressAria')}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={artistImageProgressPercent}
@@ -14310,9 +14349,15 @@ export const SettingsPage = (): JSX.Element => {
                       </div>
                       <div className="settings-update-progress-meta">
                         <span>
-                          处理中 {artistImageActive} · 待处理 {artistImageSummary.pending} · 已缓存 {artistImageSummary.matched} · 未找到 {artistImageSummary.notFound} · 失败 {artistImageFailed}
+                          {t('mediaLibrary.settings.artistImages.progressMeta', {
+                            active: artistImageActive,
+                            pending: artistImageSummary.pending,
+                            cached: artistImageSummary.matched,
+                            notFound: artistImageSummary.notFound,
+                            failed: artistImageFailed,
+                          })}
                         </span>
-                        <span>跳过 {artistImageProgress.lastQueued.skipped}</span>
+                        <span>{t('mediaLibrary.settings.artistImages.skipped', { count: artistImageProgress.lastQueued.skipped })}</span>
                       </div>
                     </div>
                   ) : null}
@@ -14322,12 +14367,12 @@ export const SettingsPage = (): JSX.Element => {
                 <>
                   <SettingRow
                     className="setting-row--full setting-row--compact-panel"
-                    title="下载路径"
-                    description="选择下载音频保存目录，下载页会同步使用这个位置。"
+                    title={t('mediaLibrary.settings.download.path.title')}
+                    description={t('mediaLibrary.settings.download.path.description')}
                   >
                     <div className="settings-cache-panel settings-cache-panel--download">
                       <div className="settings-cache-path">
-                        <em>当前下载文件夹</em>
+                        <em>{t('mediaLibrary.settings.download.path.current')}</em>
                         <strong title={currentDownloadDirectoryLabel}>{currentDownloadDirectoryLabel}</strong>
                       </div>
                       <div className="settings-chip-row settings-chip-row--left">
@@ -14338,7 +14383,7 @@ export const SettingsPage = (): JSX.Element => {
                           disabled={downloadDirectoryBusy}
                         >
                           <FolderOpen size={15} />
-                          {downloadSettings?.outputDirectory ? '更换文件夹' : '选择文件夹'}
+                          {downloadSettings?.outputDirectory ? t('mediaLibrary.settings.download.path.action.change') : t('mediaLibrary.settings.download.path.action.choose')}
                         </button>
                       </div>
                       {downloadDirectoryMessage ? <p className="settings-inline-note">{downloadDirectoryMessage}</p> : null}
@@ -14347,11 +14392,11 @@ export const SettingsPage = (): JSX.Element => {
                   <SettingRow
                     id="settings-row-streaming-download-actions"
                     highlighted={highlightedSettingId === 'settings-row-streaming-download-actions'}
-                    title="流媒体下载按钮"
-                    description="默认隐藏流媒体页下载入口；开启后才会在支持的平台歌曲行显示下载按钮。"
+                    title={t('mediaLibrary.settings.download.streamingActions.title')}
+                    description={t('mediaLibrary.settings.download.streamingActions.description')}
                   >
                     <div className="settings-inline-toggle settings-inline-toggle--compact">
-                      <span>{appSettings?.streamingDownloadActionsEnabled ? '已显示' : '已隐藏'}</span>
+                      <span>{appSettings?.streamingDownloadActionsEnabled ? t('mediaLibrary.settings.download.streamingActions.visible') : t('mediaLibrary.settings.download.streamingActions.hidden')}</span>
                       <ToggleButton
                         active={appSettings?.streamingDownloadActionsEnabled === true}
                         disabled={!appSettings}
@@ -14362,11 +14407,11 @@ export const SettingsPage = (): JSX.Element => {
                 </>
               ) : null}
               <SettingRow
-                title="歌单自动备份"
-                description="开启后，刷新、清空或删除歌单前会先在系统下载文件夹保存一份 JSON 备份。"
+                title={t('mediaLibrary.settings.playlistBackups.title')}
+                description={t('mediaLibrary.settings.playlistBackups.description')}
               >
                 <div className="settings-inline-toggle settings-inline-toggle--compact">
-                  <span>{appSettings?.playlistBackupsEnabled === false ? '已关闭' : '已开启'}</span>
+                  <span>{appSettings?.playlistBackupsEnabled === false ? t('common.disabled') : t('common.enabled')}</span>
                   <ToggleButton
                     active={appSettings?.playlistBackupsEnabled ?? true}
                     disabled={!appSettings}
@@ -14376,27 +14421,27 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
-                title="重复歌曲"
-                description="在歌曲列表中隐藏低音质重复版本，不会删除文件。"
+                title={t('mediaLibrary.settings.duplicates.title')}
+                description={t('mediaLibrary.settings.duplicates.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--duplicates">
                   <div className="settings-status-grid">
                     <span>
-                      <em>隐藏状态</em>
-                      <strong>{appSettings?.duplicateTracksEnabled ? `已开启，隐藏 ${duplicateSummary?.hiddenTracks ?? 0} 首` : '未开启'}</strong>
+                      <em>{t('mediaLibrary.settings.duplicates.metric.visibility')}</em>
+                      <strong>{appSettings?.duplicateTracksEnabled ? t('mediaLibrary.settings.duplicates.value.enabledHidden', { count: duplicateSummary?.hiddenTracks ?? 0 }) : t('common.disabled')}</strong>
                     </span>
                     <span>
-                      <em>分析结果</em>
-                      <strong>{duplicateSummary ? `${duplicateSummary.duplicateGroups} 组 / ${duplicateSummary.duplicateMembers} 首候选` : '尚未读取'}</strong>
+                      <em>{t('mediaLibrary.settings.duplicates.metric.analysis')}</em>
+                      <strong>{duplicateSummary ? t('mediaLibrary.settings.duplicates.value.analysis', { groups: duplicateSummary.duplicateGroups, tracks: duplicateSummary.duplicateMembers }) : t('mediaLibrary.health.value.notRead')}</strong>
                     </span>
                     <span>
-                      <em>更新时间</em>
-                      <strong>{duplicateSummary?.updatedAt ? new Date(duplicateSummary.updatedAt).toLocaleString() : '尚未分析'}</strong>
+                      <em>{t('mediaLibrary.settings.duplicates.metric.updatedAt')}</em>
+                      <strong>{duplicateSummary?.updatedAt ? new Date(duplicateSummary.updatedAt).toLocaleString() : t('mediaLibrary.settings.duplicates.value.notAnalyzed')}</strong>
                     </span>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                     <div className="settings-inline-toggle">
-                      <span>隐藏重复歌曲</span>
+                      <span>{t('mediaLibrary.settings.duplicates.action.hide')}</span>
                       <ToggleButton
                         active={appSettings?.duplicateTracksEnabled ?? false}
                         disabled={!appSettings || duplicateBusyAction !== null}
@@ -14405,10 +14450,10 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                     <button className="settings-action-button" type="button" disabled={duplicateBusyAction !== null} onClick={() => void handleAnalyzeDuplicateTracks()}>
                       <RotateCw className={duplicateBusyAction === 'analyze' ? 'spinning-icon' : undefined} size={15} />
-                      {duplicateBusyAction === 'analyze' ? '分析中...' : '分析重复歌曲'}
+                      {duplicateBusyAction === 'analyze' ? t('mediaLibrary.settings.duplicates.action.analyzing') : t('mediaLibrary.settings.duplicates.action.analyze')}
                     </button>
                   </div>
-                  {appSettings?.duplicateTracksEnabled ? <p className="settings-inline-note">当前已隐藏 {duplicateSummary?.hiddenTracks ?? 0} 首重复歌曲。</p> : null}
+                  {appSettings?.duplicateTracksEnabled ? <p className="settings-inline-note">{t('mediaLibrary.settings.duplicates.message.hiddenNow', { count: duplicateSummary?.hiddenTracks ?? 0 })}</p> : null}
                   {duplicateMessage ? <p className="settings-inline-note">{duplicateMessage}</p> : null}
                 </div>
               </SettingRow>
@@ -14416,8 +14461,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-library-merge-strategy"
                 highlighted={highlightedSettingId === 'settings-row-library-merge-strategy'}
-                title="专辑/艺人合并策略"
-                description="选择资料库如何整理专辑和艺人别名，不会改写歌曲 artist 显示或元数据。"
+                title={t('mediaLibrary.settings.merge.title')}
+                description={t('mediaLibrary.settings.merge.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--album">
                   <div className="settings-chip-row settings-chip-row--left">
@@ -14425,23 +14470,23 @@ export const SettingsPage = (): JSX.Element => {
                       active={(pendingAlbumMergeStrategy ?? appSettings?.albumMergeStrategy ?? 'standard') === 'standard'}
                       onClick={() => setPendingAlbumMergeStrategy('standard')}
                     >
-                      标准模式（推荐）
+                      {t('mediaLibrary.settings.merge.album.standard')}
                     </ChipButton>
                     <ChipButton
                       active={(pendingAlbumMergeStrategy ?? appSettings?.albumMergeStrategy ?? 'standard') === 'sameTitleAndCover'}
                       onClick={() => setPendingAlbumMergeStrategy('sameTitleAndCover')}
                     >
-                      宽松合并
+                      {t('mediaLibrary.settings.merge.album.loose')}
                     </ChipButton>
                   </div>
                   <div className="settings-status-grid">
                     <span>
-                      <em>标准模式（推荐）</em>
-                      <strong>优先使用 Album Artist；缺失时按文件夹 + 专辑名分组，最不容易误合并。</strong>
+                      <em>{t('mediaLibrary.settings.merge.album.standard')}</em>
+                      <strong>{t('mediaLibrary.settings.merge.album.standardDescription')}</strong>
                     </span>
                     <span>
-                      <em>宽松合并</em>
-                      <strong>专辑名匹配度 95% 以上直接合并；否则封面一致且专辑名匹配度 90% 以上时合并。</strong>
+                      <em>{t('mediaLibrary.settings.merge.album.loose')}</em>
+                      <strong>{t('mediaLibrary.settings.merge.album.looseDescription')}</strong>
                     </span>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left">
@@ -14449,23 +14494,23 @@ export const SettingsPage = (): JSX.Element => {
                       active={(pendingArtistMergeStrategy ?? appSettings?.artistMergeStrategy ?? 'standard') === 'conservative'}
                       onClick={() => setPendingArtistMergeStrategy('conservative')}
                     >
-                      保守艺人合并
+                      {t('mediaLibrary.settings.merge.artist.conservative')}
                     </ChipButton>
                     <ChipButton
                       active={(pendingArtistMergeStrategy ?? appSettings?.artistMergeStrategy ?? 'standard') === 'standard'}
                       onClick={() => setPendingArtistMergeStrategy('standard')}
                     >
-                      普通艺人合并（推荐）
+                      {t('mediaLibrary.settings.merge.artist.standard')}
                     </ChipButton>
                   </div>
                   <div className="settings-status-grid">
                     <span>
-                      <em>保守艺人合并</em>
-                      <strong>只合并大小写、全半角、空格、点号、尾部符号等明显同名变体。</strong>
+                      <em>{t('mediaLibrary.settings.merge.artist.conservative')}</em>
+                      <strong>{t('mediaLibrary.settings.merge.artist.conservativeDescription')}</strong>
                     </span>
                     <span>
-                      <em>普通艺人合并（推荐）</em>
-                      <strong>在保守规则上处理 +81 / Topic / Official 等尾缀，并用高阈值模糊匹配合并长名称近似别名。</strong>
+                      <em>{t('mediaLibrary.settings.merge.artist.standard')}</em>
+                      <strong>{t('mediaLibrary.settings.merge.artist.standardDescription')}</strong>
                     </span>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
@@ -14475,7 +14520,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleAlbumMergeStrategyApply()}
                       disabled={!appSettings || albumGroupingBusy}
                     >
-                      {albumGroupingBusy ? '重新整理中...' : '应用并重新整理分组'}
+                      {albumGroupingBusy ? t('mediaLibrary.settings.merge.action.regrouping') : t('mediaLibrary.settings.merge.action.apply')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14484,7 +14529,7 @@ export const SettingsPage = (): JSX.Element => {
                       disabled={libraryScanActionDisabled}
                     >
                       <RotateCw className={libraryScanActionDisabled ? 'spinning-icon' : undefined} size={15} />
-                      {libraryScanActionDisabled ? '扫描队列中...' : '扫描曲库'}
+                      {libraryScanActionDisabled ? t('mediaLibrary.settings.scan.action.queued') : t('mediaLibrary.settings.scan.action.scanLibrary')}
                     </button>
                   </div>
                   {albumGroupingMessage ? <p className="settings-inline-note">{albumGroupingMessage}</p> : null}
@@ -14492,7 +14537,7 @@ export const SettingsPage = (): JSX.Element => {
                   {libraryScanHasVisibleProgress ? (
                     <div className="settings-update-progress settings-library-scan-progress" role="status" aria-live="polite">
                       <div className="settings-update-progress-label">
-                        <strong>{libraryScanRunningList.length > 0 ? '曲库扫描进度' : '最近一次曲库扫描'}</strong>
+                        <strong>{libraryScanRunningList.length > 0 ? t('mediaLibrary.settings.scan.progressTitle.running') : t('mediaLibrary.settings.scan.progressTitle.last')}</strong>
                         <span>
                           {libraryScanProgressDone} / {libraryScanProgressTotal || '?'}
                         </span>
@@ -14500,7 +14545,7 @@ export const SettingsPage = (): JSX.Element => {
                       <div
                         className="settings-update-progress-track"
                         role="progressbar"
-                        aria-label="曲库扫描进度"
+                        aria-label={t('mediaLibrary.settings.scan.progressAria')}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-valuenow={libraryScanProgressPercent}
@@ -14519,18 +14564,18 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
-                title="嵌入标签重扫"
-                description="重新读取音频文件里的内嵌标题、艺人、专辑、音轨号和封面；读取到后直接应用到曲库。"
+                title={t('mediaLibrary.settings.embeddedRescan.title')}
+                description={t('mediaLibrary.settings.embeddedRescan.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--embedded-tags">
                   <div className="settings-status-grid">
                     <span>
-                      <em>全部重扫</em>
-                      <strong>无视旧缓存，逐首重新读取嵌入标签</strong>
+                      <em>{t('mediaLibrary.settings.embeddedRescan.all')}</em>
+                      <strong>{t('mediaLibrary.settings.embeddedRescan.allDescription')}</strong>
                     </span>
                     <span>
-                      <em>缺失封面</em>
-                      <strong>只重扫没有封面或只有默认封面的歌曲</strong>
+                      <em>{t('mediaLibrary.settings.embeddedRescan.missingCover')}</em>
+                      <strong>{t('mediaLibrary.settings.embeddedRescan.missingCoverDescription')}</strong>
                     </span>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
@@ -14541,7 +14586,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleRescanEmbeddedTags('all')}
                     >
                       <RotateCw className={embeddedTagRescanBusy === 'all' ? 'spinning-icon' : undefined} size={15} />
-                      {embeddedTagRescanBusy === 'all' ? '启动中...' : '重扫所有嵌入标签'}
+                      {embeddedTagRescanBusy === 'all' ? t('mediaLibrary.settings.action.starting') : t('mediaLibrary.settings.embeddedRescan.action.all')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14550,7 +14595,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleRescanEmbeddedTags('missing-cover')}
                     >
                       <RotateCw className={embeddedTagRescanBusy === 'missing-cover' ? 'spinning-icon' : undefined} size={15} />
-                      {embeddedTagRescanBusy === 'missing-cover' ? '启动中...' : '重扫缺失封面的歌曲'}
+                      {embeddedTagRescanBusy === 'missing-cover' ? t('mediaLibrary.settings.action.starting') : t('mediaLibrary.settings.embeddedRescan.action.missingCover')}
                     </button>
                   </div>
                   {embeddedTagRescanMessage ? <p className="settings-inline-note">{embeddedTagRescanMessage}</p> : null}
@@ -14558,40 +14603,43 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
-                title="封面缓存目录"
-                description="迁移只会复制缓存，不会移动或删除你的音乐文件。"
+                title={t('mediaLibrary.settings.coverCache.title')}
+                description={t('mediaLibrary.settings.coverCache.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--cover">
                   {cacheInventory ? (
                     <div className="settings-cache-result">
                       <span>
-                        <em>缓存合计</em>
+                        <em>{t('mediaLibrary.settings.coverCache.total')}</em>
                         <strong>{formatCacheBytes(cacheInventory.totalSizeBytes)}</strong>
                       </span>
                       {cacheInventory.items.map((item) => (
                         <span key={item.kind}>
                           <em>{item.label}</em>
-                          <strong>{formatCacheBytes(item.sizeBytes)} · {item.fileCount} 个文件</strong>
+                          <strong>{t('mediaLibrary.settings.coverCache.fileCount', { size: formatCacheBytes(item.sizeBytes), count: item.fileCount })}</strong>
                           <p title={item.path}>{item.path}</p>
-                          <p>{item.movable ? '可迁移' : '暂不迁移'} · {item.reason}{item.lastError ? ` · ${item.lastError}` : ''}</p>
+                          <p>
+                            {item.movable ? t('mediaLibrary.settings.coverCache.movable') : t('mediaLibrary.settings.coverCache.notMovable')} · {item.reason}
+                            {item.lastError ? ` · ${item.lastError}` : ''}
+                          </p>
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <p className="settings-inline-note">{cacheInventoryBusy ? '正在统计缓存...' : '缓存清单暂不可用。'}</p>
+                    <p className="settings-inline-note">{cacheInventoryBusy ? t('mediaLibrary.settings.coverCache.inventory.loading') : t('mediaLibrary.settings.coverCache.inventory.unavailable')}</p>
                   )}
                   <div className="settings-cache-path">
-                    <em>当前缓存目录</em>
+                    <em>{t('mediaLibrary.settings.coverCache.current')}</em>
                     <strong title={currentCacheDirectoryLabel}>{currentCacheDirectoryLabel}</strong>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" onClick={() => void refreshCacheInventory()} disabled={cacheInventoryBusy}>
                       <RefreshCw className={cacheInventoryBusy ? 'spinning-icon' : undefined} size={15} />
-                      刷新清单
+                      {t('mediaLibrary.settings.coverCache.action.refresh')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleCacheDirectoryChoose()} disabled={cacheDirectoryBusy}>
                       <FolderOpen size={15} />
-                      选择目录
+                      {t('mediaLibrary.settings.coverCache.action.choose')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14603,20 +14651,20 @@ export const SettingsPage = (): JSX.Element => {
                       }}
                       disabled={cacheDirectoryBusy || !defaultCacheDirectory}
                     >
-                      恢复默认
+                      {t('mediaLibrary.settings.coverCache.action.restoreDefault')}
                     </button>
                   </div>
                   {pendingCacheDirectory !== undefined ? (
                     <div className="settings-cache-confirm">
                       <span>
-                        <em>当前</em>
-                        <strong title={currentCacheDirectory}>{currentCacheDirectory || '读取中'}</strong>
+                        <em>{t('mediaLibrary.settings.coverCache.currentShort')}</em>
+                        <strong title={currentCacheDirectory}>{currentCacheDirectory || t('mediaLibrary.settings.coverCache.loading')}</strong>
                       </span>
                       <span>
-                        <em>新目录</em>
-                        <strong title={pendingResolvedCacheDirectory ?? ''}>{pendingResolvedCacheDirectory ?? '默认目录读取中'}</strong>
+                        <em>{t('mediaLibrary.settings.coverCache.newDirectory')}</em>
+                        <strong title={pendingResolvedCacheDirectory ?? ''}>{pendingResolvedCacheDirectory ?? t('mediaLibrary.settings.coverCache.defaultLoading')}</strong>
                       </span>
-                      <p>迁移会复制封面缓存并更新数据库路径，不会删除旧缓存目录。</p>
+                      <p>{t('mediaLibrary.settings.coverCache.confirmDescription')}</p>
                       <div className="settings-chip-row settings-chip-row--left">
                         <button
                           className="settings-action-button"
@@ -14624,7 +14672,7 @@ export const SettingsPage = (): JSX.Element => {
                           onClick={() => void handleCacheDirectoryApply(true)}
                           disabled={cacheDirectoryBusy || !pendingResolvedCacheDirectory}
                         >
-                          迁移到新目录
+                          {t('mediaLibrary.settings.coverCache.action.migrate')}
                         </button>
                         <button
                           className="settings-action-button"
@@ -14632,7 +14680,7 @@ export const SettingsPage = (): JSX.Element => {
                           onClick={() => void handleCacheDirectoryApply(false)}
                           disabled={cacheDirectoryBusy || !pendingResolvedCacheDirectory}
                         >
-                          仅切换不迁移
+                          {t('mediaLibrary.settings.coverCache.action.switchOnly')}
                         </button>
                         <button
                           className="settings-action-button"
@@ -14640,7 +14688,7 @@ export const SettingsPage = (): JSX.Element => {
                           onClick={() => setPendingCacheDirectory(undefined)}
                           disabled={cacheDirectoryBusy}
                         >
-                          取消
+                          {t('mediaLibrary.settings.action.cancel')}
                         </button>
                       </div>
                     </div>
@@ -14649,36 +14697,36 @@ export const SettingsPage = (): JSX.Element => {
                   {cacheDirectoryResult ? (
                     <div className="settings-cache-result">
                       <span>
-                        <em>复制</em>
+                        <em>{t('mediaLibrary.settings.coverCache.result.copied')}</em>
                         <strong>{cacheDirectoryResult.copiedFiles}</strong>
                       </span>
                       <span>
-                        <em>跳过</em>
+                        <em>{t('mediaLibrary.settings.coverCache.result.skipped')}</em>
                         <strong>{cacheDirectoryResult.skippedFiles}</strong>
                       </span>
                       <span>
-                        <em>更新记录</em>
+                        <em>{t('mediaLibrary.settings.coverCache.result.updated')}</em>
                         <strong>{cacheDirectoryResult.updatedCoverRows}</strong>
                       </span>
                       {cacheDirectoryResult.warnings.length ? (
-                        <p>警告：{cacheDirectoryResult.warnings.slice(0, 3).join('；')}</p>
+                        <p>{t('mediaLibrary.settings.coverCache.result.warnings', { message: cacheDirectoryResult.warnings.slice(0, 3).join('；') })}</p>
                       ) : null}
                       {cacheDirectoryResult.errors.length ? (
-                        <p className="settings-inline-error">错误：{cacheDirectoryResult.errors.slice(0, 3).join('；')}</p>
+                        <p className="settings-inline-error">{t('mediaLibrary.settings.coverCache.result.errors', { message: cacheDirectoryResult.errors.slice(0, 3).join('；') })}</p>
                       ) : null}
                     </div>
                   ) : null}
                 </div>
               </SettingRow>
               <SettingRow
-                title="扫描性能"
-                description="选择 ECHO Next 在曲库扫描时并行读取的文件数量。"
+                title={t('mediaLibrary.settings.scanPerformance.title')}
+                description={t('mediaLibrary.settings.scanPerformance.description')}
               >
                 <div className="settings-chip-row">
                   {[
-                    ['low', '低占用'],
-                    ['balanced', '均衡'],
-                    ['performance', '高性能'],
+                    ['low', t('mediaLibrary.settings.scanPerformance.low')],
+                    ['balanced', t('mediaLibrary.settings.scanPerformance.balanced')],
+                    ['performance', t('mediaLibrary.settings.scanPerformance.performance')],
                   ].map(([mode, label]) => (
                     <ChipButton
                       active={(appSettings?.scanPerformanceMode ?? 'balanced') === mode}
@@ -14692,13 +14740,13 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
-                title="BPM / Offset 分析"
-                description="默认开启。开启后只会在播放当前歌曲时低优先级分析缺失 BPM，并把检测到的 BPM 写入歌曲标签；手动按钮仍可一次性补齐缺失 BPM。"
+                title={t('mediaLibrary.settings.bpm.title')}
+                description={t('mediaLibrary.settings.bpm.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--bpm-analysis">
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                     <div className="settings-inline-toggle">
-                      <span>启用 BPM 分析</span>
+                      <span>{t('mediaLibrary.settings.bpm.enable')}</span>
                       <ToggleButton
                         active={appSettings?.audioAnalysisEnabled ?? false}
                         disabled={!appSettings || bpmAnalysisBusy}
@@ -14712,25 +14760,25 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleStartBpmAnalysis()}
                     >
                       <RotateCw className={bpmAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
-                      {bpmAnalysisBusy ? '分析中...' : '分析缺失 BPM'}
+                      {bpmAnalysisBusy ? t('mediaLibrary.settings.bpm.action.analyzing') : t('mediaLibrary.settings.bpm.action.analyzeMissing')}
                     </button>
                   </div>
                   <div className="settings-status-grid">
                     <span>
-                      <em>状态</em>
-                      <strong>{appSettings?.audioAnalysisEnabled ? '已开启' : '已关闭'}</strong>
+                      <em>{t('mediaLibrary.settings.bpm.status')}</em>
+                      <strong>{appSettings?.audioAnalysisEnabled ? t('common.enabled') : t('common.disabled')}</strong>
                     </span>
                     <span>
-                      <em>进度</em>
-                      <strong>{bpmAnalysisJob ? `${bpmAnalysisJob.processedTracks}/${bpmAnalysisJob.totalTracks}` : '尚未运行'}</strong>
+                      <em>{t('mediaLibrary.settings.bpm.progress')}</em>
+                      <strong>{bpmAnalysisJob ? `${bpmAnalysisJob.processedTracks}/${bpmAnalysisJob.totalTracks}` : t('mediaLibrary.settings.bpm.notRun')}</strong>
                     </span>
                     <span>
-                      <em>已更新</em>
+                      <em>{t('mediaLibrary.settings.bpm.updated')}</em>
                       <strong>{bpmAnalysisJob?.updatedTracks ?? 0}</strong>
                     </span>
                   </div>
                   {bpmAnalysisMessage ? <p className="settings-inline-note">{bpmAnalysisMessage}</p> : null}
-                  {bpmAnalysisJob?.errorCount ? <p className="settings-inline-error">分析错误 {bpmAnalysisJob.errorCount} 个，已跳过问题文件。</p> : null}
+                  {bpmAnalysisJob?.errorCount ? <p className="settings-inline-error">{t('mediaLibrary.settings.bpm.errorCount', { count: bpmAnalysisJob.errorCount })}</p> : null}
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.library.network.title')} description={t('settings.library.network.description')}>
@@ -14819,9 +14867,9 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </div>
                     <div className="settings-update-source-picker">
-                      <span>下载源</span>
+                      <span>{t('settings.about.updates.downloadSource')}</span>
                       <StyledSelect
-                        ariaLabel="更新下载源"
+                        ariaLabel={t('settings.about.updates.downloadSourceAria')}
                         className="settings-update-source-select"
                         disabled={!appSettings}
                         options={autoUpdateSourceOptions.map((option) => ({
@@ -14835,7 +14883,7 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                     {currentAutoUpdateSource === 'custom' ? (
                       <div className="settings-update-custom-source">
-                        <span>自定义 generic 源</span>
+                        <span>{t('settings.about.updates.customGenericSource')}</span>
                         <input
                           disabled={!appSettings}
                           placeholder="https://example.com/echo/releases/latest/download"
@@ -14845,7 +14893,7 @@ export const SettingsPage = (): JSX.Element => {
                         />
                         <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleAutoUpdateCustomUrlSave}>
                           <Save size={15} />
-                          保存
+                          {t('settings.about.updates.action.save')}
                         </button>
                       </div>
                     ) : null}
@@ -14868,7 +14916,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleOpenExternalUrl(officialWebsiteUrl)}
                     >
                       <Globe2 size={15} />
-                      官方网站
+                      {t('settings.about.links.officialWebsite')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14876,7 +14924,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleOpenExternalUrl(userDocumentationUrl)}
                     >
                       <ExternalLink size={15} />
-                      使用文档
+                      {t('settings.about.links.documentation')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14884,7 +14932,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleOpenExternalUrl(baiduPanShareUrl)}
                     >
                       <ExternalLink size={15} />
-                      百度网盘
+                      {t('settings.about.links.baiduPan')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14892,7 +14940,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleOpenExternalUrl(bilibiliSpaceUrl)}
                     >
                       <ExternalLink size={15} />
-                      哔哩哔哩
+                      {t('settings.about.links.bilibili')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -14946,24 +14994,24 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-safe-mode"
                 highlighted={highlightedSettingId === 'settings-row-safe-mode'}
                 title="Safe mode"
-                description="持续开启后，每次启动会先打开异常记录器；只显示异常、渲染器错误、音频错误和慢启动阶段，不混入普通播放日志。"
+                description={t('settings.about.safeMode.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--diagnostics">
                   <div className="settings-status-grid">
                     <span>
-                      <em>状态</em>
-                      <strong>{appSettings?.safeModeEnabled ? '开启' : '关闭'}</strong>
+                      <em>{t('settings.about.safeMode.status')}</em>
+                      <strong>{appSettings?.safeModeEnabled ? t('common.enabled') : t('common.disabled')}</strong>
                     </span>
                     <span>
-                      <em>生效范围</em>
-                      <strong>每次启动</strong>
+                      <em>{t('settings.about.safeMode.scope')}</em>
+                      <strong>{t('settings.about.safeMode.scopeEveryLaunch')}</strong>
                     </span>
                     <span>
-                      <em>启动行为</em>
-                      <strong>只诊断</strong>
+                      <em>{t('settings.about.safeMode.startupBehavior')}</em>
+                      <strong>{t('settings.about.safeMode.diagnosticsOnly')}</strong>
                     </span>
                     <span>
-                      <em>慢阶段阈值</em>
+                      <em>{t('settings.about.safeMode.slowStageThreshold')}</em>
                       <strong>2000ms</strong>
                     </span>
                   </div>
@@ -14978,18 +15026,18 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenDevConsole()}>
                       <Code2 size={15} />
-                      打开控制台
+                      {t('settings.about.safeMode.action.openConsole')}
                     </button>
                     <button className="settings-action-button" type="button" disabled={diagnosticsBusy} onClick={() => void handleDiagnosticsExportZip()}>
                       <Download size={15} />
-                      {diagnosticsBusy ? '导出中...' : '导出诊断包'}
+                      {diagnosticsBusy ? t('settings.about.diagnostics.action.exporting') : t('settings.about.safeMode.action.exportZip')}
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    早期 PowerShell 只盯 exceptions.safe.log：警告显示黄色，错误和致命错误显示红色；完整启动时间线仍会写入安全诊断包里的 startup-timeline.safe.json。
+                    {t('settings.about.safeMode.note.powerShell')}
                   </p>
                   <p className="settings-inline-note">
-                    提问前请先打开此功能并导出 log；如果只有口头阐述，请向我的合作伙伴提问。
+                    {t('settings.about.safeMode.note.beforeAsk')}
                   </p>
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                     <button
@@ -14998,7 +15046,7 @@ export const SettingsPage = (): JSX.Element => {
                       onClick={() => void handleOpenExternalUrl('https://www.doubao.com/chat/')}
                     >
                       <ExternalLink size={15} />
-                      合作伙伴
+                      {t('settings.about.safeMode.action.partner')}
                     </button>
                   </div>
                   {devConsoleMessage ? <p className="settings-inline-note">{devConsoleMessage}</p> : null}
@@ -15009,8 +15057,8 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-diagnostics-assistant"
                 highlighted={highlightedSettingId === 'settings-row-diagnostics-assistant'}
-                title="诊断助手"
-                description="本地、安全、详细地整理音频链路、崩溃状态、日志和导出入口；不会自动上传。"
+                title={t('settings.about.diagnosticsAssistant.title')}
+                description={t('settings.about.diagnosticsAssistant.description')}
               >
                 <DiagnosticsAssistantPanel lastCrashSummary={lastCrashSummary} />
               </SettingRow>
@@ -15018,14 +15066,14 @@ export const SettingsPage = (): JSX.Element => {
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-diagnostics"
                 highlighted={highlightedSettingId === 'settings-row-diagnostics'}
-                title="Diagnostics / 崩溃报告"
-                description="报错默认生成轻量 Markdown 报告；日志目录仍保留在本地，不会自动上传。"
+                title={t('settings.about.diagnostics.title')}
+                description={t('settings.about.diagnostics.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--diagnostics">
                   <div className="settings-status-grid">
                     <span>
-                      <em>上次异常退出</em>
-                      <strong>{lastCrashSummary ? '检测到' : '未检测到'}</strong>
+                      <em>{t('settings.about.diagnostics.lastCrash')}</em>
+                      <strong>{lastCrashSummary ? t('settings.about.diagnostics.detected') : t('settings.about.diagnostics.notDetected')}</strong>
                     </span>
                     <span>
                       <em>Session</em>
@@ -15043,23 +15091,23 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" disabled={diagnosticsBusy} onClick={() => void handleDiagnosticsExport()}>
                       <Download size={15} />
-                      {diagnosticsBusy ? '导出中...' : '导出 Markdown'}
+                      {diagnosticsBusy ? t('settings.about.diagnostics.action.exporting') : t('settings.about.diagnostics.action.exportMarkdown')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenFolder()}>
                       <FolderOpen size={15} />
-                      打开日志目录
+                      {t('settings.about.diagnostics.action.openLogs')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenCrashReport()}>
                       <FileText size={15} />
-                      打开崩溃报告
+                      {t('settings.about.diagnostics.action.openCrashReport')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenAudioCrashReport()}>
                       <Headphones size={15} />
-                      打开音频报告
+                      {t('settings.about.diagnostics.action.openAudioReport')}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenDevConsole()}>
                       <Code2 size={15} />
-                      打开调试控制台
+                      {t('settings.about.diagnostics.action.openDebugConsole')}
                     </button>
                     <button
                       className="settings-action-button"
@@ -15067,7 +15115,7 @@ export const SettingsPage = (): JSX.Element => {
                       disabled={!lastCrashSummary}
                       onClick={() => void handleDiagnosticsClearSummary()}
                     >
-                      清除上次异常提示
+                      {t('settings.about.diagnostics.action.clearLastCrash')}
                     </button>
                   </div>
                   {diagnosticsMessage ? <p className="settings-inline-note">{diagnosticsMessage}</p> : null}
@@ -15259,8 +15307,8 @@ export const SettingsPage = (): JSX.Element => {
                         onClick={() => setDuplicateCleanupResultsExpanded((expanded) => !expanded)}
                       >
                         <span>
-                          <strong>扫描结果明细</strong>
-                          <em>{duplicateCleanupPreview.groups.length} 组重复，待清理 {duplicateCleanupPreview.totalTracksToRemove} 首</em>
+                          <strong>{t('settings.danger.duplicates.preview.title')}</strong>
+                          <em>{t('settings.danger.duplicates.preview.summary', { groups: duplicateCleanupPreview.groups.length, tracks: duplicateCleanupPreview.totalTracksToRemove })}</em>
                         </span>
                         <ChevronDown size={16} />
                       </button>
@@ -15270,15 +15318,20 @@ export const SettingsPage = (): JSX.Element => {
                             <div className="settings-library-quality-row" key={group.id}>
                               <div>
                                 <strong>{group.keep.track.title} - {group.keep.track.artist}</strong>
-                                <small title={group.keep.track.path}>保留：{formatDuplicateCleanupTrackQuality(group.keep)} · {group.keep.track.path}</small>
+                                <small title={group.keep.track.path}>{t('settings.danger.duplicates.preview.keep', { quality: formatDuplicateCleanupTrackQuality(group.keep), path: group.keep.track.path })}</small>
                                 {group.remove.map((member) => (
                                   <small title={member.track.path} key={member.track.id}>
-                                    清理：{member.track.title} - {member.track.artist} · {formatDuplicateCleanupTrackQuality(member)} · {member.track.path}
+                                    {t('settings.danger.duplicates.preview.cleanTrack', {
+                                      title: member.track.title,
+                                      artist: member.track.artist,
+                                      quality: formatDuplicateCleanupTrackQuality(member),
+                                      path: member.track.path,
+                                    })}
                                   </small>
                                 ))}
                               </div>
                               <div className="settings-library-quality-actions">
-                                <em>清理 {group.remove.length} 首</em>
+                                <em>{t('settings.danger.duplicates.preview.cleanCount', { count: group.remove.length })}</em>
                               </div>
                             </div>
                           ))}
@@ -15290,27 +15343,27 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.danger.clearCache.title')} description={t('settings.danger.clearCache.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleClearLibraryCache()}>
-                  {dangerBusy ? '处理中...' : '清空曲库缓存'}
+                  {dangerBusy ? t('settings.danger.action.processing') : t('settings.danger.clearCache.action')}
                 </button>
               </SettingRow>
-              <SettingRow title="恢复默认设置" description="重置应用偏好、封面缓存目录和外观偏好；不会删除音乐文件或曲库文件夹。">
+              <SettingRow title={t('settings.danger.reset.title')} description={t('settings.danger.reset.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleResetDefaultSettings()}>
-                  {dangerBusy ? '处理中...' : '恢复默认设置'}
+                  {dangerBusy ? t('settings.danger.action.processing') : t('settings.danger.reset.action')}
                 </button>
               </SettingRow>
-              <SettingRow title="重建曲库数据库" description="曲库数据库完全损坏、重新添加文件夹无效、重扫没反应时使用；会归档旧数据库并删除当前索引，不删除音乐文件。">
+              <SettingRow title={t('settings.danger.repair.title')} description={t('settings.danger.repair.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleRepairLibraryDatabase()}>
-                  {dangerBusy ? '处理中...' : '重建曲库数据库'}
+                  {dangerBusy ? t('settings.danger.action.processing') : t('settings.danger.repair.action')}
                 </button>
               </SettingRow>
-              <SettingRow title="删除曲库数据库" description="比重建更硬：只归档并删除数据库文件，不主动创建新库；适合重建也失败或数据库文件被严重损坏时使用。">
+              <SettingRow title={t('settings.danger.deleteDatabase.title')} description={t('settings.danger.deleteDatabase.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleDeleteLibraryDatabase()}>
-                  {dangerBusy ? '处理中...' : '删除曲库数据库'}
+                  {dangerBusy ? t('settings.danger.action.processing') : t('settings.danger.deleteDatabase.action')}
                 </button>
               </SettingRow>
-              <SettingRow title="删除所有 ECHO 本地内容" description="清空设置、账号、插件、曲库数据库、缓存、日志、壁纸、保护快照和下载任务记录；不会主动删除音乐文件夹或下载输出目录。确认词：删除所有内容">
+              <SettingRow title={t('settings.danger.deleteAll.title')} description={t('settings.danger.deleteAll.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleDeleteAllUserData()}>
-                  {dangerBusy ? '处理中...' : '删除所有内容'}
+                  {dangerBusy ? t('settings.danger.action.processing') : t('settings.danger.deleteAll.action')}
                 </button>
               </SettingRow>
               {dangerMessage ? <p className="settings-inline-note">{dangerMessage}</p> : null}

@@ -854,6 +854,42 @@ describe('PlaylistsPage actions menu', () => {
     );
   });
 
+  it('filters the playlist sidebar by local and streaming sources', async () => {
+    const localPlaylist = playlist({ id: 'playlist-local', name: 'Road Mix', sourceProvider: 'local', itemCount: 1 });
+    const streamingPlaylist = playlist({
+      id: 'playlist-streaming',
+      name: 'Cloud Mix',
+      sourceProvider: 'netease',
+      sourcePlaylistId: '123456',
+      itemCount: 2,
+    });
+    window.echo = {
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([localPlaylist, streamingPlaylist]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([item()])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    await screen.findAllByText('Road Mix');
+    const sidebar = document.querySelector('.playlist-sidebar') as HTMLElement;
+    const getPlaylistNames = (): string[] =>
+      Array.from(sidebar.querySelectorAll('.playlist-list-item strong span')).map((element) => element.textContent ?? '');
+
+    await waitFor(() => expect(getPlaylistNames()).toEqual(['Road Mix', 'Cloud Mix']));
+
+    fireEvent.click(screen.getByRole('button', { name: '仅显示本地歌单' }));
+    await waitFor(() => expect(getPlaylistNames()).toEqual(['Road Mix']));
+
+    fireEvent.click(screen.getByRole('button', { name: '仅显示流媒体' }));
+    await waitFor(() => expect(getPlaylistNames()).toEqual(['Cloud Mix']));
+  });
+
   it('remembers streaming favorite sidebar order after dragging favorite lists', async () => {
     const favorites = streamingFavoritesSnapshot({
       providers: {

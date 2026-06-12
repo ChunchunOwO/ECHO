@@ -1067,6 +1067,34 @@
   background: var(--theme-accent-bg);
 }
 
+.playlist-source-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.playlist-source-filter button {
+  min-width: 0;
+  min-height: 31px;
+  padding: 0 8px;
+  overflow: hidden;
+  color: var(--theme-muted-text);
+  border: 1px solid var(--theme-card-border);
+  border-radius: 7px;
+  background: var(--theme-panel-bg);
+  font-size: 11px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-source-filter button:hover,
+.playlist-source-filter button[data-active="true"] {
+  color: var(--theme-accent-text);
+  border-color: var(--theme-accent-border);
+  background: var(--theme-accent-bg);
+}
+
 .playlist-list--favorites .playlist-list-item {
   grid-template-columns: 20px minmax(0, 1fr);
 }

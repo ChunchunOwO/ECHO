@@ -7,6 +7,8 @@ import { getLibraryService } from '../../library/LibraryService';
 import type { DiscordPresenceService, DiscordPresenceStatus, DiscordPresenceTrack } from './DiscordPresenceService';
 
 export const DISCORD_CLIENT_ID = process.env.ECHO_DISCORD_CLIENT_ID || '1487118099298779206';
+export const DISCORD_APP_LOGO_IMAGE_KEY =
+  process.env.ECHO_DISCORD_APP_LOGO_IMAGE_KEY || 'https://raw.githubusercontent.com/moekotori/echo/main/software.png';
 
 type DiscordActivity = {
   details?: string;
@@ -210,7 +212,7 @@ export const createDiscordActivity = (status: AudioStatus, track: DiscordPresenc
     return {
       details: 'Loading...',
       state: 'Preparing playback',
-      largeImageKey: 'echo_logo',
+      largeImageKey: DISCORD_APP_LOGO_IMAGE_KEY,
       largeImageText: 'ECHO Next',
       instance: false,
     };
@@ -220,7 +222,7 @@ export const createDiscordActivity = (status: AudioStatus, track: DiscordPresenc
     return {
       details: track.title,
       state: `Paused \u00b7 ${track.artist}`.slice(0, 128),
-      largeImageKey: track.coverImageKey ?? 'echo_logo',
+      largeImageKey: track.coverImageKey ?? DISCORD_APP_LOGO_IMAGE_KEY,
       largeImageText: track.album || 'ECHO Next',
       smallImageKey: 'paused',
       smallImageText: formatDiscordSmallImageText(track),
@@ -231,7 +233,7 @@ export const createDiscordActivity = (status: AudioStatus, track: DiscordPresenc
   const activity: DiscordActivity = {
     details: track.title,
     state: track.artist,
-    largeImageKey: track.coverImageKey ?? 'echo_logo',
+    largeImageKey: track.coverImageKey ?? DISCORD_APP_LOGO_IMAGE_KEY,
     largeImageText: track.album || 'ECHO Next',
     smallImageKey: 'playing',
     smallImageText: formatDiscordSmallImageText(track),

@@ -13213,6 +13213,54 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
     );
 }
 
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .app-titlebar {
+  z-index: 90;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface:has(.lyrics-page[data-immersive-cover-style="true"][data-background="cover"]) {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .app-titlebar-actions,
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .titlebar-action {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-controls {
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-control {
+  color: color-mix(in srgb, var(--theme-heading-text) 88%, #1d2d42);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--theme-panel-bg-strong) 76%, transparent));
+}
+
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-control:hover {
+  color: var(--theme-heading-text);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) 22%, transparent);
+}
+
+html .app-shell.app-shell--acrylic:is(.app-shell--lyrics, :has(.lyrics-page)):not(.app-shell--wallpaper) .window-control--close:hover {
+  color: var(--theme-on-accent);
+  background: var(--theme-danger-solid-bg);
+}
+
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-page {
   --home-shell-bg:
     linear-gradient(

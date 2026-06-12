@@ -8,6 +8,8 @@ import type {
   MissingMetadataField,
   NetworkMetadataScanJobStatus,
 } from '../../../shared/types/library';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { getLibraryBridge } from '../../utils/echoBridge';
 
 type LibraryQualityPanelProps = {
@@ -20,25 +22,29 @@ const issueKindFields: Partial<Record<LibraryQualityIssueKind, MissingMetadataFi
   unknown_artist_album: ['artist', 'album', 'albumArtist'],
 };
 
-const reasonLabels: Record<LibraryQualityIssueReason, string> = {
-  missing_cover: '缺封面',
-  missing_title: '缺标题',
-  missing_artist: '缺艺人',
-  missing_album: '缺专辑',
-  missing_album_artist: '缺专辑艺人',
-  missing_track_no: '缺音轨号',
-  missing_disc_no: '缺碟号',
-  missing_year: '缺年份',
-  missing_genre: '缺流派',
-  unknown_artist: '未知艺人',
-  filename_fallback: '文件名回退',
-  unknown_field: '未知字段',
-  metadata_fallback: '元数据回退',
-  unknown_album: '未知专辑',
-  embedded_metadata_error: '内嵌标签读取失败',
-  embedded_cover_error: '内嵌封面读取失败',
-  network_metadata_candidate: '有网络元数据候选',
-  network_cover_candidate: '有网络封面候选',
+type TranslateOptions = Record<string, string | number>;
+type Translate = (key: TranslationKey, options?: TranslateOptions) => string;
+const fallbackT: Translate = translateFallback;
+
+const reasonLabelKeys: Record<LibraryQualityIssueReason, TranslationKey> = {
+  missing_cover: 'mediaLibrary.quality.reason.missingCover',
+  missing_title: 'mediaLibrary.quality.reason.missingTitle',
+  missing_artist: 'mediaLibrary.quality.reason.missingArtist',
+  missing_album: 'mediaLibrary.quality.reason.missingAlbum',
+  missing_album_artist: 'mediaLibrary.quality.reason.missingAlbumArtist',
+  missing_track_no: 'mediaLibrary.quality.reason.missingTrackNo',
+  missing_disc_no: 'mediaLibrary.quality.reason.missingDiscNo',
+  missing_year: 'mediaLibrary.quality.reason.missingYear',
+  missing_genre: 'mediaLibrary.quality.reason.missingGenre',
+  unknown_artist: 'mediaLibrary.quality.reason.unknownArtist',
+  filename_fallback: 'mediaLibrary.quality.reason.filenameFallback',
+  unknown_field: 'mediaLibrary.quality.reason.unknownField',
+  metadata_fallback: 'mediaLibrary.quality.reason.metadataFallback',
+  unknown_album: 'mediaLibrary.quality.reason.unknownAlbum',
+  embedded_metadata_error: 'mediaLibrary.quality.reason.embeddedMetadataError',
+  embedded_cover_error: 'mediaLibrary.quality.reason.embeddedCoverError',
+  network_metadata_candidate: 'mediaLibrary.quality.reason.networkMetadataCandidate',
+  network_cover_candidate: 'mediaLibrary.quality.reason.networkCoverCandidate',
 };
 
 const emptyPage = (kind: LibraryQualityIssueKind): LibraryQualityIssuePage => ({
@@ -50,7 +56,10 @@ const emptyPage = (kind: LibraryQualityIssueKind): LibraryQualityIssuePage => ({
   kind,
 });
 
-const formatReason = (reason: LibraryQualityIssueReason): string => reasonLabels[reason] ?? reason;
+const formatReason = (reason: LibraryQualityIssueReason, t: Translate): string => {
+  const key = reasonLabelKeys[reason];
+  return key ? t(key) : reason;
+};
 
 const overviewTotal = (overview: LibraryQualityOverviewItem[]): number =>
   overview.reduce((total, item) => total + item.count, 0);
@@ -77,44 +86,45 @@ const getCoverBackfillProgressPercent = (job: NetworkMetadataScanJobStatus): num
 const isCoverBackfillApplying = (job: NetworkMetadataScanJobStatus): boolean =>
   job.status === 'running' && job.scannedCount > 0 && job.processedTracks > job.scannedCount;
 
-const coverBackfillPhaseLabel = (job: NetworkMetadataScanJobStatus, indeterminate: boolean): string => {
+const coverBackfillPhaseLabel = (job: NetworkMetadataScanJobStatus, indeterminate: boolean, t: Translate): string => {
   if (job.status === 'completed') {
-    return '封面补全完成';
+    return t('mediaLibrary.quality.coverBackfill.completed');
   }
   if (job.status === 'failed') {
-    return '封面补全失败';
+    return t('mediaLibrary.quality.coverBackfill.failed');
   }
   if (isCoverBackfillApplying(job)) {
-    return '正在下载并应用网络封面';
+    return t('mediaLibrary.quality.coverBackfill.applying');
   }
   if (job.candidateCount > 0) {
-    return '正在搜索网络封面候选，扫描完成后开始应用';
+    return t('mediaLibrary.quality.coverBackfill.searchingThenApply');
   }
-  return indeterminate ? '正在检测缺失/默认封面' : '正在搜索网络封面候选';
+  return indeterminate ? t('mediaLibrary.quality.coverBackfill.detecting') : t('mediaLibrary.quality.coverBackfill.searching');
 };
 
-const formatMissingCoverBackfillMessage = (job: NetworkMetadataScanJobStatus): string => {
+const formatMissingCoverBackfillMessage = (job: NetworkMetadataScanJobStatus, t: Translate): string => {
   const total = job.totalTracks || job.scannedCount || job.diagnostics.targetCount;
   const processed = Math.min(total || job.processedTracks, job.processedTracks);
   const applied = job.diagnostics.appliedCount;
 
   if (job.status === 'queued') {
-    return '封面补全已排队，等待后台网络任务开始。';
+    return t('mediaLibrary.quality.coverBackfill.queued');
   }
   if (job.status === 'running') {
     if (!total) {
-      return '正在检测缺失/默认封面的歌曲并搜索网络封面...';
+      return t('mediaLibrary.quality.coverBackfill.runningIndeterminate');
     }
-    return `正在补全网络封面：${processed}/${total}，已应用 ${applied} 张`;
+    return t('mediaLibrary.quality.coverBackfill.running', { processed, total, applied });
   }
   if (job.status === 'failed') {
-    return `封面补全失败：${job.errors[0] ?? '未知错误'}`;
+    return t('mediaLibrary.quality.coverBackfill.failedReason', { reason: job.errors[0] ?? t('mediaLibrary.quality.unknownError') });
   }
 
-  return `封面补全完成：检测 ${job.scannedCount} 首，找到 ${job.candidateCount} 个候选条目，已应用 ${applied} 张`;
+  return t('mediaLibrary.quality.coverBackfill.completedDetail', { scanned: job.scannedCount, candidates: job.candidateCount, applied });
 };
 
 export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled = false }: LibraryQualityPanelProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? fallbackT;
   const [expanded, setExpanded] = useState(false);
   const [overview, setOverview] = useState<LibraryQualityOverviewItem[]>([]);
   const [overviewBusy, setOverviewBusy] = useState(false);
@@ -138,20 +148,20 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
   );
   const coverBackfillProgressTitle =
     coverBackfillJob?.status === 'completed'
-      ? '封面补全完成'
+      ? t('mediaLibrary.quality.coverBackfill.completed')
       : coverBackfillJob?.status === 'failed'
-        ? '封面补全失败'
-        : '正在补全网络封面';
+        ? t('mediaLibrary.quality.coverBackfill.failed')
+        : t('mediaLibrary.quality.coverBackfill.inProgress');
   const coverBackfillProgressLabel = coverBackfillIndeterminate
-    ? '正在检测缺失/默认封面'
+    ? t('mediaLibrary.quality.coverBackfill.detecting')
     : `${coverBackfillProcessed} / ${coverBackfillTotal || coverBackfillProcessed}`;
-  const coverBackfillPhase = coverBackfillJob ? coverBackfillPhaseLabel(coverBackfillJob, coverBackfillIndeterminate) : null;
+  const coverBackfillPhase = coverBackfillJob ? coverBackfillPhaseLabel(coverBackfillJob, coverBackfillIndeterminate, t) : null;
 
   const refreshOverview = useCallback(async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.getLibraryQualityOverview) {
       setOverview([]);
-      setMessage('桌面桥接暂不可用，无法读取资料质量概览。');
+      setMessage(t('mediaLibrary.quality.error.bridgeOverview'));
       return;
     }
 
@@ -164,14 +174,14 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
     } finally {
       setOverviewBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const loadIssues = useCallback(
     async (kind: LibraryQualityIssueKind, page = 1, nextSearch = search): Promise<void> => {
       const library = getLibraryBridge();
       if (!library?.getLibraryQualityIssues) {
         setIssuePage(emptyPage(kind));
-        setMessage('桌面桥接暂不可用，无法读取问题歌曲列表。');
+        setMessage(t('mediaLibrary.quality.error.bridgeIssues'));
         return;
       }
 
@@ -193,7 +203,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         setIssuesBusy(false);
       }
     },
-    [search],
+    [search, t],
   );
 
   useEffect(() => {
@@ -257,7 +267,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
   const handleOpenTrack = useCallback(async (trackId: string): Promise<void> => {
     const library = getLibraryBridge();
     if (!library?.openTrackInFolder) {
-      setMessage('桌面桥接暂不可用，无法定位文件。');
+      setMessage(t('mediaLibrary.quality.error.bridgeOpenTrack'));
       return;
     }
 
@@ -269,17 +279,17 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
     } finally {
       setActionBusy(null);
     }
-  }, []);
+  }, [t]);
 
   const handleRepairTrack = useCallback(
     async (trackId: string): Promise<void> => {
       const library = getLibraryBridge();
       if (!networkMetadataEnabled) {
-        setMessage('请先开启网络元数据补全，再补全单曲。');
+        setMessage(t('mediaLibrary.quality.message.enableNetworkFirstRepair'));
         return;
       }
       if (!library?.repairMissingMetadata) {
-        setMessage('桌面桥接暂不可用，无法补全单曲资料。');
+        setMessage(t('mediaLibrary.quality.error.bridgeRepair'));
         return;
       }
 
@@ -287,7 +297,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
       try {
         const result = await library.repairMissingMetadata(trackId);
         const candidateCount = result.metadata.length + result.covers.length;
-        setMessage(`已完成单曲补全检查，找到 ${candidateCount} 个候选，应用 ${result.diagnostics.appliedCount} 项。`);
+        setMessage(t('mediaLibrary.quality.message.repairDone', { candidates: candidateCount, applied: result.diagnostics.appliedCount }));
         await refreshOverview();
         await loadIssues(selectedKind, issuePage.page);
       } catch (error) {
@@ -296,7 +306,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         setActionBusy(null);
       }
     },
-    [issuePage.page, loadIssues, networkMetadataEnabled, refreshOverview, selectedKind],
+    [issuePage.page, loadIssues, networkMetadataEnabled, refreshOverview, selectedKind, t],
   );
 
   const pollMissingCoverBackfillJob = useCallback(
@@ -308,7 +318,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
       const library = getLibraryBridge();
       if (!library?.getMissingCoverBackfillStatus) {
         setActionBusy(null);
-        setMessage('桌面桥接暂不可用，无法读取封面补全进度。');
+        setMessage(t('mediaLibrary.quality.error.bridgeCoverProgress'));
         return;
       }
 
@@ -328,7 +338,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
             return;
           }
           setCoverBackfillJob(status);
-          setMessage(formatMissingCoverBackfillMessage(status));
+          setMessage(formatMissingCoverBackfillMessage(status, t));
           if (status.status === 'completed' || status.status === 'failed') {
             await refreshOverview();
             await loadIssues(selectedKind, issuePage.page);
@@ -346,7 +356,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         }
       }
     },
-    [issuePage.page, loadIssues, refreshOverview, selectedKind],
+    [issuePage.page, loadIssues, refreshOverview, selectedKind, t],
   );
 
   useEffect(() => {
@@ -375,7 +385,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         }
 
         setCoverBackfillJob(status);
-        setMessage(formatMissingCoverBackfillMessage(status));
+        setMessage(formatMissingCoverBackfillMessage(status, t));
         if (status.status === 'queued' || status.status === 'running') {
           setActionBusy('cover-backfill');
           void pollMissingCoverBackfillJob(status.id);
@@ -388,26 +398,26 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
     return () => {
       cancelled = true;
     };
-  }, [networkMetadataEnabled, pollMissingCoverBackfillJob]);
+  }, [networkMetadataEnabled, pollMissingCoverBackfillJob, t]);
 
   const handleStartBatchScan = useCallback(async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!networkMetadataEnabled) {
-      setMessage('请先开启网络元数据补全，再扫描当前分类。');
+      setMessage(t('mediaLibrary.quality.message.enableNetworkFirstScan'));
       return;
     }
     if (!selectedOverview?.actionAvailable) {
-      setMessage('这个分类建议先重扫本地文件或检查文件健康，暂不启用网络补全。');
+      setMessage(t('mediaLibrary.quality.message.actionUnavailable'));
       return;
     }
     if (!library?.startMissingMetadataScan) {
-      setMessage('桌面桥接暂不可用，无法启动网络资料扫描。');
+      setMessage(t('mediaLibrary.quality.error.bridgeStartScan'));
       return;
     }
 
     const isMissingCoverBackfill = selectedKind === 'missing_cover';
     if (isMissingCoverBackfill && !library.startMissingCoverBackfill) {
-      setMessage('桌面桥接暂不可用，无法启动网络封面补全。');
+      setMessage(t('mediaLibrary.quality.error.bridgeStartCoverBackfill'));
       return;
     }
 
@@ -416,7 +426,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
       if (isMissingCoverBackfill) {
         const job = await library.startMissingCoverBackfill({ limit: 500, fields: ['cover'] });
         setCoverBackfillJob(job);
-        setMessage(formatMissingCoverBackfillMessage(job));
+        setMessage(formatMissingCoverBackfillMessage(job, t));
         if (job.status === 'completed' || job.status === 'failed') {
           setActionBusy(null);
         } else {
@@ -426,7 +436,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
       }
 
       const job = await library.startMissingMetadataScan({ limit: 100, fields: selectedFields });
-      setMessage(`已开始小批量资料扫描：${job.id.slice(0, 8)}，最多处理 ${job.totalTracks || 100} 首。`);
+      setMessage(t('mediaLibrary.quality.message.batchScanStarted', { id: job.id.slice(0, 8), total: job.totalTracks || 100 }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -434,7 +444,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         setActionBusy(null);
       }
     }
-  }, [networkMetadataEnabled, pollMissingCoverBackfillJob, selectedFields, selectedKind, selectedOverview?.actionAvailable]);
+  }, [networkMetadataEnabled, pollMissingCoverBackfillJob, selectedFields, selectedKind, selectedOverview?.actionAvailable, t]);
 
   return (
     <div className="settings-cache-panel settings-cache-panel--library-quality">
@@ -445,8 +455,8 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
         type="button"
       >
         <span>
-          <strong>资料质量整理</strong>
-          <em>{overviewBusy ? '正在统计...' : total > 0 ? `${total} 个本地资料问题` : '本地曲库资料看起来很干净'}</em>
+          <strong>{t('mediaLibrary.quality.title')}</strong>
+          <em>{overviewBusy ? t('mediaLibrary.quality.summary.counting') : total > 0 ? t('mediaLibrary.quality.summary.issues', { count: total }) : t('mediaLibrary.quality.summary.clean')}</em>
         </span>
         <ListFilter size={16} />
       </button>
@@ -476,20 +486,20 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
             <label>
               <Search size={14} />
               <input
-                aria-label="搜索资料质量问题歌曲"
+                aria-label={t('mediaLibrary.quality.search.aria')}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     handleSearchSubmit();
                   }
                 }}
-                placeholder="搜索歌曲、艺人、专辑"
+                placeholder={t('mediaLibrary.quality.search.placeholder')}
                 value={search}
               />
             </label>
             <button className="settings-action-button" disabled={issuesBusy} onClick={handleSearchSubmit} type="button">
               <Search size={15} />
-              筛选
+              {t('mediaLibrary.quality.action.filter')}
             </button>
             <button
               className="settings-action-button"
@@ -498,12 +508,12 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
               type="button"
             >
               <RefreshCw className={actionBusy === 'batch-scan' || actionBusy === 'cover-backfill' ? 'spinning-icon' : undefined} size={15} />
-              {selectedKind === 'missing_cover' ? '补全缺失封面' : '扫描当前分类'}
+              {selectedKind === 'missing_cover' ? t('mediaLibrary.quality.action.backfillMissingCover') : t('mediaLibrary.quality.action.scanCurrent')}
             </button>
           </div>
 
           {!networkMetadataEnabled ? (
-            <p className="settings-inline-note">网络补全未开启；当前仍可查看和定位问题歌曲，不会自动修改标签。</p>
+            <p className="settings-inline-note">{t('mediaLibrary.quality.note.networkDisabled')}</p>
           ) : null}
           {message ? <p className="settings-inline-note">{message}</p> : null}
           {coverBackfillJob && selectedKind === 'missing_cover' ? (
@@ -513,7 +523,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
                 <span>{coverBackfillProgressLabel}</span>
               </div>
               <div
-                aria-label="网络封面补全进度"
+                aria-label={t('mediaLibrary.quality.coverBackfill.progressAria')}
                 aria-valuemax={100}
                 aria-valuemin={0}
                 aria-valuenow={coverBackfillIndeterminate ? undefined : coverBackfillProgressPercent}
@@ -525,31 +535,35 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
               </div>
               <div className="settings-update-progress-meta">
                 <span title={coverBackfillJob.currentTrackTitle ?? undefined}>
-                  {coverBackfillJob.currentTrackTitle ?? coverBackfillPhase ?? (coverBackfillIndeterminate ? '正在搜索网络封面候选' : '等待后台结果')}
+                  {coverBackfillJob.currentTrackTitle ?? coverBackfillPhase ?? (coverBackfillIndeterminate ? t('mediaLibrary.quality.coverBackfill.searching') : t('mediaLibrary.quality.coverBackfill.waitingResult'))}
                 </span>
                 <span>
-                  候选条目 {coverBackfillJob.candidateCount} / 已应用 {coverBackfillJob.diagnostics.appliedCount} / 错误 {coverBackfillJob.errors.length}
+                  {t('mediaLibrary.quality.coverBackfill.meta', {
+                    candidates: coverBackfillJob.candidateCount,
+                    applied: coverBackfillJob.diagnostics.appliedCount,
+                    errors: coverBackfillJob.errors.length,
+                  })}
                 </span>
               </div>
             </div>
           ) : null}
 
           <div className="settings-library-quality-list" aria-busy={issuesBusy}>
-            {issuesBusy ? <p className="settings-inline-note">正在读取问题歌曲...</p> : null}
+            {issuesBusy ? <p className="settings-inline-note">{t('mediaLibrary.quality.message.loadingIssues')}</p> : null}
             {!issuesBusy && issuePage.items.length === 0 ? (
-              <p className="settings-inline-note">这个分类暂时没有问题歌曲。</p>
+              <p className="settings-inline-note">{t('mediaLibrary.quality.message.noIssues')}</p>
             ) : null}
             {issuePage.items.map((item) => (
               <article className="settings-library-quality-row" key={item.track.id}>
                 <div>
-                  <strong>{item.track.title || '未命名歌曲'}</strong>
+                  <strong>{item.track.title || t('mediaLibrary.quality.untitledTrack')}</strong>
                   <span>{item.track.artist || 'Unknown Artist'} · {item.track.album || 'Unknown Album'}</span>
                   <small title={item.track.path}>{item.track.path}</small>
                   <div className="settings-library-quality-reasons">
                     {item.reasons.map((reason) => (
-                      <em key={reason}>{formatReason(reason)}</em>
+                      <em key={reason}>{formatReason(reason, t)}</em>
                     ))}
-                    {item.candidateCount ? <em>{item.candidateCount} 个候选</em> : null}
+                    {item.candidateCount ? <em>{t('mediaLibrary.quality.candidates', { count: item.candidateCount })}</em> : null}
                   </div>
                 </div>
                 <div className="settings-library-quality-actions">
@@ -561,7 +575,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
                     type="button"
                   >
                     <FolderOpen size={15} />
-                    定位文件
+                    {t('mediaLibrary.quality.action.locateFile')}
                   </button>
                   <button
                     className="settings-action-button"
@@ -570,7 +584,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
                     type="button"
                   >
                     <Wand2 size={15} />
-                    补全此曲
+                    {t('mediaLibrary.quality.action.repairTrack')}
                   </button>
                 </div>
               </article>
@@ -579,7 +593,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
 
           <div className="settings-library-quality-pager">
             <span>
-              第 {issuePage.page} 页 · 共 {issuePage.total} 首
+              {t('mediaLibrary.quality.pager', { page: issuePage.page, total: issuePage.total })}
             </span>
             <button
               className="settings-action-button"
@@ -587,7 +601,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
               onClick={() => void loadIssues(selectedKind, issuePage.page - 1)}
               type="button"
             >
-              上一页
+              {t('mediaLibrary.quality.action.previousPage')}
             </button>
             <button
               className="settings-action-button"
@@ -595,7 +609,7 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
               onClick={() => void loadIssues(selectedKind, issuePage.page + 1)}
               type="button"
             >
-              下一页
+              {t('mediaLibrary.quality.action.nextPage')}
             </button>
           </div>
         </>

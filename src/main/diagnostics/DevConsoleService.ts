@@ -15,6 +15,7 @@ import { recordDiagnosticConsoleProblem } from './ExceptionRecorder';
 import { getPlaybackPerformanceSnapshot } from './PlaybackPerformanceDiagnostics';
 import { getActiveLibraryScanPerfContext, isLibraryScanPerfDiagnosticsEnabled } from './LibraryScanPerfDiagnostics';
 import { areDeveloperToolsAllowed } from '../app/securityPolicy';
+import { getAppSettings } from '../app/appSettings';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -640,12 +641,214 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+const devConsoleText = {
+  'zh-CN': {
+    htmlLang: 'zh-Hans',
+    title: 'ECHO 调试控制台',
+    note: '实时显示主进程 stdout/stderr 与渲染器 console，方便像 npm run dev 一样排查问题。',
+    filterPlaceholder: '搜索日志 / Ctrl+F',
+    filterAria: '筛选日志',
+    sourceAria: '日志来源',
+    levelAria: '日志级别',
+    allSources: '全部来源',
+    allLevels: '全部级别',
+    problems: '错误/警告',
+    performance: 'Performance',
+    autoScroll: '自动滚动',
+    manualScroll: '手动滚动',
+    wrap: '换行',
+    noWrap: '不换行',
+    bottom: '到底部',
+    pause: '暂停',
+    resume: '继续',
+    clear: '清空',
+    copyVisible: '复制可见',
+    saveLog: '保存 .log',
+    devTools: 'DevTools',
+    visible: '可见',
+    total: '总数',
+    unread: '未读',
+    waiting: '等待日志...',
+    separator: ' · ',
+    shortcuts: 'Ctrl+F 搜索 · Ctrl+L 清空 · End 到底部',
+    problemTitle: '问题一览',
+    problemTitleEmpty: '问题一览：暂无异常',
+    problemHint: '最近 stderr/error/warn 会自动浮到这里；点击条目可定位同类日志。',
+    problemHintEmpty: '安全模式会持续捕获主进程、渲染器和启动异常。',
+    problemEmpty: '当前没有捕获到高风险日志。',
+    performanceTitle: 'Performance timeline',
+    performanceLatest: 'Latest',
+    performanceNoStalls: 'No stalls captured.',
+    noRouteAudioFields: 'no route/audio fields',
+    recentEntry: '最近一条',
+    noMatches: '没有匹配的日志。',
+    noLogs: '还没有日志。',
+    copied: '已复制',
+    copyFailed: '复制失败',
+    saved: '已保存',
+  },
+  'zh-TW': {
+    htmlLang: 'zh-Hant',
+    title: 'ECHO 除錯控制台',
+    note: '即時顯示主程序 stdout/stderr 與渲染器 console，方便像 npm run dev 一樣排查問題。',
+    filterPlaceholder: '搜尋日誌 / Ctrl+F',
+    filterAria: '篩選日誌',
+    sourceAria: '日誌來源',
+    levelAria: '日誌級別',
+    allSources: '全部來源',
+    allLevels: '全部級別',
+    problems: '錯誤/警告',
+    performance: 'Performance',
+    autoScroll: '自動捲動',
+    manualScroll: '手動捲動',
+    wrap: '換行',
+    noWrap: '不換行',
+    bottom: '到底部',
+    pause: '暫停',
+    resume: '繼續',
+    clear: '清空',
+    copyVisible: '複製可見',
+    saveLog: '儲存 .log',
+    devTools: 'DevTools',
+    visible: '可見',
+    total: '總數',
+    unread: '未讀',
+    waiting: '等待日誌...',
+    separator: ' · ',
+    shortcuts: 'Ctrl+F 搜尋 · Ctrl+L 清空 · End 到底部',
+    problemTitle: '問題一覽',
+    problemTitleEmpty: '問題一覽：暫無異常',
+    problemHint: '最近 stderr/error/warn 會自動浮到這裡；點擊項目可定位同類日誌。',
+    problemHintEmpty: '安全模式會持續捕獲主程序、渲染器和啟動異常。',
+    problemEmpty: '目前沒有捕獲到高風險日誌。',
+    performanceTitle: 'Performance timeline',
+    performanceLatest: 'Latest',
+    performanceNoStalls: 'No stalls captured.',
+    noRouteAudioFields: 'no route/audio fields',
+    recentEntry: '最近一條',
+    noMatches: '沒有匹配的日誌。',
+    noLogs: '還沒有日誌。',
+    copied: '已複製',
+    copyFailed: '複製失敗',
+    saved: '已儲存',
+  },
+  'ja-JP': {
+    htmlLang: 'ja',
+    title: 'ECHO デバッグコンソール',
+    note: 'メインプロセスの stdout/stderr とレンダラー console をリアルタイム表示し、npm run dev のように問題を調査できます。',
+    filterPlaceholder: 'ログを検索 / Ctrl+F',
+    filterAria: 'ログを絞り込み',
+    sourceAria: 'ログソース',
+    levelAria: 'ログレベル',
+    allSources: 'すべてのソース',
+    allLevels: 'すべてのレベル',
+    problems: 'エラー/警告',
+    performance: 'Performance',
+    autoScroll: '自動スクロール',
+    manualScroll: '手動スクロール',
+    wrap: '折り返し',
+    noWrap: '折り返さない',
+    bottom: '末尾へ',
+    pause: '一時停止',
+    resume: '再開',
+    clear: 'クリア',
+    copyVisible: '表示分をコピー',
+    saveLog: '.log を保存',
+    devTools: 'DevTools',
+    visible: '表示',
+    total: '合計',
+    unread: '未読',
+    waiting: 'ログ待機中...',
+    separator: ' · ',
+    shortcuts: 'Ctrl+F 検索 · Ctrl+L クリア · End 末尾へ',
+    problemTitle: '問題一覧',
+    problemTitleEmpty: '問題一覧: 異常なし',
+    problemHint: '最近の stderr/error/warn がここに表示されます。項目をクリックすると同種ログへ絞り込めます。',
+    problemHintEmpty: 'セーフモードではメインプロセス、レンダラー、起動時の異常を継続的に捕捉します。',
+    problemEmpty: '高リスクログはまだ捕捉されていません。',
+    performanceTitle: 'Performance timeline',
+    performanceLatest: 'Latest',
+    performanceNoStalls: 'No stalls captured.',
+    noRouteAudioFields: 'no route/audio fields',
+    recentEntry: '最新',
+    noMatches: '一致するログはありません。',
+    noLogs: 'ログはまだありません。',
+    copied: 'コピーしました',
+    copyFailed: 'コピー失敗',
+    saved: '保存しました',
+  },
+  'en-US': {
+    htmlLang: 'en',
+    title: 'ECHO Debug Console',
+    note: 'Shows main-process stdout/stderr and renderer console in real time, like npm run dev for troubleshooting.',
+    filterPlaceholder: 'Search logs / Ctrl+F',
+    filterAria: 'Filter logs',
+    sourceAria: 'Log source',
+    levelAria: 'Log level',
+    allSources: 'All sources',
+    allLevels: 'All levels',
+    problems: 'Errors/Warnings',
+    performance: 'Performance',
+    autoScroll: 'Auto scroll',
+    manualScroll: 'Manual scroll',
+    wrap: 'Wrap',
+    noWrap: 'No wrap',
+    bottom: 'Bottom',
+    pause: 'Pause',
+    resume: 'Resume',
+    clear: 'Clear',
+    copyVisible: 'Copy visible',
+    saveLog: 'Save .log',
+    devTools: 'DevTools',
+    visible: 'Visible',
+    total: 'Total',
+    unread: 'Unread',
+    waiting: 'Waiting for logs...',
+    separator: ' · ',
+    shortcuts: 'Ctrl+F search · Ctrl+L clear · End bottom',
+    problemTitle: 'Problem Overview',
+    problemTitleEmpty: 'Problem Overview: no issues',
+    problemHint: 'Recent stderr/error/warn entries appear here automatically. Click an item to focus related logs.',
+    problemHintEmpty: 'Safe mode continuously captures main-process, renderer, and startup exceptions.',
+    problemEmpty: 'No high-risk logs captured yet.',
+    performanceTitle: 'Performance timeline',
+    performanceLatest: 'Latest',
+    performanceNoStalls: 'No stalls captured.',
+    noRouteAudioFields: 'no route/audio fields',
+    recentEntry: 'Latest entry',
+    noMatches: 'No matching logs.',
+    noLogs: 'No logs yet.',
+    copied: 'Copied',
+    copyFailed: 'Copy failed',
+    saved: 'Saved',
+  },
+} as const;
+
+const resolveDevConsoleText = (): typeof devConsoleText[keyof typeof devConsoleText] => {
+  const locale = getAppSettings().locale ?? 'zh-CN';
+  if (locale in devConsoleText) {
+    return devConsoleText[locale as keyof typeof devConsoleText];
+  }
+  const normalizedLocale = locale.toLowerCase();
+  if (normalizedLocale.startsWith('zh-tw') || normalizedLocale.startsWith('zh-hk') || normalizedLocale.startsWith('zh-mo') || normalizedLocale.startsWith('zh-hant')) {
+    return devConsoleText['zh-TW'];
+  }
+  if (normalizedLocale.startsWith('ja')) {
+    return devConsoleText['ja-JP'];
+  }
+  if (normalizedLocale.startsWith('en')) {
+    return devConsoleText['en-US'];
+  }
+  return devConsoleText['zh-CN'];
+};
+
 const createDevConsoleHtml = (): string => {
-  const title = 'ECHO Debug Console';
-  const note = '实时显示主进程 stdout/stderr 与渲染器 console，方便像 npm run dev 一样排查问题。';
+  const text = resolveDevConsoleText();
+  const title = text.title;
+  const note = text.note;
 
   return `<!doctype html>
-<html lang="zh-Hans">
+<html lang="${escapeHtml(text.htmlLang)}">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'unsafe-inline'; style-src 'unsafe-inline';" />
@@ -761,53 +964,54 @@ const createDevConsoleHtml = (): string => {
       <small>${escapeHtml(note)}</small>
     </div>
     <div class="controls">
-      <input id="filter" aria-label="filter" placeholder="搜索日志 / Ctrl+F" />
-      <select id="source" aria-label="source">
-        <option value="">全部来源</option>
+      <input id="filter" aria-label="${escapeHtml(text.filterAria)}" placeholder="${escapeHtml(text.filterPlaceholder)}" />
+      <select id="source" aria-label="${escapeHtml(text.sourceAria)}">
+        <option value="">${escapeHtml(text.allSources)}</option>
         <option value="stdout">stdout</option>
         <option value="stderr">stderr</option>
         <option value="renderer">renderer</option>
         <option value="system">system</option>
       </select>
-      <select id="level" aria-label="level">
-        <option value="">全部级别</option>
+      <select id="level" aria-label="${escapeHtml(text.levelAria)}">
+        <option value="">${escapeHtml(text.allLevels)}</option>
         <option value="error">error</option>
         <option value="warn">warn</option>
         <option value="info">info</option>
         <option value="debug">debug</option>
         <option value="log">log</option>
       </select>
-      <button id="problems" type="button">错误/警告</button>
-      <button id="performance" type="button">Performance</button>
-      <button id="autoscroll" type="button" data-active="true">自动滚动</button>
-      <button id="wrap" type="button" data-active="true">换行</button>
-      <button id="bottom" type="button">到底部</button>
-      <button id="pause" type="button">暂停</button>
-      <button id="clear" type="button">清空</button>
-      <button id="copy" type="button">复制可见</button>
-      <button id="save" type="button">保存 .log</button>
-      <button id="devtools" type="button">DevTools</button>
+      <button id="problems" type="button">${escapeHtml(text.problems)}</button>
+      <button id="performance" type="button">${escapeHtml(text.performance)}</button>
+      <button id="autoscroll" type="button" data-active="true">${escapeHtml(text.autoScroll)}</button>
+      <button id="wrap" type="button" data-active="true">${escapeHtml(text.wrap)}</button>
+      <button id="bottom" type="button">${escapeHtml(text.bottom)}</button>
+      <button id="pause" type="button">${escapeHtml(text.pause)}</button>
+      <button id="clear" type="button">${escapeHtml(text.clear)}</button>
+      <button id="copy" type="button">${escapeHtml(text.copyVisible)}</button>
+      <button id="save" type="button">${escapeHtml(text.saveLog)}</button>
+      <button id="devtools" type="button">${escapeHtml(text.devTools)}</button>
     </div>
   </header>
   <section class="summary" aria-live="polite">
-    <span class="chip">可见 <strong id="visibleCount">0</strong></span>
-    <span class="chip">总数 <strong id="totalCount">0</strong></span>
+    <span class="chip">${escapeHtml(text.visible)} <strong id="visibleCount">0</strong></span>
+    <span class="chip">${escapeHtml(text.total)} <strong id="totalCount">0</strong></span>
     <span class="chip" data-tone="error">error <strong id="errorCount">0</strong></span>
     <span class="chip" data-tone="warn">warn <strong id="warnCount">0</strong></span>
     <span class="chip" data-tone="warn">perf <strong id="performanceCount">0</strong></span>
     <span class="chip" data-tone="error">stderr <strong id="stderrCount">0</strong></span>
     <span class="chip" data-tone="ok">renderer <strong id="rendererCount">0</strong></span>
-    <span class="chip">未读 <strong id="unreadCount">0</strong></span>
+    <span class="chip">${escapeHtml(text.unread)} <strong id="unreadCount">0</strong></span>
   </section>
   <section id="problemBoard" class="problem-board" data-empty="true" aria-live="polite"></section>
   <section id="performanceBoard" class="performance-board" data-empty="true" aria-live="polite"></section>
   <main id="console" class="console" data-wrap="true" aria-live="polite"></main>
   <footer class="footer">
-    <span id="status">等待日志...</span>
-    <span>Ctrl+F 搜索 · Ctrl+L 清空 · End 到底部</span>
+    <span id="status">${escapeHtml(text.waiting)}</span>
+    <span>${escapeHtml(text.shortcuts)}</span>
   </footer>
   <script>
     const api = window.echoDevConsole;
+    const text = ${JSON.stringify(text)};
     const consoleEl = document.getElementById('console');
     const filterEl = document.getElementById('filter');
     const sourceEl = document.getElementById('source');
@@ -1007,18 +1211,18 @@ const createDevConsoleHtml = (): string => {
       const head = document.createElement('div');
       head.className = 'problem-head';
       const title = document.createElement('strong');
-      title.textContent = problems.length ? '问题一览' : '问题一览：暂无异常';
+      title.textContent = problems.length ? text.problemTitle : text.problemTitleEmpty;
       const hint = document.createElement('span');
       hint.textContent = problems.length
-        ? '最近 stderr/error/warn 会自动浮到这里；点击条目可定位同类日志。'
-        : '安全模式会持续捕获主进程、渲染器和启动异常。';
+        ? text.problemHint
+        : text.problemHintEmpty;
       head.append(title, hint);
       problemBoardEl.append(head);
 
       if (problems.length === 0) {
         const empty = document.createElement('span');
         empty.className = 'problem-empty';
-        empty.textContent = '当前没有捕获到高风险日志。';
+        empty.textContent = text.problemEmpty;
         problemBoardEl.append(empty);
         return;
       }
@@ -1064,12 +1268,12 @@ const createDevConsoleHtml = (): string => {
       const head = document.createElement('div');
       head.className = 'performance-head';
       const title = document.createElement('strong');
-      title.textContent = 'Performance timeline';
+      title.textContent = text.performanceTitle;
       const hint = document.createElement('span');
       const latest = stalls[0];
       hint.textContent = latest
-        ? 'Latest: ' + latest.cause + ' · ' + (latest.durationMs === null ? '?' : Math.round(latest.durationMs) + 'ms')
-        : 'No stalls captured.';
+        ? text.performanceLatest + ': ' + latest.cause + ' · ' + (latest.durationMs === null ? '?' : Math.round(latest.durationMs) + 'ms')
+        : text.performanceNoStalls;
       head.append(title, hint);
       performanceBoardEl.append(head);
 
@@ -1101,7 +1305,7 @@ const createDevConsoleHtml = (): string => {
           stall.underruns ? 'underruns=' + stall.underruns : null,
         ].filter(Boolean);
         const route = document.createElement('span');
-        route.textContent = routeParts.length ? routeParts.join(' · ') : 'no route/audio fields';
+        route.textContent = routeParts.length ? routeParts.join(' · ') : text.noRouteAudioFields;
         const taskParts = [
           stall.pendingTask ? 'pending=' + stall.pendingTask : null,
           stall.lastTask ? 'last=' + stall.lastTask + (stall.lastTaskMs ? ' ' + stall.lastTaskMs + 'ms' : '') : null,
@@ -1146,10 +1350,10 @@ const createDevConsoleHtml = (): string => {
       performanceButton.dataset.active = String(onlyPerformance);
       autoScrollButton.dataset.active = String(autoScroll);
       wrapButton.dataset.active = String(wrapLines);
-      autoScrollButton.textContent = autoScroll ? '自动滚动' : '手动滚动';
-      wrapButton.textContent = wrapLines ? '换行' : '不换行';
-      pauseButton.textContent = paused ? '继续' + (unread ? ' +' + unread : '') : '暂停';
-      statusEl.textContent = total ? '最近一条 #' + entries[entries.length - 1].id + ' · ' + timePart(entries[entries.length - 1].timestamp) : '等待日志...';
+      autoScrollButton.textContent = autoScroll ? text.autoScroll : text.manualScroll;
+      wrapButton.textContent = wrapLines ? text.wrap : text.noWrap;
+      pauseButton.textContent = paused ? text.resume + (unread ? ' +' + unread : '') : text.pause;
+      statusEl.textContent = total ? text.recentEntry + ' #' + entries[entries.length - 1].id + text.separator + timePart(entries[entries.length - 1].timestamp) : text.waiting;
     };
     const scrollToBottom = () => {
       consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -1163,7 +1367,7 @@ const createDevConsoleHtml = (): string => {
       if (!visible.length) {
         const empty = document.createElement('div');
         empty.className = 'empty';
-        empty.textContent = entries.length ? '没有匹配的日志。' : '还没有日志。';
+        empty.textContent = entries.length ? text.noMatches : text.noLogs;
         consoleEl.append(empty);
       } else {
         const fragment = document.createDocumentFragment();
@@ -1333,13 +1537,13 @@ const createDevConsoleHtml = (): string => {
     });
     copyButton.addEventListener('click', () => {
       flushPendingEntriesNow();
-      const text = entries.filter(passesFilters).map(formatEntryLine).join('\\n');
-      navigator.clipboard.writeText(text).then(() => setTemporaryButtonText(copyButton, '已复制')).catch(() => setTemporaryButtonText(copyButton, '复制失败'));
+      const logText = entries.filter(passesFilters).map(formatEntryLine).join('\\n');
+      navigator.clipboard.writeText(logText).then(() => setTemporaryButtonText(copyButton, text.copied)).catch(() => setTemporaryButtonText(copyButton, text.copyFailed));
     });
     saveButton.addEventListener('click', () => {
       flushPendingEntriesNow();
-      const text = entries.filter(passesFilters).map(formatEntryLine).join('\\n');
-      const blob = new Blob([text + '\\n'], { type: 'text/plain;charset=utf-8' });
+      const logText = entries.filter(passesFilters).map(formatEntryLine).join('\\n');
+      const blob = new Blob([logText + '\\n'], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1347,7 +1551,7 @@ const createDevConsoleHtml = (): string => {
       anchor.download = 'echo-debug-console-' + stamp + '.log';
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setTemporaryButtonText(saveButton, '已保存');
+      setTemporaryButtonText(saveButton, text.saved);
     });
     devtoolsButton.addEventListener('click', () => {
       api.openDevTools().catch(() => undefined);
@@ -1419,12 +1623,13 @@ export const openDevConsoleWindow = (): void => {
     return;
   }
 
+  const text = resolveDevConsoleText();
   consoleWindow = new BrowserWindow({
     width: 1240,
     height: 760,
     minWidth: 720,
     minHeight: 480,
-    title: 'ECHO Debug Console',
+    title: text.title,
     icon: existsSync(appIconPath) ? appIconPath : undefined,
     backgroundColor: '#080c11',
     show: false,

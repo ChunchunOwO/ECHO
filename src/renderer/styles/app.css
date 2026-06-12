@@ -2977,6 +2977,16 @@
   gap: 10px;
 }
 
+.settings-acrylic-warning {
+  flex-basis: 100%;
+  margin: -2px 0 0;
+  color: var(--theme-warning-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: right;
+}
+
 .settings-acrylic-slider,
 .settings-acrylic-subtoggle {
   display: grid;

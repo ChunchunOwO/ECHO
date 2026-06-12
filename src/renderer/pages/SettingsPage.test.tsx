@@ -1054,7 +1054,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     await screen.findByText('route.settings.label');
-    const row = screen.getByText('底栏信号路径').closest('.setting-row') as HTMLElement;
+    const row = screen.getByText('settings.general.signalPathControl.title').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: false }));
@@ -1947,7 +1947,10 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    const row = screen.getByText('settings.appearance.windowAcrylic.title').closest('.setting-row') as HTMLElement;
+    const row = screen
+      .getByText('settings.appearance.windowAcrylic.title · settings.appearance.windowAcrylic.experimental')
+      .closest('.setting-row') as HTMLElement;
+    expect(within(row).getByText('settings.appearance.windowAcrylic.themeWarning')).toBeTruthy();
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicEnabled: true }));

@@ -14,6 +14,8 @@ import {
   openLibraryDatabaseRecoverySettings,
 } from '../../utils/databaseRecovery';
 import { getLibraryBridge } from '../../utils/echoBridge';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 type LibraryFoldersPanelProps = {
   autoRefresh?: boolean;
@@ -25,76 +27,79 @@ type LibraryFoldersPanelProps = {
 const terminalStatuses = new Set<LibraryScanStatus['status']>(['completed', 'failed', 'cancelled']);
 const runningStatuses = new Set<LibraryScanStatus['status']>(['queued', 'running']);
 let sharedNotifiedJobIds = new Set<string>();
+type TranslateOptions = Record<string, string | number>;
+type Translate = (key: TranslationKey, options?: TranslateOptions) => string;
+const fallbackT: Translate = translateFallback;
 
 export const __resetLibraryFolderScanSessionForTests = (): void => {
   sharedNotifiedJobIds = new Set<string>();
 };
 
-const statusLabel = (status: LibraryScanStatus['status']): string => {
+const statusLabel = (status: LibraryScanStatus['status'], t: Translate): string => {
   switch (status) {
     case 'queued':
-      return '排队中';
+      return t('mediaLibrary.folders.status.queued');
     case 'running':
-      return '扫描中';
+      return t('mediaLibrary.folders.status.running');
     case 'completed':
-      return '已完成';
+      return t('mediaLibrary.folders.status.completed');
     case 'cancelled':
-      return '已取消';
+      return t('mediaLibrary.folders.status.cancelled');
     case 'failed':
-      return '失败';
+      return t('mediaLibrary.folders.status.failed');
     default:
       return status;
   }
 };
 
-const phaseLabel = (phase: LibraryScanStatus['phase']): string => {
+const phaseLabel = (phase: LibraryScanStatus['phase'], t: Translate): string => {
   switch (phase) {
     case 'queued':
-      return '排队';
+      return t('mediaLibrary.folders.phase.queued');
     case 'discovering':
-      return '发现文件';
+      return t('mediaLibrary.folders.phase.discovering');
     case 'checking_cache':
-      return '检查缓存';
+      return t('mediaLibrary.folders.phase.checkingCache');
     case 'reading_metadata':
-      return '读取元数据';
+      return t('mediaLibrary.folders.phase.readingMetadata');
     case 'extracting_covers':
-      return '处理封面';
+      return t('mediaLibrary.folders.phase.extractingCovers');
     case 'grouping_albums':
-      return '整理专辑';
+      return t('mediaLibrary.folders.phase.groupingAlbums');
     case 'writing_database':
-      return '写入数据库';
+      return t('mediaLibrary.folders.phase.writingDatabase');
     case 'finished':
-      return '完成';
+      return t('mediaLibrary.folders.phase.finished');
     case 'failed':
-      return '失败';
+      return t('mediaLibrary.folders.phase.failed');
     case 'cancelled':
-      return '取消';
+      return t('mediaLibrary.folders.phase.cancelled');
     default:
       return phase;
   }
 };
 
-const formatFolderError = (error: unknown): string => {
+const formatFolderError = (error: unknown, t: Translate): string => {
   const message = error instanceof Error ? error.message : String(error);
   const upper = message.toUpperCase();
 
   if (upper.includes('ENOENT')) {
-    return '路径不存在';
+    return t('mediaLibrary.folders.error.pathMissing');
   }
 
   if (upper.includes('ENOTDIR')) {
-    return '不是文件夹';
+    return t('mediaLibrary.folders.error.notFolder');
   }
 
   if (upper.includes('EACCES') || upper.includes('EPERM')) {
-    return '没有访问权限';
+    return t('mediaLibrary.folders.error.noAccess');
   }
 
   if (upper.includes('ALREADY EXISTS') || upper.includes('UNIQUE')) {
-    return '文件夹已存在';
+    return t('mediaLibrary.folders.error.alreadyExists');
   }
 
-  return message || '导入失败';
+  return message || t('mediaLibrary.folders.error.importFailed');
 };
 
 export const LibraryFoldersPanel = ({
@@ -103,6 +108,7 @@ export const LibraryFoldersPanel = ({
   defaultCollapsed = false,
   pollScanStatuses = true,
 }: LibraryFoldersPanelProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? fallbackT;
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [foldersLoaded, setFoldersLoaded] = useState(false);
   const [folderPath, setFolderPath] = useState('');
@@ -119,7 +125,7 @@ export const LibraryFoldersPanel = ({
 
       if (!library) {
         setFolders([]);
-        setError('桌面桥接不可用。请在 ECHO Next 桌面端管理曲库文件夹。');
+        setError(t('mediaLibrary.folders.error.bridgeManage'));
         setDatabaseRecoveryAvailable(false);
         return;
       }
@@ -133,12 +139,12 @@ export const LibraryFoldersPanel = ({
         setDatabaseRecoveryAvailable(true);
         return;
       }
-      setError(formatFolderError(refreshError));
+      setError(formatFolderError(refreshError, t));
       setDatabaseRecoveryAvailable(false);
     } finally {
       setFoldersLoaded(true);
     }
-  }, []);
+  }, [t]);
 
   const dispatchLibraryChanged = useCallback(async () => {
     try {
@@ -160,14 +166,14 @@ export const LibraryFoldersPanel = ({
       const library = getLibraryBridge();
 
       if (!library) {
-        setError('桌面桥接不可用。请在 ECHO Next 桌面端扫描文件夹。');
+        setError(t('mediaLibrary.folders.error.bridgeScan'));
         setDatabaseRecoveryAvailable(false);
         return;
       }
 
       const currentScan = getLibraryScanStatuses()[folderId];
       if (currentScan && runningStatuses.has(currentScan.status)) {
-        setMessage('该文件夹正在后台扫描');
+        setMessage(t('mediaLibrary.folders.message.alreadyScanning'));
         return;
       }
 
@@ -178,7 +184,7 @@ export const LibraryFoldersPanel = ({
         setMessage(statusMessage);
       }
     },
-    [updateScanStatus],
+    [t, updateScanStatus],
   );
 
   const importFolderPath = useCallback(
@@ -196,27 +202,27 @@ export const LibraryFoldersPanel = ({
         const library = getLibraryBridge();
 
         if (!library) {
-          setError('桌面桥接不可用。请在 ECHO Next 桌面端导入文件夹。');
+          setError(t('mediaLibrary.folders.error.bridgeImport'));
           setDatabaseRecoveryAvailable(false);
           return;
         }
 
         const folder = await library.addFolder(normalizedPath);
         setFolderPath(normalizedPath);
-        setMessage(alreadyImported ? '文件夹已存在，开始重新扫描' : '文件夹已添加，开始扫描');
+        setMessage(alreadyImported ? t('mediaLibrary.folders.message.rescanExisting') : t('mediaLibrary.folders.message.addedScanning'));
         await refreshFolders();
-        await startScan(folder.id, alreadyImported ? '文件夹已存在，开始重新扫描' : '文件夹已添加，开始扫描');
+        await startScan(folder.id, alreadyImported ? t('mediaLibrary.folders.message.rescanExisting') : t('mediaLibrary.folders.message.addedScanning'));
       } catch (importError) {
         if (isLibraryDatabaseCorruptionError(importError)) {
           setError(getLibraryDatabaseRecoveryMessage());
           setDatabaseRecoveryAvailable(true);
           return;
         }
-        setError(formatFolderError(importError));
+        setError(formatFolderError(importError, t));
         setDatabaseRecoveryAvailable(false);
       }
     },
-    [folders, refreshFolders, startScan],
+    [folders, refreshFolders, startScan, t],
   );
 
   const handleChooseFolder = useCallback(async (): Promise<void> => {
@@ -224,7 +230,7 @@ export const LibraryFoldersPanel = ({
       const library = getLibraryBridge();
 
       if (!library) {
-        setError('桌面桥接不可用。请在 ECHO Next 桌面端选择文件夹。');
+        setError(t('mediaLibrary.folders.error.bridgeChoose'));
         return;
       }
 
@@ -237,9 +243,9 @@ export const LibraryFoldersPanel = ({
       setFolderPath(chosenPath);
       await importFolderPath(chosenPath);
     } catch (chooseError) {
-      setError(formatFolderError(chooseError));
+      setError(formatFolderError(chooseError, t));
     }
-  }, [importFolderPath]);
+  }, [importFolderPath, t]);
 
   const handleAddAndScan = useCallback(async (): Promise<void> => {
     await importFolderPath(folderPath);
@@ -251,19 +257,19 @@ export const LibraryFoldersPanel = ({
         const library = getLibraryBridge();
 
         if (!library) {
-          setError('桌面桥接不可用。请在 ECHO Next 桌面端取消扫描。');
+          setError(t('mediaLibrary.folders.error.bridgeCancel'));
           return;
         }
 
         const scan = await library.cancelScan(jobId);
         updateScanStatus(scan);
-        setMessage('扫描已取消');
+        setMessage(t('mediaLibrary.folders.message.scanCancelled'));
         await dispatchLibraryChanged();
       } catch (cancelError) {
-        setError(formatFolderError(cancelError));
+        setError(formatFolderError(cancelError, t));
       }
     },
-    [dispatchLibraryChanged, updateScanStatus],
+    [dispatchLibraryChanged, t, updateScanStatus],
   );
 
   const handleRemoveFolder = useCallback(
@@ -272,19 +278,19 @@ export const LibraryFoldersPanel = ({
         const library = getLibraryBridge();
 
         if (!library) {
-          setError('桌面桥接不可用。请在 ECHO Next 桌面端移除文件夹。');
+          setError(t('mediaLibrary.folders.error.bridgeRemove'));
           return;
         }
 
         await library.removeFolder(folderId);
         forgetLibraryScanStatus(folderId);
-        setMessage('文件夹已移除');
+        setMessage(t('mediaLibrary.folders.message.folderRemoved'));
         await dispatchLibraryChanged();
       } catch (removeError) {
-        setError(formatFolderError(removeError));
+        setError(formatFolderError(removeError, t));
       }
     },
-    [dispatchLibraryChanged],
+    [dispatchLibraryChanged, t],
   );
 
   useEffect(() => {
@@ -352,10 +358,10 @@ export const LibraryFoldersPanel = ({
         void dispatchLibraryChanged();
         setMessage(
           status.status === 'completed'
-            ? '扫描完成'
+            ? t('mediaLibrary.folders.message.scanCompleted')
             : status.status === 'cancelled'
-              ? '扫描已取消'
-              : '扫描失败',
+              ? t('mediaLibrary.folders.message.scanCancelled')
+              : t('mediaLibrary.folders.message.scanFailed'),
         );
       }
 
@@ -363,20 +369,20 @@ export const LibraryFoldersPanel = ({
         sharedNotifiedJobIds.delete(status.id);
       }
     }
-  }, [dispatchLibraryChanged, scanStatuses]);
+  }, [dispatchLibraryChanged, scanStatuses, t]);
 
   const bodyId = 'library-folders-panel-body';
 
   return (
-    <section className="audio-dev-panel library-folders-panel" aria-label="曲库文件夹" data-collapsed={isCollapsed ? 'true' : 'false'}>
+    <section className="audio-dev-panel library-folders-panel" aria-label={t('mediaLibrary.folders.aria')} data-collapsed={isCollapsed ? 'true' : 'false'}>
       <div className="audio-dev-header">
         <div>
-          <span className="panel-kicker">曲库</span>
-          <h2>文件夹</h2>
+          <span className="panel-kicker">{t('mediaLibrary.kicker')}</span>
+          <h2>{t('mediaLibrary.folders.title')}</h2>
         </div>
         <div className="library-folders-panel-actions">
           {!isCollapsed ? (
-            <button className="tool-button" type="button" aria-label="刷新文件夹" title="刷新文件夹" onClick={() => void refreshFolders()}>
+            <button className="tool-button" type="button" aria-label={t('mediaLibrary.folders.action.refresh')} title={t('mediaLibrary.folders.action.refresh')} onClick={() => void refreshFolders()}>
               <RefreshCw size={17} />
             </button>
           ) : null}
@@ -385,11 +391,11 @@ export const LibraryFoldersPanel = ({
             type="button"
             aria-controls={bodyId}
             aria-expanded={!isCollapsed}
-            aria-label={isCollapsed ? '展开曲库文件夹' : '折叠曲库文件夹'}
-            title={isCollapsed ? '展开曲库文件夹' : '折叠曲库文件夹'}
+            aria-label={isCollapsed ? t('mediaLibrary.folders.action.expand') : t('mediaLibrary.folders.action.collapse')}
+            title={isCollapsed ? t('mediaLibrary.folders.action.expand') : t('mediaLibrary.folders.action.collapse')}
             onClick={() => setIsCollapsed((current) => !current)}
           >
-            <span>{isCollapsed ? '展开' : '折叠'}</span>
+            <span>{isCollapsed ? t('mediaLibrary.folders.action.expandShort') : t('mediaLibrary.folders.action.collapseShort')}</span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
         </div>
@@ -399,7 +405,7 @@ export const LibraryFoldersPanel = ({
         <div id={bodyId} className="library-folders-panel-body">
       <div className="library-folder-entry">
         <label className="audio-field">
-          <span>文件夹路径</span>
+          <span>{t('mediaLibrary.folders.field.path')}</span>
           <input
             ref={inputRef}
             type="text"
@@ -410,11 +416,11 @@ export const LibraryFoldersPanel = ({
         </label>
         <button className="audio-command-button" type="button" onClick={() => void handleChooseFolder()}>
           <FolderPlus size={17} />
-          <span>选择文件夹</span>
+          <span>{t('mediaLibrary.folders.action.choose')}</span>
         </button>
         <button className="audio-command-button" type="button" onClick={() => void handleAddAndScan()} disabled={!folderPath.trim()}>
           <RotateCw size={17} />
-          <span>添加并扫描</span>
+          <span>{t('mediaLibrary.folders.action.addScan')}</span>
         </button>
       </div>
 
@@ -424,16 +430,16 @@ export const LibraryFoldersPanel = ({
           <p className="audio-error">{error}</p>
           {databaseRecoveryAvailable ? (
             <button className="settings-action-button" type="button" onClick={openLibraryDatabaseRecoverySettings}>
-              去恢复助手
+              {t('mediaLibrary.folders.action.recovery')}
             </button>
           ) : null}
         </div>
       ) : null}
 
       {!foldersLoaded && !autoRefresh ? (
-        <p className="audio-empty">{'\u66f2\u5e93\u6587\u4ef6\u5939\u5c06\u5728\u754c\u9762\u7a7a\u95f2\u540e\u8bfb\u53d6\uff0c\u4e5f\u53ef\u4ee5\u70b9\u51fb\u5237\u65b0\u7acb\u5373\u8bfb\u53d6\u3002'}</p>
+        <p className="audio-empty">{t('mediaLibrary.folders.empty.deferred')}</p>
       ) : folders.length === 0 ? (
-        <p className="audio-empty">还没有导入曲库文件夹。</p>
+        <p className="audio-empty">{t('mediaLibrary.folders.empty.none')}</p>
       ) : (
         <div className="library-folder-list">
           {folders.map((folder) => {
@@ -447,17 +453,23 @@ export const LibraryFoldersPanel = ({
                   <span>{folder.path}</span>
                   {scan ? (
                     <small>
-                      {statusLabel(scan.status)} / {phaseLabel(scan.phase)} / 已处理 {scan.processedFiles}/{scan.totalFiles}，跳过 {scan.skippedFiles}
+                      {t('mediaLibrary.folders.scan.progress', {
+                        status: statusLabel(scan.status, t),
+                        phase: phaseLabel(scan.phase, t),
+                        processed: scan.processedFiles,
+                        total: scan.totalFiles,
+                        skipped: scan.skippedFiles,
+                      })}
                     </small>
                   ) : (
-                    <small>就绪</small>
+                    <small>{t('mediaLibrary.folders.status.ready')}</small>
                   )}
                 </div>
                 <button
                   className="audio-icon-command"
                   type="button"
-                  aria-label="扫描文件夹"
-                  title="扫描文件夹"
+                  aria-label={t('mediaLibrary.folders.action.scan')}
+                  title={t('mediaLibrary.folders.action.scan')}
                   onClick={() => void startScan(folder.id)}
                   disabled={isScanning}
                 >
@@ -466,8 +478,8 @@ export const LibraryFoldersPanel = ({
                 <button
                   className="audio-icon-command"
                   type="button"
-                  aria-label="取消扫描"
-                  title="取消扫描"
+                  aria-label={t('mediaLibrary.folders.action.cancelScan')}
+                  title={t('mediaLibrary.folders.action.cancelScan')}
                   onClick={() => scan && void handleCancelScan(folder.id, scan.id)}
                   disabled={!isScanning || !scan}
                 >
@@ -476,8 +488,8 @@ export const LibraryFoldersPanel = ({
                 <button
                   className="audio-icon-command danger"
                   type="button"
-                  aria-label="移除文件夹"
-                  title="移除文件夹"
+                  aria-label={t('mediaLibrary.folders.action.remove')}
+                  title={t('mediaLibrary.folders.action.remove')}
                   onClick={() => void handleRemoveFolder(folder.id)}
                 >
                   <Trash2 size={17} />

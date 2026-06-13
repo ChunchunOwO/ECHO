@@ -17,6 +17,7 @@ import { titleFromPath } from '../components/player/playerFormat';
 import { logLyricsConsole } from '../diagnostics/lyricsConsole';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 import { registerAppearanceFontFile, serializeFontList } from '../preferences/appearancePreferences';
+import { createMusicReactiveScene, musicReactiveSceneToCssVars } from '../../shared/utils/musicReactiveScene';
 
 type DesktopLyricsSettings = Required<Pick<
   AppSettings,
@@ -34,6 +35,7 @@ type DesktopLyricsSettings = Required<Pick<
   | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
+  | 'lyricsMusicReactiveVisualsEnabled'
 >> & Pick<AppSettings, 'desktopLyricsBounds'>;
 
 type DesktopLyricsStateSnapshot = {
@@ -81,6 +83,7 @@ const fallbackSettings: DesktopLyricsSettings = {
   desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
+  lyricsMusicReactiveVisualsEnabled: false,
   desktopLyricsBounds: null,
 };
 
@@ -293,6 +296,7 @@ const pickDesktopLyricsSettings = (settings: Partial<AppSettings> | null | undef
   desktopLyricsTextDirection: settings?.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings?.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings?.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
+  lyricsMusicReactiveVisualsEnabled: settings?.lyricsMusicReactiveVisualsEnabled === true,
   desktopLyricsBounds: settings?.desktopLyricsBounds ?? null,
 });
 
@@ -705,6 +709,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const [playbackClock, setPlaybackClock] = useState<PlaybackClock | null>(null);
   const [playbackClockPriorityUntilMs, setPlaybackClockPriorityUntilMs] = useState(0);
   const [forwardedClock, setForwardedClock] = useState<PlaybackClock | null>(null);
+  const [forwardedAudioStatus, setForwardedAudioStatus] = useState<AudioStatus | null>(null);
   const [forwardedLyricsMetadata, setForwardedLyricsMetadata] = useState<ForwardedLyricsMetadata | null>(null);
   const [forwardedUpdatedAtMs, setForwardedUpdatedAtMs] = useState(0);
   const [lyrics, setLyrics] = useState<DesktopLyricsStateSnapshot>(() => emptyLyrics());
@@ -852,8 +857,23 @@ export const DesktopLyricsApp = (): JSX.Element => {
         !detail ||
         (
           !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
-          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled')
+          !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled') &&
+          !Object.prototype.hasOwnProperty.call(detail, 'lyricsMusicReactiveVisualsEnabled')
         )
+      ) {
+        return;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(detail, 'lyricsMusicReactiveVisualsEnabled')) {
+        setSettings((current) => pickDesktopLyricsSettings({
+          ...current,
+          lyricsMusicReactiveVisualsEnabled: detail.lyricsMusicReactiveVisualsEnabled === true,
+        }));
+      }
+
+      if (
+        !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
+        !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled')
       ) {
         return;
       }
@@ -990,6 +1010,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
           dedupeMs: 500,
         });
         setForwardedClock(clock);
+        setForwardedAudioStatus(status);
         setForwardedLyricsMetadata(audioStatusToLyricsMetadata(status));
         setForwardedUpdatedAtMs(updatedAtMs);
       }
@@ -1003,6 +1024,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
         dedupeMs: 500,
       });
       setForwardedClock(clock);
+      setForwardedAudioStatus(status);
       setForwardedLyricsMetadata(audioStatusToLyricsMetadata(status));
       setForwardedUpdatedAtMs(updatedAtMs);
     });
@@ -1493,6 +1515,36 @@ export const DesktopLyricsApp = (): JSX.Element => {
     settings.desktopLyricsColorMode === 'custom'
       ? settings.desktopLyricsStrokeColor
       : 'var(--desktop-lyrics-theme-stroke-color)';
+  const shouldUseDesktopMusicReactiveVisuals =
+    settings.lyricsMusicReactiveVisualsEnabled === true &&
+    enhancedLowLoadPlaybackActive !== true;
+  const musicReactiveAudioStatus = useMemo(() => {
+    if (!shouldUseDesktopMusicReactiveVisuals || !forwardedAudioStatus) {
+      return null;
+    }
+
+    if (!activeClock) {
+      return forwardedAudioStatus;
+    }
+
+    const sameTrack =
+      Boolean(forwardedAudioStatus.currentTrackId && forwardedAudioStatus.currentTrackId === activeClock.currentTrackId) ||
+      Boolean(forwardedAudioStatus.currentFilePath && forwardedAudioStatus.currentFilePath === activeClock.filePath);
+    return sameTrack ? forwardedAudioStatus : null;
+  }, [
+    activeClock?.currentTrackId,
+    activeClock?.filePath,
+    forwardedAudioStatus,
+    shouldUseDesktopMusicReactiveVisuals,
+  ]);
+  const musicReactiveScene = useMemo(
+    () => createMusicReactiveScene(musicReactiveAudioStatus),
+    [musicReactiveAudioStatus],
+  );
+  const musicReactiveCssVars = useMemo(
+    () => musicReactiveSceneToCssVars(musicReactiveScene, 'desktop-lyrics-reactive'),
+    [musicReactiveScene],
+  );
 
   const style = {
     '--desktop-lyrics-font-size': `${settings.desktopLyricsFontSizePx}px`,
@@ -1502,6 +1554,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
     '--desktop-lyrics-color': desktopLyricsColor,
     '--desktop-lyrics-stroke-color': desktopLyricsStrokeColor,
     '--desktop-lyrics-opacity': (settings.desktopLyricsOpacityPercent / 100).toFixed(2),
+    ...(shouldUseDesktopMusicReactiveVisuals ? musicReactiveCssVars : {}),
   } as CSSProperties;
   const lineTextStyle = {
     '--desktop-lyrics-text-fit-scale': desktopLyricsTextFitScale.toFixed(3),
@@ -1514,10 +1567,13 @@ export const DesktopLyricsApp = (): JSX.Element => {
       data-color-mode={settings.desktopLyricsColorMode}
       data-locked={settings.desktopLyricsLocked}
       data-menu-visible={menuVisible}
+      data-music-reactive={shouldUseDesktopMusicReactiveVisuals ? musicReactiveScene.mode : undefined}
+      data-music-reactive-clipping={shouldUseDesktopMusicReactiveVisuals && musicReactiveScene.clippingRisk ? 'true' : undefined}
       data-playback-state={activeClock?.state ?? 'stopped'}
       data-text-direction={settings.desktopLyricsTextDirection}
       style={style}
     >
+      {shouldUseDesktopMusicReactiveVisuals ? <div className="desktop-lyrics-reactive-backdrop" aria-hidden="true" /> : null}
       <section className="desktop-lyrics-stage" aria-label={t('desktopLyrics.aria.stage')}>
         <div className="desktop-lyrics-lines" onContextMenu={(event) => void unlockFromContextMenu(event)}>
           <div className="desktop-lyrics-line-text" ref={lineTextRef} style={lineTextStyle}>

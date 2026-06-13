@@ -170,6 +170,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsImmersiveCoverGlassEnabled).toBe(false);
     expect(settings.lyricsImmersiveCoverGlassBlurPx).toBe(16);
     expect(settings.lyricsHighResolutionNetworkCoverEnabled).toBe(false);
+    expect(settings.lyricsMusicReactiveVisualsEnabled).toBe(false);
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
     expect(settings.lyricsCoverOpacityPercent).toBe(100);
@@ -1046,7 +1047,7 @@ describe('app settings normalization', () => {
       lastFmNowPlayingEnabled: true,
       lastFmMinScrobbleSeconds: 30,
       lastFmAuthToken: null,
-      taskbarPlaybackControlsEnabled: false,
+      taskbarPlaybackControlsEnabled: true,
     });
     expect(
       normalizeSettings({
@@ -1068,6 +1069,9 @@ describe('app settings normalization', () => {
       lastFmMinScrobbleSeconds: 240,
       lastFmAuthToken: 'token',
       taskbarPlaybackControlsEnabled: true,
+    });
+    expect(normalizeSettings({ taskbarPlaybackControlsEnabled: false })).toMatchObject({
+      taskbarPlaybackControlsEnabled: false,
     });
   });
 
@@ -1585,6 +1589,7 @@ describe('app settings normalization', () => {
         lyricsImmersiveCoverGlassEnabled: 'yes' as never,
         lyricsImmersiveCoverGlassBlurPx: 999,
         lyricsHighResolutionNetworkCoverEnabled: 'yes' as never,
+        lyricsMusicReactiveVisualsEnabled: 'yes' as never,
         lyricsBackgroundMode: 'album' as never,
         lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
         lyricsCoverOpacityPercent: -10,
@@ -1639,6 +1644,7 @@ describe('app settings normalization', () => {
       lyricsImmersiveCoverGlassEnabled: false,
       lyricsImmersiveCoverGlassBlurPx: 32,
       lyricsHighResolutionNetworkCoverEnabled: false,
+      lyricsMusicReactiveVisualsEnabled: false,
       lyricsBackgroundMode: 'theme',
       lyricsCustomWallpaperPath: null,
       lyricsCoverOpacityPercent: 0,
@@ -1673,6 +1679,7 @@ describe('app settings normalization', () => {
         lyricsImmersiveCoverGlassBlurPx: 12.5,
         lyricsSmartAlignmentEnabled: true,
         lyricsHighResolutionNetworkCoverEnabled: true,
+        lyricsMusicReactiveVisualsEnabled: true,
         lyricsBackgroundMode: 'cover',
         lyricsCoverOpacityPercent: 64.4,
         lyricsCoverBlurPx: 12.5,
@@ -1702,6 +1709,7 @@ describe('app settings normalization', () => {
       lyricsImmersiveCoverGlassBlurPx: 13,
       lyricsSmartAlignmentEnabled: true,
       lyricsHighResolutionNetworkCoverEnabled: true,
+      lyricsMusicReactiveVisualsEnabled: true,
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,
       lyricsCoverBlurPx: 13,

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { AudioStatus } from '../../../shared/types/audio';
+import { createMusicReactiveScene, type MusicReactiveScene } from '../../../shared/utils/musicReactiveScene';
 import { getAudioSession } from '../../audio/AudioSession';
 import {
   decrementWallpaperEngineBridgeClients,
@@ -63,6 +64,7 @@ export type WallpaperEngineBridgeSnapshot = {
     headroomDb: number | null;
     meterSource: 'pre_native_estimated_post_dsp' | null;
   };
+  scene: MusicReactiveScene;
   capabilities: {
     preNativeAudioTelemetry: true;
     supportsWasapiShared: true;
@@ -108,13 +110,41 @@ const writeJson = (response: ServerResponse, statusCode: number, payload: unknow
 const helperScript = `(() => {
   const endpoint = 'http://127.0.0.1:${defaultWallpaperEngineBridgePort}/events';
   let source = null;
+  const setCssVar = (name, value) => {
+    if (typeof document === 'undefined' || !document.documentElement?.style) return;
+    document.documentElement.style.setProperty('--echo-wallpaper-' + name, String(value));
+  };
+  const rounded = (value) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)).toFixed(3) : '0';
+  const applySceneCssVars = (snapshot) => {
+    const scene = snapshot?.scene;
+    if (!scene || typeof document === 'undefined') return;
+    document.documentElement.dataset.echoWallpaperBridge = 'connected';
+    document.documentElement.dataset.echoWallpaperMode = scene.mode || 'idle';
+    setCssVar('energy', rounded(scene.energy));
+    setCssVar('transient', rounded(scene.transient));
+    setCssVar('bass', rounded(scene.bass));
+    setCssVar('mid', rounded(scene.mid));
+    setCssVar('treble', rounded(scene.treble));
+    setCssVar('pressure', rounded(scene.pressure));
+    setCssVar('headroom-db', Number.isFinite(scene.headroomDb) ? scene.headroomDb.toFixed(1) : '0');
+    setCssVar('clipping-risk', scene.clippingRisk ? '1' : '0');
+    (Array.isArray(scene.bands) ? scene.bands : []).slice(0, 12).forEach((value, index) => {
+      setCssVar('band-' + index, rounded(value));
+    });
+  };
   window.echoWallpaperEngineBridge = {
-    connect(onSnapshot) {
+    connect(onSnapshot, options = {}) {
       if (source) source.close();
       source = new EventSource(endpoint);
       source.addEventListener('snapshot', (event) => {
         try {
-          onSnapshot(JSON.parse(event.data));
+          const snapshot = JSON.parse(event.data);
+          if (options.applyCssVariables !== false) {
+            applySceneCssVars(snapshot);
+          }
+          if (typeof onSnapshot === 'function') {
+            onSnapshot(snapshot);
+          }
         } catch (_) {
           // Ignore malformed bridge events.
         }
@@ -162,6 +192,7 @@ export const createWallpaperEngineBridgeSnapshot = (status: AudioStatus): Wallpa
       headroomDb: audioLevels?.headroomDb ?? null,
       meterSource: audioLevels?.meterSource ?? null,
     },
+    scene: createMusicReactiveScene(status),
     capabilities: {
       preNativeAudioTelemetry: true,
       supportsWasapiShared: true,

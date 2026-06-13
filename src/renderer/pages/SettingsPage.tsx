@@ -4315,7 +4315,6 @@ export const SettingsPage = (): JSX.Element => {
   const playbackOutputModesForPlatform = useMemo(() => getPlaybackOutputModesForPlatform(rendererPlatform), [rendererPlatform]);
   const sharedBackendOptionsForPlatform = useMemo(() => getSharedBackendOptionsForPlatform(rendererPlatform), [rendererPlatform]);
   const advancedNativeOutputAvailable = isAdvancedNativeOutputPlatform(rendererPlatform);
-  const windowsIntegrationAvailable = rendererPlatform === 'win32';
   const settingsScrollShellRef = useRef<HTMLDivElement | null>(null);
   const [settingsHorizontalScroll, setSettingsHorizontalScroll] = useState({
     available: false,
@@ -4388,6 +4387,8 @@ export const SettingsPage = (): JSX.Element => {
   const [smtcDiagnostics, setSmtcDiagnostics] = useState<SmtcDiagnostics | null>(null);
   const [smtcRestarting, setSmtcRestarting] = useState(false);
   const [taskbarPlaybackStatus, setTaskbarPlaybackStatus] = useState<TaskbarPlaybackStatus | null>(null);
+  const windowsIntegrationAvailable =
+    rendererPlatform === 'win32' || smtcDiagnostics?.platform === 'win32' || taskbarPlaybackStatus?.supported === true;
   const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
   const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
   const [accountCookies, setAccountCookies] = useState<Record<AccountProvider, string>>({

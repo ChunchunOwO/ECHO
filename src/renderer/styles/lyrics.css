@@ -69,6 +69,14 @@ html[data-theme-preset="darkSideMoon"] {
   --lyrics-cover-color-soft-rgb: 236 241 248;
   --lyrics-cover-color-deep-rgb: 52 58 68;
   --lyrics-cover-color-glow-rgb: var(--preset-accent-rgb, 91 151 220);
+  --lyrics-reactive-energy: 0;
+  --lyrics-reactive-transient: 0;
+  --lyrics-reactive-bass: 0;
+  --lyrics-reactive-mid: 0;
+  --lyrics-reactive-treble: 0;
+  --lyrics-reactive-pressure: 0;
+  --lyrics-reactive-glow-alpha: 0.1;
+  --lyrics-reactive-scale: 1;
   position: relative;
   display: grid;
   height: 100%;
@@ -245,6 +253,105 @@ html[data-theme-preset="darkSideMoon"] {
   filter: blur(var(--lyrics-cover-blur))
     brightness(calc(var(--lyrics-cover-brightness) * 0.82)) saturate(0.92);
   opacity: 1;
+}
+
+.lyrics-music-reactive-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  opacity: calc(0.16 + var(--lyrics-reactive-energy) * 0.58);
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.lyrics-page[data-music-reactive="idle"] .lyrics-music-reactive-layer {
+  opacity: 0.12;
+}
+
+.lyrics-music-reactive-wash {
+  position: absolute;
+  inset: -12%;
+  background:
+    conic-gradient(
+      from calc(210deg + var(--lyrics-reactive-transient) * 90deg) at 50% 52%,
+      rgb(var(--lyrics-cover-color-deep-rgb) / calc(0.1 + var(--lyrics-reactive-pressure) * 0.22)),
+      rgb(var(--lyrics-cover-color-rgb) / calc(0.18 + var(--lyrics-reactive-bass) * 0.24)),
+      rgb(var(--lyrics-cover-color-glow-rgb) / calc(0.14 + var(--lyrics-reactive-transient) * 0.32)),
+      rgb(var(--lyrics-cover-color-soft-rgb) / calc(0.1 + var(--lyrics-reactive-treble) * 0.22)),
+      rgb(var(--lyrics-cover-color-deep-rgb) / calc(0.08 + var(--lyrics-reactive-pressure) * 0.18))
+    ),
+    linear-gradient(
+      115deg,
+      rgb(var(--lyrics-cover-color-rgb) / calc(0.08 + var(--lyrics-reactive-energy) * 0.18)),
+      transparent 46%,
+      rgb(var(--lyrics-cover-color-glow-rgb) / calc(0.1 + var(--lyrics-reactive-mid) * 0.2))
+    );
+  filter:
+    blur(calc(16px + var(--lyrics-reactive-bass) * 26px))
+    saturate(calc(1.05 + var(--lyrics-reactive-energy) * 0.78))
+    brightness(calc(0.9 + var(--lyrics-reactive-pressure) * 0.18));
+  opacity: var(--lyrics-reactive-glow-alpha);
+  transform:
+    scale(var(--lyrics-reactive-scale))
+    rotate(calc(-1.6deg + var(--lyrics-reactive-transient) * 3.2deg));
+  transition:
+    filter 160ms linear,
+    opacity 160ms linear,
+    transform 160ms linear;
+}
+
+.lyrics-page[data-music-reactive="limit"] .lyrics-music-reactive-wash {
+  filter:
+    blur(calc(18px + var(--lyrics-reactive-bass) * 30px))
+    saturate(calc(1.16 + var(--lyrics-reactive-pressure) * 0.68))
+    brightness(calc(0.88 + var(--lyrics-reactive-pressure) * 0.24));
+  opacity: calc(var(--lyrics-reactive-glow-alpha) + 0.12);
+}
+
+.lyrics-music-reactive-spectrum {
+  position: absolute;
+  right: clamp(30px, 6vw, 112px);
+  bottom: clamp(20px, 5vh, 74px);
+  left: clamp(30px, 6vw, 112px);
+  display: grid;
+  height: clamp(72px, 15vh, 172px);
+  align-items: end;
+  gap: clamp(4px, 0.8vw, 12px);
+  grid-template-columns: repeat(12, minmax(4px, 1fr));
+  opacity: calc(0.14 + var(--lyrics-reactive-energy) * 0.54);
+  -webkit-mask-image: linear-gradient(to top, rgb(0 0 0), rgb(0 0 0 / 0.72) 68%, transparent);
+  mask-image: linear-gradient(to top, rgb(0 0 0), rgb(0 0 0 / 0.72) 68%, transparent);
+}
+
+.lyrics-music-reactive-spectrum span {
+  min-height: 12px;
+  height: calc(8% + var(--lyrics-reactive-band-value, 0) * 92%);
+  border-radius: 999px 999px 3px 3px;
+  background:
+    linear-gradient(
+      to top,
+      rgb(var(--lyrics-cover-color-deep-rgb) / calc(0.22 + var(--lyrics-reactive-pressure) * 0.3)),
+      rgb(var(--lyrics-cover-color-rgb) / calc(0.28 + var(--lyrics-reactive-energy) * 0.34)) 56%,
+      rgb(var(--lyrics-cover-color-glow-rgb) / calc(0.26 + var(--lyrics-reactive-transient) * 0.42))
+    );
+  box-shadow:
+    0 -8px 26px rgb(var(--lyrics-cover-color-glow-rgb) / calc(0.08 + var(--lyrics-reactive-transient) * 0.24)),
+    0 -2px 12px rgb(var(--lyrics-cover-color-rgb) / calc(0.06 + var(--lyrics-reactive-energy) * 0.16));
+  transform: scaleY(calc(0.62 + var(--lyrics-reactive-transient) * 0.38));
+  transform-origin: bottom;
+  transition:
+    height 90ms linear,
+    transform 90ms linear,
+    opacity 90ms linear;
+}
+
+.lyrics-page[data-music-reactive-telemetry="fallback"] .lyrics-music-reactive-spectrum {
+  opacity: calc(0.08 + var(--lyrics-reactive-energy) * 0.24);
+}
+
+.lyrics-page[data-music-reactive-clipping="true"] .lyrics-music-reactive-spectrum span {
+  filter: saturate(1.28) brightness(1.08);
 }
 
 html[data-theme="dark"] .page-surface:has(.lyrics-page) {
@@ -5751,6 +5858,8 @@ html[data-theme="dark"] .lyrics-copy-notice {
   .lyrics-word,
   .lyrics-line small,
   .lyrics-line em,
+  .lyrics-music-reactive-wash,
+  .lyrics-music-reactive-spectrum span,
   .lyrics-copy-notice {
     animation: none;
     transition: opacity 120ms ease;

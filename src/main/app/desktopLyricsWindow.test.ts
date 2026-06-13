@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     desktopLyricsLocked: false,
     desktopLyricsBounds: null as { x: number; y: number; width: number; height: number } | null,
     desktopLyricsTextDirection: 'horizontal' as 'horizontal' | 'vertical',
+    lyricsMusicReactiveVisualsEnabled: false,
   },
   createdWindows: [] as Array<{
     visible: boolean;

@@ -165,6 +165,7 @@ const makeAppSettings = (
   lyricsImmersiveCoverGlassEnabled: false,
   lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
+  lyricsMusicReactiveVisualsEnabled: false,
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -2006,6 +2007,52 @@ describe("LyricsPage", () => {
     expect(page.dataset.immersiveCoverStyle).toBeUndefined();
     expect(page.dataset.background).toBe("theme");
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
+  });
+
+  it("renders the music reactive lyrics visual layer from live audio telemetry when enabled", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    const { emitAudioStatus } = mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsMusicReactiveVisualsEnabled: true,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findAllByRole("heading", { name: "Test Song" });
+    act(() => {
+      emitAudioStatus({
+        ...makeAudioStatus(track, 12),
+        audioLevels: {
+          inputPeakDb: -3.8,
+          inputRmsDb: -16,
+          estimatedOutputPeakDb: -3.8,
+          estimatedOutputRmsDb: -16,
+          visualSpectrum: Array.from({ length: 32 }, (_, index) => (index % 8) / 7),
+          visualSpectrumVersion: 2,
+          visualEnergy: 0.68,
+          visualTransient: 0.56,
+          visualTelemetryState: "pcm",
+          headroomDb: 3.2,
+          clipCount: 0,
+          lastClipAt: null,
+          meterSource: "pre_native_estimated_post_dsp",
+        },
+      });
+    });
+
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+    await waitFor(() => expect(page.dataset.musicReactive).toBe("beat"));
+    expect(page.dataset.musicReactiveTelemetry).toBe("pcm");
+    expect(container.querySelector(".lyrics-music-reactive-layer")).toBeTruthy();
+    expect(container.querySelectorAll(".lyrics-music-reactive-spectrum span")).toHaveLength(12);
+    expect(page.style.getPropertyValue("--lyrics-reactive-energy")).toBe("0.680");
+    expect(page.style.getPropertyValue("--lyrics-reactive-transient")).toBe("0.560");
   });
 
   it("uses the current album cover as a full-page lyrics background when immersive cover style is enabled", async () => {

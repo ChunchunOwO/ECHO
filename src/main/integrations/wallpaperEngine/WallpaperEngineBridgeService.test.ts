@@ -101,6 +101,19 @@ const readJson = async <T>(url: string): Promise<T> => {
   return await response.json() as T;
 };
 
+const waitForBridgeClientCount = async (expected: number, timeoutMs = 1_000): Promise<void> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (getWallpaperEngineBridgeClientCount() === expected) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  expect(getWallpaperEngineBridgeClientCount()).toBe(expected);
+};
+
 describe('WallpaperEngineBridgeService', () => {
   afterEach(() => {
     resetWallpaperEngineBridgeRuntimeForTests();
@@ -123,10 +136,18 @@ describe('WallpaperEngineBridgeService', () => {
         supportsWasapiExclusive: true,
         supportsAsio: true,
       },
+      scene: {
+        mode: 'flow',
+        energy: 0.72,
+        transient: 0.35,
+        headroomDb: 4.2,
+        clippingRisk: false,
+      },
     });
     expect(JSON.stringify(snapshot)).not.toContain('secret.flac');
     expect(snapshot.audio.visualSpectrum).toHaveLength(32);
     expect(snapshot.audio.visualTelemetryState).toBe('pcm');
+    expect(snapshot.scene.bands).toHaveLength(12);
   });
 
   it('serves snapshots for WASAPI exclusive and ASIO output modes', async () => {
@@ -178,7 +199,7 @@ describe('WallpaperEngineBridgeService', () => {
       request.on('error', reject);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForBridgeClientCount(0);
     expect(getWallpaperEngineBridgeClientCount()).toBe(0);
     expect(isWallpaperEngineBridgeVisualTelemetryActive()).toBe(false);
     await service.stop();

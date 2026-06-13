@@ -59,6 +59,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsImmersiveCoverGlassEnabled: false,
   lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
+  lyricsMusicReactiveVisualsEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -206,6 +207,7 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
     desktopLyricsTranslationEnabled: true,
     desktopLyricsTextDirection: 'horizontal',
     desktopLyricsBounds: null,
+    lyricsMusicReactiveVisualsEnabled: false,
   },
   ...overrides,
 });
@@ -1336,6 +1338,41 @@ describe('LyricsSettingsDrawer', () => {
     );
     expect(displaySettingsChangedListener).toHaveBeenCalledWith(
       expect.objectContaining({ detail: { lyricsHighResolutionNetworkCoverEnabled: true } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+  });
+
+  it('toggles music reactive visuals from the lyrics background section', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings(patch));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-music-reactive-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-music-reactive-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsMusicReactiveVisualsEnabled: true }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsMusicReactiveVisualsEnabled: true } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsMusicReactiveVisualsEnabled: true } }),
     );
 
     window.removeEventListener('settings:changed', settingsChangedListener);

@@ -39,6 +39,7 @@ export type DesktopLyricsState = {
     | 'desktopLyricsRomanizationEnabled'
     | 'desktopLyricsTranslationEnabled'
     | 'desktopLyricsBounds'
+    | 'lyricsMusicReactiveVisualsEnabled'
   >;
 };
 

@@ -337,6 +337,7 @@ export type AppSettings = {
   lyricsImmersiveCoverGlassEnabled?: boolean;
   lyricsImmersiveCoverGlassBlurPx?: number;
   lyricsHighResolutionNetworkCoverEnabled?: boolean;
+  lyricsMusicReactiveVisualsEnabled?: boolean;
   lyricsBackgroundMode: LyricsBackgroundMode;
   lyricsCustomWallpaperPath: string | null;
   lyricsCoverOpacityPercent: number;

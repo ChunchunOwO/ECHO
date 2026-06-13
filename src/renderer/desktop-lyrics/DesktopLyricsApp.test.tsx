@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AudioStatus } from '../../shared/types/audio';
 import type { ConnectSessionStatus } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LyricLine, TrackLyrics } from '../../shared/types/lyrics';
@@ -31,6 +32,7 @@ const makeDesktopLyricsSettingsBase = (locked: boolean) => ({
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
   desktopLyricsTextDirection: 'horizontal',
+  lyricsMusicReactiveVisualsEnabled: false,
   desktopLyricsBounds: null,
 });
 
@@ -84,12 +86,78 @@ const makeDesktopTrackLyrics = (
   ...overrides,
 });
 
+const makeDesktopAudioStatus = (
+  track: LibraryTrack,
+  overrides: Partial<AudioStatus> = {},
+): AudioStatus => ({
+  host: 'ready',
+  state: 'playing',
+  outputDeviceId: null,
+  outputDeviceName: null,
+  outputDeviceType: null,
+  outputBackend: 'wasapi-shared',
+  activeOutputBackendImpl: null,
+  outputMode: 'shared',
+  useJuceOutputRequested: false,
+  useJuceDecodeRequested: false,
+  activeDecodeBackendImpl: null,
+  volume: 1,
+  playbackRate: 1,
+  playbackSpeedMode: 'nightcore',
+  currentFilePath: track.path,
+  currentTrackId: track.id,
+  currentTrackTitle: track.title,
+  currentTrackArtist: track.artist,
+  currentTrackAlbum: track.album,
+  currentTrackAlbumArtist: track.albumArtist,
+  durationSeconds: track.duration,
+  positionSeconds: 12,
+  channels: 2,
+  codec: track.codec,
+  bitDepth: track.bitDepth,
+  bitrate: track.bitrate,
+  fileSampleRate: track.sampleRate,
+  decoderOutputSampleRate: track.sampleRate,
+  requestedOutputSampleRate: track.sampleRate,
+  actualDeviceSampleRate: track.sampleRate,
+  sharedDeviceSampleRate: track.sampleRate,
+  resampling: false,
+  bitPerfectCandidate: false,
+  sampleRateMismatch: false,
+  eqEnabled: false,
+  channelBalanceEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: null,
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
+  warnings: [],
+  error: null,
+  audioLevels: {
+    inputPeakDb: -4,
+    inputRmsDb: -18,
+    estimatedOutputPeakDb: -4,
+    estimatedOutputRmsDb: -18,
+    visualSpectrum: Array.from({ length: 32 }, (_, index) => (index % 6) / 5),
+    visualSpectrumVersion: 2,
+    visualEnergy: 0.64,
+    visualTransient: 0.52,
+    visualTelemetryState: 'pcm',
+    headroomDb: 2.8,
+    clipCount: 0,
+    lastClipAt: null,
+    meterSource: 'pre_native_estimated_post_dsp',
+  },
+  ...overrides,
+});
+
 const renderDesktopLyricsApp = (
   locked: boolean,
   options: {
     playbackStatus?: PlaybackStatus;
     connectStatus?: ConnectSessionStatus | null;
     settings?: Partial<ReturnType<typeof makeDesktopLyricsSettingsBase>>;
+    audioStatus?: AudioStatus | null;
     track?: LibraryTrack;
     lyrics?: TrackLyrics | null;
   } = {},
@@ -142,7 +210,7 @@ const renderDesktopLyricsApp = (
       play: connectPlay,
     },
     desktopLyrics: {
-      getLastAudioStatus: vi.fn().mockResolvedValue(null),
+      getLastAudioStatus: vi.fn().mockResolvedValue(options.audioStatus ?? null),
       getState: vi.fn().mockResolvedValue({
         visible: true,
         locked,
@@ -432,6 +500,29 @@ describe('desktop lyrics text fitting', () => {
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10 }));
 
     expect(setMousePassthrough).not.toHaveBeenCalledWith(false);
+  });
+
+  it('renders the desktop lyrics music reactive backdrop from forwarded audio telemetry when enabled', async () => {
+    const track = makeDesktopLyricsTrack();
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { lyricsMusicReactiveVisualsEnabled: true },
+      audioStatus: makeDesktopAudioStatus(track),
+      track,
+      lyrics: makeDesktopTrackLyrics([{ timeMs: 0, text: 'Reactive line' }]),
+      playbackStatus: {
+        currentTrackId: track.id,
+        filePath: track.path,
+        state: 'playing',
+        positionMs: 12_000,
+        durationMs: 188_000,
+      },
+    });
+
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    await waitFor(() => expect(app?.getAttribute('data-music-reactive')).toBe('beat'));
+    expect(container.querySelector('.desktop-lyrics-reactive-backdrop')).toBeTruthy();
+    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-energy')).toBe('0.640');
+    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-transient')).toBe('0.520');
   });
 
   it('hides the desktop lyrics menu on mouse leave even after a control keeps focus', async () => {

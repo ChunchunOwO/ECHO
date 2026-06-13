@@ -519,6 +519,7 @@ export const defaultSettings: AppSettings = {
   lyricsImmersiveCoverGlassEnabled: false,
   lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
+  lyricsMusicReactiveVisualsEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -614,7 +615,7 @@ export const defaultSettings: AppSettings = {
   lastFmAuthToken: null,
   smtcEnabled: true,
   smtcLyricsEnabled: false,
-  taskbarPlaybackControlsEnabled: false,
+  taskbarPlaybackControlsEnabled: true,
 };
 
 let cachedSettingsSource: Partial<AppSettings> | null = null;
@@ -1869,6 +1870,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
       ? Math.round(clamp(lyricsImmersiveCoverGlassBlurPx, 0, 32))
       : defaultSettings.lyricsImmersiveCoverGlassBlurPx,
     lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
+    lyricsMusicReactiveVisualsEnabled: settings.lyricsMusicReactiveVisualsEnabled === true,
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),
     lyricsCoverOpacityPercent: Number.isFinite(lyricsCoverOpacityPercent)
@@ -2008,7 +2010,10 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
     lastFmAuthToken: normalizeOptionalText(settings.lastFmAuthToken),
     smtcEnabled: settings.smtcEnabled !== false,
     smtcLyricsEnabled: settings.smtcLyricsEnabled === true,
-    taskbarPlaybackControlsEnabled: settings.taskbarPlaybackControlsEnabled === true,
+    taskbarPlaybackControlsEnabled:
+      settings.taskbarPlaybackControlsEnabled === undefined
+        ? defaultSettings.taskbarPlaybackControlsEnabled
+        : settings.taskbarPlaybackControlsEnabled === true,
   };
 };
 

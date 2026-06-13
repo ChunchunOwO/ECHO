@@ -113,6 +113,7 @@ const linkVersion = '1';
 const streamTokenTtlMs = 5 * 60 * 1000;
 const artworkTokenTtlMs = 30 * 60 * 1000;
 const maxLibraryPageSize = 500;
+const maxJsonBodyBytes = 2 * 1024 * 1024;
 const defaultDeviceName = 'PC ECHO';
 
 const safeHeader = (value: string | string[] | undefined): string | undefined => (typeof value === 'string' ? value : undefined);
@@ -575,6 +576,13 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       font-style: normal;
       font-size: 10px;
       font-weight: 900;
+      pointer-events: auto;
+    }
+    .album-play-hit {
+      cursor: pointer;
+    }
+    .album-play-hit:hover {
+      background: #b8f3e9;
     }
     .album-card[data-busy="true"] .album-mini-controls i {
       color: transparent;
@@ -833,6 +841,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       }
       return state.albums.find((album) => album.id === card.dataset.albumId) || null;
     };
+    const playHitFromPoint = (x, y) => {
+      return document.elementFromPoint(x, y)?.closest?.('.album-play-hit') || null;
+    };
     const handleAlbumTap = (album, x, y) => {
       const now = Date.now();
       const last = state.lastTap;
@@ -1054,7 +1065,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         card.innerHTML =
           '<button type="button">' +
           '<div class="album-cover">' + (album.artworkUrl ? '<img alt="" loading="lazy" decoding="async" src="' + album.artworkUrl + '">' : '') + '</div>' +
-          '<div class="album-copy"><strong></strong><span></span><div class="album-mini-controls"><b></b><i>▶</i></div></div></button>';
+          '<div class="album-copy"><strong></strong><span></span><div class="album-mini-controls"><b></b><i class="album-play-hit" role="button" tabindex="-1">▶</i></div></div></button>';
         card.querySelector('strong').textContent = album.title || 'Untitled Album';
         card.querySelector('span').textContent = album.albumArtist || album.sourceLabel || '';
         card.querySelector('b').textContent = (album.trackCount || 0) + ' tracks';
@@ -1062,6 +1073,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         card.querySelector('button').title = album.title || 'Untitled Album';
         card.querySelector('img')?.addEventListener('error', (event) => {
           event.currentTarget.remove();
+        });
+        card.querySelector('.album-play-hit')?.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clearClickTimer();
+          playAlbum(album).catch((error) => toast(error.message));
         });
         card.querySelector('button').addEventListener('click', (event) => {
           event.preventDefault();
@@ -1143,6 +1160,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         row.querySelector('span').textContent = track.title || ('Track ' + (index + 1));
         row.addEventListener('click', (event) => {
           event.preventDefault();
+          playAlbum(album, track.id).catch((error) => toast(error.message));
         });
         row.addEventListener('dblclick', (event) => {
           event.preventDefault();
@@ -1311,7 +1329,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         state.suppressClickUntil = Date.now() + 180;
         startMomentum();
       } else if (Date.now() >= state.suppressClickUntil) {
+        const playHit = playHitFromPoint(event.clientX, event.clientY);
         const album = albumFromPoint(event.clientX, event.clientY);
+        if (playHit && album) {
+          clearClickTimer();
+          playAlbum(album).catch((error) => toast(error.message));
+          window.setTimeout(() => { state.dragMoved = false; }, 0);
+          return;
+        }
         if (album) {
           handleAlbumTap(album, event.clientX, event.clientY);
         }
@@ -1374,7 +1399,7 @@ const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.byteLength;
-    if (size > 64 * 1024) {
+    if (size > maxJsonBodyBytes) {
       throw new HttpError(413, 'body_too_large');
     }
     chunks.push(buffer);

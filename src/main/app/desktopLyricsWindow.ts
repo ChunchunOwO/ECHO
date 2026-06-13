@@ -55,6 +55,7 @@ const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled,
     desktopLyricsBounds: settings.desktopLyricsBounds,
+    lyricsMusicReactiveVisualsEnabled: settings.lyricsMusicReactiveVisualsEnabled,
   };
 };
 

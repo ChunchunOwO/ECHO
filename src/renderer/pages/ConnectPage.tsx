@@ -1129,6 +1129,50 @@ export const ConnectPage = (): JSX.Element => {
     : echoLinkStatus.token
       ? `${echoLinkStatus.token.slice(0, 6)}...${echoLinkStatus.token.slice(-6)}`
       : '-';
+  const lanStreamerCount = visibleDevices.filter((device) => device.protocol === 'dlna').length;
+  const airPlayOutputCount = visibleDevices.filter((device) => device.protocol === 'airplay').length;
+  const hqPlayerOutputCount = visibleDevices.filter((device) => device.protocol === 'hqplayer').length;
+  const echoLinkStatusLabel = echoLinkStatus.running ? '在线' : echoLinkStatus.error ? '异常' : echoLinkStatus.enabled ? '启动中' : '未开启';
+  const echoLinkWebStatusLabel = echoLinkWebControlUrl ? 'Web 遥控就绪' : '等待 ECHO Link';
+  const receiverCommandLabel = receiverStatus.enabled ? t(receiverStateLabel[receiverStatus.state]) : '未开启';
+  const airPlayCommandLabel = airPlayReceiverStatus.enabled ? t(airPlayStateLabel[airPlayReceiverStatus.state]) : '未开启';
+  const latestEchoLinkHttpError = echoLinkStatus.diagnostics.recentHttpErrors[0] ?? null;
+  const commandCenterIssues = [
+    error ? { source: 'Connect', detail: error } : null,
+    status.error ? { source: 'Output', detail: status.error } : null,
+    receiverStatus.error ? { source: 'DLNA Receiver', detail: receiverStatus.error } : null,
+    airPlayReceiverStatus.error ? { source: 'AirPlay', detail: airPlayReceiverStatus.error } : null,
+    echoLinkStatus.error ? { source: 'ECHO Link', detail: echoLinkStatus.error } : null,
+    echoLinkStatus.mdns.error ? { source: 'mDNS', detail: echoLinkStatus.mdns.error } : null,
+    latestEchoLinkHttpError ? { source: 'Web Remote', detail: latestEchoLinkHttpError.message } : null,
+    hqPlayerStatus?.lastError ? { source: 'HQPlayer', detail: hqPlayerStatus.lastError } : null,
+  ].filter((issue): issue is { source: string; detail: string } => Boolean(issue?.detail?.trim())).slice(0, 4);
+  const commandCenterHealth =
+    commandCenterIssues.length > 0
+      ? 'warning'
+      : status.state === 'playing' || receiverStatus.state === 'playing' || airPlayReceiverStatus.state === 'playing'
+        ? 'active'
+        : echoLinkStatus.running || visibleDevices.length > 0 || hqPlayerState === 'available'
+          ? 'online'
+          : 'idle';
+  const commandCenterHealthLabel =
+    commandCenterHealth === 'warning'
+      ? '需要关注'
+      : commandCenterHealth === 'active'
+        ? '正在投送'
+        : commandCenterHealth === 'online'
+          ? '中枢在线'
+          : '待机';
+  const commandCenterRouteLabel = status.deviceId
+    ? `当前输出 / ${activeTargetLabel}`
+    : receiverStatus.state === 'playing'
+      ? `Phone / ${receiverStatus.advertisedName}`
+      : airPlayReceiverStatus.state === 'playing'
+        ? `AirPlay / ${airPlayReceiverStatus.advertisedName}`
+        : '等待选择输出';
+  const commandCenterErrorLabel = commandCenterIssues[0]
+    ? `${commandCenterIssues[0].source}: ${commandCenterIssues[0].detail}`
+    : '最近没有连接失败';
 
   const refreshDonatorUnlockStatus = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1885,13 +1929,22 @@ export const ConnectPage = (): JSX.Element => {
   if (donatorUnlockStatus.unlocked !== true) {
     return (
       <div className="connect-page connect-page--locked">
-        <section className="connect-donator-lock" aria-label="Donator Only">
+        <section className="connect-donator-lock" aria-label="Connect Command Center locked">
           <div className="connect-donator-lock__icon" aria-hidden="true">
             {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={30} /> : <LockKeyhole size={30} />}
+          </div>
+          <div className="connect-donator-lock__intro">
+            <span>Connect Command Center</span>
+            <strong>局域网音频中枢</strong>
+            <small>手机扫码配对、Web 遥控、AirPlay / DLNA / HQPlayer 和 ECHO Link 会在解锁后集中到这里。</small>
           </div>
           <p className="section-kicker">WIRELESS PLAYBACK</p>
           <h1>Donator Only</h1>
           <p>{connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason]}</p>
+          <div className="connect-donator-lock__status">
+            <span>Unlock Gate</span>
+            <strong>{donatorUnlockStatus.pluginInstalled ? (donatorUnlockStatus.pluginEnabled ? 'Plugin enabled' : 'Plugin disabled') : 'Plugin not imported'}</strong>
+          </div>
           <div className="connect-donator-lock__facts">
             <span>
               <em>Plugin</em>
@@ -1963,6 +2016,96 @@ export const ConnectPage = (): JSX.Element => {
           <span>{error}</span>
         </div>
       ) : null}
+
+      <section className="connect-command-center" data-state={commandCenterHealth} aria-label="Connect Command Center">
+        <div className="connect-command-center__headline">
+          <div className="connect-command-center__title">
+            <span className="connect-command-center__badge" data-state={commandCenterHealth}>{commandCenterHealthLabel}</span>
+            <p className="section-kicker">LAN AUDIO HUB</p>
+            <h2>Connect Command Center</h2>
+            <p>{commandCenterRouteLabel}</p>
+          </div>
+          <div className="connect-command-center__actions">
+            <button className="settings-action-button" type="button" onClick={() => void openEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
+              <Smartphone size={15} />
+              Web 遥控
+            </button>
+            <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkPairing()} disabled={!echoLinkPairingUri}>
+              {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
+              手机配对
+            </button>
+            <button className="settings-action-button" type="button" onClick={() => void refreshDevices()} disabled={isRefreshing}>
+              {isRefreshing ? <Loader2 className="spinning-icon" size={15} /> : <RefreshCw size={15} />}
+              全局刷新
+            </button>
+          </div>
+        </div>
+
+        <div className="connect-command-center__body">
+          <div className="connect-command-center__qr-card">
+            <div className="connect-command-center__qr" data-empty={echoLinkQrDataUrl ? 'false' : 'true'}>
+              {echoLinkQrDataUrl ? <img src={echoLinkQrDataUrl} alt="" /> : <Smartphone size={34} />}
+            </div>
+            <div>
+              <span>PHONE PAIRING</span>
+              <strong>{echoLinkStatus.running ? '扫码连接手机 ECHO' : '等待 ECHO Link 启动'}</strong>
+              <small>{echoLinkPairingUri ?? 'echo://pair 尚未启用'}</small>
+            </div>
+          </div>
+
+          <div className="connect-command-center__status-grid">
+            <article data-state={echoLinkStatus.running ? 'online' : echoLinkStatus.error ? 'warning' : 'idle'}>
+              <Server size={18} />
+              <span>ECHO Link</span>
+              <strong>{echoLinkStatusLabel}</strong>
+              <small>{echoLinkAddressLabel}</small>
+            </article>
+            <article data-state={echoLinkWebControlUrl ? 'online' : 'idle'}>
+              <Smartphone size={18} />
+              <span>Web Remote</span>
+              <strong>{echoLinkWebStatusLabel}</strong>
+              <small>{echoLinkWebControlUrl ?? 'http://LAN-IP:26789/echo-link/web'}</small>
+            </article>
+            <article data-state={receiverStatus.enabled ? 'online' : 'idle'}>
+              <Radio size={18} />
+              <span>DLNA Receiver</span>
+              <strong>{receiverCommandLabel}</strong>
+              <small>{receiverStatus.currentClient?.address ?? `${receiverStatus.addresses.length} LAN address`}</small>
+            </article>
+            <article data-state={airPlayReceiverStatus.error ? 'warning' : airPlayReceiverStatus.enabled ? 'online' : 'idle'}>
+              <Cast size={18} />
+              <span>AirPlay</span>
+              <strong>{airPlayCommandLabel}</strong>
+              <small>{airPlayReceiverProtocol === 'airplay2' ? 'AirPlay 2 experimental' : 'AirPlay 1 / RAOP'}</small>
+            </article>
+            <article data-state={hqPlayerState === 'available' ? 'online' : hqPlayerState === 'unavailable' || hqPlayerState === 'not-configured' ? 'warning' : 'idle'}>
+              <Cable size={18} />
+              <span>HQPlayer</span>
+              <strong>{t(hqPlayerStateLabel[hqPlayerState])}</strong>
+              <small>{hqPlayerEndpointLabel}</small>
+            </article>
+            <article data-state={visibleDevices.length > 0 ? 'online' : 'idle'}>
+              <SlidersHorizontal size={18} />
+              <span>Outputs</span>
+              <strong>{visibleDevices.length} 个入口</strong>
+              <small>{lanStreamerCount} DLNA / {airPlayOutputCount} AirPlay / {hqPlayerOutputCount} HQPlayer</small>
+            </article>
+          </div>
+        </div>
+
+        <div className="connect-command-center__route" aria-label="当前投送链路">
+          <span>ECHO</span>
+          <strong>{previewTitle}</strong>
+          <span>{status.deviceId ? `Output / ${activeTargetLabel}` : 'No output'}</span>
+          <strong>{status.state === 'idle' ? 'Standby' : t(stateLabel[status.state])}</strong>
+        </div>
+
+        <div className="connect-command-center__issues" data-empty={commandCenterIssues.length === 0 ? 'true' : undefined}>
+          <AlertTriangle size={16} />
+          <strong>{commandCenterErrorLabel}</strong>
+          {commandCenterIssues.length > 1 ? <small>另有 {commandCenterIssues.length - 1} 条连接事件</small> : null}
+        </div>
+      </section>
 
       <section className="connect-stage" aria-label={t('connectPage.stage.aria')}>
         <section className="connect-now connect-now--stage" aria-label={t('connectPage.nowPlaying.aria')}>

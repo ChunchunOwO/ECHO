@@ -85,6 +85,8 @@ const createWindow = () => ({
   sent: [] as Array<[string, unknown]>,
   setProgressBar: vi.fn(),
   setThumbarButtons: vi.fn((_buttons: Array<{ click: () => void }>) => true),
+  getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 720 })),
+  setThumbnailClip: vi.fn(),
   setThumbnailToolTip: vi.fn(),
   setTitle: vi.fn(),
   isDestroyed() {
@@ -123,8 +125,10 @@ describe('TaskbarPlaybackIntegration', () => {
 
     expect(window.setProgressBar).toHaveBeenCalledWith(0.25, { mode: 'normal' });
     expect(window.setTitle).toHaveBeenCalledWith('Song A - Artist A | ECHO Next');
+    expect(window.setThumbnailClip).toHaveBeenCalledWith({ x: 0, y: 624, width: 1280, height: 96 });
     expect(window.setThumbnailToolTip).toHaveBeenCalledWith('Song A - Artist A | ECHO Next');
     expect(window.setThumbarButtons).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ tooltip: 'Pause' })]));
+    expect(integration.getStatus()).toMatchObject({ thumbnailClip: 'player-bar' });
     integration.dispose();
   });
 
@@ -195,6 +199,7 @@ describe('TaskbarPlaybackIntegration', () => {
     expect(window.setProgressBar).toHaveBeenCalledWith(-1);
     expect(window.setThumbarButtons).toHaveBeenCalledWith([]);
     expect(window.setTitle).toHaveBeenCalledWith('ECHO NEXT');
+    expect(window.setThumbnailClip).toHaveBeenCalledWith({ x: 0, y: 0, width: 1280, height: 720 });
   });
 
   it('clears taskbar state when taskbar playback controls are disabled', async () => {

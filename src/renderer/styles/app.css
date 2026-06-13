@@ -17816,6 +17816,382 @@ html[data-theme="dark"] .history-play-count {
   flex-wrap: wrap;
 }
 
+.connect-donator-lock__intro {
+  display: grid;
+  gap: 6px;
+  max-width: 470px;
+}
+
+.connect-donator-lock__intro span {
+  color: var(--theme-accent-text);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.connect-donator-lock__intro strong {
+  color: var(--theme-heading-text);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.connect-donator-lock__intro small {
+  font-size: 13px;
+}
+
+.connect-donator-lock__status {
+  display: inline-grid;
+  min-width: min(100%, 360px);
+  gap: 4px;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--theme-warning-text) 24%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-warning-bg) 72%, var(--color-bg-elevated));
+  text-align: center;
+}
+
+.connect-donator-lock__status span {
+  color: var(--theme-warning-text);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.connect-donator-lock__status strong {
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.connect-command-center {
+  display: grid;
+  gap: 15px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent-border) 42%, var(--color-border));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--theme-accent-bg) 82%, var(--color-bg-elevated) 18%), var(--color-bg-elevated) 46%, color-mix(in srgb, var(--theme-success-bg) 58%, var(--color-bg-elevated) 42%)),
+    var(--color-bg-elevated);
+  box-shadow:
+    var(--theme-shadow-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 92%, transparent);
+}
+
+.connect-command-center[data-state="warning"] {
+  border-color: color-mix(in srgb, var(--theme-warning-text) 34%, var(--color-border));
+}
+
+.connect-command-center__headline,
+.connect-command-center__actions,
+.connect-command-center__body,
+.connect-command-center__qr-card,
+.connect-command-center__route,
+.connect-command-center__issues {
+  min-width: 0;
+}
+
+.connect-command-center__headline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.connect-command-center__title {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.connect-command-center__title .section-kicker,
+.connect-command-center__title h2,
+.connect-command-center__title p {
+  margin: 0;
+}
+
+.connect-command-center__title h2 {
+  color: var(--theme-heading-text);
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.connect-command-center__title p:last-child {
+  max-width: 720px;
+  overflow: hidden;
+  color: var(--theme-subtle-text);
+  font-size: 13px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-command-center__badge {
+  width: fit-content;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--theme-accent-text);
+  border: 1px solid color-mix(in srgb, var(--theme-accent-text) 24%, var(--color-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-accent-bg) 72%, var(--color-bg-elevated) 28%);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.connect-command-center__badge[data-state="active"],
+.connect-command-center__badge[data-state="online"] {
+  color: var(--theme-success-text);
+  border-color: color-mix(in srgb, var(--theme-success-text) 26%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-success-bg) 72%, var(--color-bg-elevated) 28%);
+}
+
+.connect-command-center__badge[data-state="warning"] {
+  color: var(--theme-warning-text);
+  border-color: color-mix(in srgb, var(--theme-warning-text) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-warning-bg) 72%, var(--color-bg-elevated) 28%);
+}
+
+.connect-command-center__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.connect-command-center__body {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.connect-command-center__qr-card {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent-border) 36%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 78%, var(--theme-accent-bg) 22%);
+}
+
+.connect-command-center__qr {
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--theme-accent-text);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.connect-command-center__qr[data-empty="true"] {
+  background: var(--theme-control-bg);
+}
+
+.connect-command-center__qr img {
+  width: 118px;
+  height: 118px;
+  object-fit: contain;
+}
+
+.connect-command-center__qr-card span,
+.connect-command-center__status-grid span {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.connect-command-center__qr-card strong,
+.connect-command-center__status-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-weight: 860;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-command-center__qr-card small,
+.connect-command-center__status-grid small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-subtle-text);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-command-center__status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.connect-command-center__status-grid article {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
+}
+
+.connect-command-center__status-grid svg {
+  color: var(--theme-accent-text);
+}
+
+.connect-command-center__status-grid article[data-state="online"] {
+  border-color: color-mix(in srgb, var(--theme-success-text) 26%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-success-bg) 48%, var(--color-bg-elevated) 52%);
+}
+
+.connect-command-center__status-grid article[data-state="warning"] {
+  border-color: color-mix(in srgb, var(--theme-warning-text) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-warning-bg) 48%, var(--color-bg-elevated) 52%);
+}
+
+.connect-command-center__status-grid article[data-state="warning"] svg {
+  color: var(--theme-warning-text);
+}
+
+.connect-command-center__route {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.1fr) auto minmax(0, 0.8fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent-border) 32%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 62%, transparent);
+}
+
+.connect-command-center__route span {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.connect-command-center__route strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-command-center__issues {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  color: var(--theme-warning-text);
+  border: 1px solid color-mix(in srgb, var(--theme-warning-text) 24%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-warning-bg) 52%, var(--color-bg-elevated) 48%);
+}
+
+.connect-command-center__issues[data-empty="true"] {
+  color: var(--theme-success-text);
+  border-color: color-mix(in srgb, var(--theme-success-text) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--theme-success-bg) 46%, var(--color-bg-elevated) 54%);
+}
+
+.connect-command-center__issues strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-command-center__issues small {
+  margin-left: auto;
+  color: var(--theme-subtle-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .connect-command-center__body {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-command-center__status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .connect-command-center__headline {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connect-command-center__actions {
+    justify-content: stretch;
+  }
+
+  .connect-command-center__actions .settings-action-button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .connect-command-center__title p:last-child {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 640px) {
+  .connect-command-center {
+    padding: 14px;
+  }
+
+  .connect-command-center__title h2 {
+    font-size: 24px;
+  }
+
+  .connect-command-center__qr-card,
+  .connect-command-center__status-grid,
+  .connect-command-center__route {
+    grid-template-columns: 1fr;
+  }
+
+  .connect-command-center__qr {
+    width: 112px;
+    height: 112px;
+  }
+
+  .connect-command-center__qr img {
+    width: 100px;
+    height: 100px;
+  }
+
+  .connect-command-center__issues {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .connect-command-center__issues small {
+    width: 100%;
+    margin-left: 25px;
+  }
+}
+
 .connect-hqplayer-panel {
   display: grid;
   gap: 16px;
@@ -19462,6 +19838,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 }
 
 .app-shell--wallpaper-ready .connect-now--stage,
+.app-shell--wallpaper-ready .connect-command-center,
 .app-shell--wallpaper-ready .connect-device-section--stage,
 .app-shell--wallpaper-ready .connect-hqplayer-panel,
 .app-shell--wallpaper-ready .connect-echo-link-panel,
@@ -19476,6 +19853,10 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 }
 
 .app-shell--wallpaper-ready .connect-device-row,
+.app-shell--wallpaper-ready .connect-command-center__qr-card,
+.app-shell--wallpaper-ready .connect-command-center__status-grid article,
+.app-shell--wallpaper-ready .connect-command-center__route,
+.app-shell--wallpaper-ready .connect-command-center__issues,
 .app-shell--wallpaper-ready .connect-device-empty,
 .app-shell--wallpaper-ready .connect-hidden-devices,
 .app-shell--wallpaper-ready .connect-radio-row,
@@ -19496,6 +19877,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 }
 
 .app-shell--wallpaper-ready .connect-artwork,
+.app-shell--wallpaper-ready .connect-command-center__qr,
 .app-shell--wallpaper-ready .connect-device-icon,
 .app-shell--wallpaper-ready .connect-radio-icon,
 .app-shell--wallpaper-ready .connect-hqplayer-icon,
@@ -19514,6 +19896,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 .app-shell--wallpaper-ready[data-wallpaper-unified-opacity="true"] .page-surface:has(.connect-page),
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .page-surface:has(.connect-page),
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-now--stage,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-section--stage,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-panel,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-echo-link-panel,
@@ -19521,6 +19904,10 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-receiver-panel,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-outgoing-debug,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-row,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center__qr-card,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center__status-grid article,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center__route,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center__issues,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-empty,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hidden-devices,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-row,
@@ -19530,6 +19917,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-status-grid,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-plan,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-artwork,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-command-center__qr,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-icon,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-icon,
 .app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-icon,

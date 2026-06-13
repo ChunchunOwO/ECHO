@@ -1503,6 +1503,8 @@ export type TranslationKey =
   | 'lyricsSettings.background.immersiveCoverGlass'
   | 'lyricsSettings.background.immersiveCoverGlassDescription'
   | 'lyricsSettings.background.immersiveCoverGlassBlur'
+  | 'lyricsSettings.background.musicReactiveVisuals'
+  | 'lyricsSettings.background.musicReactiveVisualsDescription'
   | 'lyricsSettings.background.mode.customWallpaper'
   | 'lyricsSettings.background.mode.theme'
   | 'lyricsSettings.background.modeAria'
@@ -5981,6 +5983,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.background.immersiveCoverGlass': '沉浸封面毛玻璃',
   'lyricsSettings.background.immersiveCoverGlassDescription': '只为歌词阅读区域增加柔和毛玻璃，不改变封面铺底；关闭时保持纯封面背景。',
   'lyricsSettings.background.immersiveCoverGlassBlur': '毛玻璃模糊',
+  'lyricsSettings.background.musicReactiveVisuals': '音乐响应视觉',
+  'lyricsSettings.background.musicReactiveVisualsDescription': '在歌词页和桌面歌词后方加入跟随电平、瞬态、余量和封面颜色变化的视觉层；低负载播放模式会自动暂停。',
   'lyricsSettings.background.mode.cover': '跟随封面',
   'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自定义壁纸',
@@ -9186,6 +9190,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.background.immersiveCoverGlass': '沉浸封面毛玻璃',
   'lyricsSettings.background.immersiveCoverGlassDescription': '只為歌詞閱讀區域增加柔和毛玻璃，不改變封面鋪底；關閉時保持純封面背景。',
   'lyricsSettings.background.immersiveCoverGlassBlur': '毛玻璃模糊',
+  'lyricsSettings.background.musicReactiveVisuals': '音樂響應視覺',
+  'lyricsSettings.background.musicReactiveVisualsDescription': '在歌詞頁和桌面歌詞後方加入跟隨電平、瞬態、餘量和封面顏色變化的視覺層；低負載播放模式會自動暫停。',
   'lyricsSettings.background.mode.cover': '跟隨封面',
   'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自訂桌布',
@@ -12221,6 +12227,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.background.immersiveCoverGlass': '没入カバーのガラスぼかし',
   'lyricsSettings.background.immersiveCoverGlassDescription': '歌詞の読み取り領域だけに柔らかなガラスぼかしを追加します。背景カバー自体は変更しません。',
   'lyricsSettings.background.immersiveCoverGlassBlur': 'ガラスぼかし',
+  'lyricsSettings.background.musicReactiveVisuals': '音楽リアクティブ表示',
+  'lyricsSettings.background.musicReactiveVisualsDescription': '歌詞ページとデスクトップ歌詞の背面に、レベル、トランジェント、ヘッドルーム、カバー色に反応するビジュアル層を追加します。低負荷再生モードでは自動的に停止します。',
   'lyricsSettings.background.mode.cover': 'カバーに合わせる',
   'lyricsSettings.background.mode.coverColor': 'カバー色',
   'lyricsSettings.background.mode.customWallpaper': 'カスタム壁紙',
@@ -15320,6 +15328,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.background.immersiveCoverGlass': 'Immersive cover glass',
   'lyricsSettings.background.immersiveCoverGlassDescription': 'Adds a soft glass blur only behind the lyrics reading area without changing the full-cover background.',
   'lyricsSettings.background.immersiveCoverGlassBlur': 'Glass blur',
+  'lyricsSettings.background.musicReactiveVisuals': 'Music reactive visuals',
+  'lyricsSettings.background.musicReactiveVisualsDescription': 'Adds a visual layer behind lyrics and desktop lyrics that follows levels, transients, headroom, and cover color; low-load playback mode pauses it automatically.',
   'lyricsSettings.background.mode.cover': 'Follow cover',
   'lyricsSettings.background.mode.coverColor': 'Cover color',
   'lyricsSettings.background.mode.customWallpaper': 'Custom wallpaper',

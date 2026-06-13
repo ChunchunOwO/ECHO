@@ -12,8 +12,11 @@ import { getMainWindow } from './windowManager';
 
 const defaultWindowTitle = 'ECHO NEXT';
 const activeTitleSuffix = 'ECHO Next';
+const taskbarPlayerBarThumbnailHeight = 96;
 
 type TaskbarWindow = Pick<BrowserWindow, 'isDestroyed' | 'setProgressBar' | 'setThumbarButtons' | 'setTitle'> & {
+  getContentBounds?: () => Electron.Rectangle;
+  setThumbnailClip?: (region: Electron.Rectangle) => void;
   setThumbnailToolTip?: (toolTip: string) => void;
   webContents: Pick<BrowserWindow['webContents'], 'send'>;
 };
@@ -215,6 +218,7 @@ const createEmptyStatus = (platform: NodeJS.Platform, bound: boolean, windowAvai
   title: defaultWindowTitle,
   progress: null,
   thumbarButtons: null,
+  thumbnailClip: null,
   lastSyncAt: null,
   lastAppliedAt: null,
   lastClearedAt: null,
@@ -310,6 +314,7 @@ export class TaskbarPlaybackIntegration {
     try {
       this.updateProgress(status, progress);
       this.updateTitle(this.status.title);
+      this.updateThumbnailClip();
       this.updateThumbarButtons(status);
       this.updateProgressTimer(status);
       this.status = {
@@ -333,6 +338,7 @@ export class TaskbarPlaybackIntegration {
     this.window.setProgressBar(-1);
     this.window.setThumbarButtons([]);
     this.window.setTitle(defaultWindowTitle);
+    this.clearThumbnailClip();
     this.window.setThumbnailToolTip?.(defaultWindowTitle);
     this.lastThumbarKey = null;
     this.status = {
@@ -340,6 +346,7 @@ export class TaskbarPlaybackIntegration {
       title: defaultWindowTitle,
       progress: null,
       thumbarButtons: null,
+      thumbnailClip: null,
       lastClearedAt: new Date().toISOString(),
     };
   }
@@ -385,6 +392,45 @@ export class TaskbarPlaybackIntegration {
   private updateTitle(title: string): void {
     this.window.setTitle(title);
     this.window.setThumbnailToolTip?.(title);
+  }
+
+  private updateThumbnailClip(): void {
+    if (!this.window.setThumbnailClip || !this.window.getContentBounds) {
+      this.status = {
+        ...this.status,
+        thumbnailClip: null,
+      };
+      return;
+    }
+
+    const bounds = this.window.getContentBounds();
+    const width = Math.max(1, Math.round(bounds.width));
+    const height = Math.max(1, Math.round(bounds.height));
+    const clipHeight = Math.max(1, Math.min(taskbarPlayerBarThumbnailHeight, height));
+    this.window.setThumbnailClip({
+      x: 0,
+      y: height - clipHeight,
+      width,
+      height: clipHeight,
+    });
+    this.status = {
+      ...this.status,
+      thumbnailClip: 'player-bar',
+    };
+  }
+
+  private clearThumbnailClip(): void {
+    if (!this.window.setThumbnailClip || !this.window.getContentBounds) {
+      return;
+    }
+
+    const bounds = this.window.getContentBounds();
+    this.window.setThumbnailClip({
+      x: 0,
+      y: 0,
+      width: Math.max(1, Math.round(bounds.width)),
+      height: Math.max(1, Math.round(bounds.height)),
+    });
   }
 
   private updateThumbarButtons(status: AudioStatus): void {

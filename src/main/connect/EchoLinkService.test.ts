@@ -474,6 +474,18 @@ describe('EchoLinkService', () => {
     expect(dispatchPlaybackAction).not.toHaveBeenCalledWith('nextTrack');
   });
 
+  it('accepts large queueReplace bodies for big album playback', async () => {
+    const largeTrackIds = Array.from({ length: 9000 }, () => 'track-1');
+    const response = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'queueReplace', trackIds: largeTrackIds, startTrackId: 'track-1', output: 'pc' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-1' }));
+  });
+
   it('routes queue navigation commands through the existing playback action bus', async () => {
     const nextResponse = await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
       method: 'POST',

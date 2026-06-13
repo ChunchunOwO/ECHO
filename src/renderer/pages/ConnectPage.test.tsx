@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../shared/types/appSettings';
 import { hqPlayerConnectDeviceId, type ConnectDevice, type ConnectSessionStatus } from '../../shared/types/connect';
+import type { EchoLinkServerStatus } from '../../shared/types/echoLink';
 import type {
   HqPlayerPlaybackControlPlan,
   HqPlayerPlaybackControlSendState,
@@ -275,6 +276,37 @@ const dlnaConnectStatus: ConnectSessionStatus = {
   ],
 };
 
+const echoLinkServerStatus: EchoLinkServerStatus = {
+  enabled: true,
+  running: true,
+  port: 26789,
+  host: '192.168.1.20',
+  addresses: ['192.168.1.20'],
+  pairingUri: null,
+  webControlUrl: null,
+  token: 'pair-token-1234567890',
+  deviceName: 'PC ECHO',
+  deviceId: 'pc-echo',
+  activeMediaTokens: 1,
+  activeArtworkTokens: 0,
+  mdns: {
+    state: 'advertising',
+    serviceName: '_echo-link._tcp.local',
+    error: null,
+    advertisedAddresses: ['192.168.1.20'],
+  },
+  diagnostics: {
+    selectedLanAddress: '192.168.1.20',
+    lastPhoneConnectionAt: '2026-05-21T01:02:00.000Z',
+    lastAuthFailureAt: null,
+    authFailureCount: 0,
+    lastMediaTokenServed: null,
+    recentHttpErrors: [],
+  },
+  error: null,
+  updatedAt: '2026-05-21T01:02:00.000Z',
+};
+
 const installEchoBridge = (
   status: HqPlayerStatus,
   settings: HqPlayerSettings = hqSettings,
@@ -354,6 +386,12 @@ const installEchoBridge = (
       setAirPlayReceiverEnabled: vi.fn(),
       stopAirPlayReceiverPlayback: vi.fn(),
       onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      getEchoLinkStatus: vi.fn().mockResolvedValue(echoLinkServerStatus),
+      setEchoLinkEnabled: vi.fn().mockResolvedValue(echoLinkServerStatus),
+      rotateEchoLinkToken: vi.fn().mockResolvedValue({
+        ...echoLinkServerStatus,
+        token: 'rotated-token-1234567890',
+      }),
     },
     hqPlayer: {
       getSettings: vi.fn().mockResolvedValue(settings),
@@ -434,10 +472,26 @@ describe('ConnectPage HQPlayer controls', () => {
     renderConnectPage();
 
     expect(await screen.findByRole('heading', { name: 'Donator Only' })).toBeTruthy();
+    expect(screen.getByText('Connect Command Center')).toBeTruthy();
     expect(screen.getByText('导入插件')).toBeTruthy();
     await waitFor(() => expect(bridge.connect.getDonatorUnlockStatus).toHaveBeenCalled());
     expect(bridge.connect.listDevices).not.toHaveBeenCalled();
     expect(bridge.connect.refresh).not.toHaveBeenCalled();
+    expect(bridge.connect.getEchoLinkStatus).not.toHaveBeenCalled();
+  });
+
+  it('surfaces ECHO Link pairing, web remote, and protocol health in the Command Center', async () => {
+    const bridge = installEchoBridge(hqStatus('available'), hqSettings, dlnaConnectStatus, [dlnaDevice, hqPlayerDevice]);
+    renderConnectPage();
+
+    expect(await screen.findByRole('heading', { name: 'Connect Command Center' })).toBeTruthy();
+    await waitFor(() => expect(bridge.connect.getEchoLinkStatus).toHaveBeenCalled());
+    expect(screen.getByText('正在投送')).toBeTruthy();
+    expect(screen.getByText('扫码连接手机 ECHO')).toBeTruthy();
+    expect(screen.getByText('Web 遥控就绪')).toBeTruthy();
+    expect(screen.getAllByText('192.168.1.20:26789').length).toBeGreaterThan(0);
+    expect(screen.getByText('1 DLNA / 0 AirPlay / 1 HQPlayer')).toBeTruthy();
+    expect(screen.getByText('最近没有连接失败')).toBeTruthy();
   });
 
   it('shows HQPlayer as a Connect output device and routes connection through Connect', async () => {

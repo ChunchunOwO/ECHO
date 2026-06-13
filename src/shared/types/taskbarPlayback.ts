@@ -11,6 +11,7 @@ export type TaskbarPlaybackStatus = {
   title: string;
   progress: number | null;
   thumbarButtons: 'playing' | 'paused' | null;
+  thumbnailClip: 'player-bar' | null;
   lastSyncAt: string | null;
   lastAppliedAt: string | null;
   lastClearedAt: string | null;

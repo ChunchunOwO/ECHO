@@ -59,6 +59,7 @@ import { beginPlaybackSeekSnapshot, refreshPlaybackStatus, useSharedPlaybackStat
 import { logLyricsConsole } from "../diagnostics/lyricsConsole";
 import { openAlbumDetailForTrack } from "../utils/albumNavigation";
 import { serializeFontList } from "../preferences/appearancePreferences";
+import { createMusicReactiveScene, musicReactiveSceneToCssVars } from "../../shared/utils/musicReactiveScene";
 
 type LyricsPageProps = {
   initialLyrics?: LyricLine[];
@@ -174,6 +175,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsImmersiveCoverGlassEnabled"
   | "lyricsImmersiveCoverGlassBlurPx"
   | "lyricsHighResolutionNetworkCoverEnabled"
+  | "lyricsMusicReactiveVisualsEnabled"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
   | "lyricsBackgroundScalePercent"
@@ -193,6 +195,7 @@ const playbackRateChangeDiscontinuitySeconds = 0.35;
 const albumNavigationTransitionMs = 180;
 const lyricSeekPreviewMaxMs = 1200;
 const lyricsDrawerToolsChangedEvent = "app:lyrics-drawer-tools-changed";
+const lyricsMusicReactiveBandIndexes = Array.from({ length: 12 }, (_, index) => index);
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
@@ -232,6 +235,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsImmersiveCoverGlassEnabled: false,
   lyricsImmersiveCoverGlassBlurPx: 16,
   lyricsHighResolutionNetworkCoverEnabled: false,
+  lyricsMusicReactiveVisualsEnabled: false,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
   lyricsBackgroundScalePercent: 100,
@@ -1076,6 +1080,7 @@ const selectLyricsDisplaySettings = (
   lyricsImmersiveCoverGlassEnabled: settings.lyricsImmersiveCoverGlassEnabled === true,
   lyricsImmersiveCoverGlassBlurPx: settings.lyricsImmersiveCoverGlassBlurPx ?? fallbackLyricsDisplaySettings.lyricsImmersiveCoverGlassBlurPx,
   lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
+  lyricsMusicReactiveVisualsEnabled: settings.lyricsMusicReactiveVisualsEnabled === true,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
   lyricsBackgroundScalePercent: settings.lyricsBackgroundScalePercent,
@@ -1200,6 +1205,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsImmersiveCoverGlassEnabled",
   "lyricsImmersiveCoverGlassBlurPx",
   "lyricsHighResolutionNetworkCoverEnabled",
+  "lyricsMusicReactiveVisualsEnabled",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
   "lyricsBackgroundScalePercent",
@@ -2011,6 +2017,18 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     shouldUseImmersiveCoverStyle &&
     effectiveLyricsBackgroundMode === "cover" &&
     lyricsDisplaySettings.lyricsImmersiveCoverGlassEnabled === true;
+  const musicReactiveScene = useMemo(
+    () => createMusicReactiveScene(activeAudioStatus),
+    [activeAudioStatus],
+  );
+  const shouldUseMusicReactiveVisuals =
+    lyricsDisplaySettings.lyricsMusicReactiveVisualsEnabled === true &&
+    lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true &&
+    lyricsViewMode === "lyrics";
+  const musicReactiveCssVars = useMemo(
+    () => musicReactiveSceneToCssVars(musicReactiveScene, "lyrics-reactive"),
+    [musicReactiveScene],
+  );
   const effectiveLyricsBackgroundScalePercent =
     effectiveLyricsBackgroundMode === "cover"
       ? Math.max(100, lyricsDisplaySettings.lyricsBackgroundScalePercent)
@@ -2127,6 +2145,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         "--lyrics-background-bleed": `-${lyricsDisplaySettings.lyricsCoverBlurPx * 2}px`,
         ...(coverColorCssVars ?? {}),
         ...(smartReadableColors ?? {}),
+        ...(shouldUseMusicReactiveVisuals ? musicReactiveCssVars : {}),
       }) as CSSProperties,
     [
       coverColorCssVars,
@@ -2146,6 +2165,8 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsDisplaySettings.lyricsContextOpacityPercent,
       lyricsDisplaySettings.lyricsWordHighlightClarityPercent,
       lyricsWallpaperUrl,
+      musicReactiveCssVars,
+      shouldUseMusicReactiveVisuals,
       smartReadableColors,
     ],
   );
@@ -4428,6 +4449,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       data-view-mode={lyricsViewMode}
       data-mv-lyrics-hidden={shouldHideLyricsInMv ? "true" : undefined}
       data-airplay-receiver={isCurrentAirPlayReceiverTrack ? "true" : undefined}
+      data-music-reactive={shouldUseMusicReactiveVisuals ? musicReactiveScene.mode : undefined}
+      data-music-reactive-telemetry={shouldUseMusicReactiveVisuals ? musicReactiveScene.visualTelemetryState : undefined}
+      data-music-reactive-clipping={shouldUseMusicReactiveVisuals && musicReactiveScene.clippingRisk ? "true" : undefined}
       data-window-maximized={isWindowMaximized}
       style={lyricsPageStyle}
       onDragLeave={handleLyricsDragLeave}
@@ -4435,6 +4459,21 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       onDrop={handleLyricsDrop}
     >
       <div className="lyrics-backdrop" aria-hidden="true" />
+      {shouldUseMusicReactiveVisuals ? (
+        <div className="lyrics-music-reactive-layer" aria-hidden="true">
+          <div className="lyrics-music-reactive-wash" />
+          <div className="lyrics-music-reactive-spectrum">
+            {lyricsMusicReactiveBandIndexes.map((index) => (
+              <span
+                key={index}
+                style={{
+                  "--lyrics-reactive-band-value": musicReactiveScene.bands[index]?.toFixed(3) ?? "0",
+                } as CSSProperties}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
       {isCustomLyricsDragging ? (
         <div className="lyrics-custom-lrc-drop" aria-hidden="true">
           <Upload size={28} />

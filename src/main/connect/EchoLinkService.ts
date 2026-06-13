@@ -214,6 +214,29 @@ const sourceLabelForTrack = (track: LibraryTrack): string => {
 const canPlayOnPhone = (track: LibraryTrack): boolean =>
   (track.mediaType ?? 'local') === 'local' && existsSync(track.path) && isAndroidFriendlyAudioPath(track.path);
 
+const firstNonEmpty = (...values: Array<string | null | undefined>): string | null => {
+  for (const value of values) {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return null;
+};
+
+const fileNameFromPath = (filePath: string | null | undefined): string | null => {
+  const trimmed = firstNonEmpty(filePath);
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.split(/[\\/]/u).pop() ?? trimmed;
+};
+
+const webSafeArtworkUrl = (value: string | null | undefined): string | null => {
+  const trimmed = firstNonEmpty(value);
+  return trimmed && /^(https?:|data:)/iu.test(trimmed) ? trimmed : null;
+};
+
 const formatLrcTimestamp = (timeMs: number): string => {
   const safe = Math.max(0, Math.floor(timeMs));
   const minutes = Math.floor(safe / 60000);
@@ -284,14 +307,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0f1115;
-      --panel: rgba(24, 27, 34, 0.84);
-      --panel-strong: rgba(35, 39, 48, 0.94);
-      --line: rgba(255, 255, 255, 0.12);
-      --text: #f6f3ee;
-      --muted: #a8b0bd;
-      --accent: #8fe1d1;
-      --warm: #f2c57c;
+      --bg: #080a0f;
+      --panel: rgba(15, 18, 27, 0.74);
+      --panel-strong: rgba(18, 22, 31, 0.96);
+      --line: rgba(255, 255, 255, 0.13);
+      --text: #f8f5ef;
+      --muted: #aeb7c5;
+      --accent: #9be8f4;
+      --warm: #ffcf7a;
+      --rose: #ff8caf;
+      --violet: #a98cff;
+      --glass: rgba(13, 11, 17, 0.56);
       --danger: #ff8a8a;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -301,7 +327,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       min-height: 100vh;
       overflow-x: hidden;
       color: var(--text);
-      background: linear-gradient(135deg, #111319 0%, #15171d 48%, #101218 100%);
+      background:
+        linear-gradient(120deg, rgba(255, 140, 175, 0.26), transparent 34%),
+        linear-gradient(310deg, rgba(155, 232, 244, 0.18), transparent 38%),
+        linear-gradient(18deg, rgba(255, 207, 122, 0.1), transparent 32%),
+        linear-gradient(135deg, #211520 0%, #10131d 48%, #08151a 100%);
+      background-size: auto;
     }
     button, input { font: inherit; }
     button {
@@ -310,8 +341,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       color: var(--text);
       background: rgba(255, 255, 255, 0.08);
       cursor: pointer;
+      transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
     }
     button:disabled { cursor: not-allowed; opacity: 0.52; }
+    button:hover:not(:disabled) {
+      border-color: rgba(155, 232, 244, 0.42);
+      background: rgba(155, 232, 244, 0.12);
+      transform: translateY(-1px);
+    }
     .shell {
       position: relative;
       min-height: 100vh;
@@ -324,30 +361,47 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       z-index: 10;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(15, 17, 21, 0.74);
-      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.24);
-      backdrop-filter: blur(18px);
+      background: rgba(8, 10, 15, 0.7);
+      box-shadow: 0 20px 54px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255,255,255,0.08);
+      backdrop-filter: blur(22px);
+      opacity: 0.24;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .topbar:hover,
+    .now:hover,
+    .sea-head:hover,
+    .topbar:focus-within,
+    .now:focus-within,
+    .sea-head:focus-within {
+      opacity: 1;
     }
     .topbar {
       top: 14px;
       left: 14px;
-      right: 14px;
+      right: auto;
+      width: auto;
+      max-width: calc(100vw - 28px);
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 14px;
+      grid-template-columns: auto auto;
+      gap: 12px;
       align-items: center;
-      padding: 10px 12px;
+      padding: 8px 9px 8px 11px;
+      border-color: rgba(255,255,255,0.08);
+      background: rgba(12, 10, 15, 0.48);
+      transform: scale(0.92);
+      transform-origin: top left;
     }
     .brand small, .now small, .album-detail small, .sea-head small {
       display: block;
       color: var(--muted);
       font-size: 12px;
       font-weight: 740;
+      letter-spacing: 0;
       text-transform: uppercase;
     }
     .brand strong {
       display: block;
-      font-size: clamp(22px, 3vw, 36px);
+      font-size: clamp(18px, 2vw, 24px);
       line-height: 1.02;
     }
     .controls {
@@ -357,9 +411,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       gap: 8px;
     }
     .controls button, .album-detail button {
-      min-height: 38px;
-      padding: 0 14px;
+      min-height: 34px;
+      min-width: 34px;
+      padding: 0 10px;
+      font-size: 15px;
       font-weight: 780;
+      line-height: 1;
     }
     .controls button.primary, .album-detail button.primary {
       color: #071210;
@@ -373,6 +430,32 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       cursor: grab;
       touch-action: none;
       user-select: none;
+      perspective: 1400px;
+      background:
+        linear-gradient(120deg, rgba(255, 140, 175, 0.28), transparent 42%),
+        linear-gradient(300deg, rgba(155, 232, 244, 0.18), transparent 46%),
+        linear-gradient(180deg, rgba(8, 7, 11, 0.08), rgba(8, 7, 11, 0.72));
+    }
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.1), transparent 20%, transparent 70%, rgba(0,0,0,0.45)),
+        linear-gradient(90deg, rgba(0,0,0,0.32), transparent 18%, transparent 82%, rgba(0,0,0,0.42));
+      opacity: 0.9;
+    }
+    .stage::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,0.08), transparent 18%, transparent 74%, rgba(0,0,0,0.4)),
+        linear-gradient(90deg, rgba(0,0,0,0.3), transparent 22%, transparent 78%, rgba(0,0,0,0.32));
     }
     .stage[data-dragging="true"] {
       cursor: grabbing;
@@ -384,12 +467,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       grid-template-columns: 86px minmax(0, 280px);
       gap: 12px;
       align-items: center;
-      max-width: min(92vw, 420px);
-      padding: 10px;
+      max-width: min(92vw, 360px);
+      padding: 8px;
+      border-color: rgba(255,255,255,0.08);
+      background: rgba(12, 10, 15, 0.52);
+      opacity: 0.2;
+      transform: scale(0.74);
+      transform-origin: bottom left;
     }
     .now-art {
-      width: 86px;
-      height: 86px;
+      width: 66px;
+      height: 66px;
       overflow: hidden;
       border-radius: 8px;
       background: #1f232b;
@@ -402,7 +490,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     }
     .now h1 {
       margin: 0;
-      font-size: 25px;
+      font-size: 20px;
       line-height: 1.1;
     }
     .now p {
@@ -413,6 +501,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .now .progress-row,
     .now .search {
       grid-column: 1 / -1;
+    }
+    .now .search {
+      display: none;
     }
     .progress {
       height: 7px;
@@ -440,7 +531,11 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       border-radius: 8px;
       outline: 0;
       color: var(--text);
-      background: rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.08);
+    }
+    .search input:focus {
+      border-color: rgba(155, 232, 244, 0.56);
+      box-shadow: 0 0 0 3px rgba(155, 232, 244, 0.12);
     }
     .sea-head {
       top: 92px;
@@ -449,14 +544,59 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
-      max-width: min(92vw, 360px);
-      padding: 10px 12px;
+      max-width: min(92vw, 420px);
+      padding: 8px 9px;
+      border-color: rgba(255,255,255,0.08);
+      background: rgba(12, 10, 15, 0.46);
+      transform: scale(0.9);
+      transform-origin: top right;
     }
-    .sea-head h2 { margin: 0; font-size: 18px; }
+    .sea-head h2 { margin: 0; font-size: 15px; }
     .sea-head small { color: var(--muted); font-weight: 680; }
+    .album-mural {
+      position: absolute;
+      inset: -8%;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+      filter: saturate(1.12);
+    }
+    .album-mural::after {
+      content: "";
+      position: absolute;
+      inset: -2%;
+      background: rgba(8, 7, 11, 0.08);
+      backdrop-filter: blur(2px);
+    }
+    .album-mural-tile {
+      position: absolute;
+      left: var(--mural-x);
+      top: var(--mural-y);
+      width: var(--mural-w);
+      aspect-ratio: 0.72;
+      overflow: hidden;
+      border-radius: 12px;
+      opacity: var(--mural-opacity);
+      transform: rotate(var(--mural-rotate)) scale(var(--mural-scale));
+      filter: blur(var(--mural-blur));
+      box-shadow: 0 24px 70px rgba(0,0,0,0.4);
+    }
+    .album-mural-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .album-mural-tile::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.18) 42%, rgba(0,0,0,0.72));
+    }
     .sea-viewport {
       position: absolute;
       inset: 0;
+      z-index: 2;
       overflow: hidden;
       cursor: grab;
       touch-action: none;
@@ -480,31 +620,65 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       left: var(--card-x);
       top: var(--card-y);
       width: var(--card-w, 142px);
+      z-index: var(--card-z, 1);
       min-width: 0;
       overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.14);
+      padding: 0;
+      border: 1px solid rgba(255,255,255,0.045);
       border-radius: 8px;
-      background: var(--panel-strong);
-      box-shadow: 0 14px 30px rgba(0,0,0,0.24);
-      transform: translateZ(0) rotate(var(--tilt, 0deg));
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04) 18%, rgba(13, 11, 17, 0.72) 64%, rgba(8, 7, 11, 0.9)),
+        var(--glass);
+      box-shadow: 0 18px 56px rgba(0,0,0,var(--card-shadow, 0.36)), inset 0 1px 0 rgba(255,255,255,0.08);
+      transform: translate3d(0, var(--depth-y, 0), 0) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
       opacity: var(--opacity, 1);
-      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1)) blur(var(--card-blur, 0px));
+      backdrop-filter: blur(18px) saturate(1.18);
+      contain: layout paint style;
+      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
       will-change: transform;
+      backface-visibility: hidden;
+    }
+    .album-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.18), transparent 22%),
+        linear-gradient(315deg, rgba(255, 140, 175, 0.12), transparent 46%);
+      opacity: 0.72;
+    }
+    .album-card::after {
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      z-index: 2;
+      width: 32px;
+      height: 32px;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 45%, rgba(255,255,255,0.72) 49%, transparent 53%),
+        linear-gradient(180deg, transparent 45%, rgba(255,255,255,0.72) 49%, transparent 53%);
+      opacity: 0.22;
+      transform: rotate(18deg) scale(var(--spark-scale, 1));
     }
     .album-card:hover {
-      border-color: rgba(143, 225, 209, 0.72);
-      box-shadow: 0 18px 42px rgba(0,0,0,0.34);
-      transform: translate3d(0, -6px, 0) rotate(0deg);
+      border-color: rgba(255,255,255,0.16);
+      box-shadow: 0 30px 78px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
+      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 0) rotate(0deg) scale(1.025);
+      filter: saturate(1.08) brightness(1.04) blur(0);
       opacity: 1;
     }
     .album-card[data-selected="true"] {
-      border-color: rgba(242, 197, 124, 0.82);
-      box-shadow: 0 24px 58px rgba(242, 197, 124, 0.16), 0 18px 38px rgba(0,0,0,0.3);
+      border-color: rgba(255,255,255,0.2);
+      box-shadow: 0 26px 70px rgba(255, 178, 213, 0.16), 0 22px 56px rgba(0,0,0,0.4);
       opacity: 1;
     }
     .album-card[data-now="true"] {
-      border-color: rgba(143, 225, 209, 0.9);
-      box-shadow: 0 26px 64px rgba(143, 225, 209, 0.18), 0 18px 38px rgba(0,0,0,0.32);
+      border-color: rgba(255, 192, 220, 0.52);
+      box-shadow: 0 30px 78px rgba(255, 160, 204, 0.16), 0 22px 56px rgba(0,0,0,0.42);
       opacity: 1;
     }
     .album-card[data-busy="true"] {
@@ -513,11 +687,13 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     }
     .album-card button {
       position: relative;
-      display: grid;
+      z-index: 1;
+      display: block;
       width: 100%;
       padding: 0;
       border: 0;
       border-radius: 0;
+      color: inherit;
       text-align: left;
       background: transparent;
     }
@@ -526,19 +702,52 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       outline-offset: -2px;
     }
     .album-cover {
+      position: relative;
+      width: 100%;
       aspect-ratio: 1;
+      margin: 0;
       overflow: hidden;
-      background: #20242d;
+      border: 0;
+      border-radius: 0;
+      background:
+        linear-gradient(135deg, rgba(169, 140, 255, 0.78), rgba(255, 140, 175, 0.72) 46%, rgba(155, 232, 244, 0.58)),
+        linear-gradient(45deg, rgba(255,255,255,0.14) 0 10%, transparent 10% 20%, rgba(255,255,255,0.12) 20% 30%, transparent 30% 100%),
+        #20242d;
+      box-shadow: none;
+    }
+    .album-cover::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,0.22), transparent 28%),
+        linear-gradient(315deg, transparent 58%, rgba(255,255,255,0.14));
+      mix-blend-mode: screen;
+    }
+    .album-cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      border-radius: inherit;
+    }
+    .album-cover img {
+      position: relative;
+      z-index: 1;
     }
     .album-copy {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      min-height: 56px;
-      padding: 8px 9px;
-      background: linear-gradient(180deg, rgba(10, 12, 16, 0), rgba(10, 12, 16, 0.86) 28%, rgba(10, 12, 16, 0.96));
-      backdrop-filter: blur(6px);
+      position: relative;
+      z-index: 2;
+      min-height: 98px;
+      margin: -1px 0 0;
+      padding: 15px 10px 43px;
+      border: 0;
+      border-radius: 0;
+      background: linear-gradient(180deg, rgba(38,34,43,0.52), rgba(7,7,10,0.86));
+      backdrop-filter: blur(22px) saturate(1.28);
     }
     .album-copy strong, .album-copy span {
       display: -webkit-box;
@@ -547,48 +756,105 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     }
     .album-copy strong {
       -webkit-line-clamp: 2;
-      font-size: 13px;
-      line-height: 1.25;
+      padding-right: 28px;
+      color: var(--text);
+      font-size: 13.5px;
+      line-height: 1.22;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
     .album-copy span {
-      margin-top: 4px;
+      margin-top: 5px;
       -webkit-line-clamp: 1;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 12.5px;
     }
-    .album-mini-controls {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 6px;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 11px;
-    }
-    .album-mini-controls i {
+    .album-more {
+      position: absolute;
+      top: 10px;
+      right: 10px;
       display: grid;
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       place-items: center;
+      border: 0;
       border-radius: 999px;
-      color: #071210;
-      background: rgba(143, 225, 209, 0.92);
+      color: var(--muted);
+      background: rgba(255,255,255,0.035);
       font-style: normal;
       font-size: 10px;
       font-weight: 900;
+    }
+    .album-track-count {
+      display: none;
+    }
+    .album-mini-controls {
+      position: absolute;
+      left: 9px;
+      right: 9px;
+      bottom: 9px;
+      display: grid;
+      grid-template-columns: 1fr 1.18fr 1fr 1fr;
+      align-items: center;
+      justify-items: center;
+      gap: 6px;
+      margin-top: 0;
+    }
+    .album-mini-controls i,
+    .album-mini-controls em {
+      display: grid;
+      width: 100%;
+      max-width: 28px;
+      height: 28px;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      color: rgba(248, 245, 239, 0.78);
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(12px);
+      font-style: normal;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .album-mini-controls i {
+      width: 32px;
+      max-width: 32px;
+      height: 32px;
+      color: #071210;
+      border-color: transparent;
+      background: linear-gradient(135deg, rgba(155, 232, 244, 0.98), rgba(255, 140, 175, 0.82));
       pointer-events: auto;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+      font-size: 13px;
+      transform: translateY(-1px);
+    }
+    .album-mini-controls em {
+      pointer-events: none;
     }
     .album-play-hit {
       cursor: pointer;
     }
     .album-play-hit:hover {
-      background: #b8f3e9;
+      background: #c8f6ff;
     }
     .album-card[data-busy="true"] .album-mini-controls i {
       color: transparent;
       background:
         radial-gradient(circle at center, transparent 44%, #071210 46%, #071210 54%, transparent 56%),
-        rgba(143, 225, 209, 0.92);
+        rgba(155, 232, 244, 0.94);
+    }
+    .stage[data-dragging="true"] .album-card {
+      filter: saturate(1);
+      backdrop-filter: none;
+      transition: none;
+      box-shadow: 0 18px 48px rgba(0,0,0,0.34);
+    }
+    .stage[data-dragging="true"] .album-copy,
+    .stage[data-dragging="true"] .album-mini-controls i,
+    .stage[data-dragging="true"] .album-mini-controls em {
+      backdrop-filter: none;
+    }
+    .stage[data-dragging="true"] .album-mural {
+      filter: none;
     }
     .album-detail {
       position: fixed;
@@ -696,38 +962,108 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .toast[data-open="true"] { display: block; }
     @media (max-width: 760px) {
       .topbar {
-        grid-template-columns: minmax(0, 1fr);
+        left: 12px;
+        right: 12px;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 8px;
-        padding: 9px 10px;
+        padding: 8px;
+      }
+      .brand small {
+        font-size: 10px;
       }
       .brand strong {
-        font-size: 26px;
+        overflow: hidden;
+        font-size: 20px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       .controls {
         flex-wrap: nowrap;
-        justify-content: flex-start;
+        justify-content: flex-end;
+        gap: 6px;
       }
       .controls button {
-        flex: 1 1 0;
-        min-width: 0;
-        min-height: 34px;
-        padding: 0 7px;
-        font-size: 13px;
+        flex: 0 0 32px;
+        width: 32px;
+        min-height: 32px;
+        padding: 0;
+        font-size: 15px;
       }
       .sea-head {
-        top: 138px;
-        left: 14px;
-        right: 14px;
-        max-width: none;
+        top: 86px;
+        left: auto;
+        right: 12px;
+        grid-template-columns: auto;
+        max-width: max-content;
+        padding: 6px;
+      }
+      .sea-head div {
+        display: none;
+      }
+      .sea-head button {
+        min-height: 30px;
+        padding: 0 12px;
+        font-size: 12px;
       }
       .now {
-        left: 14px;
-        right: 14px;
-        bottom: 14px;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        grid-template-columns: 58px minmax(0, 1fr);
+        gap: 10px;
         max-width: none;
+        padding: 8px;
+      }
+      .now-art {
+        width: 58px;
+        height: 58px;
+      }
+      .now h1 {
+        overflow: hidden;
+        font-size: 20px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .now p {
+        overflow: hidden;
+        font-size: 13px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .now .search {
+        display: none;
+      }
+      .progress {
+        height: 5px;
       }
       .album-card {
         width: var(--card-w, 132px);
+      }
+      .album-copy {
+        min-height: 82px;
+        margin: 0;
+        padding: 11px 9px 38px;
+      }
+      .album-copy strong {
+        font-size: 13px;
+      }
+      .album-copy span {
+        font-size: 11.5px;
+      }
+      .album-mini-controls {
+        left: 10px;
+        right: 10px;
+        bottom: 9px;
+      }
+      .album-mini-controls i,
+      .album-mini-controls em {
+        max-width: 24px;
+        height: 25px;
+      }
+      .album-mini-controls i {
+        width: 28px;
+        max-width: 28px;
+        height: 28px;
       }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -745,13 +1081,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         <strong>Album Sea</strong>
       </div>
       <div class="controls" aria-label="Playback controls">
-        <button id="prevBtn" type="button">上一首</button>
-        <button id="playBtn" class="primary" type="button">播放/暂停</button>
-        <button id="nextBtn" type="button">下一首</button>
-        <button id="stopBtn" type="button">停止</button>
+        <button id="prevBtn" type="button" aria-label="上一首" title="上一首">&#9198;</button>
+        <button id="playBtn" class="primary" type="button" aria-label="播放/暂停" title="播放/暂停">&#9654;</button>
+        <button id="nextBtn" type="button" aria-label="下一首" title="下一首">&#9197;</button>
+        <button id="stopBtn" type="button" aria-label="停止" title="停止">&#9632;</button>
       </div>
     </header>
     <main class="stage">
+      <div class="album-mural" id="albumMural" aria-hidden="true"></div>
       <aside class="now">
         <div class="now-art"><img id="nowArt" alt="" hidden></div>
         <div>
@@ -804,6 +1141,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       velocityX: 0,
       velocityY: 0,
       momentumFrame: 0,
+      panFrame: 0,
       clickTimer: 0,
       playingAlbumId: null,
       commandBusy: 0,
@@ -815,6 +1153,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     };
     const $ = (id) => document.getElementById(id);
     const stage = document.querySelector('.stage');
+    const maxRenderedAlbums = 300;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const fmt = (ms) => {
       const safe = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -949,6 +1288,15 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       $('albumSea').style.setProperty('--pan-x', state.panX + 'px');
       $('albumSea').style.setProperty('--pan-y', state.panY + 'px');
     };
+    const requestPan = () => {
+      if (state.panFrame) {
+        return;
+      }
+      state.panFrame = window.requestAnimationFrame(() => {
+        state.panFrame = 0;
+        applyPan();
+      });
+    };
     const panBounds = () => ({
       minX: -world.width + window.innerWidth * 0.72,
       maxX: -window.innerWidth * 0.32,
@@ -975,6 +1323,10 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       if (state.momentumFrame) {
         window.cancelAnimationFrame(state.momentumFrame);
         state.momentumFrame = 0;
+      }
+      if (state.panFrame) {
+        window.cancelAnimationFrame(state.panFrame);
+        state.panFrame = 0;
       }
       state.velocityX = 0;
       state.velocityY = 0;
@@ -1016,15 +1368,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       applyPan();
     };
     const updateLayout = () => {
-      const count = Math.max(1, state.albums.length);
+      const count = Math.max(1, Math.min(maxRenderedAlbums, state.albums.length));
       const wide = window.innerWidth >= 760;
       const aspect = Math.max(0.72, Math.min(2.2, window.innerWidth / Math.max(1, window.innerHeight)));
-      layout.cellW = wide ? 150 : 126;
-      layout.cellH = wide ? 164 : 138;
-      layout.cols = Math.max(wide ? 9 : 5, Math.ceil(Math.sqrt(count * aspect * 1.22)));
-      layout.rows = Math.max(wide ? 5 : 7, Math.ceil(count / layout.cols));
-      world.width = Math.max(Math.ceil(window.innerWidth * 2.35), layout.cols * layout.cellW + 360);
-      world.height = Math.max(Math.ceil(window.innerHeight * 2.25), layout.rows * layout.cellH + 320);
+      layout.cellW = wide ? 232 : 178;
+      layout.cellH = wide ? 310 : 252;
+      layout.cols = wide
+        ? Math.max(8, Math.ceil(Math.sqrt(count * aspect * 0.82)))
+        : Math.max(5, Math.ceil(Math.sqrt(count * aspect * 0.42)));
+      layout.rows = Math.max(wide ? 6 : 7, Math.ceil(count / layout.cols));
+      world.width = Math.max(Math.ceil(window.innerWidth * 2.05), layout.cols * layout.cellW + 480);
+      world.height = Math.max(Math.ceil(window.innerHeight * 2.08), layout.rows * layout.cellH + 440);
       const sea = $('albumSea');
       sea.style.width = world.width + 'px';
       sea.style.height = world.height + 'px';
@@ -1033,18 +1387,96 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const raw = Math.sin((index + 1) * 9283.123 + state.randomSeed * 31 + salt * 97) * 10000;
       return raw - Math.floor(raw);
     };
+    const muralStyle = (index) => {
+      const wide = window.innerWidth >= 760;
+      const x = Math.round(-8 + seeded(index, 20) * 116);
+      const y = Math.round(-10 + seeded(index, 21) * 120);
+      const width = Math.round((wide ? 104 : 82) + seeded(index, 22) * (wide ? 210 : 108));
+      const scale = 0.78 + seeded(index, 23) * 0.74;
+      const rotate = (seeded(index, 24) - 0.5) * 18;
+      const opacity = 0.24 + seeded(index, 25) * 0.34;
+      const blur = 1.2 + seeded(index, 26) * (wide ? 4.2 : 3.1);
+      return '--mural-x:' + x + '%;--mural-y:' + y + '%;--mural-w:' + width + 'px;--mural-scale:' + scale.toFixed(3) + ';--mural-rotate:' + rotate.toFixed(2) + 'deg;--mural-opacity:' + opacity.toFixed(3) + ';--mural-blur:' + blur.toFixed(2) + 'px';
+    };
+    const renderMural = () => {
+      const mural = $('albumMural');
+      if (!mural) {
+        return;
+      }
+      mural.innerHTML = '';
+      const albums = state.albums.filter((album) => album.artworkUrl).slice(0, 72);
+      albums.forEach((album, index) => {
+        const tile = document.createElement('i');
+        tile.className = 'album-mural-tile';
+        tile.style.cssText = muralStyle(index);
+        const img = document.createElement('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = album.artworkUrl;
+        img.addEventListener('error', () => tile.remove());
+        tile.appendChild(img);
+        mural.appendChild(tile);
+      });
+    };
     const albumStyle = (index) => {
       const wide = window.innerWidth >= 760;
-      const size = Math.round((wide ? 118 : 100) + seeded(index, 1) * (wide ? 28 : 22));
-      const col = index % layout.cols;
-      const row = Math.floor(index / layout.cols);
-      const jitterX = (seeded(index, 2) - 0.5) * Math.min(34, layout.cellW * 0.24);
-      const jitterY = (seeded(index, 3) - 0.5) * Math.min(34, layout.cellH * 0.24);
-      const x = Math.round(180 + col * layout.cellW + jitterX);
-      const y = Math.round(160 + row * layout.cellH + jitterY);
-      const tilt = (seeded(index, 4) - 0.5) * 3.2;
-      const opacity = 0.82 + seeded(index, 5) * 0.16;
-      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3);
+      const heroOffsets = [
+        [-315, -205],
+        [-105, -185],
+        [118, -178],
+        [342, -210],
+        [-444, -28],
+        [-220, 8],
+        [6, -12],
+        [248, 24],
+        [470, 4],
+        [-365, 178],
+        [-125, 172],
+        [126, 170],
+        [370, 190],
+        [-520, 316],
+        [-258, 328],
+        [18, 308],
+        [286, 338],
+        [540, 304],
+        [-78, -354],
+        [214, -352],
+      ];
+      const depth = seeded(index, 10);
+      const hero = wide && index < heroOffsets.length;
+      const near = hero ? index < 9 : depth > 0.76;
+      const far = hero ? index >= 15 : depth < 0.3;
+      const baseSize = near ? (wide ? 148 : 124) : far ? (wide ? 90 : 78) : (wide ? 112 : 98);
+      const size = Math.round(baseSize + seeded(index, 1) * (near ? (wide ? 34 : 24) : far ? (wide ? 22 : 16) : (wide ? 30 : 20)));
+      const slotCount = Math.max(1, layout.cols * layout.rows);
+      const slot = (index * 37 + Math.floor(seeded(index, 15) * slotCount)) % slotCount;
+      const col = slot % layout.cols;
+      const row = Math.floor(slot / layout.cols);
+      const originX = Math.round((world.width - layout.cols * layout.cellW) / 2 + (wide ? 22 : 12));
+      const originY = Math.round((world.height - layout.rows * layout.cellH) / 2 + (wide ? 24 : 16));
+      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.26;
+      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.16;
+      const jitterX = (seeded(index, 2) - 0.5) * Math.min(116, layout.cellW * 0.36);
+      const jitterY = (seeded(index, 3) - 0.5) * Math.min(132, layout.cellH * 0.34);
+      const heroOffset = heroOffsets[index] || [0, 0];
+      const x = hero
+        ? Math.round(world.width / 2 + heroOffset[0] + (seeded(index, 2) - 0.5) * 28)
+        : Math.round(originX + col * layout.cellW + waveX + jitterX);
+      const y = hero
+        ? Math.round(world.height / 2 + heroOffset[1] + (seeded(index, 3) - 0.5) * 28)
+        : Math.round(originY + row * layout.cellH + waveY + jitterY);
+      const tilt = (seeded(index, 4) - 0.5) * (near ? 3.2 : far ? 9.5 : 5.6);
+      const scale = near ? 0.98 + seeded(index, 6) * 0.18 : far ? 0.58 + seeded(index, 6) * 0.2 : 0.76 + seeded(index, 6) * 0.22;
+      const opacity = near ? 0.9 + seeded(index, 5) * 0.1 : far ? 0.28 + seeded(index, 5) * 0.24 : 0.56 + seeded(index, 5) * 0.26;
+      const depthY = Math.round((seeded(index, 7) - 0.5) * (near ? 12 : far ? 72 : 38));
+      const blur = near ? 0 : far ? 3.4 + seeded(index, 9) * 4.2 : seeded(index, 8) > 0.62 ? 1.0 + seeded(index, 9) * 1.8 : 0;
+      const z = near ? 40 + Math.round(seeded(index, 11) * 20) : far ? 1 + Math.round(seeded(index, 11) * 8) : 14 + Math.round(seeded(index, 11) * 18);
+      const bright = near ? 1.04 : far ? 0.76 : 0.92;
+      const sat = near ? 1.08 : far ? 0.82 : 0.98;
+      const shadow = near ? 0.48 : far ? 0.22 : 0.34;
+      const sparkle = near ? 0.72 + seeded(index, 12) * 0.5 : far ? 0.38 + seeded(index, 12) * 0.32 : 0.54 + seeded(index, 12) * 0.36;
+      return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--card-blur:' + blur.toFixed(2) + 'px;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
     };
     const renderAlbums = () => {
       updateLayout();
@@ -1055,7 +1487,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         applyPan();
         return;
       }
-      state.albums.forEach((album, index) => {
+      const renderedAlbums = state.albums.slice(0, maxRenderedAlbums);
+      renderedAlbums.forEach((album, index) => {
         const card = document.createElement('article');
         card.className = 'album-card';
         card.dataset.albumId = album.id;
@@ -1065,7 +1498,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         card.innerHTML =
           '<button type="button">' +
           '<div class="album-cover">' + (album.artworkUrl ? '<img alt="" loading="lazy" decoding="async" src="' + album.artworkUrl + '">' : '') + '</div>' +
-          '<div class="album-copy"><strong></strong><span></span><div class="album-mini-controls"><b></b><i class="album-play-hit" role="button" tabindex="-1">▶</i></div></div></button>';
+          '<div class="album-copy"><strong></strong><span></span><em class="album-more" aria-hidden="true">...</em><div class="album-mini-controls"><b class="album-track-count"></b><em aria-hidden="true">&#9198;</em><i class="album-play-hit" role="button" tabindex="-1">&#9654;</i><em aria-hidden="true">&#9197;</em><em aria-hidden="true">&#9825;</em></div></div></button>';
         card.querySelector('strong').textContent = album.title || 'Untitled Album';
         card.querySelector('span').textContent = album.albumArtist || album.sourceLabel || '';
         card.querySelector('b').textContent = (album.trackCount || 0) + ' tracks';
@@ -1121,6 +1554,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       state.selectedTracks = [];
       $('albumDetail').dataset.open = 'false';
       $('albumCount').textContent = body.totalCount + ' 张专辑';
+      renderMural();
       renderAlbums();
       centerWorld();
     };
@@ -1310,7 +1744,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const constrained = constrainPan(state.drag.panX + dx, state.drag.panY + dy, 0.36);
       state.panX = constrained.x;
       state.panY = constrained.y;
-      applyPan();
+      requestPan();
     });
     const finishDrag = (event) => {
       if (!state.drag || state.drag.pointerId !== event.pointerId) {
@@ -1354,7 +1788,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const constrained = constrainPan(state.panX - dx, state.panY - dy, 0.18);
       state.panX = constrained.x;
       state.panY = constrained.y;
-      applyPan();
+      requestPan();
     }, { passive: false });
     $('seaViewport').addEventListener('dblclick', (event) => {
       const card = event.target.closest?.('.album-card');
@@ -1374,6 +1808,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       stopMomentum();
       updateLayout();
       centerWorld();
+      renderMural();
       renderAlbums();
     });
     window.addEventListener('focus', () => void loadStatus());
@@ -1593,6 +2028,7 @@ export class EchoLinkService {
 
   getStatusResponse(baseUrl?: string): EchoLinkStatusResponse {
     const audioStatus = this.audioSession.getStatus();
+    this.syncQueueTrackFromAudioStatus(audioStatus);
     const track = this.resolveCurrentTrack(audioStatus);
     return {
       device: {
@@ -2022,7 +2458,7 @@ export class EchoLinkService {
   private createPlayback(audioStatus: AudioStatus, track: LibraryTrack | null, baseUrl: string): EchoLinkPlayback {
     return {
       state: stateForAudioStatus(audioStatus),
-      track: track ? this.toTrackPreview(track, baseUrl) : this.previewFromAudioStatus(audioStatus, baseUrl),
+      track: this.createCurrentTrackPreview(audioStatus, track, baseUrl),
       positionMs: Math.max(0, Math.round((audioStatus.positionSeconds ?? 0) * 1000)),
       durationMs: Math.max(0, Math.round((audioStatus.durationSeconds ?? 0) * 1000)),
       volume: Math.max(0, Math.min(1, Number(audioStatus.volume) || 0)),
@@ -2032,20 +2468,26 @@ export class EchoLinkService {
     };
   }
 
-  private previewFromAudioStatus(audioStatus: AudioStatus, _baseUrl: string): EchoLinkTrackPreview | null {
-    if (!audioStatus.currentTrackId && !audioStatus.currentFilePath) {
+  private createCurrentTrackPreview(audioStatus: AudioStatus, track: LibraryTrack | null, baseUrl: string): EchoLinkTrackPreview | null {
+    const id = firstNonEmpty(audioStatus.currentTrackId, track?.id, audioStatus.currentFilePath);
+    const title = firstNonEmpty(audioStatus.currentTrackTitle, track?.title, fileNameFromPath(audioStatus.currentFilePath), fileNameFromPath(track?.path));
+    if (!id && !title) {
       return null;
     }
+    const artist = firstNonEmpty(audioStatus.currentTrackArtist, audioStatus.currentTrackAlbumArtist, track?.artist, track?.albumArtist);
+    const album = firstNonEmpty(audioStatus.currentTrackAlbum, track?.album) ?? '';
+    const albumArtist = firstNonEmpty(audioStatus.currentTrackAlbumArtist, audioStatus.currentTrackArtist, track?.albumArtist, track?.artist);
+    const statusDurationMs = Math.max(0, Math.round((audioStatus.durationSeconds ?? 0) * 1000));
     return {
-      id: audioStatus.currentTrackId ?? audioStatus.currentFilePath ?? 'current',
-      title: audioStatus.currentTrackTitle ?? audioStatus.currentFilePath?.split(/[\\/]/u).pop() ?? 'Unknown Track',
-      artist: audioStatus.currentTrackArtist ?? 'Unknown Artist',
-      album: audioStatus.currentTrackAlbum ?? '',
-      albumArtist: audioStatus.currentTrackAlbumArtist ?? audioStatus.currentTrackArtist ?? 'Unknown Artist',
-      artworkUrl: null,
-      durationMs: Math.max(0, Math.round((audioStatus.durationSeconds ?? 0) * 1000)),
-      sourceLabel: 'Current Playback',
-      canPlayOnPhone: Boolean(audioStatus.currentFilePath && existsSync(audioStatus.currentFilePath)),
+      id: id ?? 'current',
+      title: title ?? 'Unknown Track',
+      artist: artist ?? 'Unknown Artist',
+      album,
+      albumArtist: albumArtist ?? artist ?? 'Unknown Artist',
+      artworkUrl: webSafeArtworkUrl(audioStatus.currentTrackCoverUrl) ?? (track ? this.createArtworkUrl(track.coverId, baseUrl) : null),
+      durationMs: statusDurationMs > 0 ? statusDurationMs : Math.max(0, Math.round((track?.duration ?? 0) * 1000)),
+      sourceLabel: track ? sourceLabelForTrack(track) : 'Current Playback',
+      canPlayOnPhone: track ? canPlayOnPhone(track) : Boolean(audioStatus.currentFilePath && existsSync(audioStatus.currentFilePath)),
     };
   }
 
@@ -2073,6 +2515,14 @@ export class EchoLinkService {
     } catch {
       return null;
     }
+  }
+
+  private syncQueueTrackFromAudioStatus(audioStatus: AudioStatus): void {
+    const currentTrackId = firstNonEmpty(audioStatus.currentTrackId);
+    if (!currentTrackId || this.queueTrackIds.length === 0) {
+      return;
+    }
+    this.currentQueueTrackId = this.queueTrackIds.includes(currentTrackId) ? currentTrackId : null;
   }
 
   private requireTrack(trackId: string): LibraryTrack {

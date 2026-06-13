@@ -9,7 +9,7 @@ import { createDefaultGlobalShortcuts, createDefaultLocalShortcuts, type GlobalS
 import type { HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
-import { I18nProvider } from '../../i18n/I18nProvider';
+import { I18nProvider, translateFallback } from '../../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, setPlaybackStatusSnapshot } from '../../stores/playbackStatusStore';
 import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
@@ -410,10 +410,14 @@ describe('PlayerBar', () => {
       },
     } as unknown as Window['echo'];
 
+    window.localStorage.setItem('echo-next.locale', 'zh-CN');
+
     render(
-      <PlaybackQueueProvider>
-        <QueueSeed showSignalPathControl={true} tracks={[track]} />
-      </PlaybackQueueProvider>,
+      <I18nProvider>
+        <PlaybackQueueProvider>
+          <QueueSeed showSignalPathControl={true} tracks={[track]} />
+        </PlaybackQueueProvider>
+      </I18nProvider>,
     );
 
     await screen.findByText('Signal Path Track');
@@ -542,22 +546,24 @@ describe('PlayerBar', () => {
     } as unknown as Window['echo'];
 
     render(
-      <PlaybackQueueProvider>
-        <QueueSeed showSignalPathControl={true} tracks={[track]} />
-      </PlaybackQueueProvider>,
+      <I18nProvider>
+        <PlaybackQueueProvider>
+          <QueueSeed showSignalPathControl={true} tracks={[track]} />
+        </PlaybackQueueProvider>
+      </I18nProvider>,
     );
 
     await screen.findByText('HQPlayer Signal Track');
     const signalPathButton = await screen.findByRole('button', { name: /HQPlayer/u });
     fireEvent.click(signalPathButton);
 
-    const dialog = await screen.findByRole('dialog', { name: '信号路径' });
-    expect(dialog.textContent).toContain('信号路径: HQPlayer');
+    const dialog = await screen.findByRole('dialog', { name: 'Signal path' });
+    expect(dialog.textContent).toContain('Signal path: HQPlayer');
     expect(dialog.textContent).toContain('FLAC 44.1kHz 16bit 2ch');
     await waitFor(() => expect(dialog.textContent).toContain('HQPlayer Desktop'));
     expect(dialog.textContent).toContain('SDM / sinc-long / ASDM7EC-super');
-    expect(dialog.textContent).toContain('HQPlayer 输出 / 22.58MHz / 1bit / 2ch');
-    expect(dialog.textContent).not.toContain('等待信号');
+    expect(dialog.textContent).toContain('HQPlayer output / 22.58MHz / 1bit / 2ch');
+    expect(dialog.textContent).not.toContain('Waiting for signal');
   });
 
   it('shows read-only Signal Path Doctor notes for the HQPlayer popover', async () => {
@@ -601,14 +607,14 @@ describe('PlayerBar', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: '信号路径' });
-    expect(dialog.textContent).toContain('Signal Path Doctor');
-    expect(dialog.textContent).not.toContain('External renderer owns the chain');
-    const doctorToggle = screen.getByRole('button', { name: 'Expand Signal Path Doctor' });
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.title'));
+    expect(dialog.textContent).not.toContain(translateFallback('audioSignalPath.doctor.hqPlayer.external.title'));
+    const doctorToggle = screen.getByRole('button', { name: translateFallback('audioSignalPath.doctor.expand') });
     expect(doctorToggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(doctorToggle);
     expect(doctorToggle.getAttribute('aria-expanded')).toBe('true');
-    expect(dialog.textContent).toContain('External renderer owns the chain');
-    await waitFor(() => expect(dialog.textContent).toContain('HQPlayer output is reported'));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.hqPlayer.external.title'));
+    await waitFor(() => expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.hqPlayer.output.title')));
     expect(dialog.textContent).not.toContain('Apply');
   });
 
@@ -645,19 +651,24 @@ describe('PlayerBar', () => {
 
     expect(screen.getByRole('button', { name: '打开音频链路：已强化，FLAC / 96k / 24b' }).textContent).toBe('');
     const dialog = screen.getByRole('dialog', { name: '信号路径' });
-    expect(dialog.textContent).toContain('Signal Path Theater');
-    expect(dialog.textContent).toContain('Live Level');
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.theater.title'));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.metric.liveLevel'));
     expect(dialog.textContent).toContain('-15.8 dB');
-    expect(dialog.textContent).toContain('PCM live level / headroom 2.4 dB / peak -2.4 dB');
-    expect(dialog.textContent).toContain('Signal Path Doctor');
-    expect(dialog.textContent).not.toContain('Headroom is tight');
-    const doctorToggle = screen.getByRole('button', { name: 'Expand Signal Path Doctor' });
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.meter.detail', {
+      source: translateFallback('audioSignalPath.meter.sourcePcm'),
+      headroom: '2.4 dB',
+      peak: '-2.4 dB',
+    }));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.title'));
+    expect(dialog.textContent).not.toContain(translateFallback('audioSignalPath.doctor.headroom.title'));
+    const doctorToggle = screen.getByRole('button', { name: translateFallback('audioSignalPath.doctor.expand') });
     expect(doctorToggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(doctorToggle);
     expect(doctorToggle.getAttribute('aria-expanded')).toBe('true');
-    expect(dialog.textContent).toContain('Headroom is tight');
-    expect(dialog.textContent).toContain('Not bit-perfect');
-    expect(dialog.textContent).toContain('Processing');
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.headroom.title'));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.notBitPerfect.title'));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.notBitPerfect.advice'));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.metric.processing'));
     expect(dialog.textContent).toContain('信号路径: 已强化');
     expect(dialog.textContent).toContain('参数化 EQ');
     expect(dialog.textContent).toContain('5 个频段');
@@ -687,6 +698,9 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('信号路径: 重采样');
     expect(dialog.textContent).toContain('重采样');
     expect(dialog.textContent).toContain('96kHz -> 48kHz');
+    expect(dialog.textContent).not.toContain(translateFallback('audioSignalPath.doctor.resampling.advice'));
+    fireEvent.click(screen.getByRole('button', { name: translateFallback('audioSignalPath.doctor.expand') }));
+    expect(dialog.textContent).toContain(translateFallback('audioSignalPath.doctor.resampling.advice'));
   });
 
   it('shows ECHO SRC as upsampling in the signal path', () => {

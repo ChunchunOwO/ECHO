@@ -883,10 +883,10 @@ describe('PlaylistsPage actions menu', () => {
 
     await waitFor(() => expect(getPlaylistNames()).toEqual(['Road Mix', 'Cloud Mix']));
 
-    fireEvent.click(screen.getByRole('button', { name: '仅显示本地歌单' }));
+    fireEvent.click(screen.getByRole('button', { name: '本地' }));
     await waitFor(() => expect(getPlaylistNames()).toEqual(['Road Mix']));
 
-    fireEvent.click(screen.getByRole('button', { name: '仅显示流媒体' }));
+    fireEvent.click(screen.getByRole('button', { name: '流媒体' }));
     await waitFor(() => expect(getPlaylistNames()).toEqual(['Cloud Mix']));
   });
 

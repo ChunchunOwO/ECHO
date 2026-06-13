@@ -2490,10 +2490,10 @@ export const PlaylistsPage = (): JSX.Element => {
                 全部
               </button>
               <button type="button" data-active={playlistSourceFilter === 'local'} onClick={() => setPlaylistSourceFilter('local')}>
-                仅显示本地歌单
+                本地
               </button>
               <button type="button" data-active={playlistSourceFilter === 'streaming'} onClick={() => setPlaylistSourceFilter('streaming')}>
-                仅显示流媒体
+                流媒体
               </button>
             </div>
 

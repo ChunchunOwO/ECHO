@@ -301,6 +301,38 @@ describe('EchoLinkService', () => {
     expect(body.playback.track.albumArtist).toBe('Artist');
   });
 
+  it('prefers live audio metadata over the library preview for current playback', async () => {
+    audioSession.status = makeAudioStatus({
+      state: 'playing',
+      currentTrackId: 'track-1',
+      currentFilePath: audioPath,
+      currentTrackTitle: 'Live Song',
+      currentTrackArtist: 'Live Artist',
+      currentTrackAlbum: 'Live Album',
+      currentTrackAlbumArtist: 'Live Album Artist',
+      currentTrackCoverUrl: 'https://example.test/live-cover.jpg',
+      positionSeconds: 7,
+      durationSeconds: 199,
+    });
+
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, { headers: authHeaders() });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.playback).toMatchObject({
+      positionMs: 7000,
+      durationMs: 199000,
+      track: {
+        id: 'track-1',
+        title: 'Live Song',
+        artist: 'Live Artist',
+        album: 'Live Album',
+        albumArtist: 'Live Album Artist',
+        artworkUrl: 'https://example.test/live-cover.jpg',
+      },
+    });
+  });
+
   it('serves the web control page through the Echo Link token URL', async () => {
     const status = service.getServerStatus();
     expect(status.webControlUrl).toContain('/echo-link/web?token=');
@@ -472,6 +504,27 @@ describe('EchoLinkService', () => {
     expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-1' }));
     expect(audioSession.playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-2' }));
     expect(dispatchPlaybackAction).not.toHaveBeenCalledWith('nextTrack');
+  });
+
+  it('syncs the ECHO Link queue pointer from the active audio status', async () => {
+    await fetch(`${baseUrl()}/echo-link/v1/playback/command`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'queueReplace', trackIds: ['track-1', 'track-2'], startTrackId: 'track-1', output: 'pc' }),
+    });
+    audioSession.status = makeAudioStatus({
+      state: 'playing',
+      currentTrackId: 'track-2',
+      currentFilePath: audioPath,
+      currentTrackTitle: 'Song B',
+    });
+
+    const response = await fetch(`${baseUrl()}/echo-link/v1/status`, { headers: authHeaders() });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.playback.track).toMatchObject({ id: 'track-2', title: 'Song B' });
+    expect(body.playback.queue).toMatchObject({ currentTrackId: 'track-2' });
   });
 
   it('accepts large queueReplace bodies for big album playback', async () => {

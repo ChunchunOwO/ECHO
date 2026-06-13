@@ -839,6 +839,58 @@ export type TranslationKey =
   | 'audioSignalPath.dsp.channelBalance'
   | 'audioSignalPath.dsp.roomCorrectionModule'
   | 'audioSignalPath.dsp.safetyLimiter'
+  | 'audioSignalPath.doctor.blocker.rateConversion'
+  | 'audioSignalPath.doctor.bitPerfect.advice'
+  | 'audioSignalPath.doctor.bitPerfect.detail'
+  | 'audioSignalPath.doctor.bitPerfect.title'
+  | 'audioSignalPath.doctor.collapse'
+  | 'audioSignalPath.doctor.echoSrc.advice'
+  | 'audioSignalPath.doctor.echoSrc.detail'
+  | 'audioSignalPath.doctor.echoSrc.title'
+  | 'audioSignalPath.doctor.expand'
+  | 'audioSignalPath.doctor.eyebrow.bitPerfect'
+  | 'audioSignalPath.doctor.eyebrow.clock'
+  | 'audioSignalPath.doctor.eyebrow.doctor'
+  | 'audioSignalPath.doctor.eyebrow.hqPlayer'
+  | 'audioSignalPath.doctor.eyebrow.level'
+  | 'audioSignalPath.doctor.eyebrow.src'
+  | 'audioSignalPath.doctor.eyebrow.status'
+  | 'audioSignalPath.doctor.eyebrow.why'
+  | 'audioSignalPath.doctor.headroom.advice'
+  | 'audioSignalPath.doctor.headroom.detail'
+  | 'audioSignalPath.doctor.headroom.title'
+  | 'audioSignalPath.doctor.hintCount.many'
+  | 'audioSignalPath.doctor.hintCount.one'
+  | 'audioSignalPath.doctor.hqPlayer.error.advice'
+  | 'audioSignalPath.doctor.hqPlayer.error.detail'
+  | 'audioSignalPath.doctor.hqPlayer.error.title'
+  | 'audioSignalPath.doctor.hqPlayer.external.advice'
+  | 'audioSignalPath.doctor.hqPlayer.external.detail'
+  | 'audioSignalPath.doctor.hqPlayer.external.title'
+  | 'audioSignalPath.doctor.hqPlayer.output.advice'
+  | 'audioSignalPath.doctor.hqPlayer.output.detail'
+  | 'audioSignalPath.doctor.hqPlayer.output.title'
+  | 'audioSignalPath.doctor.hqPlayer.waiting.advice'
+  | 'audioSignalPath.doctor.hqPlayer.waiting.detail'
+  | 'audioSignalPath.doctor.hqPlayer.waiting.title'
+  | 'audioSignalPath.doctor.limiter.advice'
+  | 'audioSignalPath.doctor.limiter.detail'
+  | 'audioSignalPath.doctor.limiter.title'
+  | 'audioSignalPath.doctor.notBitPerfect.advice'
+  | 'audioSignalPath.doctor.notBitPerfect.detail'
+  | 'audioSignalPath.doctor.notBitPerfect.fallback'
+  | 'audioSignalPath.doctor.notBitPerfect.title'
+  | 'audioSignalPath.doctor.resampling.advice'
+  | 'audioSignalPath.doctor.resampling.detail'
+  | 'audioSignalPath.doctor.resampling.title'
+  | 'audioSignalPath.doctor.sampleRateMismatch.advice'
+  | 'audioSignalPath.doctor.sampleRateMismatch.detail'
+  | 'audioSignalPath.doctor.sampleRateMismatch.title'
+  | 'audioSignalPath.doctor.outputError.title'
+  | 'audioSignalPath.doctor.title'
+  | 'audioSignalPath.doctor.waiting.advice'
+  | 'audioSignalPath.doctor.waiting.detail'
+  | 'audioSignalPath.doctor.waiting.title'
   | 'audioSignalPath.header'
   | 'audioSignalPath.hqPlayer.error'
   | 'audioSignalPath.hqPlayer.externalChain'
@@ -853,6 +905,33 @@ export type TranslationKey =
   | 'audioSignalPath.hqPlayer.state.ready'
   | 'audioSignalPath.hqPlayer.state.stopped'
   | 'audioSignalPath.layers'
+  | 'audioSignalPath.meter.clipDetected.many'
+  | 'audioSignalPath.meter.clipDetected.one'
+  | 'audioSignalPath.meter.closeToZero'
+  | 'audioSignalPath.meter.detail'
+  | 'audioSignalPath.meter.limiterHolding'
+  | 'audioSignalPath.meter.sourceFallback'
+  | 'audioSignalPath.meter.sourcePcm'
+  | 'audioSignalPath.meter.sourcePriming'
+  | 'audioSignalPath.meter.waiting'
+  | 'audioSignalPath.metric.bitPerfectCandidate'
+  | 'audioSignalPath.metric.clock'
+  | 'audioSignalPath.metric.clockPending'
+  | 'audioSignalPath.metric.directPath'
+  | 'audioSignalPath.metric.external'
+  | 'audioSignalPath.metric.externalRendererClock'
+  | 'audioSignalPath.metric.hqPlayerClock'
+  | 'audioSignalPath.metric.hqPlayerError'
+  | 'audioSignalPath.metric.hqPlayerOwnsGain'
+  | 'audioSignalPath.metric.liveLevel'
+  | 'audioSignalPath.metric.mediaMetadata'
+  | 'audioSignalPath.metric.nativeClockPath'
+  | 'audioSignalPath.metric.noDspModules'
+  | 'audioSignalPath.metric.output'
+  | 'audioSignalPath.metric.processing'
+  | 'audioSignalPath.metric.rateConversionActive'
+  | 'audioSignalPath.metric.source'
+  | 'audioSignalPath.metric.sourceDeviceRateDiffers'
   | 'audioSignalPath.node.dataSource'
   | 'audioSignalPath.node.decode'
   | 'audioSignalPath.node.output'
@@ -904,6 +983,7 @@ export type TranslationKey =
   | 'audioSignalPath.summary.upsampling'
   | 'audioSignalPath.summary.outputModeOutput'
   | 'audioSignalPath.summary.waitingPlayback'
+  | 'audioSignalPath.theater.title'
   | 'audioSignalPath.title'
   | 'audioSignalPath.unknown'
   | 'audioProfessional.action.hideDetails'
@@ -4500,7 +4580,340 @@ const songsPageEnUS = {
 const songsPageZhTW = songsPageZhCN;
 const songsPageJaJP = songsPageEnUS;
 
+const audioSignalPathExtrasZhCN = {
+  'audioSignalPath.doctor.blocker.rateConversion': '采样率转换',
+  'audioSignalPath.doctor.bitPerfect.advice': '想要透明播放时可以保留这个路径；Doctor 暂时没有紧急建议。',
+  'audioSignalPath.doctor.bitPerfect.detail': '{mode}输出，未检测到活跃 DSP 阻塞项。',
+  'audioSignalPath.doctor.bitPerfect.title': 'Bit-perfect 候选',
+  'audioSignalPath.doctor.collapse': '收起信号路径医生',
+  'audioSignalPath.doctor.echoSrc.advice': '想要升频风格就保留 SRC；目标是原生采样率输出时就关闭 SRC。',
+  'audioSignalPath.doctor.echoSrc.detail': '当前 DSP/SRC 模式开启了升频。',
+  'audioSignalPath.doctor.echoSrc.title': 'ECHO SRC 是有意开启的',
+  'audioSignalPath.doctor.expand': '展开信号路径医生',
+  'audioSignalPath.doctor.eyebrow.bitPerfect': 'Bit-perfect',
+  'audioSignalPath.doctor.eyebrow.clock': '时钟',
+  'audioSignalPath.doctor.eyebrow.doctor': '诊断',
+  'audioSignalPath.doctor.eyebrow.hqPlayer': 'HQPlayer',
+  'audioSignalPath.doctor.eyebrow.level': '电平',
+  'audioSignalPath.doctor.eyebrow.src': 'SRC',
+  'audioSignalPath.doctor.eyebrow.status': '状态',
+  'audioSignalPath.doctor.eyebrow.why': '原因',
+  'audioSignalPath.doctor.headroom.advice': '启用 EQ、FIR 或声道平衡时，多留一点负 preamp/headroom 通常更稳。',
+  'audioSignalPath.doctor.headroom.detail': 'Headroom {headroom}，peak {peak}；启用 EQ/FIR/preamp 时要留意这里。',
+  'audioSignalPath.doctor.headroom.title': '余量偏紧',
+  'audioSignalPath.doctor.hintCount.many': '{count} 条提示',
+  'audioSignalPath.doctor.hintCount.one': '{count} 条提示',
+  'audioSignalPath.doctor.hqPlayer.error.advice': '优先检查 HQPlayer Desktop / 控制端口；ECHO 不会自动改动外部渲染器链路。',
+  'audioSignalPath.doctor.hqPlayer.error.detail': 'HQPlayer 报告了外部播放问题。',
+  'audioSignalPath.doctor.hqPlayer.error.title': '外部链路异常',
+  'audioSignalPath.doctor.hqPlayer.external.advice': '想改变这条链路时，在 HQPlayer 里调整 profile / filter / shaper。',
+  'audioSignalPath.doctor.hqPlayer.external.detail': 'ECHO 只交接传输；最终 DSP、采样率、shaper 和输出由 HQPlayer 决定。',
+  'audioSignalPath.doctor.hqPlayer.external.title': '外部渲染器接管链路',
+  'audioSignalPath.doctor.hqPlayer.output.advice': '如果速率看起来不对，优先检查当前 HQPlayer profile，而不是 ECHO 本地输出模式。',
+  'audioSignalPath.doctor.hqPlayer.output.detail': '{output}；这个速率来自 HQPlayer 遥测，不是本机 Windows 输出路径。',
+  'audioSignalPath.doctor.hqPlayer.output.title': 'HQPlayer 已上报输出',
+  'audioSignalPath.doctor.hqPlayer.waiting.advice': '等待 HQPlayer 遥测，或打开 HQPlayer 确认当前输出管线。',
+  'audioSignalPath.doctor.hqPlayer.waiting.detail': '播放已经交接出去，但 HQPlayer 还没有返回完整处理细节。',
+  'audioSignalPath.doctor.hqPlayer.waiting.title': '等待详细遥测',
+  'audioSignalPath.doctor.limiter.advice': '追求更大音量前，建议先降低 preamp、EQ 增益、FIR trim 或 ReplayGain 增益。',
+  'audioSignalPath.doctor.limiter.detail': '安全限幅器已经在 DSP 之后保护输出。',
+  'audioSignalPath.doctor.limiter.title': '限幅器已介入',
+  'audioSignalPath.doctor.notBitPerfect.advice': '想要更严格的 bit-perfect 路径，优先用独占或 ASIO 输出，并关闭 DSP/SRC 模块。',
+  'audioSignalPath.doctor.notBitPerfect.detail': '原因：{blockers}。',
+  'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO 现在不能把这条链路标记为透明 1:1 输出。',
+  'audioSignalPath.doctor.notBitPerfect.title': '不是 bit-perfect',
+  'audioSignalPath.doctor.outputError.title': '输出链路异常',
+  'audioSignalPath.doctor.resampling.advice': '如果想要原生采样率播放，可以为这台 DAC 试试独占输出或 ASIO，而不是共享/系统输出。',
+  'audioSignalPath.doctor.resampling.detail': '{path}；ECHO 正在跟随当前输出时钟/后端，所以不是 1:1 时钟链路。',
+  'audioSignalPath.doctor.resampling.title': '正在进行采样率转换',
+  'audioSignalPath.doctor.sampleRateMismatch.advice': '先确认目标设备是否支持这个采样率；独占或 ASIO 通常能给 ECHO 更干净的设备时钟。',
+  'audioSignalPath.doctor.sampleRateMismatch.detail': '{path}；源文件和设备时钟没有对齐。',
+  'audioSignalPath.doctor.sampleRateMismatch.title': '采样率不一致',
+  'audioSignalPath.doctor.title': '信号路径医生',
+  'audioSignalPath.doctor.waiting.advice': '先播放一首歌；Doctor 只读，不会自动改变输出设置。',
+  'audioSignalPath.doctor.waiting.detail': '开始播放后，ECHO 会在这里解释当前信号链路。',
+  'audioSignalPath.doctor.waiting.title': '等待播放',
+  'audioSignalPath.meter.clipDetected.many': '检测到 {count} 次削波',
+  'audioSignalPath.meter.clipDetected.one': '检测到 1 次削波',
+  'audioSignalPath.meter.closeToZero': '输出已经接近 0 dBFS',
+  'audioSignalPath.meter.detail': '{source} / headroom {headroom} / peak {peak}',
+  'audioSignalPath.meter.limiterHolding': '保护限幅器正在压住输出',
+  'audioSignalPath.meter.sourceFallback': '回退电平',
+  'audioSignalPath.meter.sourcePcm': 'PCM 实时电平',
+  'audioSignalPath.meter.sourcePriming': '电平表预热中',
+  'audioSignalPath.meter.waiting': '等待实时电平',
+  'audioSignalPath.metric.bitPerfectCandidate': 'Bit-perfect 候选',
+  'audioSignalPath.metric.clock': '时钟',
+  'audioSignalPath.metric.clockPending': '时钟等待中',
+  'audioSignalPath.metric.directPath': '直接路径',
+  'audioSignalPath.metric.external': '外部',
+  'audioSignalPath.metric.externalRendererClock': '外部渲染器时钟',
+  'audioSignalPath.metric.hqPlayerClock': 'HQPlayer 时钟',
+  'audioSignalPath.metric.hqPlayerError': 'HQPlayer 报告了异常',
+  'audioSignalPath.metric.hqPlayerOwnsGain': 'HQPlayer 接管增益与最终渲染',
+  'audioSignalPath.metric.liveLevel': '实时电平',
+  'audioSignalPath.metric.mediaMetadata': '媒体元数据',
+  'audioSignalPath.metric.nativeClockPath': '原生时钟路径',
+  'audioSignalPath.metric.noDspModules': '未启用 DSP 模块',
+  'audioSignalPath.metric.output': '输出',
+  'audioSignalPath.metric.processing': '处理',
+  'audioSignalPath.metric.rateConversionActive': '采样率转换已启用',
+  'audioSignalPath.metric.source': '来源',
+  'audioSignalPath.metric.sourceDeviceRateDiffers': '来源与设备采样率不同',
+  'audioSignalPath.theater.title': '信号路径剧场',
+};
+
+const audioSignalPathExtrasZhTW = {
+  'audioSignalPath.doctor.blocker.rateConversion': '取樣率轉換',
+  'audioSignalPath.doctor.bitPerfect.advice': '想要透明播放時可以保留這條路徑；Doctor 暫時沒有緊急建議。',
+  'audioSignalPath.doctor.bitPerfect.detail': '{mode}輸出，未偵測到啟用中的 DSP 阻塞項。',
+  'audioSignalPath.doctor.bitPerfect.title': 'Bit-perfect 候選',
+  'audioSignalPath.doctor.collapse': '收合訊號路徑醫生',
+  'audioSignalPath.doctor.echoSrc.advice': '想要升頻風格就保留 SRC；目標是原生取樣率輸出時就關閉 SRC。',
+  'audioSignalPath.doctor.echoSrc.detail': '目前 DSP/SRC 模式已啟用升頻。',
+  'audioSignalPath.doctor.echoSrc.title': 'ECHO SRC 是有意開啟的',
+  'audioSignalPath.doctor.expand': '展開訊號路徑醫生',
+  'audioSignalPath.doctor.eyebrow.bitPerfect': 'Bit-perfect',
+  'audioSignalPath.doctor.eyebrow.clock': '時鐘',
+  'audioSignalPath.doctor.eyebrow.doctor': '診斷',
+  'audioSignalPath.doctor.eyebrow.hqPlayer': 'HQPlayer',
+  'audioSignalPath.doctor.eyebrow.level': '電平',
+  'audioSignalPath.doctor.eyebrow.src': 'SRC',
+  'audioSignalPath.doctor.eyebrow.status': '狀態',
+  'audioSignalPath.doctor.eyebrow.why': '原因',
+  'audioSignalPath.doctor.headroom.advice': '啟用 EQ、FIR 或聲道平衡時，多留一點負 preamp/headroom 通常更穩。',
+  'audioSignalPath.doctor.headroom.detail': 'Headroom {headroom}，peak {peak}；啟用 EQ/FIR/preamp 時要留意這裡。',
+  'audioSignalPath.doctor.headroom.title': '餘量偏緊',
+  'audioSignalPath.doctor.hintCount.many': '{count} 則提示',
+  'audioSignalPath.doctor.hintCount.one': '{count} 則提示',
+  'audioSignalPath.doctor.hqPlayer.error.advice': '優先檢查 HQPlayer Desktop / 控制埠；ECHO 不會自動改動外部渲染器鏈路。',
+  'audioSignalPath.doctor.hqPlayer.error.detail': 'HQPlayer 回報了外部播放問題。',
+  'audioSignalPath.doctor.hqPlayer.error.title': '外部鏈路異常',
+  'audioSignalPath.doctor.hqPlayer.external.advice': '想改變這條鏈路時，在 HQPlayer 裡調整 profile / filter / shaper。',
+  'audioSignalPath.doctor.hqPlayer.external.detail': 'ECHO 只交接傳輸；最終 DSP、取樣率、shaper 與輸出由 HQPlayer 決定。',
+  'audioSignalPath.doctor.hqPlayer.external.title': '外部渲染器接管鏈路',
+  'audioSignalPath.doctor.hqPlayer.output.advice': '如果速率看起來不對，優先檢查目前 HQPlayer profile，而不是 ECHO 本機輸出模式。',
+  'audioSignalPath.doctor.hqPlayer.output.detail': '{output}；這個速率來自 HQPlayer 遙測，不是本機 Windows 輸出路徑。',
+  'audioSignalPath.doctor.hqPlayer.output.title': 'HQPlayer 已回報輸出',
+  'audioSignalPath.doctor.hqPlayer.waiting.advice': '等待 HQPlayer 遙測，或打開 HQPlayer 確認目前輸出管線。',
+  'audioSignalPath.doctor.hqPlayer.waiting.detail': '播放已經交接出去，但 HQPlayer 還沒有返回完整處理細節。',
+  'audioSignalPath.doctor.hqPlayer.waiting.title': '等待詳細遙測',
+  'audioSignalPath.doctor.limiter.advice': '追求更大音量前，建議先降低 preamp、EQ 增益、FIR trim 或 ReplayGain 增益。',
+  'audioSignalPath.doctor.limiter.detail': '安全限幅器已經在 DSP 之後保護輸出。',
+  'audioSignalPath.doctor.limiter.title': '限幅器已介入',
+  'audioSignalPath.doctor.notBitPerfect.advice': '想要更嚴格的 bit-perfect 路徑，優先用獨占或 ASIO 輸出，並關閉 DSP/SRC 模組。',
+  'audioSignalPath.doctor.notBitPerfect.detail': '原因：{blockers}。',
+  'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO 現在不能把這條鏈路標記為透明 1:1 輸出。',
+  'audioSignalPath.doctor.notBitPerfect.title': '不是 bit-perfect',
+  'audioSignalPath.doctor.outputError.title': '輸出鏈路異常',
+  'audioSignalPath.doctor.resampling.advice': '如果想要原生取樣率播放，可以為這台 DAC 試試獨占輸出或 ASIO，而不是共享/系統輸出。',
+  'audioSignalPath.doctor.resampling.detail': '{path}；ECHO 正在跟隨目前輸出時鐘/後端，所以不是 1:1 時鐘鏈路。',
+  'audioSignalPath.doctor.resampling.title': '正在進行取樣率轉換',
+  'audioSignalPath.doctor.sampleRateMismatch.advice': '先確認目標裝置是否支援這個取樣率；獨占或 ASIO 通常能給 ECHO 更乾淨的裝置時鐘。',
+  'audioSignalPath.doctor.sampleRateMismatch.detail': '{path}；來源檔案和裝置時鐘沒有對齊。',
+  'audioSignalPath.doctor.sampleRateMismatch.title': '取樣率不一致',
+  'audioSignalPath.doctor.title': '訊號路徑醫生',
+  'audioSignalPath.doctor.waiting.advice': '先播放一首歌；Doctor 只讀，不會自動改變輸出設定。',
+  'audioSignalPath.doctor.waiting.detail': '開始播放後，ECHO 會在這裡解釋目前訊號鏈路。',
+  'audioSignalPath.doctor.waiting.title': '等待播放',
+  'audioSignalPath.meter.clipDetected.many': '偵測到 {count} 次削波',
+  'audioSignalPath.meter.clipDetected.one': '偵測到 1 次削波',
+  'audioSignalPath.meter.closeToZero': '輸出已經接近 0 dBFS',
+  'audioSignalPath.meter.detail': '{source} / headroom {headroom} / peak {peak}',
+  'audioSignalPath.meter.limiterHolding': '保護限幅器正在壓住輸出',
+  'audioSignalPath.meter.sourceFallback': '回退電平',
+  'audioSignalPath.meter.sourcePcm': 'PCM 即時電平',
+  'audioSignalPath.meter.sourcePriming': '電平表預熱中',
+  'audioSignalPath.meter.waiting': '等待即時電平',
+  'audioSignalPath.metric.bitPerfectCandidate': 'Bit-perfect 候選',
+  'audioSignalPath.metric.clock': '時鐘',
+  'audioSignalPath.metric.clockPending': '時鐘等待中',
+  'audioSignalPath.metric.directPath': '直接路徑',
+  'audioSignalPath.metric.external': '外部',
+  'audioSignalPath.metric.externalRendererClock': '外部渲染器時鐘',
+  'audioSignalPath.metric.hqPlayerClock': 'HQPlayer 時鐘',
+  'audioSignalPath.metric.hqPlayerError': 'HQPlayer 回報了異常',
+  'audioSignalPath.metric.hqPlayerOwnsGain': 'HQPlayer 接管增益與最終渲染',
+  'audioSignalPath.metric.liveLevel': '即時電平',
+  'audioSignalPath.metric.mediaMetadata': '媒體中繼資料',
+  'audioSignalPath.metric.nativeClockPath': '原生時鐘路徑',
+  'audioSignalPath.metric.noDspModules': '未啟用 DSP 模組',
+  'audioSignalPath.metric.output': '輸出',
+  'audioSignalPath.metric.processing': '處理',
+  'audioSignalPath.metric.rateConversionActive': '取樣率轉換已啟用',
+  'audioSignalPath.metric.source': '來源',
+  'audioSignalPath.metric.sourceDeviceRateDiffers': '來源與裝置取樣率不同',
+  'audioSignalPath.theater.title': '訊號路徑劇場',
+};
+
+const audioSignalPathExtrasJaJP = {
+  'audioSignalPath.doctor.blocker.rateConversion': 'サンプルレート変換',
+  'audioSignalPath.doctor.bitPerfect.advice': '透明な再生を狙うならこの経路を維持できます。Doctor から急ぎの提案はありません。',
+  'audioSignalPath.doctor.bitPerfect.detail': '{mode}出力で、有効な DSP ブロッカーは検出されていません。',
+  'audioSignalPath.doctor.bitPerfect.title': 'Bit-perfect 候補',
+  'audioSignalPath.doctor.collapse': '信号パスドクターを閉じる',
+  'audioSignalPath.doctor.echoSrc.advice': 'アップサンプリングの質感が目的なら SRC を維持し、ネイティブサンプルレート出力が目的なら SRC をオフにしてください。',
+  'audioSignalPath.doctor.echoSrc.detail': '現在の DSP/SRC モードでアップサンプリングが有効です。',
+  'audioSignalPath.doctor.echoSrc.title': 'ECHO SRC は意図的に有効です',
+  'audioSignalPath.doctor.expand': '信号パスドクターを展開',
+  'audioSignalPath.doctor.eyebrow.bitPerfect': 'Bit-perfect',
+  'audioSignalPath.doctor.eyebrow.clock': 'クロック',
+  'audioSignalPath.doctor.eyebrow.doctor': '診断',
+  'audioSignalPath.doctor.eyebrow.hqPlayer': 'HQPlayer',
+  'audioSignalPath.doctor.eyebrow.level': 'レベル',
+  'audioSignalPath.doctor.eyebrow.src': 'SRC',
+  'audioSignalPath.doctor.eyebrow.status': '状態',
+  'audioSignalPath.doctor.eyebrow.why': '理由',
+  'audioSignalPath.doctor.headroom.advice': 'EQ、FIR、チャンネルバランスを使うときは、少し負の preamp/headroom を多めに残す方が安定します。',
+  'audioSignalPath.doctor.headroom.detail': 'Headroom {headroom}、peak {peak}。EQ/FIR/preamp が有効なときはここに注意してください。',
+  'audioSignalPath.doctor.headroom.title': 'ヘッドルームが狭めです',
+  'audioSignalPath.doctor.hintCount.many': '{count} 件のヒント',
+  'audioSignalPath.doctor.hintCount.one': '{count} 件のヒント',
+  'audioSignalPath.doctor.hqPlayer.error.advice': 'まず HQPlayer Desktop / control port を確認してください。ECHO は外部レンダラー経路を自動変更しません。',
+  'audioSignalPath.doctor.hqPlayer.error.detail': 'HQPlayer が外部再生の問題を報告しました。',
+  'audioSignalPath.doctor.hqPlayer.error.title': '外部経路エラー',
+  'audioSignalPath.doctor.hqPlayer.external.advice': 'この経路を変えたい場合は、HQPlayer 側で profile / filter / shaper を調整してください。',
+  'audioSignalPath.doctor.hqPlayer.external.detail': 'ECHO はトランスポートを渡し、最終 DSP、レート、shaper、出力は HQPlayer が決定します。',
+  'audioSignalPath.doctor.hqPlayer.external.title': '外部レンダラーが経路を所有しています',
+  'audioSignalPath.doctor.hqPlayer.output.advice': 'このレートが想定外なら、ECHO のローカル出力モードではなく、現在の HQPlayer profile を確認してください。',
+  'audioSignalPath.doctor.hqPlayer.output.detail': '{output}。このレートは HQPlayer テレメトリ由来で、ローカル Windows 出力経路ではありません。',
+  'audioSignalPath.doctor.hqPlayer.output.title': 'HQPlayer 出力が報告されています',
+  'audioSignalPath.doctor.hqPlayer.waiting.advice': 'HQPlayer テレメトリを待つか、HQPlayer を開いて現在の出力パイプラインを確認してください。',
+  'audioSignalPath.doctor.hqPlayer.waiting.detail': '再生はハンドオフ済みですが、HQPlayer から完全な処理詳細はまだ返っていません。',
+  'audioSignalPath.doctor.hqPlayer.waiting.title': '詳細テレメトリ待ち',
+  'audioSignalPath.doctor.limiter.advice': '音量をさらに追う前に、preamp、EQ gain、FIR trim、ReplayGain gain を下げることを検討してください。',
+  'audioSignalPath.doctor.limiter.detail': '安全リミッターが DSP 後の出力をすでに保護しています。',
+  'audioSignalPath.doctor.limiter.title': 'リミッターが動作中',
+  'audioSignalPath.doctor.notBitPerfect.advice': 'より厳密な bit-perfect 経路にするなら、Exclusive または ASIO 出力を優先し、DSP/SRC モジュールをオフにしてください。',
+  'audioSignalPath.doctor.notBitPerfect.detail': '理由: {blockers}。',
+  'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO は現在、このチェーンを透明な 1:1 出力として扱えません。',
+  'audioSignalPath.doctor.notBitPerfect.title': 'Bit-perfect ではありません',
+  'audioSignalPath.doctor.outputError.title': '出力経路エラー',
+  'audioSignalPath.doctor.resampling.advice': 'ネイティブレート再生が目的なら、この DAC では共有/システム出力ではなく Exclusive 出力または ASIO を試してください。',
+  'audioSignalPath.doctor.resampling.detail': '{path}。ECHO は現在の出力クロック/バックエンドに従っているため、1:1 クロック経路ではありません。',
+  'audioSignalPath.doctor.resampling.title': 'サンプルレート変換中',
+  'audioSignalPath.doctor.sampleRateMismatch.advice': 'まず対象デバイスがこのレートをサポートするか確認してください。Exclusive または ASIO 出力の方が、ECHO によりクリーンなデバイスクロックを渡せます。',
+  'audioSignalPath.doctor.sampleRateMismatch.detail': '{path}。ソースとデバイスクロックが一致していません。',
+  'audioSignalPath.doctor.sampleRateMismatch.title': 'サンプルレート不一致',
+  'audioSignalPath.doctor.title': '信号パスドクター',
+  'audioSignalPath.doctor.waiting.advice': 'まず何か再生してください。Doctor は読み取り専用で、出力設定を自動変更しません。',
+  'audioSignalPath.doctor.waiting.detail': '再生を開始すると、ECHO がここで現在の信号経路を説明します。',
+  'audioSignalPath.doctor.waiting.title': '再生待ち',
+  'audioSignalPath.meter.clipDetected.many': '{count} 回のクリップを検出',
+  'audioSignalPath.meter.clipDetected.one': '1 回のクリップを検出',
+  'audioSignalPath.meter.closeToZero': '出力が 0 dBFS に近づいています',
+  'audioSignalPath.meter.detail': '{source} / headroom {headroom} / peak {peak}',
+  'audioSignalPath.meter.limiterHolding': '保護リミッターが出力を抑えています',
+  'audioSignalPath.meter.sourceFallback': 'フォールバックレベル',
+  'audioSignalPath.meter.sourcePcm': 'PCM ライブレベル',
+  'audioSignalPath.meter.sourcePriming': 'メーター準備中',
+  'audioSignalPath.meter.waiting': 'リアルタイムメーター待ち',
+  'audioSignalPath.metric.bitPerfectCandidate': 'Bit-perfect 候補',
+  'audioSignalPath.metric.clock': 'クロック',
+  'audioSignalPath.metric.clockPending': 'クロック待ち',
+  'audioSignalPath.metric.directPath': 'ダイレクト経路',
+  'audioSignalPath.metric.external': '外部',
+  'audioSignalPath.metric.externalRendererClock': '外部レンダラークロック',
+  'audioSignalPath.metric.hqPlayerClock': 'HQPlayer クロック',
+  'audioSignalPath.metric.hqPlayerError': 'HQPlayer がエラーを報告しました',
+  'audioSignalPath.metric.hqPlayerOwnsGain': 'HQPlayer がゲインと最終レンダリングを所有しています',
+  'audioSignalPath.metric.liveLevel': 'ライブレベル',
+  'audioSignalPath.metric.mediaMetadata': 'メディアメタデータ',
+  'audioSignalPath.metric.nativeClockPath': 'ネイティブクロック経路',
+  'audioSignalPath.metric.noDspModules': 'DSP モジュールは無効',
+  'audioSignalPath.metric.output': '出力',
+  'audioSignalPath.metric.processing': '処理',
+  'audioSignalPath.metric.rateConversionActive': 'サンプルレート変換が有効',
+  'audioSignalPath.metric.source': 'ソース',
+  'audioSignalPath.metric.sourceDeviceRateDiffers': 'ソースとデバイスのレートが異なります',
+  'audioSignalPath.theater.title': '信号パスシアター',
+};
+
+const audioSignalPathExtrasEnUS = {
+  'audioSignalPath.doctor.blocker.rateConversion': 'rate conversion',
+  'audioSignalPath.doctor.bitPerfect.advice': 'Keep this path when you want transparent playback; Doctor has nothing urgent to suggest here.',
+  'audioSignalPath.doctor.bitPerfect.detail': '{mode} output with no active DSP blockers detected.',
+  'audioSignalPath.doctor.bitPerfect.title': 'Bit-perfect candidate',
+  'audioSignalPath.doctor.collapse': 'Collapse Signal Path Doctor',
+  'audioSignalPath.doctor.echoSrc.advice': 'Keep SRC when you want the upsampling flavor; turn SRC off if the goal is native sample-rate output.',
+  'audioSignalPath.doctor.echoSrc.detail': 'Upsampling is enabled by the current DSP/SRC mode.',
+  'audioSignalPath.doctor.echoSrc.title': 'ECHO SRC is intentional',
+  'audioSignalPath.doctor.expand': 'Expand Signal Path Doctor',
+  'audioSignalPath.doctor.eyebrow.bitPerfect': 'Bit-perfect',
+  'audioSignalPath.doctor.eyebrow.clock': 'Clock',
+  'audioSignalPath.doctor.eyebrow.doctor': 'Doctor',
+  'audioSignalPath.doctor.eyebrow.hqPlayer': 'HQPlayer',
+  'audioSignalPath.doctor.eyebrow.level': 'Level',
+  'audioSignalPath.doctor.eyebrow.src': 'SRC',
+  'audioSignalPath.doctor.eyebrow.status': 'Status',
+  'audioSignalPath.doctor.eyebrow.why': 'Why',
+  'audioSignalPath.doctor.headroom.advice': 'A little more negative preamp/headroom is usually safer when EQ, FIR, or channel balance is active.',
+  'audioSignalPath.doctor.headroom.detail': 'Headroom {headroom}, peak {peak}; watch this when EQ/FIR/preamp is active.',
+  'audioSignalPath.doctor.headroom.title': 'Headroom is tight',
+  'audioSignalPath.doctor.hintCount.many': '{count} hints',
+  'audioSignalPath.doctor.hintCount.one': '{count} hint',
+  'audioSignalPath.doctor.hqPlayer.error.advice': 'Check HQPlayer Desktop/control port first; ECHO is not changing the external renderer path automatically.',
+  'audioSignalPath.doctor.hqPlayer.error.detail': 'HQPlayer reported an external playback problem.',
+  'audioSignalPath.doctor.hqPlayer.error.title': 'External path error',
+  'audioSignalPath.doctor.hqPlayer.external.advice': 'Adjust HQPlayer profile/filter/shaper inside HQPlayer when you want to change this chain.',
+  'audioSignalPath.doctor.hqPlayer.external.detail': 'ECHO hands off transport; HQPlayer decides final DSP, rate, shaper, and output.',
+  'audioSignalPath.doctor.hqPlayer.external.title': 'External renderer owns the chain',
+  'audioSignalPath.doctor.hqPlayer.output.advice': 'If this rate looks unexpected, review the active HQPlayer profile rather than ECHO local output mode.',
+  'audioSignalPath.doctor.hqPlayer.output.detail': '{output}; this rate comes from HQPlayer telemetry, not the local Windows output path.',
+  'audioSignalPath.doctor.hqPlayer.output.title': 'HQPlayer output is reported',
+  'audioSignalPath.doctor.hqPlayer.waiting.advice': 'Wait for HQPlayer telemetry or open HQPlayer to confirm the active output pipeline.',
+  'audioSignalPath.doctor.hqPlayer.waiting.detail': 'Playback is handed off, but HQPlayer has not returned full processing details yet.',
+  'audioSignalPath.doctor.hqPlayer.waiting.title': 'Waiting for detailed telemetry',
+  'audioSignalPath.doctor.limiter.advice': 'Consider lowering preamp, EQ gain, FIR trim, or ReplayGain gain before chasing more loudness.',
+  'audioSignalPath.doctor.limiter.detail': 'The safety limiter is already protecting output after DSP.',
+  'audioSignalPath.doctor.limiter.title': 'Limiter is active',
+  'audioSignalPath.doctor.notBitPerfect.advice': 'For a stricter bit-perfect path, prefer Exclusive or ASIO output and keep DSP/SRC modules off.',
+  'audioSignalPath.doctor.notBitPerfect.detail': 'Because of {blockers}.',
+  'audioSignalPath.doctor.notBitPerfect.fallback': 'ECHO cannot mark this chain as a transparent 1:1 output right now.',
+  'audioSignalPath.doctor.notBitPerfect.title': 'Not bit-perfect',
+  'audioSignalPath.doctor.outputError.title': 'Output path error',
+  'audioSignalPath.doctor.resampling.advice': 'If you want native-rate playback, try Exclusive output or ASIO for this DAC instead of shared/system output.',
+  'audioSignalPath.doctor.resampling.detail': '{path}; ECHO is following the active output clock/backend, so this is not a 1:1 clock path.',
+  'audioSignalPath.doctor.resampling.title': 'Sample-rate conversion',
+  'audioSignalPath.doctor.sampleRateMismatch.advice': 'Check whether the target device supports this rate; Exclusive or ASIO output usually gives ECHO a cleaner device clock.',
+  'audioSignalPath.doctor.sampleRateMismatch.detail': '{path}; source and device clock are not aligned.',
+  'audioSignalPath.doctor.sampleRateMismatch.title': 'Sample-rate mismatch',
+  'audioSignalPath.doctor.title': 'Signal Path Doctor',
+  'audioSignalPath.doctor.waiting.advice': 'Play something first; Doctor will stay read-only and will not change output settings.',
+  'audioSignalPath.doctor.waiting.detail': 'Start a track and ECHO will explain the active signal path here.',
+  'audioSignalPath.doctor.waiting.title': 'Waiting for playback',
+  'audioSignalPath.meter.clipDetected.many': '{count} clip events detected',
+  'audioSignalPath.meter.clipDetected.one': '1 clip event detected',
+  'audioSignalPath.meter.closeToZero': 'Output is close to 0 dBFS',
+  'audioSignalPath.meter.detail': '{source} / headroom {headroom} / peak {peak}',
+  'audioSignalPath.meter.limiterHolding': 'Protect limiter is holding the output',
+  'audioSignalPath.meter.sourceFallback': 'Fallback level',
+  'audioSignalPath.meter.sourcePcm': 'PCM live level',
+  'audioSignalPath.meter.sourcePriming': 'Meter priming',
+  'audioSignalPath.meter.waiting': 'Waiting for realtime meter',
+  'audioSignalPath.metric.bitPerfectCandidate': 'Bit-perfect candidate',
+  'audioSignalPath.metric.clock': 'Clock',
+  'audioSignalPath.metric.clockPending': 'Clock pending',
+  'audioSignalPath.metric.directPath': 'Direct path',
+  'audioSignalPath.metric.external': 'External',
+  'audioSignalPath.metric.externalRendererClock': 'External renderer clock',
+  'audioSignalPath.metric.hqPlayerClock': 'HQPlayer clock',
+  'audioSignalPath.metric.hqPlayerError': 'HQPlayer reported an error',
+  'audioSignalPath.metric.hqPlayerOwnsGain': 'HQPlayer owns gain and final rendering',
+  'audioSignalPath.metric.liveLevel': 'Live Level',
+  'audioSignalPath.metric.mediaMetadata': 'Media metadata',
+  'audioSignalPath.metric.nativeClockPath': 'Native clock path',
+  'audioSignalPath.metric.noDspModules': 'No DSP modules active',
+  'audioSignalPath.metric.output': 'Output',
+  'audioSignalPath.metric.processing': 'Processing',
+  'audioSignalPath.metric.rateConversionActive': 'Rate conversion active',
+  'audioSignalPath.metric.source': 'Source',
+  'audioSignalPath.metric.sourceDeviceRateDiffers': 'Source and device rate differ',
+  'audioSignalPath.theater.title': 'Signal Path Theater',
+};
+
 const zhCN: TranslationMap = {
+  ...audioSignalPathExtrasZhCN,
   ...mediaLibraryZhCN,
   ...likedPageZhCN,
   ...settingsAboutDangerZhCN,
@@ -7790,6 +8203,7 @@ const zhCN: TranslationMap = {
 
 const zhTW: TranslationMap = {
   ...zhCN,
+  ...audioSignalPathExtrasZhTW,
   ...mediaLibraryZhTW,
   ...likedPageZhTW,
   ...settingsAboutDangerZhTW,
@@ -10813,6 +11227,7 @@ const zhTW: TranslationMap = {
 
 const jaJP: TranslationMap = {
   ...zhCN,
+  ...audioSignalPathExtrasJaJP,
   ...mediaLibraryJaJP,
   ...likedPageJaJP,
   ...settingsAboutDangerJaJP,
@@ -13914,6 +14329,7 @@ const jaJP: TranslationMap = {
 
 const enUS: TranslationMap = {
   ...zhCN,
+  ...audioSignalPathExtrasEnUS,
   ...mediaLibraryEnUS,
   ...likedPageEnUS,
   ...settingsAboutDangerEnUS,

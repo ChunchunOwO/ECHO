@@ -21996,7 +21996,8 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
   grid-template-columns: 58px minmax(0, 1fr);
   grid-template-areas:
     "eyebrow title"
-    "eyebrow detail";
+    "eyebrow detail"
+    "eyebrow advice";
   gap: 2px 8px;
   padding: 7px 8px;
   border: 1px solid rgba(110, 96, 145, 0.11);
@@ -22036,6 +22037,16 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
   font-size: 11.5px;
   font-style: normal;
   font-weight: 620;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+
+.signal-path-doctor__hint small {
+  grid-area: advice;
+  min-width: 0;
+  color: #5966c8;
+  font-size: 11.5px;
+  font-weight: 680;
   line-height: 1.28;
   overflow-wrap: anywhere;
 }
@@ -22475,6 +22486,10 @@ html[data-theme="dark"] .signal-path-doctor__hint em {
   color: #b8c4dc;
 }
 
+html[data-theme="dark"] .signal-path-doctor__hint small {
+  color: #aebaff;
+}
+
 html[data-theme="dark"] .signal-path-doctor__hint[data-tone="process"] {
   border-color: rgba(174, 186, 255, 0.18);
   background: rgba(86, 98, 180, 0.12);
@@ -22520,7 +22535,8 @@ html[data-theme="dark"] .signal-path-doctor__hint[data-tone="danger"] {
     grid-template-areas:
       "eyebrow"
       "title"
-      "detail";
+      "detail"
+      "advice";
   }
 
   .signal-path-roon-node {

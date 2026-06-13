@@ -10,13 +10,19 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioStatus } from '../../../shared/types/audio';
+import type { AudioOutputMode, AudioStatus } from '../../../shared/types/audio';
 import type { ConnectSessionStatus } from '../../../shared/types/connect';
 import type { HqPlayerRemotePlaybackStatus, HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { isHqPlayerConnectStatus } from '../../utils/connectPlayback';
+import {
+  getDacCapabilityAtlasProfile,
+  recordDacCapabilityObservation,
+  type DacCapabilityAtlasProfile,
+  type DacCapabilityModeStats,
+} from '../../utils/dacCapabilityAtlas';
 
 type AudioSignalPathPopoverProps = {
   isOpen: boolean;
@@ -67,6 +73,7 @@ type SignalDoctorInsight = {
   eyebrow: string;
   title: string;
   detail: string;
+  advice: string;
   tone: SignalTone;
 };
 
@@ -75,6 +82,20 @@ type SignalTheaterModel = {
   meter: SignalTheaterMeter;
   metrics: SignalTheaterMetric[];
   doctorInsights: SignalDoctorInsight[];
+};
+
+type DacCapabilityAtlasFact = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: SignalTone;
+};
+
+type DacCapabilityAtlasModeView = {
+  mode: AudioOutputMode;
+  label: string;
+  detail: string;
+  tone: SignalTone;
 };
 
 type SignalTheaterMeterStyle = CSSProperties & {
@@ -370,6 +391,148 @@ const outputBackendLabel = (backend: string | null | undefined): string | null =
   }
 
   return normalized;
+};
+
+const formatAtlasRateList = (rates: number[], t: Translate = fallbackT): string =>
+  rates
+    .map((rate) => formatRoonRate(rate))
+    .filter((rate): rate is string => Boolean(rate))
+    .join(' / ') || t('audioSignalPath.atlas.pending');
+
+const atlasProfileTone = (profile: DacCapabilityAtlasProfile | null): SignalTone => {
+  if (!profile || profile.observations <= 0) {
+    return 'muted';
+  }
+
+  if (profile.failureCount > 0 && profile.successCount === 0) {
+    return 'danger';
+  }
+
+  if (profile.lastFailureReason || profile.fortyFourToFortyEightCount > 0 || profile.sampleRateConversionCount > profile.nativeOutputRates.length) {
+    return 'warning';
+  }
+
+  return profile.nativeOutputRates.length ? 'good' : 'process';
+};
+
+const atlasModeTone = (stats: DacCapabilityModeStats | null | undefined): SignalTone => {
+  if (!stats || stats.observations <= 0) {
+    return 'muted';
+  }
+
+  if (stats.failureCount > 0 && stats.successCount === 0) {
+    return 'danger';
+  }
+
+  if (stats.failureCount > 0) {
+    return 'warning';
+  }
+
+  return stats.nativeSuccessCount > 0 ? 'good' : 'process';
+};
+
+const atlasModeDetail = (stats: DacCapabilityModeStats | null | undefined, t: Translate = fallbackT): string => {
+  if (!stats || stats.observations <= 0) {
+    return t('audioSignalPath.atlas.modeUnproven');
+  }
+
+  if (stats.failureCount > 0 && stats.successCount === 0) {
+    return t('audioSignalPath.atlas.modeIssues', { count: stats.failureCount });
+  }
+
+  if (stats.failureCount > 0) {
+    return t('audioSignalPath.atlas.modeMixed', { success: stats.successCount, issues: stats.failureCount });
+  }
+
+  if (stats.nativeSuccessCount > 0) {
+    return t('audioSignalPath.atlas.modeNative', { success: stats.successCount, native: stats.nativeSuccessCount });
+  }
+
+  return t('audioSignalPath.atlas.modeStable', { count: stats.successCount });
+};
+
+const atlasModeViews = (
+  profile: DacCapabilityAtlasProfile | null,
+  status: AudioStatus | null,
+  t: Translate = fallbackT,
+): DacCapabilityAtlasModeView[] => {
+  const modeOrder: AudioOutputMode[] = ['exclusive', 'asio', 'shared', 'system'];
+  const preferredOrder = status?.outputMode
+    ? [status.outputMode, ...modeOrder.filter((mode) => mode !== status.outputMode)]
+    : modeOrder;
+
+  return preferredOrder
+    .map((mode) => {
+      const stats = profile?.modes[mode] ?? null;
+      return {
+        mode,
+        label: outputModeLabel(mode, t),
+        detail: atlasModeDetail(stats, t),
+        tone: atlasModeTone(stats),
+      };
+    })
+    .filter((modeView, index) => index < 2 || modeView.tone !== 'muted')
+    .slice(0, 4);
+};
+
+const atlasFacts = (
+  profile: DacCapabilityAtlasProfile | null,
+  t: Translate = fallbackT,
+): DacCapabilityAtlasFact[] => {
+  const observedRates = formatAtlasRateList(profile?.observedOutputRates ?? [], t);
+  const nativeRate = formatRoonRate(profile?.lastNativeRate);
+  const nativeMode = profile?.lastNativeMode ? outputModeLabel(profile.lastNativeMode, t) : null;
+  const lastFailure = cleanReason(profile?.lastFailureReason);
+  const lastFailureMode = profile?.lastFailureMode ? outputModeLabel(profile.lastFailureMode, t) : null;
+
+  return [
+    {
+      label: t('audioSignalPath.atlas.observedRates'),
+      value: observedRates,
+      detail: t('audioSignalPath.atlas.observedOnly'),
+      tone: profile?.observedOutputRates.length ? 'process' : 'muted',
+    },
+    {
+      label: t('audioSignalPath.atlas.nativeProof'),
+      value: nativeRate ?? t('audioSignalPath.atlas.nativeNone'),
+      detail: nativeRate && nativeMode
+        ? t('audioSignalPath.atlas.nativeDetail', { mode: nativeMode })
+        : t('audioSignalPath.atlas.nativeNoneDetail'),
+      tone: nativeRate ? 'good' : 'muted',
+    },
+    {
+      label: t('audioSignalPath.atlas.resampleTendency'),
+      value: profile?.fortyFourToFortyEightCount
+        ? t('audioSignalPath.atlas.resample441To48', { count: profile.fortyFourToFortyEightCount })
+        : t('audioSignalPath.atlas.resampleNone'),
+      detail: profile?.sampleRateConversionCount
+        ? t('audioSignalPath.atlas.resampleDetail', { count: profile.sampleRateConversionCount })
+        : t('audioSignalPath.atlas.resampleNoneDetail'),
+      tone: profile?.fortyFourToFortyEightCount ? 'warning' : 'good',
+    },
+    {
+      label: t('audioSignalPath.atlas.lastIssue'),
+      value: lastFailure ?? t('audioSignalPath.atlas.lastIssueNone'),
+      detail: lastFailureMode
+        ? t('audioSignalPath.atlas.lastIssueDetail', { mode: lastFailureMode })
+        : t('audioSignalPath.atlas.lastIssueNoneDetail'),
+      tone: lastFailure ? 'warning' : 'good',
+    },
+  ];
+};
+
+const atlasResamplingAdvice = (
+  profile: DacCapabilityAtlasProfile | null,
+  t: Translate = fallbackT,
+): string | null => {
+  if (!profile?.lastNativeMode || !profile.lastNativeRate) {
+    return null;
+  }
+
+  return t('audioSignalPath.doctor.resampling.atlasAdvice', {
+    mode: outputModeLabel(profile.lastNativeMode, t),
+    rate: formatRoonRate(profile.lastNativeRate) ?? t('audioSignalPath.atlas.pending'),
+  });
 };
 
 const sourceLabel = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): string => {
@@ -909,7 +1072,7 @@ const signalLiveValueLabel = (status: AudioStatus | null): string | null => {
   return formatDb(levels?.estimatedOutputRmsDb ?? levels?.inputRmsDb ?? levels?.estimatedOutputPeakDb ?? levels?.inputPeakDb);
 };
 
-const buildHeadroomMeter = (status: AudioStatus | null): SignalTheaterMeter => {
+const buildHeadroomMeter = (status: AudioStatus | null, t: Translate = fallbackT): SignalTheaterMeter => {
   const levels = status?.audioLevels;
   const headroomDb = levels?.headroomDb ?? null;
   const clipCount = levels?.clipCount ?? 0;
@@ -923,24 +1086,24 @@ const buildHeadroomMeter = (status: AudioStatus | null): SignalTheaterMeter => {
         : 'good';
   const levelPeak = formatDb(levels?.estimatedOutputPeakDb ?? levels?.inputPeakDb);
   const meterSource = levels?.visualTelemetryState === 'pcm'
-    ? 'PCM live level'
+    ? t('audioSignalPath.meter.sourcePcm')
     : levels?.visualTelemetryState === 'priming'
-      ? 'Meter priming'
-      : 'Fallback level';
+      ? t('audioSignalPath.meter.sourcePriming')
+      : t('audioSignalPath.meter.sourceFallback');
   const detail = !status
-    ? 'Waiting for realtime meter'
+    ? t('audioSignalPath.meter.waiting')
     : status.dspLimiterProtecting
-      ? 'Protect limiter is holding the output'
+      ? t('audioSignalPath.meter.limiterHolding')
       : clipCount > 0
-        ? `${clipCount} clip event${clipCount === 1 ? '' : 's'} detected`
+        ? t(clipCount === 1 ? 'audioSignalPath.meter.clipDetected.one' : 'audioSignalPath.meter.clipDetected.many', { count: clipCount })
         : status.dspClippingRisk || status.clippingRisk
-          ? 'Output is close to 0 dBFS'
+          ? t('audioSignalPath.meter.closeToZero')
           : levelPeak
-            ? `${meterSource} / headroom ${formatDb(headroomDb) ?? '-- dB'} / peak ${levelPeak}`
+            ? t('audioSignalPath.meter.detail', { source: meterSource, headroom: formatDb(headroomDb) ?? '-- dB', peak: levelPeak })
             : meterSource;
 
   return {
-    label: 'Live Level',
+    label: t('audioSignalPath.metric.liveLevel'),
     value: signalLiveValueLabel(status) ?? '--',
     detail,
     tone,
@@ -951,13 +1114,15 @@ const buildHeadroomMeter = (status: AudioStatus | null): SignalTheaterMeter => {
 const buildLocalSignalDoctorInsights = (
   status: AudioStatus | null,
   track: LibraryTrack | null,
+  atlasProfile: DacCapabilityAtlasProfile | null,
   t: Translate = fallbackT,
 ): SignalDoctorInsight[] => {
   if (!status) {
     return [{
-      eyebrow: 'Doctor',
-      title: 'Waiting for playback',
-      detail: 'Start a track and ECHO will explain the active signal path here.',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.doctor'),
+      title: t('audioSignalPath.doctor.waiting.title'),
+      detail: t('audioSignalPath.doctor.waiting.detail'),
+      advice: t('audioSignalPath.doctor.waiting.advice'),
       tone: 'muted',
     }];
   }
@@ -972,9 +1137,10 @@ const buildLocalSignalDoctorInsights = (
 
   if (status.error || status.sampleRateMismatch) {
     insights.push({
-      eyebrow: 'Status',
-      title: status.error ? 'Output path error' : 'Sample-rate mismatch',
-      detail: cleanReason(status.error) ?? `${ratePath}; source and device clock are not aligned.`,
+      eyebrow: t('audioSignalPath.doctor.eyebrow.status'),
+      title: status.error ? t('audioSignalPath.doctor.outputError.title') : t('audioSignalPath.doctor.sampleRateMismatch.title'),
+      detail: cleanReason(status.error) ?? t('audioSignalPath.doctor.sampleRateMismatch.detail', { path: ratePath }),
+      advice: t('audioSignalPath.doctor.sampleRateMismatch.advice'),
       tone: 'danger',
     });
   } else if (status.resampling || (
@@ -985,52 +1151,61 @@ const buildLocalSignalDoctorInsights = (
     && Math.round(sourceRate) !== Math.round(outputRate)
   )) {
     insights.push({
-      eyebrow: 'Why',
-      title: 'Sample-rate conversion',
-      detail: `${ratePath}; ECHO is following the active output clock/backend, so this is not a 1:1 clock path.`,
+      eyebrow: t('audioSignalPath.doctor.eyebrow.why'),
+      title: t('audioSignalPath.doctor.resampling.title'),
+      detail: t('audioSignalPath.doctor.resampling.detail', { path: ratePath }),
+      advice: atlasResamplingAdvice(atlasProfile, t) ?? t('audioSignalPath.doctor.resampling.advice'),
       tone: status.echoSrcActive ? 'process' : 'warning',
     });
   }
 
   if (status.dspLimiterProtecting || status.dspClippingRisk || status.clippingRisk || (headroomDb !== null && headroomDb <= 3)) {
     insights.push({
-      eyebrow: 'Level',
-      title: status.dspLimiterProtecting ? 'Limiter is active' : 'Headroom is tight',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.level'),
+      title: status.dspLimiterProtecting ? t('audioSignalPath.doctor.limiter.title') : t('audioSignalPath.doctor.headroom.title'),
       detail: status.dspLimiterProtecting
-        ? 'The safety limiter is already protecting output after DSP.'
-        : `Headroom ${formatDb(headroomDb) ?? '-- dB'}${levelPeak ? `, peak ${levelPeak}` : ''}; watch this when EQ/FIR/preamp is active.`,
+        ? t('audioSignalPath.doctor.limiter.detail')
+        : t('audioSignalPath.doctor.headroom.detail', { headroom: formatDb(headroomDb) ?? '-- dB', peak: levelPeak ?? '-- dB' }),
+      advice: status.dspLimiterProtecting
+        ? t('audioSignalPath.doctor.limiter.advice')
+        : t('audioSignalPath.doctor.headroom.advice'),
       tone: status.dspLimiterProtecting || status.dspClippingRisk || status.clippingRisk ? 'danger' : 'warning',
     });
   }
 
   if (status.bitPerfectCandidate) {
     insights.push({
-      eyebrow: 'Bit-perfect',
-      title: 'Bit-perfect candidate',
-      detail: `${outputModeLabel(status.outputMode, t)} output with no active DSP blockers detected.`,
+      eyebrow: t('audioSignalPath.doctor.eyebrow.bitPerfect'),
+      title: t('audioSignalPath.doctor.bitPerfect.title'),
+      detail: t('audioSignalPath.doctor.bitPerfect.detail', { mode: outputModeLabel(status.outputMode, t) }),
+      advice: t('audioSignalPath.doctor.bitPerfect.advice'),
       tone: 'good',
     });
   } else {
     const blockers = [
-      status.resampling || status.echoSrcActive ? 'rate conversion' : null,
+      status.resampling || status.echoSrcActive ? t('audioSignalPath.doctor.blocker.rateConversion') : null,
       dspModules.length ? dspModules.slice(0, 2).join(' + ') : null,
       status.outputMode === 'shared' || status.outputMode === 'system' ? outputModeLabel(status.outputMode, t) : null,
       cleanReason(status.bitPerfectDisabledReason),
     ].filter((item): item is string => Boolean(item));
 
     insights.push({
-      eyebrow: 'Bit-perfect',
-      title: 'Not bit-perfect',
-      detail: blockers.length ? `Because of ${blockers.join(' / ')}.` : 'ECHO cannot mark this chain as a transparent 1:1 output right now.',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.bitPerfect'),
+      title: t('audioSignalPath.doctor.notBitPerfect.title'),
+      detail: blockers.length
+        ? t('audioSignalPath.doctor.notBitPerfect.detail', { blockers: blockers.join(' / ') })
+        : t('audioSignalPath.doctor.notBitPerfect.fallback'),
+      advice: t('audioSignalPath.doctor.notBitPerfect.advice'),
       tone: status.sampleRateMismatch || status.error ? 'danger' : 'warning',
     });
   }
 
   if (status.echoSrcActive) {
     insights.push({
-      eyebrow: 'SRC',
-      title: 'ECHO SRC is intentional',
-      detail: formatEchoSrcPath(status, track) ?? 'Upsampling is enabled by the current DSP/SRC mode.',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.src'),
+      title: t('audioSignalPath.doctor.echoSrc.title'),
+      detail: formatEchoSrcPath(status, track) ?? t('audioSignalPath.doctor.echoSrc.detail'),
+      advice: t('audioSignalPath.doctor.echoSrc.advice'),
       tone: 'process',
     });
   }
@@ -1047,35 +1222,39 @@ const buildHqPlayerSignalDoctorInsights = (
 
   if (connectStatus.state === 'error') {
     return [{
-      eyebrow: 'HQPlayer',
-      title: 'External path error',
-      detail: cleanReason(connectStatus.error) ?? 'HQPlayer reported an external playback problem.',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.hqPlayer'),
+      title: t('audioSignalPath.doctor.hqPlayer.error.title'),
+      detail: cleanReason(connectStatus.error) ?? t('audioSignalPath.doctor.hqPlayer.error.detail'),
+      advice: t('audioSignalPath.doctor.hqPlayer.error.advice'),
       tone: 'danger',
     }];
   }
 
   const insights: SignalDoctorInsight[] = [{
-    eyebrow: 'HQPlayer',
-    title: 'External renderer owns the chain',
-    detail: 'ECHO hands off transport; HQPlayer decides final DSP, rate, shaper, and output.',
+    eyebrow: t('audioSignalPath.doctor.eyebrow.hqPlayer'),
+    title: t('audioSignalPath.doctor.hqPlayer.external.title'),
+    detail: t('audioSignalPath.doctor.hqPlayer.external.detail'),
+    advice: t('audioSignalPath.doctor.hqPlayer.external.advice'),
     tone: 'process',
   }];
 
   const output = hqPlayerOutputLabel(playbackStatus, t);
   if (output !== t('audioSignalPath.hqPlayer.outputDecided')) {
     insights.push({
-      eyebrow: 'Clock',
-      title: 'HQPlayer output is reported',
-      detail: `${output}; this rate comes from HQPlayer telemetry, not the local Windows output path.`,
+      eyebrow: t('audioSignalPath.doctor.eyebrow.clock'),
+      title: t('audioSignalPath.doctor.hqPlayer.output.title'),
+      detail: t('audioSignalPath.doctor.hqPlayer.output.detail', { output }),
+      advice: t('audioSignalPath.doctor.hqPlayer.output.advice'),
       tone: 'process',
     });
   }
 
   if (!hasHqPlayerPlaybackDetails(playbackStatus)) {
     insights.push({
-      eyebrow: 'Status',
-      title: 'Waiting for detailed telemetry',
-      detail: 'Playback is handed off, but HQPlayer has not returned full processing details yet.',
+      eyebrow: t('audioSignalPath.doctor.eyebrow.status'),
+      title: t('audioSignalPath.doctor.hqPlayer.waiting.title'),
+      detail: t('audioSignalPath.doctor.hqPlayer.waiting.detail'),
+      advice: t('audioSignalPath.doctor.hqPlayer.waiting.advice'),
       tone: 'muted',
     });
   }
@@ -1087,6 +1266,7 @@ const buildLocalSignalTheater = (
   status: AudioStatus | null,
   track: LibraryTrack | null,
   summary: SignalSummary,
+  atlasProfile: DacCapabilityAtlasProfile | null,
   t: Translate = fallbackT,
 ): SignalTheaterModel => {
   const dspModules = buildDspModules(status, t);
@@ -1103,37 +1283,37 @@ const buildLocalSignalTheater = (
 
   return {
     detail: summary.detail,
-    meter: buildHeadroomMeter(status),
-    doctorInsights: buildLocalSignalDoctorInsights(status, track, t),
+    meter: buildHeadroomMeter(status, t),
+    doctorInsights: buildLocalSignalDoctorInsights(status, track, atlasProfile, t),
     metrics: [
       {
-        label: 'Source',
+        label: t('audioSignalPath.metric.source'),
         value: roonSourceLabel(status, track, t),
-        detail: joinSpec([formatBitrate(track?.bitrate ?? status?.bitrate), formatChannels(status?.channels)], 'Media metadata'),
+        detail: joinSpec([formatBitrate(track?.bitrate ?? status?.bitrate), formatChannels(status?.channels)], t('audioSignalPath.metric.mediaMetadata')),
         tone: status ? 'good' : 'muted',
       },
       {
-        label: 'Processing',
-        value: dspModules.length ? dspModules.slice(0, 3).join(' + ') : status?.resampling ? t('audioSignalPath.summary.resampling') : 'Direct path',
-        detail: formatResamplePath(status, track) ?? (dspModules.length ? t('audioSignalPath.process.echoChain') : 'No DSP modules active'),
+        label: t('audioSignalPath.metric.processing'),
+        value: dspModules.length ? dspModules.slice(0, 3).join(' + ') : status?.resampling ? t('audioSignalPath.summary.resampling') : t('audioSignalPath.metric.directPath'),
+        detail: formatResamplePath(status, track) ?? (dspModules.length ? t('audioSignalPath.process.echoChain') : t('audioSignalPath.metric.noDspModules')),
         tone: processingTone,
       },
       {
-        label: 'Output',
+        label: t('audioSignalPath.metric.output'),
         value: status?.outputDeviceName ?? t('audioSignalPath.output.systemDefaultDevice'),
         detail: joinSpec([outputMode, outputBackend, formatRoonRate(outputRate)], outputMode),
         tone: status?.sampleRateMismatch || status?.error ? 'danger' : status ? 'good' : 'muted',
       },
       {
-        label: 'Clock',
-        value: ratePairLabel(status?.fileSampleRate ?? track?.sampleRate, outputRate, 'Clock pending'),
+        label: t('audioSignalPath.metric.clock'),
+        value: ratePairLabel(status?.fileSampleRate ?? track?.sampleRate, outputRate, t('audioSignalPath.metric.clockPending')),
         detail: status?.bitPerfectCandidate
-          ? 'Bit-perfect candidate'
+          ? t('audioSignalPath.metric.bitPerfectCandidate')
           : status?.sampleRateMismatch
-            ? 'Source and device rate differ'
+            ? t('audioSignalPath.metric.sourceDeviceRateDiffers')
             : status?.resampling || status?.echoSrcActive
-              ? 'Rate conversion active'
-              : 'Native clock path',
+              ? t('audioSignalPath.metric.rateConversionActive')
+              : t('audioSignalPath.metric.nativeClockPath'),
         tone: status?.sampleRateMismatch ? 'danger' : status?.resampling || status?.echoSrcActive ? 'process' : status ? 'good' : 'muted',
       },
     ],
@@ -1159,28 +1339,30 @@ const buildHqPlayerSignalTheater = (
   return {
     detail: summary.detail,
     meter: {
-      label: 'Live Level',
-      value: 'External',
-      detail: connectStatus.state === 'error' ? cleanReason(connectStatus.error) ?? 'HQPlayer reported an error' : 'HQPlayer owns gain and final rendering',
+      label: t('audioSignalPath.metric.liveLevel'),
+      value: t('audioSignalPath.metric.external'),
+      detail: connectStatus.state === 'error'
+        ? cleanReason(connectStatus.error) ?? t('audioSignalPath.metric.hqPlayerError')
+        : t('audioSignalPath.metric.hqPlayerOwnsGain'),
       tone: meterTone,
       fillPercent: meterTone === 'muted' ? 0 : 100,
     },
     doctorInsights: buildHqPlayerSignalDoctorInsights(connectStatus, hqPlayerStatus, t),
     metrics: [
       {
-        label: 'Source',
+        label: t('audioSignalPath.metric.source'),
         value: hqPlayerSourceLabel(connectStatus, track, playbackStatus, t),
         detail: connectProtocolLabel(connectStatus.protocol),
         tone: connectStatus.state === 'error' ? 'danger' : 'good',
       },
       {
-        label: 'Processing',
+        label: t('audioSignalPath.metric.processing'),
         value: dsp ?? hqPlayerStateLabel(playbackStatus?.state ?? connectStatus.state, t),
         detail: hqPlayerStatus?.controlInfo?.product ?? t('audioSignalPath.hqPlayer.externalChain'),
         tone,
       },
       {
-        label: 'Output',
+        label: t('audioSignalPath.metric.output'),
         value: output,
         detail: output === t('audioSignalPath.hqPlayer.outputDecided')
           ? t('audioSignalPath.hqPlayer.externalRendering')
@@ -1188,11 +1370,11 @@ const buildHqPlayerSignalTheater = (
         tone,
       },
       {
-        label: 'Clock',
+        label: t('audioSignalPath.metric.clock'),
         value: outputRate
-          ? hqPlayerRatePairLabel(sourceRate, outputRate, 'HQPlayer clock')
-          : ratePairLabel(sourceRate, metadata?.sampleRate ?? null, 'HQPlayer clock'),
-        detail: playbackStatus?.activeMode ?? 'External renderer clock',
+          ? hqPlayerRatePairLabel(sourceRate, outputRate, t('audioSignalPath.metric.hqPlayerClock'))
+          : ratePairLabel(sourceRate, metadata?.sampleRate ?? null, t('audioSignalPath.metric.hqPlayerClock')),
+        detail: playbackStatus?.activeMode ?? t('audioSignalPath.metric.externalRendererClock'),
         tone,
       },
     ],
@@ -1205,11 +1387,12 @@ const buildResolvedSignalTheater = (
   connectStatus: ConnectSessionStatus | null | undefined,
   hqPlayerStatus: HqPlayerStatus | null,
   summary: SignalSummary,
+  atlasProfile: DacCapabilityAtlasProfile | null,
   t: Translate = fallbackT,
 ): SignalTheaterModel =>
   isHqPlayerSignalPath(connectStatus)
     ? buildHqPlayerSignalTheater(connectStatus, track, hqPlayerStatus, summary, t)
-    : buildLocalSignalTheater(status, track, summary, t);
+    : buildLocalSignalTheater(status, track, summary, atlasProfile, t);
 
 const getDisplaySignalPathLabel = (
   status: AudioStatus | null,
@@ -1263,6 +1446,7 @@ export const AudioSignalPathPopover = ({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isDoctorCollapsed, setIsDoctorCollapsed] = useState(true);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
+  const [atlasProfile, setAtlasProfile] = useState<DacCapabilityAtlasProfile | null>(() => getDacCapabilityAtlasProfile(status));
   const closeTimerRef = useRef<number | null>(null);
   const hqPlayerSignalActive = isHqPlayerSignalPath(connectStatus);
   const hqPlayerSessionKey = hqPlayerSignalActive
@@ -1307,6 +1491,15 @@ export const AudioSignalPathPopover = ({
       setIsDoctorCollapsed(true);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (hqPlayerSignalActive) {
+      setAtlasProfile(null);
+      return;
+    }
+
+    setAtlasProfile(recordDacCapabilityObservation(status, track) ?? getDacCapabilityAtlasProfile(status));
+  }, [hqPlayerSignalActive, status, track]);
 
   useEffect(() => {
     if (!hqPlayerSignalActive) {
@@ -1363,11 +1556,21 @@ export const AudioSignalPathPopover = ({
 
   const nodes = buildResolvedSignalPathNodes(status, track, connectStatus, hqPlayerStatus, t);
   const summary = getResolvedSignalSummary(status, track, connectStatus, hqPlayerStatus, t);
-  const theater = buildResolvedSignalTheater(status, track, connectStatus, hqPlayerStatus, summary, t);
+  const theater = buildResolvedSignalTheater(status, track, connectStatus, hqPlayerStatus, summary, atlasProfile, t);
   const theaterMeterStyle: SignalTheaterMeterStyle = {
     '--signal-meter-fill': `${theater.meter.fillPercent}%`,
   };
   const pathLabel = getDisplaySignalPathLabel(status, connectStatus, t);
+  const showAtlas = !hqPlayerSignalActive;
+  const atlasTone = atlasProfileTone(atlasProfile);
+  const atlasDeviceName = atlasProfile?.deviceName ?? status?.outputDeviceName ?? t('audioSignalPath.output.systemDefaultDevice');
+  const atlasFactRows = atlasFacts(atlasProfile, t);
+  const atlasModes = atlasModeViews(atlasProfile, status, t);
+  const doctorToggleLabel = isDoctorCollapsed ? t('audioSignalPath.doctor.expand') : t('audioSignalPath.doctor.collapse');
+  const doctorHintCountLabel = t(
+    theater.doctorInsights.length === 1 ? 'audioSignalPath.doctor.hintCount.one' : 'audioSignalPath.doctor.hintCount.many',
+    { count: theater.doctorInsights.length },
+  );
 
   return (
     <section
@@ -1394,7 +1597,7 @@ export const AudioSignalPathPopover = ({
 
       <div className="signal-path-theater" data-tone={summary.tone}>
         <div className="signal-path-theater__hero">
-          <span>Signal Path Theater</span>
+          <span>{t('audioSignalPath.theater.title')}</span>
           <strong>{summary.label}</strong>
           <p>{theater.detail}</p>
         </div>
@@ -1449,19 +1652,19 @@ export const AudioSignalPathPopover = ({
 
       <div
         className="signal-path-doctor"
-        aria-label="Signal Path Doctor"
+        aria-label={t('audioSignalPath.doctor.title')}
         data-collapsed={isDoctorCollapsed ? 'true' : undefined}
       >
         <button
           className="signal-path-doctor__header"
           type="button"
           aria-expanded={!isDoctorCollapsed}
-          aria-label={isDoctorCollapsed ? 'Expand Signal Path Doctor' : 'Collapse Signal Path Doctor'}
-          title={isDoctorCollapsed ? 'Expand Signal Path Doctor' : 'Collapse Signal Path Doctor'}
+          aria-label={doctorToggleLabel}
+          title={doctorToggleLabel}
           onClick={() => setIsDoctorCollapsed((current) => !current)}
         >
-          <span>Signal Path Doctor</span>
-          <strong>{theater.doctorInsights.length} hint{theater.doctorInsights.length === 1 ? '' : 's'}</strong>
+          <span>{t('audioSignalPath.doctor.title')}</span>
+          <strong>{doctorHintCountLabel}</strong>
           <ChevronDown size={15} />
         </button>
         {!isDoctorCollapsed ? (
@@ -1471,6 +1674,7 @@ export const AudioSignalPathPopover = ({
                 <span>{insight.eyebrow}</span>
                 <strong>{insight.title}</strong>
                 <em>{insight.detail}</em>
+                <small>{insight.advice}</small>
               </article>
             ))}
           </div>

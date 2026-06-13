@@ -614,7 +614,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       min-width: 0;
       overflow: hidden;
       padding: 0;
-      border: 1px solid rgba(255,255,255,0.035);
+      border: 0;
       border-radius: 8px;
       background:
         linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.025) 18%, rgba(13, 11, 17, 0.7) 64%, rgba(8, 7, 11, 0.9)),
@@ -1387,19 +1387,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const baseW = wide ? clamp(Math.round(viewportW / 8.9), 118, 150) : clamp(Math.round(viewportW / 3.8), 88, 112);
       const copyH = wide ? 98 : 82;
       const desktop = [
-        [0.50, 0.50, 1.08, 1.00], [0.39, 0.53, 1.00, 0.98], [0.58, 0.38, 0.98, 0.94],
-        [0.34, 0.34, 0.92, 0.90], [0.66, 0.52, 0.90, 0.86], [0.25, 0.50, 0.84, 0.78],
-        [0.73, 0.33, 0.80, 0.72], [0.47, 0.72, 0.82, 0.78], [0.34, 0.74, 0.76, 0.68],
-        [0.64, 0.73, 0.78, 0.70], [0.20, 0.30, 0.68, 0.58], [0.81, 0.58, 0.70, 0.58],
-        [0.17, 0.68, 0.64, 0.50], [0.85, 0.24, 0.62, 0.48], [0.12, 0.44, 0.56, 0.42],
-        [0.90, 0.45, 0.56, 0.42], [0.28, 0.18, 0.66, 0.52], [0.50, 0.18, 0.64, 0.50],
-        [0.76, 0.80, 0.64, 0.48], [0.24, 0.88, 0.58, 0.42], [0.90, 0.78, 0.54, 0.38],
-        [0.07, 0.22, 0.50, 0.32], [0.08, 0.82, 0.50, 0.32], [0.94, 0.16, 0.48, 0.30],
+        [0.52, 0.50, 1.06, 1.00], [0.39, 0.53, 0.98, 0.96], [0.46, 0.32, 0.90, 0.86],
+        [0.64, 0.42, 0.88, 0.80], [0.66, 0.64, 0.76, 0.68], [0.29, 0.35, 0.70, 0.58],
+        [0.28, 0.69, 0.70, 0.56], [0.52, 0.76, 0.66, 0.48], [0.76, 0.30, 0.62, 0.40],
+        [0.18, 0.49, 0.58, 0.36], [0.84, 0.56, 0.58, 0.34], [0.16, 0.25, 0.52, 0.28],
+        [0.83, 0.80, 0.52, 0.28], [0.34, 0.86, 0.52, 0.26], [0.06, 0.70, 0.48, 0.22],
+        [0.94, 0.22, 0.48, 0.22],
       ];
       const mobile = [
-        [0.50, 0.42, 1.06, 1.00], [0.30, 0.55, 0.88, 0.76], [0.71, 0.57, 0.86, 0.74],
-        [0.50, 0.72, 0.82, 0.68], [0.24, 0.28, 0.70, 0.46], [0.76, 0.29, 0.70, 0.46],
-        [0.18, 0.78, 0.58, 0.34], [0.84, 0.80, 0.58, 0.34], [0.50, 0.18, 0.60, 0.38],
+        [0.50, 0.42, 1.06, 1.00], [0.30, 0.56, 0.88, 0.74], [0.71, 0.57, 0.86, 0.72],
+        [0.50, 0.74, 0.80, 0.60], [0.24, 0.28, 0.66, 0.38], [0.76, 0.30, 0.66, 0.38],
+        [0.50, 0.17, 0.58, 0.30],
       ];
       return (wide ? desktop : mobile).map((slot, index) => {
         const size = Math.round(baseW * slot[2] + (seeded(index, 1) - 0.5) * (wide ? 12 : 8));
@@ -1432,7 +1430,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         const size = slot.size;
         const tilt = (seeded(index, 4) - 0.5) * (slot.primary ? 2.2 : 4.6);
         const scale = slot.primary ? 1 + seeded(index, 6) * 0.04 : 0.96 + seeded(index, 6) * 0.08;
-        const opacity = clamp(slot.opacity + seeded(index, 5) * 0.05, 0.28, 1);
+        const opacity = clamp(slot.opacity + seeded(index, 5) * 0.04, 0.2, 1);
         const depthY = Math.round((seeded(index, 7) - 0.5) * (slot.primary ? 10 : 24));
         const depthZ = slot.primary ? 86 + Math.round(seeded(index, 13) * 42) : -18 + Math.round(seeded(index, 13) * 58);
         const z = slot.primary ? 120 + Math.round(seeded(index, 11) * 20) : 44 + Math.round(slot.opacity * 52) + Math.round(seeded(index, 11) * 12);

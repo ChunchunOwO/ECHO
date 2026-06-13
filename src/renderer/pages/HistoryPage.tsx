@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BarChart3, CalendarDays, Clock3, Disc3, ListX, Music2, Radio, RefreshCw, Search, Trash2, Trophy } from 'lucide-react';
+import { ArrowRight, BarChart3, Brain, CalendarDays, Clock3, Disc3, Heart, ListX, Moon, Music2, Radio, RefreshCw, Search, SkipForward, Sparkles, Trash2, Trophy } from 'lucide-react';
 import type {
   LibraryTrack,
+  PlaybackMemoryGraph,
+  PlaybackMemoryTimeBucket,
+  PlaybackMemoryTimeBucketId,
+  PlaybackMemoryTrackInsight,
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
   PlaybackHistorySummary,
@@ -35,6 +39,7 @@ type HistoryPageData = {
   filter: HistoryFilter;
   hasMore: boolean;
   items: PlaybackHistoryEntry[];
+  memory: PlaybackMemoryGraph | null;
   page: number;
   recentItems: PlaybackHistoryEntry[];
   search: string;
@@ -101,6 +106,7 @@ const emptyHistoryPageData: HistoryPageData = {
   filter: 'all',
   hasMore: false,
   items: [],
+  memory: null,
   page: 1,
   recentItems: [],
   search: '',
@@ -118,7 +124,7 @@ const isHistoryFilter = (value: unknown): value is HistoryFilter =>
 const isDefaultHistoryQuery = (filter: HistoryFilter, search: string): boolean => filter === 'all' && search.trim().length === 0;
 
 const hasHistoryPageData = (data: HistoryPageData | null): boolean =>
-  Boolean(data && (data.items.length > 0 || data.recentItems.length > 0 || data.total > 0 || data.summary || data.stats));
+  Boolean(data && (data.items.length > 0 || data.recentItems.length > 0 || data.total > 0 || data.summary || data.stats || data.memory));
 
 const sortHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[] =>
   [...items]
@@ -207,6 +213,7 @@ const normalizeStoredHistoryPageData = (value: unknown): HistoryPageData | null 
     filter,
     hasMore: value.hasMore === true,
     items: Array.isArray(value.items) ? sortHistoryItems(value.items as PlaybackHistoryEntry[]) : [],
+    memory: isRecord(value.memory) ? (value.memory as PlaybackMemoryGraph) : null,
     page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1,
     recentItems: Array.isArray(value.recentItems) ? sortRecentHistoryItems(value.recentItems as PlaybackHistoryEntry[]) : [],
     search,
@@ -462,6 +469,29 @@ const formatDayLabel = (date: string): string => {
 const formatMonthLabel = (date: Date): string =>
   new Intl.DateTimeFormat(undefined, { month: 'short' }).format(date);
 
+const formatPercent = (value: number): string => `${Math.max(0, Math.min(100, Math.round(value * 100)))}%`;
+
+const formatMemoryGap = (seconds: number, t: ReturnType<typeof useI18n>['t']): string => {
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (minutes < 1) {
+    return t('historyPage.memory.gap.lessThanMinute');
+  }
+  if (minutes < 60) {
+    return t('historyPage.memory.gap.minutes', { count: minutes });
+  }
+  return t('historyPage.memory.gap.hours', { count: Math.round(minutes / 60) });
+};
+
+const formatMemoryTrackMeta = (track: PlaybackMemoryTrackInsight, t: ReturnType<typeof useI18n>['t']): string =>
+  track.artist || track.album || t('historyPage.list.unknownArtist');
+
+const memoryBucketLabelKeys: Record<PlaybackMemoryTimeBucketId, HistoryPageTranslationKey> = {
+  lateNight: 'historyPage.memory.bucket.lateNight',
+  morning: 'historyPage.memory.bucket.morning',
+  day: 'historyPage.memory.bucket.day',
+  evening: 'historyPage.memory.bucket.evening',
+};
+
 const trackFromStatsTrack = (track: PlaybackStatsTrack): LibraryTrack => ({
   id: track.trackId ?? track.id,
   path: track.id,
@@ -492,6 +522,7 @@ export const HistoryPage = (): JSX.Element => {
   const initialHistoryData = initialHistoryDataRef.current;
   const [items, setItems] = useState<PlaybackHistoryEntry[]>(initialHistoryData.items);
   const [recentItems, setRecentItems] = useState<PlaybackHistoryEntry[]>(initialHistoryData.recentItems);
+  const [memory, setMemory] = useState<PlaybackMemoryGraph | null>(initialHistoryData.memory);
   const [summary, setSummary] = useState<PlaybackHistorySummary | null>(initialHistoryData.summary);
   const [stats, setStats] = useState<PlaybackStatsDashboard | null>(initialHistoryData.stats);
   const [page, setPage] = useState(initialHistoryData.page);
@@ -547,8 +578,9 @@ export const HistoryPage = (): JSX.Element => {
         if (!library?.getPlaybackStatsDashboard) {
           if (statsRequestIdRef.current === statsRequestId) {
             setStats(null);
+            setMemory(null);
             if (shouldCacheSnapshot) {
-              mergeCachedHistoryPageData({ stats: null });
+              mergeCachedHistoryPageData({ memory: null, stats: null });
             }
           }
           return;
@@ -565,15 +597,19 @@ export const HistoryPage = (): JSX.Element => {
               return;
             }
 
-            return library.getPlaybackStatsDashboard(historyQuery)
-              .then((nextStats) => {
+            return Promise.all([
+              library.getPlaybackStatsDashboard(historyQuery),
+              library.getPlaybackMemoryGraph?.(historyQuery) ?? Promise.resolve(null),
+            ])
+              .then(([nextStats, nextMemory]) => {
                 if (statsRequestIdRef.current !== statsRequestId) {
                   return;
                 }
 
                 setStats(nextStats);
+                setMemory(nextMemory);
                 if (shouldCacheSnapshot) {
-                  mergeCachedHistoryPageData({ stats: nextStats });
+                  mergeCachedHistoryPageData({ memory: nextMemory, stats: nextStats });
                 }
               });
           })
@@ -603,11 +639,13 @@ export const HistoryPage = (): JSX.Element => {
       setError(null);
       if (mode === 'replace' && !hasVisibleCachedSnapshot) {
         setStats(null);
+        setMemory(null);
       }
 
       if (!library) {
         setItems([]);
         setRecentItems([]);
+        setMemory(null);
         setSummary(null);
         setStats(null);
         setPage(1);
@@ -655,6 +693,7 @@ export const HistoryPage = (): JSX.Element => {
             filter,
             hasMore: historyResult.hasMore,
             items: sortHistoryItems(historyResult.items),
+            memory: cachedHistoryPageData?.memory ?? null,
             page: historyResult.page,
             recentItems: sortRecentHistoryItems(recentHistoryResult?.items ?? []),
             search,
@@ -764,6 +803,7 @@ export const HistoryPage = (): JSX.Element => {
       setHasMore(false);
       invalidateStatsRefresh();
       setStats(null);
+      setMemory(null);
       const historyQuery = { search, ...historyFilterRange(filter) };
       const nextSummary = await (window.echo?.library?.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null));
       setSummary(nextSummary);
@@ -772,6 +812,7 @@ export const HistoryPage = (): JSX.Element => {
           filter,
           hasMore: false,
           items: [],
+          memory: null,
           page: 1,
           recentItems: [],
           search,
@@ -903,6 +944,8 @@ export const HistoryPage = (): JSX.Element => {
         )}
       </section>
 
+      <EchoMemoryPanel memory={memory} />
+
       <PlaybackStatsDashboardView stats={stats} onOpenArtist={handleOpenTopArtist} onOpenTrack={handleOpenTopTrack} />
 
       <section className="history-list-section" aria-label={t('historyPage.list.aria')}>
@@ -971,6 +1014,219 @@ const HistoryMetric = ({ icon, label, value }: { icon: JSX.Element; label: strin
     <strong>{value}</strong>
   </div>
 );
+
+const EchoMemoryPanel = ({ memory }: { memory: PlaybackMemoryGraph | null }): JSX.Element | null => {
+  const { t } = useI18n();
+
+  if (!memory || memory.totals.playCount <= 0) {
+    return null;
+  }
+
+  const completionRate = memory.totals.playCount > 0 ? memory.totals.completedCount / memory.totals.playCount : 0;
+  const skipRate = memory.totals.playCount > 0 ? memory.totals.skippedCount / memory.totals.playCount : 0;
+  const activeBucket = memory.timeBuckets.reduce<PlaybackMemoryTimeBucket | null>(
+    (best, bucket) => (!best || bucket.playCount > best.playCount ? bucket : best),
+    null,
+  );
+
+  return (
+    <section className="history-memory-panel" aria-label={t('historyPage.memory.aria')}>
+      <header className="history-memory-header">
+        <div>
+          <span className="section-kicker">{t('historyPage.memory.kicker')}</span>
+          <h2>{t('historyPage.memory.title')}</h2>
+        </div>
+        <span>{t('historyPage.memory.generated', { date: formatDate(memory.generatedAt, t) })}</span>
+      </header>
+
+      <div className="history-memory-summary" aria-label={t('historyPage.memory.summaryAria')}>
+        <HistoryMemoryStat icon={<Brain size={16} />} label={t('historyPage.memory.summary.events')} value={t('historyPage.memory.summary.eventsValue', { count: memory.coverage.rawEventCount })} />
+        <HistoryMemoryStat icon={<Trophy size={16} />} label={t('historyPage.memory.summary.completion')} value={formatPercent(completionRate)} />
+        <HistoryMemoryStat icon={<SkipForward size={16} />} label={t('historyPage.memory.summary.skip')} value={formatPercent(skipRate)} />
+        <HistoryMemoryStat
+          icon={<Clock3 size={16} />}
+          label={t('historyPage.memory.summary.activeTime')}
+          value={activeBucket ? t(memoryBucketLabelKeys[activeBucket.id]) : t('historyPage.date.none')}
+        />
+      </div>
+
+      <div className="history-memory-buckets">
+        {memory.timeBuckets.map((bucket) => (
+          <HistoryMemoryBucket bucket={bucket} key={bucket.id} maxCount={Math.max(1, ...memory.timeBuckets.map((item) => item.playCount))} />
+        ))}
+      </div>
+
+      <div className="history-memory-grid">
+        <HistoryMemoryTrackCard
+          detail={memory.lateNightTrack ? t('historyPage.memory.detail.playsDuration', {
+            count: memory.lateNightTrack.playCount,
+            duration: formatLongDuration(memory.lateNightTrack.playedSeconds, t),
+          }) : null}
+          empty={t('historyPage.memory.lateNight.empty')}
+          icon={<Moon size={16} />}
+          title={t('historyPage.memory.lateNight.title')}
+          track={memory.lateNightTrack}
+        />
+        <HistoryMemoryTrackCard
+          detail={memory.comebackTrack ? t('historyPage.memory.detail.lastPlayed', {
+            date: formatDate(memory.comebackTrack.lastPlayedAt, t),
+          }) : null}
+          empty={t('historyPage.memory.comeback.empty')}
+          icon={<Sparkles size={16} />}
+          title={t('historyPage.memory.comeback.title')}
+          track={memory.comebackTrack}
+        />
+        <HistoryMemoryTrackCard
+          detail={memory.forgottenTrack ? t('historyPage.memory.detail.lastPlayed', {
+            date: formatDate(memory.forgottenTrack.lastPlayedAt, t),
+          }) : null}
+          empty={t('historyPage.memory.forgotten.empty')}
+          icon={<Clock3 size={16} />}
+          title={t('historyPage.memory.forgotten.title')}
+          track={memory.forgottenTrack}
+        />
+        <HistoryMemoryTrackCard
+          detail={memory.likedTrack ? t('historyPage.memory.detail.plays', { count: memory.likedTrack.playCount }) : null}
+          empty={t('historyPage.memory.liked.empty')}
+          icon={<Heart size={16} />}
+          title={t('historyPage.memory.liked.title')}
+          track={memory.likedTrack}
+        />
+        <HistoryMemoryTrackCard
+          detail={memory.skippedTrack ? t('historyPage.memory.detail.skipped', {
+            count: memory.skippedTrack.skippedCount,
+            rate: formatPercent(memory.skippedTrack.playCount > 0 ? memory.skippedTrack.skippedCount / memory.skippedTrack.playCount : 0),
+          }) : null}
+          empty={t('historyPage.memory.skipped.empty')}
+          icon={<SkipForward size={16} />}
+          title={t('historyPage.memory.skipped.title')}
+          track={memory.skippedTrack}
+        />
+        <HistoryMemoryTransitionCard memory={memory} />
+      </div>
+
+      {memory.recentFlow.length > 1 ? (
+        <div className="history-memory-flow" aria-label={t('historyPage.memory.flow.aria')}>
+          <span>{t('historyPage.memory.flow.title')}</span>
+          <div>
+            {memory.recentFlow.map((track, index) => (
+              <div className="history-memory-flow-node" key={`${track.id}-${index}`}>
+                <strong>{track.title}</strong>
+                {index < memory.recentFlow.length - 1 ? <ArrowRight size={14} aria-hidden="true" /> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <p className="history-memory-coverage">
+        {memory.coverage.outputDeviceHistory
+          ? t('historyPage.memory.coverage.outputReady')
+          : t('historyPage.memory.coverage.outputMissing')}
+      </p>
+    </section>
+  );
+};
+
+const HistoryMemoryStat = ({ icon, label, value }: { icon: JSX.Element; label: string; value: string }): JSX.Element => (
+  <div className="history-memory-stat">
+    {icon}
+    <span>{label}</span>
+    <strong>{value}</strong>
+  </div>
+);
+
+const HistoryMemoryBucket = ({
+  bucket,
+  maxCount,
+}: {
+  bucket: PlaybackMemoryTimeBucket;
+  maxCount: number;
+}): JSX.Element => {
+  const { t } = useI18n();
+  return (
+    <div className="history-memory-bucket">
+      <span>{t(memoryBucketLabelKeys[bucket.id])}</span>
+      <div>
+        <i style={{ width: `${Math.max(4, (bucket.playCount / maxCount) * 100)}%` }} />
+      </div>
+      <strong>{t('historyPage.memory.bucket.count', { count: bucket.playCount })}</strong>
+    </div>
+  );
+};
+
+const HistoryMemoryTrackCard = ({
+  detail,
+  empty,
+  icon,
+  title,
+  track,
+}: {
+  detail: string | null;
+  empty: string;
+  icon: JSX.Element;
+  title: string;
+  track: PlaybackMemoryTrackInsight | null;
+}): JSX.Element => {
+  const { t } = useI18n();
+  return (
+    <article className="history-memory-card">
+      <header>
+        {icon}
+        <h3>{title}</h3>
+      </header>
+      {track ? (
+        <div className="history-memory-track">
+          <div className="history-memory-cover" data-empty={!track.coverThumb}>
+            {track.coverThumb ? <img alt="" src={track.coverThumb} /> : <Music2 size={16} />}
+          </div>
+          <div>
+            <strong>{track.title}</strong>
+            <span>{formatMemoryTrackMeta(track, t)}</span>
+            {detail ? <em>{detail}</em> : null}
+          </div>
+        </div>
+      ) : (
+        <p>{empty}</p>
+      )}
+    </article>
+  );
+};
+
+const HistoryMemoryTransitionCard = ({ memory }: { memory: PlaybackMemoryGraph }): JSX.Element => {
+  const { t } = useI18n();
+  const transition = memory.transition;
+
+  return (
+    <article className="history-memory-card history-memory-card--transition">
+      <header>
+        <ArrowRight size={16} />
+        <h3>{t('historyPage.memory.transition.title')}</h3>
+      </header>
+      {transition ? (
+        <>
+          <div className="history-memory-transition">
+            <div>
+              <strong>{transition.from.title}</strong>
+              <span>{formatMemoryTrackMeta(transition.from, t)}</span>
+            </div>
+            <ArrowRight size={15} aria-hidden="true" />
+            <div>
+              <strong>{transition.to.title}</strong>
+              <span>{formatMemoryTrackMeta(transition.to, t)}</span>
+            </div>
+          </div>
+          <em>{t('historyPage.memory.transition.detail', {
+            count: transition.count,
+            gap: formatMemoryGap(transition.averageGapSeconds, t),
+          })}</em>
+        </>
+      ) : (
+        <p>{t('historyPage.memory.transition.empty')}</p>
+      )}
+    </article>
+  );
+};
 
 const PlaybackStatsDashboardView = ({
   onOpenArtist,

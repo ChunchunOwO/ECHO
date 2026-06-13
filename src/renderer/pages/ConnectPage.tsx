@@ -58,6 +58,8 @@ import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 
+type Translate = ReturnType<typeof useI18n>['t'];
+
 const defaultStatus: ConnectSessionStatus = {
   deviceId: null,
   protocol: null,
@@ -281,69 +283,69 @@ const hqPlayerStateLabel: Record<HqPlayerStatus['state'], TranslationKey> = {
   unavailable: 'connectPage.hqplayer.state.unavailable',
 };
 
-const hqPlayerModeLabel: Record<HqPlayerConnectionMode, string> = {
-  localDesktop: '本机 Desktop',
-  remote: '远程 HQPlayer',
+const hqPlayerModeLabel: Record<HqPlayerConnectionMode, TranslationKey> = {
+  localDesktop: 'connectPage.hqplayer.mode.localDesktop',
+  remote: 'connectPage.hqplayer.mode.remote',
 };
 
-const hqPlayerBackendLabel: Record<HqPlayerDefaultPlaybackBackend, string> = {
-  echoNative: '继续用 ECHO',
-  ask: '每次询问',
-  hqplayer: '优先 HQPlayer',
+const hqPlayerBackendLabel: Record<HqPlayerDefaultPlaybackBackend, TranslationKey> = {
+  echoNative: 'connectPage.hqplayer.backend.echoNative',
+  ask: 'connectPage.hqplayer.backend.ask',
+  hqplayer: 'connectPage.hqplayer.backend.hqplayer',
 };
 
-const connectDonatorUnlockReasonLabel: Record<ConnectDonatorUnlockReason, string> = {
-  'plugin-missing': '需要先导入连接解锁插件。',
-  'plugin-disabled': '解锁插件已安装但未启用。',
-  'plugin-error': '解锁插件异常或已被隔离。',
-  'hwid-file-missing': `插件缺少 ${connectDonatorHwidFileName} 白名单文件。`,
-  'hwid-file-invalid': `${connectDonatorHwidFileName} 不是有效的 HWID 白名单。`,
-  'hwid-not-allowed': '当前设备 HWID 不在插件白名单内。',
-  'license-invalid': `${connectDonatorLicenseFileName} 不是有效的机器授权。`,
-  unlocked: '已解锁。',
+const connectDonatorUnlockReasonLabel: Record<ConnectDonatorUnlockReason, TranslationKey> = {
+  'plugin-missing': 'connectPage.lock.reason.pluginMissing',
+  'plugin-disabled': 'connectPage.lock.reason.pluginDisabled',
+  'plugin-error': 'connectPage.lock.reason.pluginError',
+  'hwid-file-missing': 'connectPage.lock.reason.hwidFileMissing',
+  'hwid-file-invalid': 'connectPage.lock.reason.hwidFileInvalid',
+  'hwid-not-allowed': 'connectPage.lock.reason.hwidNotAllowed',
+  'license-invalid': 'connectPage.lock.reason.licenseInvalid',
+  unlocked: 'connectPage.lock.reason.unlocked',
 };
 
-const hqPlayerHandoffReasonLabel: Record<HqPlayerPlaybackHandoffReason, string> = {
-  hqplayer_disabled: 'HQPlayer 未启用',
-  hqplayer_control_port_not_configured: '控制端口未配置',
-  hqplayer_confirmation_required: '需要确认',
-  echo_native_selected: '当前选择 ECHO 输出',
-  remote_hqplayer_requires_media_server: '远程模式需要媒体服务',
-  media_server_not_ready: '媒体服务未就绪',
-  spotify_sdk_required: 'Spotify 需要 SDK 播放',
-  streaming_item_unplayable: '串流曲目不可播放',
-  streaming_proxy_required: '需要代理播放',
-  source_requires_headers: '音源需要请求头',
-  source_resolution_failed: '音源解析失败',
-  unsupported_media_type: '暂不支持的媒体类型',
+const hqPlayerHandoffReasonLabel: Record<HqPlayerPlaybackHandoffReason, TranslationKey> = {
+  hqplayer_disabled: 'connectPage.hqplayer.handoffReason.disabled',
+  hqplayer_control_port_not_configured: 'connectPage.hqplayer.handoffReason.portNotConfigured',
+  hqplayer_confirmation_required: 'connectPage.hqplayer.handoffReason.confirmationRequired',
+  echo_native_selected: 'connectPage.hqplayer.handoffReason.echoNativeSelected',
+  remote_hqplayer_requires_media_server: 'connectPage.hqplayer.handoffReason.remoteRequiresMediaServer',
+  media_server_not_ready: 'connectPage.hqplayer.handoffReason.mediaServerNotReady',
+  spotify_sdk_required: 'connectPage.hqplayer.handoffReason.spotifySdkRequired',
+  streaming_item_unplayable: 'connectPage.hqplayer.handoffReason.streamingItemUnplayable',
+  streaming_proxy_required: 'connectPage.hqplayer.handoffReason.streamingProxyRequired',
+  source_requires_headers: 'connectPage.hqplayer.handoffReason.sourceRequiresHeaders',
+  source_resolution_failed: 'connectPage.hqplayer.handoffReason.sourceResolutionFailed',
+  unsupported_media_type: 'connectPage.hqplayer.handoffReason.unsupportedMediaType',
 };
 
-const hqPlayerSendReasonLabel: Record<HqPlayerPlaybackControlSendReason, string> = {
-  control_plan_missing: '还没有可发送的交接计划',
-  handoff_not_ready: '交接未就绪',
-  source_missing: '音源缺失',
-  source_requires_headers: '音源需要私密请求头',
-  hqplayer_control_port_not_configured: '控制端口未配置',
-  hqplayer_connection_timeout: '连接超时',
-  hqplayer_connection_refused: '连接被拒绝',
-  hqplayer_connection_failed: '连接失败',
-  hqplayer_protocol_error: '协议响应异常',
-  hqplayer_response_error: 'HQPlayer 返回错误',
+const hqPlayerSendReasonLabel: Record<HqPlayerPlaybackControlSendReason, TranslationKey> = {
+  control_plan_missing: 'connectPage.hqplayer.sendReason.controlPlanMissing',
+  handoff_not_ready: 'connectPage.hqplayer.sendReason.handoffNotReady',
+  source_missing: 'connectPage.hqplayer.sendReason.sourceMissing',
+  source_requires_headers: 'connectPage.hqplayer.sendReason.sourceRequiresHeaders',
+  hqplayer_control_port_not_configured: 'connectPage.hqplayer.sendReason.portNotConfigured',
+  hqplayer_connection_timeout: 'connectPage.hqplayer.sendReason.timeout',
+  hqplayer_connection_refused: 'connectPage.hqplayer.sendReason.refused',
+  hqplayer_connection_failed: 'connectPage.hqplayer.sendReason.failed',
+  hqplayer_protocol_error: 'connectPage.hqplayer.sendReason.protocolError',
+  hqplayer_response_error: 'connectPage.hqplayer.sendReason.responseError',
 };
 
-const hqPlayerExposureLabel: Record<NonNullable<HqPlayerPlaybackControlPlan['source']>['exposure'], string> = {
-  'local-file': '本地文件',
-  'loopback-http': '本机流地址',
-  'direct-http': '直连 HTTP',
-  'media-server': 'ECHO 媒体服务',
+const hqPlayerExposureLabel: Record<NonNullable<HqPlayerPlaybackControlPlan['source']>['exposure'], TranslationKey> = {
+  'local-file': 'connectPage.hqplayer.exposure.localFile',
+  'loopback-http': 'connectPage.hqplayer.exposure.loopbackHttp',
+  'direct-http': 'connectPage.hqplayer.exposure.directHttp',
+  'media-server': 'connectPage.hqplayer.exposure.mediaServer',
 };
 
-const hqPlayerRemoteStateLabel: Record<HqPlayerRemotePlaybackStatus['state'], string> = {
-  stopped: '已停止',
-  paused: '已暂停',
-  playing: '播放中',
-  'stop-requested': '正在停止',
-  unknown: '未知',
+const hqPlayerRemoteStateLabel: Record<HqPlayerRemotePlaybackStatus['state'], TranslationKey> = {
+  stopped: 'connectPage.state.stopped',
+  paused: 'connectPage.state.paused',
+  playing: 'connectPage.state.playing',
+  'stop-requested': 'connectPage.hqplayer.remoteState.stopRequested',
+  unknown: 'connectPage.common.unknown',
 };
 
 const formatTime = (seconds: number): string => {
@@ -626,17 +628,17 @@ const uniqueText = (values: Array<string | null | undefined>): string[] => {
   return result;
 };
 
-const formatDeviceProduct = (device: ConnectDevice): string => {
+const formatDeviceProduct = (device: ConnectDevice, t: Translate): string => {
   const parts = uniqueText([
     device.manufacturer,
     device.discovery?.modelName ?? device.model,
     device.discovery?.modelNumber,
   ]);
-  return parts.length > 0 ? parts.join(' · ') : '型号待识别';
+  return parts.length > 0 ? parts.join(' · ') : t('connectPage.device.modelUnknown');
 };
 
-const formatDeviceAddress = (device: ConnectDevice): string =>
-  device.address ? `局域网 ${device.address}` : '等待网络地址';
+const formatDeviceAddress = (device: ConnectDevice, t: Translate): string =>
+  device.address ? t('connectPage.device.lanAddress', { address: device.address }) : t('connectPage.device.waitingAddress');
 
 const formatMimeLabel = (mimeType: string): string => {
   switch (mimeType.toLowerCase()) {
@@ -660,10 +662,10 @@ const formatMimeLabel = (mimeType: string): string => {
   }
 };
 
-const formatDeviceFormatSupport = (device: ConnectDevice): string => {
+const formatDeviceFormatSupport = (device: ConnectDevice, t: Translate): string => {
   const supported = device.capabilities.supportedMimeTypes;
   if (supported.some((item) => item === '*/*' || item.endsWith('/*'))) {
-    return '全格式接收';
+    return t('connectPage.device.format.all');
   }
 
   const formats = supported
@@ -672,29 +674,29 @@ const formatDeviceFormatSupport = (device: ConnectDevice): string => {
     .slice(0, 3);
 
   if (formats.length === 0) {
-    return '格式待探测';
+    return t('connectPage.device.format.pending');
   }
 
   const extraCount = Math.max(0, supported.length - formats.length);
   return extraCount > 0 ? `${formats.join(' / ')} +${extraCount}` : formats.join(' / ');
 };
 
-const formatDeviceSupport = (device: ConnectDevice): string => {
+const formatDeviceSupport = (device: ConnectDevice, t: Translate): string => {
   if (device.protocol === 'hqplayer') {
-    return '本机控制 · 高精度输出';
+    return t('connectPage.device.support.hqplayer');
   }
 
   if (device.protocol === 'airplay') {
-    return '实验通道 · 元数据门控';
+    return t('connectPage.device.support.airplay');
   }
 
   const controls = [
-    device.capabilities.canSeek ? '可定位' : null,
-    device.capabilities.canSetVolume ? '可调音量' : null,
-    device.capabilities.supportsMetadata ? '封面/元数据' : null,
+    device.capabilities.canSeek ? t('connectPage.device.support.seek') : null,
+    device.capabilities.canSetVolume ? t('connectPage.device.support.volume') : null,
+    device.capabilities.supportsMetadata ? t('connectPage.device.support.metadata') : null,
   ].filter(Boolean);
-  const route = device.capabilities.requiresTranscode ? '需要转码' : '可直连';
-  return [...controls, route, formatDeviceFormatSupport(device)].join(' · ') || '基础 DLNA 投送';
+  const route = device.capabilities.requiresTranscode ? t('connectPage.device.support.transcode') : t('connectPage.device.support.direct');
+  return [...controls, route, formatDeviceFormatSupport(device, t)].join(' · ') || t('connectPage.device.support.basicDlna');
 };
 
 const formatReceiverAddress = (value: string): string => {
@@ -720,9 +722,9 @@ const parsePort = (value: string): number | null => {
   return parsed;
 };
 
-const formatTimestamp = (value: string | null): string => {
+const formatTimestamp = (value: string | null, t: Translate): string => {
   if (!value) {
-    return '未检测';
+    return t('connectPage.common.notChecked');
   }
 
   const date = new Date(value);
@@ -764,8 +766,8 @@ const writeTextToClipboard = async (value: string): Promise<void> => {
   }
 };
 
-const formatHqEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
-  settings.port ? `${settings.host}:${settings.port}` : `${settings.host}:未配置`;
+const formatHqEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>, t: Translate): string =>
+  settings.port ? `${settings.host}:${settings.port}` : `${settings.host}:${t('connectPage.common.notConfigured')}`;
 
 const withHqPlayerFriendlyDefaults = (settings: HqPlayerSettings): HqPlayerSettings => {
   const isLocal = settings.connectionMode !== 'remote';
@@ -798,54 +800,56 @@ const createHqPlayerStatusFromConnectionTest = (
   playbackStatus: result.playbackStatus ?? null,
 });
 
-const formatHqPlayerSendMessage = (plan: HqPlayerPlaybackControlPlan | null): string => {
+const formatHqPlayerSendMessage = (plan: HqPlayerPlaybackControlPlan | null, t: Translate): string => {
   const send = plan?.send ?? null;
   if (!send) {
-    return '未发送';
+    return t('connectPage.hqplayer.sendState.notSent');
   }
 
   if (send.state === 'sent') {
-    return `已发送 · ${send.elapsedMs}ms`;
+    return t('connectPage.hqplayer.sendState.sent', { ms: send.elapsedMs });
   }
 
   if (send.state === 'prepared') {
-    return '已准备';
+    return t('connectPage.hqplayer.sendState.prepared');
   }
 
-  const reason = send.reason ? hqPlayerSendReasonLabel[send.reason] : send.message;
-  return `${send.state === 'failed' ? '发送失败' : '未发送'} · ${reason ?? '未知原因'}`;
+  const reason = send.reason ? t(hqPlayerSendReasonLabel[send.reason]) : send.message;
+  return `${send.state === 'failed' ? t('connectPage.hqplayer.sendState.failed') : t('connectPage.hqplayer.sendState.notSent')} · ${reason ?? t('connectPage.hqplayer.sendState.unknownReason')}`;
 };
 
 const formatHqPlayerProduct = (
   controlInfo: HqPlayerConnectionTestResult['controlInfo'] | HqPlayerStatus['controlInfo'] | null | undefined,
+  t: Translate,
 ): string =>
   controlInfo?.product
     ? [controlInfo.product, controlInfo.version].filter(Boolean).join(' ')
-    : '待检测';
+    : t('connectPage.common.pendingCheck');
 
 const formatHqPlayerEngine = (
   controlInfo: HqPlayerConnectionTestResult['controlInfo'] | HqPlayerStatus['controlInfo'] | null | undefined,
+  t: Translate,
 ): string =>
-  controlInfo?.engine ?? controlInfo?.platform ?? '待检测';
+  controlInfo?.engine ?? controlInfo?.platform ?? t('connectPage.common.pendingCheck');
 
-const formatHqPlayerRemotePosition = (status: HqPlayerRemotePlaybackStatus | null): string => {
+const formatHqPlayerRemotePosition = (status: HqPlayerRemotePlaybackStatus | null, t: Translate): string => {
   if (!status) {
-    return '待检测';
+    return t('connectPage.common.pendingCheck');
   }
 
   const position = status.positionSeconds ?? 0;
   const duration = status.durationSeconds ?? 0;
-  return `${hqPlayerRemoteStateLabel[status.state]} · ${formatTime(position)} / ${formatTime(duration)}`;
+  return `${t(hqPlayerRemoteStateLabel[status.state])} · ${formatTime(position)} / ${formatTime(duration)}`;
 };
 
-const formatHqPlayerSignal = (status: HqPlayerRemotePlaybackStatus | null): string => {
+const formatHqPlayerSignal = (status: HqPlayerRemotePlaybackStatus | null, t: Translate): string => {
   if (!status) {
-    return '待检测';
+    return t('connectPage.common.pendingCheck');
   }
 
   const format = status.activeRate && status.activeBits && status.activeChannels
     ? `${status.activeRate}Hz / ${status.activeBits}bit / ${status.activeChannels}ch`
-    : '格式待回读';
+    : t('connectPage.hqplayer.signal.pendingFormat');
   const dsp = [status.activeMode, status.activeFilter, status.activeShaper].filter(Boolean).join(' · ');
   return dsp ? `${format} · ${dsp}` : format;
 };
@@ -896,7 +900,7 @@ const looksLikeTvDevice = (device: ConnectDevice): boolean => {
   return /\b(tv|bravia|webos|roku|chromecast|android tv|google tv|samsung|lg tv|tcl|hisense|xiaomi tv|mi tv)\b/iu.test(text);
 };
 
-const deviceVisual = (device: ConnectDevice): { icon: JSX.Element; label: string; tone: string } => {
+const deviceVisual = (device: ConnectDevice): { icon: JSX.Element; label: string; labelKey?: TranslationKey; tone: string } => {
   if (device.protocol === 'hqplayer') {
     return { icon: <HqPlayerGlyph />, label: 'HQPlayer', tone: 'hqplayer' };
   }
@@ -909,7 +913,7 @@ const deviceVisual = (device: ConnectDevice): { icon: JSX.Element; label: string
     return { icon: <TvGlyph />, label: 'TV', tone: 'tv' };
   }
 
-  return { icon: <StreamerGlyph />, label: '数播', tone: 'streamer' };
+  return { icon: <StreamerGlyph />, label: 'Streamer', labelKey: 'connectPage.devices.streamerLabel', tone: 'streamer' };
 };
 
 const toHqPlayerPlayableTrack = (track: LibraryTrack | null, fallbackPath: string | null): PlayableTrack | null => {
@@ -1106,20 +1110,20 @@ export const ConnectPage = (): JSX.Element => {
   const hqPlayerEndpointLabel = formatHqEndpoint({
     host: hqPlayerStatus?.endpoint.host ?? hqPlayerEffectiveDraft.host,
     port: hqPlayerStatus?.endpoint.port ?? hqPlayerEffectiveDraft.port,
-  });
+  }, t);
   const hqPlayerControlPlan = hqPlayerLastControl ?? hqPlayerLastHandoff?.control ?? null;
-  const hqPlayerLastReason = hqPlayerLastHandoff?.reason ? hqPlayerHandoffReasonLabel[hqPlayerLastHandoff.reason] : null;
+  const hqPlayerLastReason = hqPlayerLastHandoff?.reason ? t(hqPlayerHandoffReasonLabel[hqPlayerLastHandoff.reason]) : null;
   const hqPlayerCurrentPlayable = useMemo(
     () => toHqPlayerPlayableTrack(currentTrack, currentFilePath),
     [currentFilePath, currentTrack],
   );
-  const hqPlayerSendMessage = formatHqPlayerSendMessage(hqPlayerControlPlan);
+  const hqPlayerSendMessage = formatHqPlayerSendMessage(hqPlayerControlPlan, t);
   const hqPlayerControlInfo = hqPlayerTestResult?.controlInfo ?? hqPlayerStatus?.controlInfo ?? null;
   const hqPlayerPlaybackStatus = hqPlayerTestResult?.playbackStatus ?? hqPlayerStatus?.playbackStatus ?? null;
-  const hqPlayerProductLabel = formatHqPlayerProduct(hqPlayerControlInfo);
-  const hqPlayerEngineLabel = formatHqPlayerEngine(hqPlayerControlInfo);
-  const hqPlayerRemotePositionLabel = formatHqPlayerRemotePosition(hqPlayerPlaybackStatus);
-  const hqPlayerSignalLabel = formatHqPlayerSignal(hqPlayerPlaybackStatus);
+  const hqPlayerProductLabel = formatHqPlayerProduct(hqPlayerControlInfo, t);
+  const hqPlayerEngineLabel = formatHqPlayerEngine(hqPlayerControlInfo, t);
+  const hqPlayerRemotePositionLabel = formatHqPlayerRemotePosition(hqPlayerPlaybackStatus, t);
+  const hqPlayerSignalLabel = formatHqPlayerSignal(hqPlayerPlaybackStatus, t);
   const hqPlayerMediaServerLabel = hqPlayerLastHandoff?.source?.mediaServer
     ? `${hqPlayerLastHandoff.source.mediaServer.publicHost ?? 'unknown'}:${hqPlayerLastHandoff.source.mediaServer.port ?? 'auto'}`
     : null;
@@ -1130,7 +1134,7 @@ export const ConnectPage = (): JSX.Element => {
       ? status.deviceId
       : t('connectPage.nowPlaying.noOutput');
   const activeDeviceInfoLabel = activeDevice
-    ? `${formatDeviceProduct(activeDevice)} · ${formatDeviceAddress(activeDevice)}`
+    ? `${formatDeviceProduct(activeDevice, t)} · ${formatDeviceAddress(activeDevice, t)}`
     : t('connectPage.nowPlaying.chooseDevice');
   const activeMediaInfoLabel = [
     status.metadata?.coverHttpUrl ? t('connectPage.nowPlaying.coverReady') : t('connectPage.nowPlaying.coverWaiting'),
@@ -1151,8 +1155,8 @@ export const ConnectPage = (): JSX.Element => {
       (playbackState === 'loading' || playbackState === 'playing' || playbackState === 'paused'),
   );
   const radioStatusLabel = activeRadioStation
-    ? `${playbackState === 'playing' ? '播放中' : playbackState === 'paused' ? '已暂停' : '准备中'} · ${activeRadioStation.name}`
-    : '未播放电台';
+    ? `${playbackState === 'playing' ? t('connectPage.radio.state.playing') : playbackState === 'paused' ? t('connectPage.state.paused') : t('connectPage.radio.state.preparing')} · ${activeRadioStation.name}`
+    : t('connectPage.radio.state.inactive');
   const echoLinkHosts = useMemo(() => {
     const candidates = echoLinkStatus.addresses.length > 0 ? echoLinkStatus.addresses : [echoLinkStatus.host];
     return [...new Set(candidates.filter((address) => address.trim().length > 0))];
@@ -1173,10 +1177,10 @@ export const ConnectPage = (): JSX.Element => {
   const lanStreamerCount = visibleDevices.filter((device) => device.protocol === 'dlna').length;
   const airPlayOutputCount = visibleDevices.filter((device) => device.protocol === 'airplay').length;
   const hqPlayerOutputCount = visibleDevices.filter((device) => device.protocol === 'hqplayer').length;
-  const echoLinkStatusLabel = echoLinkStatus.running ? '在线' : echoLinkStatus.error ? '异常' : echoLinkStatus.enabled ? '启动中' : '未开启';
-  const echoLinkWebStatusLabel = echoLinkWebControlUrl ? 'Web 遥控就绪' : '等待 ECHO Link';
-  const receiverCommandLabel = receiverStatus.enabled ? t(receiverStateLabel[receiverStatus.state]) : '未开启';
-  const airPlayCommandLabel = airPlayReceiverStatus.enabled ? t(airPlayStateLabel[airPlayReceiverStatus.state]) : '未开启';
+  const echoLinkStatusLabel = echoLinkStatus.running ? t('connectPage.echoLink.state.running') : echoLinkStatus.error ? t('connectPage.echoLink.state.error') : echoLinkStatus.enabled ? t('connectPage.echoLink.state.starting') : t('connectPage.common.disabled');
+  const echoLinkWebStatusLabel = echoLinkWebControlUrl ? t('connectPage.echoLink.webReady') : t('connectPage.echoLink.webWaiting');
+  const receiverCommandLabel = receiverStatus.enabled ? t(receiverStateLabel[receiverStatus.state]) : t('connectPage.common.disabled');
+  const airPlayCommandLabel = airPlayReceiverStatus.enabled ? t(airPlayStateLabel[airPlayReceiverStatus.state]) : t('connectPage.common.disabled');
   const latestEchoLinkHttpError = echoLinkStatus.diagnostics.recentHttpErrors[0] ?? null;
   const commandCenterIssues = [
     error ? { source: 'Connect', detail: error } : null,
@@ -1198,22 +1202,22 @@ export const ConnectPage = (): JSX.Element => {
           : 'idle';
   const commandCenterHealthLabel =
     commandCenterHealth === 'warning'
-      ? '需要关注'
+      ? t('connectPage.commandCenter.health.warning')
       : commandCenterHealth === 'active'
-        ? '正在投送'
+        ? t('connectPage.commandCenter.health.active')
         : commandCenterHealth === 'online'
-          ? '中枢在线'
-          : '待机';
+          ? t('connectPage.commandCenter.health.online')
+          : t('connectPage.state.idle');
   const commandCenterRouteLabel = status.deviceId
-    ? `当前输出 / ${activeTargetLabel}`
+    ? t('connectPage.commandCenter.route.output', { target: activeTargetLabel })
     : receiverStatus.state === 'playing'
       ? `Phone / ${receiverStatus.advertisedName}`
       : airPlayReceiverStatus.state === 'playing'
         ? `AirPlay / ${airPlayReceiverStatus.advertisedName}`
-        : '等待选择输出';
+        : t('connectPage.commandCenter.route.waiting');
   const commandCenterErrorLabel = commandCenterIssues[0]
     ? `${commandCenterIssues[0].source}: ${commandCenterIssues[0].detail}`
-    : '最近没有连接失败';
+    : t('connectPage.commandCenter.noRecentFailures');
 
   const echoLinkRoomState: ListeningRoomNodeState = echoLinkStatus.error
     ? 'warning'
@@ -1266,10 +1270,10 @@ export const ConnectPage = (): JSX.Element => {
       id: 'echo-link',
       state: echoLinkRoomState,
       eyebrow: 'Mobile',
-      title: 'Phone remote',
-      detail: echoLinkStatus.running ? 'Remote control available' : 'Pairing server offline',
+      title: t('connectPage.room.phone.title'),
+      detail: echoLinkStatus.running ? t('connectPage.room.phone.available') : t('connectPage.room.phone.offline'),
       metric: echoLinkStatus.diagnostics.lastPhoneConnectionAt
-        ? `Last phone ${new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString()}`
+        ? t('connectPage.room.phone.last', { time: new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString() })
         : echoLinkAddressLabel,
       icon: <Smartphone size={19} />,
     },
@@ -1277,20 +1281,20 @@ export const ConnectPage = (): JSX.Element => {
       id: 'outputs',
       state: outputRoomState,
       eyebrow: 'Outputs',
-      title: status.deviceId ? 'Current output' : 'Available renderers',
-      detail: status.deviceId ? t(stateLabel[status.state]) : `${visibleDevices.length} discovered`,
+      title: status.deviceId ? t('connectPage.room.outputs.current') : t('connectPage.room.outputs.available'),
+      detail: status.deviceId ? t(stateLabel[status.state]) : t('connectPage.room.outputs.discovered', { count: visibleDevices.length }),
       metric: status.deviceId
-        ? `Target: ${activeTargetLabel}`
-        : `Outputs: ${lanStreamerCount} DLNA / ${airPlayOutputCount} AirPlay / ${hqPlayerOutputCount} HQPlayer`,
+        ? t('connectPage.room.outputs.target', { target: activeTargetLabel })
+        : t('connectPage.room.outputs.summary', { dlna: lanStreamerCount, airplay: airPlayOutputCount, hqplayer: hqPlayerOutputCount }),
       icon: <SlidersHorizontal size={19} />,
     },
     {
       id: 'dlna',
       state: dlnaReceiverRoomState,
       eyebrow: 'Inbound',
-      title: 'DLNA receiver',
+      title: t('connectPage.room.dlna.title'),
       detail: receiverCommandLabel,
-      metric: receiverStatus.currentClient?.address ?? `${receiverStatus.addresses.length} LAN address`,
+      metric: receiverStatus.currentClient?.address ?? t('connectPage.room.dlna.addressCount', { count: receiverStatus.addresses.length }),
       icon: <Radio size={19} />,
     },
     {
@@ -1299,16 +1303,16 @@ export const ConnectPage = (): JSX.Element => {
       eyebrow: 'External DSP',
       title: 'HQPlayer',
       detail: t(hqPlayerStateLabel[hqPlayerState]),
-      metric: hqPlayerPlaybackStatus?.state ? `Remote ${hqPlayerPlaybackStatus.state}` : hqPlayerEndpointLabel,
+      metric: hqPlayerPlaybackStatus?.state ? t('connectPage.room.hqplayer.remote', { state: hqPlayerPlaybackStatus.state }) : hqPlayerEndpointLabel,
       icon: <Cable size={19} />,
     },
     {
       id: 'airplay',
       state: airPlayRoomState,
       eyebrow: 'Inbound',
-      title: 'AirPlay receiver',
+      title: t('connectPage.room.airplay.title'),
       detail: airPlayCommandLabel,
-      metric: airPlayReceiverStatus.currentClient?.address ?? (airPlayReceiverProtocol === 'airplay2' ? 'AirPlay 2 experimental' : 'AirPlay 1 / RAOP'),
+      metric: airPlayReceiverStatus.currentClient?.address ?? (airPlayReceiverProtocol === 'airplay2' ? t('connectPage.airplay.protocol.airplay2') : t('connectPage.airplay.protocol.airplay1')),
       icon: <Cast size={19} />,
     },
     {
@@ -1317,10 +1321,10 @@ export const ConnectPage = (): JSX.Element => {
       eyebrow: 'Visual layer',
       title: 'Wallpaper Engine',
       detail: wallpaperEngineBridgeStatus.eventClients > 0
-        ? `${wallpaperEngineBridgeStatus.eventClients} live visual client`
+        ? t('connectPage.room.wallpaper.liveClients', { count: wallpaperEngineBridgeStatus.eventClients })
         : wallpaperEngineBridgeStatus.running
-          ? 'SSE bridge ready'
-          : 'Bridge offline',
+          ? t('connectPage.room.wallpaper.ready')
+          : t('connectPage.room.wallpaper.offline'),
       metric: wallpaperEndpointLabel,
       icon: <Volume2 size={19} />,
     },
@@ -1368,7 +1372,7 @@ export const ConnectPage = (): JSX.Element => {
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 Connect。');
+      setError(t('connectPage.error.desktopBridgeConnect'));
       return;
     }
 
@@ -1382,7 +1386,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   const refreshHqPlayer = useCallback(async (): Promise<void> => {
     const hqPlayer = window.echo?.hqPlayer;
@@ -1549,7 +1553,7 @@ export const ConnectPage = (): JSX.Element => {
   const toggleAutoStartReceivers = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
     if (!app?.setSettings) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端保存 Connect 设置。');
+      setError(t('connectPage.error.desktopBridgeSettings'));
       return;
     }
 
@@ -1565,7 +1569,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsAutoStartBusy(false);
     }
-  }, [autoStartReceiversEnabled]);
+  }, [autoStartReceiversEnabled, t]);
 
   const patchHqPlayerDraft = useCallback((patch: Partial<HqPlayerSettings>): void => {
     setHqPlayerDraft((current) => withHqPlayerFriendlyDefaults({ ...current, ...patch }));
@@ -1575,7 +1579,7 @@ export const ConnectPage = (): JSX.Element => {
   const saveHqPlayerSettings = useCallback(async (settings: HqPlayerSettings = hqPlayerEffectiveDraft): Promise<HqPlayerSettings | null> => {
     const hqPlayer = window.echo?.hqPlayer;
     if (!hqPlayer) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端配置 HQPlayer。');
+      setError(t('connectPage.error.desktopBridgeHqPlayerConfig'));
       return null;
     }
 
@@ -1584,12 +1588,12 @@ export const ConnectPage = (): JSX.Element => {
     setHqPlayerStatus(await hqPlayer.getStatus());
     window.dispatchEvent(new CustomEvent('settings:changed', { detail: { hqPlayer: saved } }));
     return saved;
-  }, [hqPlayerEffectiveDraft]);
+  }, [hqPlayerEffectiveDraft, t]);
 
   const handleHqPlayerTestConnection = useCallback(async (): Promise<void> => {
     const hqPlayer = window.echo?.hqPlayer;
     if (!hqPlayer) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端测试 HQPlayer。');
+      setError(t('connectPage.error.desktopBridgeHqPlayerTest'));
       return;
     }
 
@@ -1638,7 +1642,7 @@ export const ConnectPage = (): JSX.Element => {
   const toggleReceiver = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.setReceiverEnabled) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 Connect。');
+      setError(t('connectPage.error.desktopBridgeConnect'));
       return;
     }
 
@@ -1651,12 +1655,12 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsReceiverBusy(false);
     }
-  }, [receiverStatus.enabled]);
+  }, [receiverStatus.enabled, t]);
 
   const toggleEchoLink = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.setEchoLinkEnabled) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 ECHO Link。');
+      setError(t('connectPage.error.desktopBridgeEchoLink'));
       return;
     }
 
@@ -1673,7 +1677,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsEchoLinkBusy(false);
     }
-  }, [echoLinkStatus.enabled]);
+  }, [echoLinkStatus.enabled, t]);
 
   const copyEchoLinkPairing = useCallback(async (): Promise<void> => {
     const value = echoLinkPairingUri ?? '';
@@ -1707,7 +1711,7 @@ export const ConnectPage = (): JSX.Element => {
   const rotateEchoLinkToken = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.rotateEchoLinkToken) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端更新 ECHO Link token。');
+      setError(t('connectPage.error.desktopBridgeEchoLinkToken'));
       return;
     }
 
@@ -1721,7 +1725,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsEchoLinkBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const stopReceiverPlayback = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1746,7 +1750,7 @@ export const ConnectPage = (): JSX.Element => {
   const toggleAirPlayReceiver = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.setAirPlayReceiverEnabled) {
-      setError('AirPlay receiver bridge unavailable.');
+      setError(t('connectPage.error.airplayBridge'));
       return;
     }
 
@@ -1759,7 +1763,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsAirPlayReceiverBusy(false);
     }
-  }, [airPlayReceiverStatus.enabled]);
+  }, [airPlayReceiverStatus.enabled, t]);
 
   const setAirPlayProtocol = useCallback(async (protocol: AirPlayReceiverProtocol): Promise<void> => {
     if (protocol === airPlayReceiverProtocol && airPlayReceiverStatus.protocol === protocol) {
@@ -1768,7 +1772,7 @@ export const ConnectPage = (): JSX.Element => {
     const app = window.echo?.app;
     const connect = window.echo?.connect;
     if (!app?.setSettings) {
-      setError('AirPlay protocol setting bridge unavailable.');
+      setError(t('connectPage.error.airplayProtocolBridge'));
       return;
     }
 
@@ -1790,12 +1794,12 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsAirPlayReceiverBusy(false);
     }
-  }, [airPlayReceiverProtocol, airPlayReceiverStatus.enabled, airPlayReceiverStatus.protocol]);
+  }, [airPlayReceiverProtocol, airPlayReceiverStatus.enabled, airPlayReceiverStatus.protocol, t]);
 
   const stopAirPlayReceiverPlayback = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect?.stopAirPlayReceiverPlayback) {
-      setError('AirPlay receiver bridge unavailable.');
+      setError(t('connectPage.error.airplayBridge'));
       return;
     }
 
@@ -1808,7 +1812,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsAirPlayReceiverBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const copyAirPlayDebug = useCallback(async (): Promise<void> => {
     if (!airPlayDebugText) {
@@ -1820,20 +1824,20 @@ export const ConnectPage = (): JSX.Element => {
       setCopiedAirPlayDebug(true);
       window.setTimeout(() => setCopiedAirPlayDebug(false), 1600);
     } catch (copyError) {
-      setError(copyError instanceof Error ? `Failed to copy AirPlay Debug: ${copyError.message}` : 'Failed to copy AirPlay Debug.');
+      setError(copyError instanceof Error ? t('connectPage.error.copyAirPlayDebugWithMessage', { message: copyError.message }) : t('connectPage.error.copyAirPlayDebug'));
     }
-  }, [airPlayDebugText]);
+  }, [airPlayDebugText, t]);
 
   const connectDevice = useCallback(
     async (device: ConnectDevice): Promise<void> => {
       const connect = window.echo?.connect;
       if (!connect) {
-        setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 Connect。');
+        setError(t('connectPage.error.desktopBridgeConnect'));
         return;
       }
 
       if (!currentTrack && !currentFilePath) {
-        setError('请先播放或选中一首歌，Connect 不允许空元数据投送。');
+        setError(t('connectPage.error.emptyMetadata'));
         return;
       }
 
@@ -1853,13 +1857,13 @@ export const ConnectPage = (): JSX.Element => {
         setBusyDeviceId(null);
       }
     },
-    [currentFilePath, currentPositionSeconds, currentTrack],
+    [currentFilePath, currentPositionSeconds, currentTrack, t],
   );
 
   const runCommand = useCallback(async (command: 'play' | 'pause' | 'stop' | 'disconnect'): Promise<void> => {
     const connect = window.echo?.connect;
     if (!connect) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端使用 Connect。');
+      setError(t('connectPage.error.desktopBridgeConnect'));
       return;
     }
 
@@ -1873,7 +1877,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsCommandBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const commitVolume = useCallback(async (nextVolume: number): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1912,7 +1916,7 @@ export const ConnectPage = (): JSX.Element => {
   const createRadioStationFromDraft = useCallback((lastPlayedAt: string | null = null): RadioStation | null => {
     const url = normalizeRadioUrl(radioUrlDraft);
     if (!url) {
-      setError('请输入 http/https 电台直播流 URL，且不要带账号密码。');
+      setError(t('connectPage.error.radioUrlRequired'));
       return null;
     }
 
@@ -1926,7 +1930,7 @@ export const ConnectPage = (): JSX.Element => {
       updatedAt: now,
       lastPlayedAt,
     };
-  }, [radioNameDraft, radioUrlDraft]);
+  }, [radioNameDraft, radioUrlDraft, t]);
 
   const saveRadioDraftStation = useCallback((): void => {
     const station = createRadioStationFromDraft(null);
@@ -1943,13 +1947,13 @@ export const ConnectPage = (): JSX.Element => {
   const playRadioStation = useCallback(async (station: RadioStation): Promise<void> => {
     const playback = window.echo?.playback;
     if (!playback?.playLocalFile) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端播放网络电台。');
+      setError(t('connectPage.error.desktopBridgeRadioPlay'));
       return;
     }
 
     const url = normalizeRadioUrl(station.url);
     if (!url) {
-      setError('电台 URL 无效，只支持 http/https 直播流。');
+      setError(t('connectPage.error.radioUrlInvalid'));
       return;
     }
 
@@ -1995,7 +1999,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsRadioBusy(false);
     }
-  }, [upsertRadioStation]);
+  }, [t, upsertRadioStation]);
 
   const playRadioDraft = useCallback(async (event?: { preventDefault: () => void }): Promise<void> => {
     event?.preventDefault();
@@ -2010,7 +2014,7 @@ export const ConnectPage = (): JSX.Element => {
   const stopRadioPlayback = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
     if (!playback?.stop) {
-      setError('Desktop bridge unavailable. 请在 Electron 桌面端停止网络电台。');
+      setError(t('connectPage.error.desktopBridgeRadioStop'));
       return;
     }
 
@@ -2024,7 +2028,7 @@ export const ConnectPage = (): JSX.Element => {
     } finally {
       setIsRadioBusy(false);
     }
-  }, []);
+  }, [t]);
 
   const removeRadioStation = useCallback((stationId: string): void => {
     persistRadioStations((current) => current.filter((station) => station.id !== stationId));
@@ -2123,18 +2127,21 @@ export const ConnectPage = (): JSX.Element => {
   if (donatorUnlockStatus.unlocked !== true) {
     return (
       <div className="connect-page connect-page--locked">
-        <section className="connect-donator-lock" aria-label="Connect Command Center locked">
+        <section className="connect-donator-lock" aria-label={t('connectPage.lock.aria')}>
           <div className="connect-donator-lock__icon" aria-hidden="true">
             {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={30} /> : <LockKeyhole size={30} />}
           </div>
           <div className="connect-donator-lock__intro">
             <span>Connect Command Center</span>
-            <strong>局域网音频中枢</strong>
-            <small>手机扫码配对、Web 遥控、AirPlay / DLNA / HQPlayer 和 ECHO Link 会在解锁后集中到这里。</small>
+            <strong>{t('connectPage.lock.title')}</strong>
+            <small>{t('connectPage.lock.description')}</small>
           </div>
           <p className="section-kicker">WIRELESS PLAYBACK</p>
           <h1>Donator Only</h1>
-          <p>{connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason]}</p>
+          <p>{t(connectDonatorUnlockReasonLabel[donatorUnlockStatus.reason], {
+            hwidFile: connectDonatorHwidFileName,
+            licenseFile: connectDonatorLicenseFileName,
+          })}</p>
           <div className="connect-donator-lock__status">
             <span>Unlock Gate</span>
             <strong>{donatorUnlockStatus.pluginInstalled ? (donatorUnlockStatus.pluginEnabled ? 'Plugin enabled' : 'Plugin disabled') : 'Plugin not imported'}</strong>
@@ -2156,19 +2163,19 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-donator-lock__actions">
             <button className="settings-action-button" type="button" onClick={openPluginsForUnlock}>
               <PackagePlus size={16} />
-              导入插件
+              {t('connectPage.lock.importPlugin')}
             </button>
             <button className="settings-action-button" type="button" onClick={() => void refreshDonatorUnlockStatus()} disabled={isDonatorUnlockLoading}>
               {isDonatorUnlockLoading ? <Loader2 className="spinning-icon" size={16} /> : <RefreshCw size={16} />}
-              重新校验
+              {t('connectPage.lock.recheck')}
             </button>
             <button className="settings-action-button" type="button" onClick={() => void copyDonatorHwid()} disabled={!donatorUnlockStatus.hwidHash}>
               <Copy size={16} />
-              复制 HWID
+              {t('connectPage.lock.copyHwid')}
             </button>
           </div>
           <small>
-            使用 Donator Unlock Issuer 在目标机器生成插件包；插件内的 {connectDonatorLicenseFileName} 会绑定当前 HWID，导入并启用后连接功能才会开放。
+            {t('connectPage.lock.issuerHint', { licenseFile: connectDonatorLicenseFileName })}
           </small>
         </section>
       </div>
@@ -2215,7 +2222,7 @@ export const ConnectPage = (): JSX.Element => {
         className="connect-command-center"
         data-state={commandCenterHealth}
         data-collapsed={isCommandCenterCollapsed ? 'true' : undefined}
-        aria-label="Connect Command Center"
+        aria-label={t('connectPage.commandCenter.aria')}
       >
         <div className="connect-command-center__headline">
           <div className="connect-command-center__title">
@@ -2227,21 +2234,21 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-command-center__actions">
             <button className="settings-action-button" type="button" onClick={() => void openEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
               <Smartphone size={15} />
-              Web 遥控
+              {t('connectPage.commandCenter.webRemote')}
             </button>
             <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkPairing()} disabled={!echoLinkPairingUri}>
               {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
-              手机配对
+              {t('connectPage.commandCenter.phonePairing')}
             </button>
             <button className="settings-action-button" type="button" onClick={refreshCommandCenter} disabled={isRefreshing}>
               {isRefreshing ? <Loader2 className="spinning-icon" size={15} /> : <RefreshCw size={15} />}
-              全局刷新
+              {t('connectPage.commandCenter.refreshAll')}
             </button>
             <button
               className="icon-button connect-collapse-button"
               type="button"
-              aria-label={isCommandCenterCollapsed ? '展开 Connect Command Center' : '折叠 Connect Command Center'}
-              title={isCommandCenterCollapsed ? '展开 Connect Command Center' : '折叠 Connect Command Center'}
+              aria-label={isCommandCenterCollapsed ? t('connectPage.commandCenter.expand') : t('connectPage.commandCenter.collapse')}
+              title={isCommandCenterCollapsed ? t('connectPage.commandCenter.expand') : t('connectPage.commandCenter.collapse')}
               aria-expanded={!isCommandCenterCollapsed}
               onClick={toggleCommandCenterCollapsed}
             >
@@ -2259,8 +2266,8 @@ export const ConnectPage = (): JSX.Element => {
             </div>
             <div>
               <span>PHONE PAIRING</span>
-              <strong>{echoLinkStatus.running ? '扫码连接手机 ECHO' : '等待 ECHO Link 启动'}</strong>
-              <small>{echoLinkPairingUri ?? 'echo://pair 尚未启用'}</small>
+              <strong>{echoLinkStatus.running ? t('connectPage.commandCenter.qrReady') : t('connectPage.commandCenter.qrWaiting')}</strong>
+              <small>{echoLinkPairingUri ?? t('connectPage.echoLink.pairDisabled')}</small>
             </div>
           </div>
 
@@ -2281,13 +2288,13 @@ export const ConnectPage = (): JSX.Element => {
               <Radio size={18} />
               <span>DLNA Receiver</span>
               <strong>{receiverCommandLabel}</strong>
-              <small>{receiverStatus.currentClient?.address ?? `${receiverStatus.addresses.length} LAN address`}</small>
+              <small>{receiverStatus.currentClient?.address ?? t('connectPage.room.dlna.addressCount', { count: receiverStatus.addresses.length })}</small>
             </article>
             <article data-state={airPlayReceiverStatus.error ? 'warning' : airPlayReceiverStatus.enabled ? 'online' : 'idle'}>
               <Cast size={18} />
               <span>AirPlay</span>
               <strong>{airPlayCommandLabel}</strong>
-              <small>{airPlayReceiverProtocol === 'airplay2' ? 'AirPlay 2 experimental' : 'AirPlay 1 / RAOP'}</small>
+              <small>{airPlayReceiverProtocol === 'airplay2' ? t('connectPage.airplay.protocol.airplay2') : t('connectPage.airplay.protocol.airplay1')}</small>
             </article>
             <article data-state={hqPlayerState === 'available' ? 'online' : hqPlayerState === 'unavailable' || hqPlayerState === 'not-configured' ? 'warning' : 'idle'}>
               <Cable size={18} />
@@ -2298,29 +2305,29 @@ export const ConnectPage = (): JSX.Element => {
             <article data-state={visibleDevices.length > 0 ? 'online' : 'idle'}>
               <SlidersHorizontal size={18} />
               <span>Outputs</span>
-              <strong>{visibleDevices.length} 个入口</strong>
+              <strong>{t('connectPage.commandCenter.entryCount', { count: visibleDevices.length })}</strong>
               <small>{lanStreamerCount} DLNA / {airPlayOutputCount} AirPlay / {hqPlayerOutputCount} HQPlayer</small>
             </article>
           </div>
         </div>
 
-        <div className="connect-command-center__route" aria-label="当前投送链路">
+        <div className="connect-command-center__route" aria-label={t('connectPage.commandCenter.routeAria')}>
           <span>ECHO</span>
           <strong>{previewTitle}</strong>
-          <span>{status.deviceId ? `Output / ${activeTargetLabel}` : 'No output'}</span>
-          <strong>{status.state === 'idle' ? 'Standby' : t(stateLabel[status.state])}</strong>
+          <span>{status.deviceId ? `Output / ${activeTargetLabel}` : t('connectPage.nowPlaying.noOutput')}</span>
+          <strong>{status.state === 'idle' ? t('connectPage.state.idle') : t(stateLabel[status.state])}</strong>
         </div>
 
         <div
           className="connect-listening-room"
           role="region"
-          aria-label="Listening Room map"
+          aria-label={t('connectPage.room.aria')}
           data-collapsed={isListeningRoomCollapsed ? 'true' : undefined}
         >
           <div className="connect-listening-room__header">
             <div>
               <span>LISTENING ROOM</span>
-              <strong>局域网听音室地图</strong>
+              <strong>{t('connectPage.room.title')}</strong>
             </div>
             <div className="connect-listening-room__header-actions">
               <small>{commandCenterRouteLabel}</small>
@@ -2328,8 +2335,8 @@ export const ConnectPage = (): JSX.Element => {
                 className="connect-listening-room__toggle"
                 type="button"
                 aria-expanded={!isListeningRoomCollapsed}
-                aria-label={isListeningRoomCollapsed ? 'Expand Listening Room map' : 'Collapse Listening Room map'}
-                title={isListeningRoomCollapsed ? 'Expand Listening Room map' : 'Collapse Listening Room map'}
+                aria-label={isListeningRoomCollapsed ? t('connectPage.room.expand') : t('connectPage.room.collapse')}
+                title={isListeningRoomCollapsed ? t('connectPage.room.expand') : t('connectPage.room.collapse')}
                 onClick={toggleListeningRoomCollapsed}
               >
                 <ChevronDown size={16} />
@@ -2353,7 +2360,7 @@ export const ConnectPage = (): JSX.Element => {
                   data-node={node.id}
                   data-state={node.state}
                   key={node.id}
-                  aria-label={`Listening Room ${node.title}`}
+                  aria-label={t('connectPage.room.nodeAria', { title: node.title })}
                 >
                   <span className="connect-listening-room__icon">{node.icon}</span>
                   <span>{node.eyebrow}</span>
@@ -2369,7 +2376,7 @@ export const ConnectPage = (): JSX.Element => {
         <div className="connect-command-center__issues" data-empty={commandCenterIssues.length === 0 ? 'true' : undefined}>
           <AlertTriangle size={16} />
           <strong>{commandCenterErrorLabel}</strong>
-          {commandCenterIssues.length > 1 ? <small>另有 {commandCenterIssues.length - 1} 条连接事件</small> : null}
+          {commandCenterIssues.length > 1 ? <small>{t('connectPage.commandCenter.moreIssues', { count: commandCenterIssues.length - 1 })}</small> : null}
         </div>
           </div>
         </div>
@@ -2450,35 +2457,35 @@ export const ConnectPage = (): JSX.Element => {
 
         <section
           className="connect-echo-link-panel"
-          aria-label="Android ECHO Link"
+          aria-label={t('connectPage.echoLink.aria')}
           data-collapsed={isEchoLinkPanelCollapsed ? 'true' : undefined}
         >
           <div className="connect-section-title">
             <div>
               <span>Android ECHO Link</span>
-              <h2>手机连接</h2>
+              <h2>{t('connectPage.echoLink.title')}</h2>
             </div>
             <div className="connect-section-actions">
               <span className="connect-hqplayer-state" data-state={echoLinkStatus.running ? 'available' : echoLinkStatus.error ? 'unavailable' : 'disabled'}>
-                {echoLinkStatus.running ? '运行中' : echoLinkStatus.error ? '异常' : '已关闭'}
+                {echoLinkStatus.running ? t('connectPage.echoLink.state.running') : echoLinkStatus.error ? t('connectPage.echoLink.state.error') : t('connectPage.common.disabled')}
               </span>
               <button className="settings-action-button" type="button" onClick={() => void refreshEchoLink()} disabled={isEchoLinkBusy}>
                 <RefreshCw size={15} />
-                刷新
+                {t('connectPage.common.refresh')}
               </button>
               <button className="settings-action-button" type="button" onClick={() => void toggleEchoLink()} disabled={isEchoLinkBusy}>
                 {isEchoLinkBusy ? <Loader2 className="spinning-icon" size={15} /> : <Power size={15} />}
-                {echoLinkStatus.enabled ? '关闭' : '开启'}
+                {echoLinkStatus.enabled ? t('connectPage.common.disable') : t('connectPage.common.enable')}
               </button>
               <button className="settings-action-button" type="button" onClick={() => void rotateEchoLinkToken()} disabled={isEchoLinkBusy}>
                 <RefreshCw size={15} />
-                轮换 Token
+                {t('connectPage.echoLink.rotateToken')}
               </button>
               <button
                 className="icon-button connect-collapse-button"
                 type="button"
-                aria-label={isEchoLinkPanelCollapsed ? '展开手机连接' : '折叠手机连接'}
-                title={isEchoLinkPanelCollapsed ? '展开手机连接' : '折叠手机连接'}
+                aria-label={isEchoLinkPanelCollapsed ? t('connectPage.echoLink.expand') : t('connectPage.echoLink.collapse')}
+                title={isEchoLinkPanelCollapsed ? t('connectPage.echoLink.expand') : t('connectPage.echoLink.collapse')}
                 aria-expanded={!isEchoLinkPanelCollapsed}
                 onClick={toggleEchoLinkPanelCollapsed}
               >
@@ -2490,44 +2497,44 @@ export const ConnectPage = (): JSX.Element => {
             <div className="connect-collapsible-content__inner">
           <div className="connect-echo-link-grid">
             <span>
-              <em>地址</em>
+              <em>{t('connectPage.echoLink.address')}</em>
               <strong>{echoLinkSelectedHost}:{echoLinkStatus.port}</strong>
             </span>
             <span>
-              <em>设备</em>
+              <em>{t('connectPage.echoLink.device')}</em>
               <strong>{echoLinkStatus.deviceName}</strong>
             </span>
             <span>
               <em>Token</em>
               <strong>{echoLinkTokenLabel}</strong>
-              <button className="icon-button" type="button" aria-label={showEchoLinkToken ? '隐藏 Token' : '显示 Token'} title={showEchoLinkToken ? '隐藏 Token' : '显示 Token'} onClick={() => setShowEchoLinkToken((current) => !current)}>
+              <button className="icon-button" type="button" aria-label={showEchoLinkToken ? t('connectPage.echoLink.hideToken') : t('connectPage.echoLink.showToken')} title={showEchoLinkToken ? t('connectPage.echoLink.hideToken') : t('connectPage.echoLink.showToken')} onClick={() => setShowEchoLinkToken((current) => !current)}>
                 {showEchoLinkToken ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </span>
             <span>
-              <em>临时流</em>
+              <em>{t('connectPage.echoLink.tempStreams')}</em>
               <strong>{echoLinkStatus.activeMediaTokens}</strong>
             </span>
             <span>
-              <em>发现</em>
-              <strong>{echoLinkStatus.mdns.state === 'advertising' ? 'mDNS 已广播' : echoLinkStatus.mdns.state === 'error' ? 'mDNS 异常' : '未广播'}</strong>
+              <em>{t('connectPage.echoLink.discovery')}</em>
+              <strong>{echoLinkStatus.mdns.state === 'advertising' ? t('connectPage.echoLink.mdnsAdvertising') : echoLinkStatus.mdns.state === 'error' ? t('connectPage.echoLink.mdnsError') : t('connectPage.echoLink.mdnsIdle')}</strong>
             </span>
             <span>
-              <em>手机</em>
-              <strong>{echoLinkStatus.diagnostics.lastPhoneConnectionAt ? new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString() : '尚未连接'}</strong>
+              <em>{t('connectPage.echoLink.phone')}</em>
+              <strong>{echoLinkStatus.diagnostics.lastPhoneConnectionAt ? new Date(echoLinkStatus.diagnostics.lastPhoneConnectionAt).toLocaleTimeString() : t('connectPage.echoLink.phoneNeverConnected')}</strong>
             </span>
             <span>
-              <em>认证失败</em>
+              <em>{t('connectPage.echoLink.authFailures')}</em>
               <strong>{echoLinkStatus.diagnostics.authFailureCount}</strong>
             </span>
             <span>
-              <em>最后 Range</em>
-              <strong>{echoLinkStatus.diagnostics.lastMediaTokenServed?.range ?? '无'}</strong>
+              <em>{t('connectPage.echoLink.lastRange')}</em>
+              <strong>{echoLinkStatus.diagnostics.lastMediaTokenServed?.range ?? t('connectPage.common.none')}</strong>
             </span>
           </div>
           {echoLinkHosts.length > 1 ? (
             <div className="connect-echo-link-hosts" aria-label="ECHO Link LAN address">
-              <small>LAN 地址</small>
+              <small>{t('connectPage.echoLink.lanAddress')}</small>
               <div>
                 {echoLinkHosts.map((host) => (
                   <button
@@ -2548,27 +2555,27 @@ export const ConnectPage = (): JSX.Element => {
             <div className="connect-echo-link-qr" data-empty={echoLinkQrDataUrl ? 'false' : 'true'}>
               {echoLinkQrDataUrl ? <img src={echoLinkQrDataUrl} alt="" /> : <Smartphone size={30} />}
             </div>
-            <code>{echoLinkPairingUri ?? 'echo://pair 未启用'}</code>
+            <code>{echoLinkPairingUri ?? t('connectPage.echoLink.pairDisabled')}</code>
             <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkPairing()} disabled={!echoLinkPairingUri}>
               {copiedEchoLinkPairing ? <Check size={15} /> : <Copy size={15} />}
-              {copiedEchoLinkPairing ? '已复制' : '复制'}
+              {copiedEchoLinkPairing ? t('connectPage.common.copied') : t('connectPage.common.copy')}
             </button>
           </div>
           <div className="connect-echo-link-web">
             <div>
-              <span>网页控制端</span>
-              <strong>{echoLinkWebControlUrl ? 'Album Sea 已就绪' : '开启 ECHO Link 后可用'}</strong>
-              <small>浏览器打开后可控制播放，并用专辑墙选择专辑。</small>
+              <span>{t('connectPage.echoLink.webTitle')}</span>
+              <strong>{echoLinkWebControlUrl ? t('connectPage.echoLink.webAlbumSeaReady') : t('connectPage.echoLink.webAvailableAfterEnable')}</strong>
+              <small>{t('connectPage.echoLink.webHint')}</small>
             </div>
             <code>{echoLinkWebControlUrl ?? 'http://LAN-IP:26789/echo-link/web'}</code>
             <div className="connect-echo-link-web__actions">
               <button className="settings-action-button" type="button" onClick={() => void openEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
                 <Smartphone size={15} />
-                打开
+                {t('connectPage.common.open')}
               </button>
               <button className="settings-action-button" type="button" onClick={() => void copyEchoLinkWebControl()} disabled={!echoLinkWebControlUrl}>
                 {copiedEchoLinkWebControl ? <Check size={15} /> : <Copy size={15} />}
-                {copiedEchoLinkWebControl ? '已复制' : '复制网页'}
+                {copiedEchoLinkWebControl ? t('connectPage.common.copied') : t('connectPage.echoLink.copyWeb')}
               </button>
             </div>
           </div>
@@ -2581,7 +2588,7 @@ export const ConnectPage = (): JSX.Element => {
           {echoLinkStatus.mdns.error || echoLinkStatus.diagnostics.recentHttpErrors.length > 0 ? (
             <details className="connect-receiver-debug">
               <summary>
-                <span>ECHO Link 诊断</span>
+                <span>{t('connectPage.echoLink.diagnostics')}</span>
                 <small>{echoLinkStatus.diagnostics.recentHttpErrors.length} errors</small>
               </summary>
               <div className="connect-receiver-debug__items">
@@ -2656,16 +2663,16 @@ export const ConnectPage = (): JSX.Element => {
                   const isActive = device.id === status.deviceId;
                   const isBusy = busyDeviceId === device.id;
                   const disabled = device.state === 'unsupported' || device.state === 'unavailable' || isBusy || (!currentTrack && !currentFilePath);
-                  const deviceProduct = formatDeviceProduct(device);
-                  const deviceAddress = formatDeviceAddress(device);
-                  const deviceSupport = formatDeviceSupport(device);
+                  const deviceProduct = formatDeviceProduct(device, t);
+                  const deviceAddress = formatDeviceAddress(device, t);
+                  const deviceSupport = formatDeviceSupport(device, t);
                   const visual = deviceVisual(device);
                   return (
                     <article
                       className="connect-device-row"
                       data-active={isActive ? 'true' : undefined}
                       key={device.id}
-                      title="右键隐藏此设备"
+                      title={t('connectPage.devices.hideHint')}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         hideDevice(device);
@@ -2677,16 +2684,16 @@ export const ConnectPage = (): JSX.Element => {
                       <div className="connect-device-copy">
                         <strong>{device.name}</strong>
                         <span>{formatProtocol(device)} · {deviceProduct}</span>
-                        <div className="connect-device-facts" aria-label={`${device.name} 设备信息`}>
+                        <div className="connect-device-facts" aria-label={t('connectPage.devices.deviceInfoAria', { name: device.name })}>
                           <small>{deviceAddress}</small>
                           <small>{deviceSupport}</small>
-                          <small>{device.lastSeenAt ? `最后发现 ${formatTimestamp(device.lastSeenAt)}` : '尚未完成发现'}</small>
+                          <small>{device.lastSeenAt ? t('connectPage.devices.lastSeen', { time: formatTimestamp(device.lastSeenAt, t) }) : t('connectPage.devices.discoveryPending')}</small>
                         </div>
                         {device.unsupportedReason ? <small>{device.unsupportedReason}</small> : null}
                       </div>
                       <div className="connect-device-meta">
                         <span data-state={device.state}>{t(isActive ? stateLabel[status.state] : deviceStateLabel[device.state])}</span>
-                        <small>{visual.label}</small>
+                        <small>{visual.labelKey ? t(visual.labelKey) : visual.label}</small>
                       </div>
                       <button
                         className="settings-action-button"
@@ -2695,7 +2702,7 @@ export const ConnectPage = (): JSX.Element => {
                         onClick={() => void connectDevice(device)}
                       >
                         {isBusy ? <Loader2 className="spinning-icon" size={15} /> : device.protocol === 'hqplayer' ? <Cable size={15} /> : <Cast size={15} />}
-                        {isActive ? '重新投送' : '连接'}
+                        {isActive ? t('connectPage.devices.reconnect') : t('connectPage.devices.connect')}
                       </button>
                     </article>
                   );
@@ -2706,19 +2713,19 @@ export const ConnectPage = (): JSX.Element => {
         </section>
       </section>
 
-      <section className="connect-radio-panel" aria-label="网络电台" data-collapsed={isRadioPanelCollapsed ? 'true' : undefined}>
+      <section className="connect-radio-panel" aria-label={t('connectPage.radio.aria')} data-collapsed={isRadioPanelCollapsed ? 'true' : undefined}>
         <div className="connect-section-title">
           <div>
             <span>Radio</span>
-            <h2>网络电台</h2>
+            <h2>{t('connectPage.radio.title')}</h2>
           </div>
           <div className="connect-section-actions">
             <small>{radioStatusLabel}</small>
             <button
               className="icon-button connect-collapse-button"
               type="button"
-              aria-label={isRadioPanelCollapsed ? '展开网络电台' : '折叠网络电台'}
-              title={isRadioPanelCollapsed ? '展开网络电台' : '折叠网络电台'}
+              aria-label={isRadioPanelCollapsed ? t('connectPage.radio.expand') : t('connectPage.radio.collapse')}
+              title={isRadioPanelCollapsed ? t('connectPage.radio.expand') : t('connectPage.radio.collapse')}
               aria-expanded={!isRadioPanelCollapsed}
               onClick={toggleRadioPanelCollapsed}
             >
@@ -2729,18 +2736,18 @@ export const ConnectPage = (): JSX.Element => {
 
         <div className="connect-collapsible-content" data-expanded={!isRadioPanelCollapsed}>
           <div className="connect-collapsible-content__inner">
-        <form className="connect-radio-form" aria-label="网络电台表单" onSubmit={(event) => void playRadioDraft(event)}>
+        <form className="connect-radio-form" aria-label={t('connectPage.radio.formAria')} onSubmit={(event) => void playRadioDraft(event)}>
           <label className="connect-radio-field">
-            <span>电台名</span>
+            <span>{t('connectPage.radio.name')}</span>
             <input
               type="text"
               value={radioNameDraft}
-              placeholder="例如 Groove Salad"
+              placeholder={t('connectPage.radio.namePlaceholder')}
               onChange={(event) => setRadioNameDraft(event.currentTarget.value)}
             />
           </label>
           <label className="connect-radio-field connect-radio-field--url">
-            <span>直播流 URL</span>
+            <span>{t('connectPage.radio.streamUrl')}</span>
             <input
               type="url"
               inputMode="url"
@@ -2752,20 +2759,20 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-radio-form-actions">
             <button className="settings-action-button" type="button" onClick={saveRadioDraftStation}>
               <Plus size={15} />
-              收藏
+              {t('connectPage.radio.save')}
             </button>
             <button className="settings-action-button" type="submit" disabled={isRadioBusy}>
               {isRadioBusy ? <Loader2 className="spinning-icon" size={15} /> : <Radio size={15} />}
-              播放
+              {t('connectPage.controls.play')}
             </button>
             <button className="settings-action-button" type="button" onClick={() => void stopRadioPlayback()} disabled={isRadioBusy || !isRadioActive}>
               <Square size={15} />
-              停止
+              {t('connectPage.controls.stop')}
             </button>
           </div>
         </form>
 
-        <div className="connect-radio-list" aria-label="已收藏电台">
+        <div className="connect-radio-list" aria-label={t('connectPage.radio.savedAria')}>
           {radioStations.length > 0 ? (
             radioStations.map((station) => {
               const isActive = activeRadioStation?.id === station.id && isRadioActive;
@@ -2779,17 +2786,17 @@ export const ConnectPage = (): JSX.Element => {
                     {station.description ? <RadioMarqueeText as="small" className="connect-radio-description" text={station.description} /> : null}
                     <RadioMarqueeText className="connect-radio-url" text={station.url} />
                     {station.lastPlayedAt ? (
-                      <small className="connect-radio-last-played">上次播放 {formatTimestamp(station.lastPlayedAt)}</small>
+                      <small className="connect-radio-last-played">{t('connectPage.radio.lastPlayed', { time: formatTimestamp(station.lastPlayedAt, t) })}</small>
                     ) : (
-                      <small className="connect-radio-last-played">未播放</small>
+                      <small className="connect-radio-last-played">{t('connectPage.radio.neverPlayed')}</small>
                     )}
                   </div>
                   <div className="connect-radio-actions">
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`播放 ${station.name}`}
-                      title={`播放 ${station.name}`}
+                      aria-label={t('connectPage.radio.playStation', { name: station.name })}
+                      title={t('connectPage.radio.playStation', { name: station.name })}
                       disabled={isRadioBusy}
                       onClick={() => void playRadioStation(station)}
                     >
@@ -2798,8 +2805,8 @@ export const ConnectPage = (): JSX.Element => {
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`删除 ${station.name}`}
-                      title={`删除 ${station.name}`}
+                      aria-label={t('connectPage.radio.deleteStation', { name: station.name })}
+                      title={t('connectPage.radio.deleteStation', { name: station.name })}
                       onClick={() => removeRadioStation(station.id)}
                     >
                       <Trash2 size={16} />
@@ -2811,8 +2818,8 @@ export const ConnectPage = (): JSX.Element => {
           ) : (
             <div className="connect-radio-empty">
               <Radio size={26} />
-              <strong>添加一个直播流 URL</strong>
-              <span>先支持手动电台收藏，避免目录接口拖慢 Connect。</span>
+              <strong>{t('connectPage.radio.emptyTitle')}</strong>
+              <span>{t('connectPage.radio.emptyDescription')}</span>
             </div>
           )}
         </div>
@@ -2850,8 +2857,8 @@ export const ConnectPage = (): JSX.Element => {
             <button
               className="icon-button connect-collapse-button"
               type="button"
-              aria-label={isHqPlayerPanelCollapsed ? '展开 HQPlayer' : '折叠 HQPlayer'}
-              title={isHqPlayerPanelCollapsed ? '展开 HQPlayer' : '折叠 HQPlayer'}
+              aria-label={isHqPlayerPanelCollapsed ? t('connectPage.hqplayer.expand') : t('connectPage.hqplayer.collapse')}
+              title={isHqPlayerPanelCollapsed ? t('connectPage.hqplayer.expand') : t('connectPage.hqplayer.collapse')}
               aria-expanded={!isHqPlayerPanelCollapsed}
               onClick={toggleHqPlayerPanelCollapsed}
             >
@@ -2867,7 +2874,7 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-hqplayer-config">
             <div className="connect-hqplayer-local-card">
               <strong>{t('connectPage.hqplayer.localDesktop')}</strong>
-              <span>{formatHqEndpoint({ host: hqPlayerLocalHost, port: hqPlayerDefaultPort })}</span>
+              <span>{formatHqEndpoint({ host: hqPlayerLocalHost, port: hqPlayerDefaultPort }, t)}</span>
             </div>
             <div className="connect-hqplayer-toggle-row">
               <div className="settings-inline-toggle">
@@ -2884,9 +2891,9 @@ export const ConnectPage = (): JSX.Element => {
                 </button>
               </div>
               <div className="settings-inline-toggle">
-                <span>串流保护</span>
+                <span>{t('connectPage.hqplayer.mediaServer')}</span>
                 <button
-                  aria-label="HQPlayer 媒体服务"
+                  aria-label={t('connectPage.hqplayer.mediaServerAria')}
                   aria-pressed={hqPlayerDraft.mediaServerEnabled}
                   className={`toggle-btn ${hqPlayerDraft.mediaServerEnabled ? 'active' : ''}`}
                   type="button"
@@ -2898,8 +2905,8 @@ export const ConnectPage = (): JSX.Element => {
             </div>
 
             <details className="connect-hqplayer-advanced">
-              <summary>高级设置</summary>
-              <div className="connect-hqplayer-segments" aria-label="HQPlayer 连接模式">
+              <summary>{t('connectPage.hqplayer.advanced')}</summary>
+              <div className="connect-hqplayer-segments" aria-label={t('connectPage.hqplayer.modeAria')}>
                 {hqPlayerConnectionModes.map((mode) => (
                   <button
                     className="connect-hqplayer-chip"
@@ -2912,12 +2919,12 @@ export const ConnectPage = (): JSX.Element => {
                       port: hqPlayerEffectiveDraft.port,
                     })}
                   >
-                    {hqPlayerModeLabel[mode]}
+                    {t(hqPlayerModeLabel[mode])}
                   </button>
                 ))}
               </div>
 
-              <div className="connect-hqplayer-segments" aria-label="HQPlayer 默认交接">
+              <div className="connect-hqplayer-segments" aria-label={t('connectPage.hqplayer.backendAria')}>
                 {hqPlayerDefaultBackends.map((backend) => (
                   <button
                     className="connect-hqplayer-chip"
@@ -2926,7 +2933,7 @@ export const ConnectPage = (): JSX.Element => {
                     type="button"
                     onClick={() => patchHqPlayerDraft({ defaultPlaybackBackend: backend })}
                   >
-                    {hqPlayerBackendLabel[backend]}
+                    {t(hqPlayerBackendLabel[backend])}
                   </button>
                 ))}
               </div>
@@ -2941,7 +2948,7 @@ export const ConnectPage = (): JSX.Element => {
                   />
                 </label>
                 <label className="connect-hqplayer-field">
-                  <span>控制端口</span>
+                  <span>{t('connectPage.hqplayer.controlPort')}</span>
                   <input
                     type="number"
                     min={1}
@@ -2951,7 +2958,7 @@ export const ConnectPage = (): JSX.Element => {
                   />
                 </label>
                 <label className="connect-hqplayer-field">
-                  <span>媒体端口</span>
+                  <span>{t('connectPage.hqplayer.mediaPort')}</span>
                   <input
                     type="number"
                     min={1}
@@ -2974,25 +2981,25 @@ export const ConnectPage = (): JSX.Element => {
 
           <div className="connect-hqplayer-status-grid">
             <span>
-              <em>控制端点</em>
+              <em>{t('connectPage.hqplayer.controlEndpoint')}</em>
               <strong>{hqPlayerEndpointLabel}</strong>
             </span>
             <span>
-              <em>默认交接</em>
-              <strong>{hqPlayerBackendLabel[hqPlayerEffectiveDraft.defaultPlaybackBackend]}</strong>
+              <em>{t('connectPage.hqplayer.defaultBackend')}</em>
+              <strong>{t(hqPlayerBackendLabel[hqPlayerEffectiveDraft.defaultPlaybackBackend])}</strong>
             </span>
             <span>
-              <em>串流保护</em>
-              <strong>{hqPlayerDraft.mediaServerEnabled ? (hqPlayerDraft.mediaServerPort ? `ECHO:${hqPlayerDraft.mediaServerPort}` : '自动端口') : '关闭'}</strong>
+              <em>{t('connectPage.hqplayer.mediaServer')}</em>
+              <strong>{hqPlayerDraft.mediaServerEnabled ? (hqPlayerDraft.mediaServerPort ? `ECHO:${hqPlayerDraft.mediaServerPort}` : t('connectPage.hqplayer.autoPort')) : t('connectPage.common.disabled')}</strong>
             </span>
             <span>
-              <em>上次检测</em>
-              <strong>{formatTimestamp(hqPlayerStatus?.lastCheckedAt ?? null)}</strong>
+              <em>{t('connectPage.hqplayer.lastChecked')}</em>
+              <strong>{formatTimestamp(hqPlayerStatus?.lastCheckedAt ?? null, t)}</strong>
             </span>
             {hqPlayerTestResult ? (
               <span className={hqPlayerTestResult.ok ? 'is-ok' : 'is-error'}>
-                <em>检测结果</em>
-                <strong>{hqPlayerTestResult.ok ? `可用 · ${hqPlayerTestResult.elapsedMs}ms` : hqPlayerTestResult.error ?? '不可用'}</strong>
+                <em>{t('connectPage.hqplayer.testResult')}</em>
+                <strong>{hqPlayerTestResult.ok ? t('connectPage.hqplayer.testAvailable', { ms: hqPlayerTestResult.elapsedMs }) : hqPlayerTestResult.error ?? t('common.unavailable')}</strong>
               </span>
             ) : null}
             <span>
@@ -3004,11 +3011,11 @@ export const ConnectPage = (): JSX.Element => {
               <strong>{hqPlayerEngineLabel}</strong>
             </span>
             <span>
-              <em>远端状态</em>
+              <em>{t('connectPage.hqplayer.remoteStatus')}</em>
               <strong>{hqPlayerRemotePositionLabel}</strong>
             </span>
             <span className="connect-hqplayer-status-grid__wide">
-              <em>信号路径</em>
+              <em>{t('connectPage.hqplayer.signalPath')}</em>
               <strong>{hqPlayerSignalLabel}</strong>
             </span>
           </div>
@@ -3016,15 +3023,15 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-hqplayer-plan">
             <div className="connect-hqplayer-plan-header">
               <SlidersHorizontal size={16} />
-              <span>最近交接计划</span>
+              <span>{t('connectPage.hqplayer.recentPlan')}</span>
             </div>
             <div className="connect-hqplayer-plan-row">
               <em>Handoff</em>
-              <strong>{hqPlayerLastHandoff ? (hqPlayerLastReason ?? hqPlayerLastHandoff.state) : '暂无'}</strong>
+              <strong>{hqPlayerLastHandoff ? (hqPlayerLastReason ?? hqPlayerLastHandoff.state) : t('connectPage.common.none')}</strong>
             </div>
             <div className="connect-hqplayer-plan-row">
               <em>Control</em>
-              <strong>{hqPlayerControlPlan ? `${hqPlayerControlPlan.action} · ${hqPlayerControlPlan.transport}` : '暂无'}</strong>
+              <strong>{hqPlayerControlPlan ? `${hqPlayerControlPlan.action} · ${hqPlayerControlPlan.transport}` : t('connectPage.common.none')}</strong>
             </div>
             <div className="connect-hqplayer-plan-row">
               <em>Send</em>
@@ -3034,8 +3041,8 @@ export const ConnectPage = (): JSX.Element => {
               <em>Source</em>
               <strong>
                 {hqPlayerControlPlan?.source
-                  ? `${hqPlayerExposureLabel[hqPlayerControlPlan.source.exposure]} · ${hqPlayerControlPlan.source.mimeType ?? 'audio'}`
-                  : '暂无'}
+                  ? `${t(hqPlayerExposureLabel[hqPlayerControlPlan.source.exposure])} · ${hqPlayerControlPlan.source.mimeType ?? 'audio'}`
+                  : t('connectPage.common.none')}
               </strong>
             </div>
             {hqPlayerMediaServerLabel ? (
@@ -3046,15 +3053,15 @@ export const ConnectPage = (): JSX.Element => {
             ) : null}
             <div className="connect-hqplayer-plan-row">
               <em>Track</em>
-              <strong>{hqPlayerControlPlan?.metadata?.title ?? hqPlayerCurrentPlayable?.title ?? '暂无当前歌曲'}</strong>
+              <strong>{hqPlayerControlPlan?.metadata?.title ?? hqPlayerCurrentPlayable?.title ?? t('connectPage.hqplayer.noCurrentTrack')}</strong>
             </div>
             <div className="connect-hqplayer-plan-row">
               <em>Headers</em>
-              <strong>{hqPlayerControlPlan?.source?.hasHeaders ? '需要媒体服务隐藏' : '不暴露请求头'}</strong>
+              <strong>{hqPlayerControlPlan?.source?.hasHeaders ? t('connectPage.hqplayer.headersRequireMediaServer') : t('connectPage.hqplayer.headersNotExposed')}</strong>
             </div>
             <div className="connect-hqplayer-plan-footer">
               <Server size={15} />
-              <span>{hqPlayerEffectiveDraft.connectionMode === 'remote' ? '远程模式会优先使用 ECHO 媒体服务' : '本机模式可直接交接本地文件或本机流地址'}</span>
+              <span>{hqPlayerEffectiveDraft.connectionMode === 'remote' ? t('connectPage.hqplayer.remoteModeHint') : t('connectPage.hqplayer.localModeHint')}</span>
             </div>
           </div>
           </div>
@@ -3063,7 +3070,7 @@ export const ConnectPage = (): JSX.Element => {
           <div className="connect-hqplayer-collapsed">
             <div className="connect-hqplayer-local-card">
               <strong>{t('connectPage.hqplayer.localDesktop')}</strong>
-              <span>{formatHqEndpoint({ host: hqPlayerLocalHost, port: hqPlayerDefaultPort })}</span>
+              <span>{formatHqEndpoint({ host: hqPlayerLocalHost, port: hqPlayerDefaultPort }, t)}</span>
             </div>
             <div className="settings-inline-toggle">
               <span>{t('connectPage.hqplayer.enable')}</span>
@@ -3131,10 +3138,10 @@ export const ConnectPage = (): JSX.Element => {
             {t('connectPage.receiver.stop')}
           </button>
         </div>
-        <details className="connect-receiver-debug" aria-label="DLNA request log">
+        <details className="connect-receiver-debug" aria-label={t('connectPage.receiver.debugAria')}>
           <summary>
-            <span>DLNA Debug</span>
-            <small>{receiverStatus.debugEvents.length > 0 ? `${receiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+            <span>{t('connectPage.receiver.debugTitle')}</span>
+            <small>{receiverStatus.debugEvents.length > 0 ? t('connectPage.outgoing.recent', { count: receiverStatus.debugEvents.length }) : t('connectPage.receiver.debugEmpty')}</small>
           </summary>
           <div className="connect-receiver-debug__items">
             {receiverStatus.debugEvents.length > 0 ? (
@@ -3146,24 +3153,24 @@ export const ConnectPage = (): JSX.Element => {
                 </code>
               ))
             ) : (
-              <small>No DLNA requests yet</small>
+              <small>{t('connectPage.receiver.debugNoneYet')}</small>
             )}
           </div>
         </details>
       </section>
 
-      <section className="connect-receiver-panel" aria-label="AirPlay 实验接收">
+      <section className="connect-receiver-panel" aria-label={t('connectPage.airplay.aria')}>
         <div className="connect-section-title">
           <div>
             <span>AirPlay Spike</span>
-            <h2>接收来自 iPhone</h2>
+            <h2>{t('connectPage.airplay.title')}</h2>
           </div>
           <button className="settings-action-button" type="button" onClick={() => void toggleAirPlayReceiver()} disabled={isAirPlayReceiverBusy}>
             {isAirPlayReceiverBusy ? <Loader2 className="spinning-icon" size={16} /> : <Power size={16} />}
-            {airPlayReceiverStatus.enabled ? '关闭 AirPlay' : '开启 AirPlay'}
+            {airPlayReceiverStatus.enabled ? t('connectPage.airplay.disable') : t('connectPage.airplay.enable')}
           </button>
         </div>
-        <div className="connect-airplay-protocols" aria-label="AirPlay protocol">
+        <div className="connect-airplay-protocols" aria-label={t('connectPage.airplay.protocolAria')}>
           {airPlayReceiverProtocols.map((protocol) => (
             <button
               key={protocol}
@@ -3172,7 +3179,7 @@ export const ConnectPage = (): JSX.Element => {
               disabled={isAirPlayReceiverBusy}
               onClick={() => void setAirPlayProtocol(protocol)}
             >
-              {protocol === 'airplay1' ? 'AirPlay 1 / RAOP' : 'AirPlay 2 实验'}
+              {protocol === 'airplay1' ? t('connectPage.airplay.protocol.airplay1') : t('connectPage.airplay.protocol.airplay2')}
             </button>
           ))}
         </div>
@@ -3181,10 +3188,10 @@ export const ConnectPage = (): JSX.Element => {
             {airPlayCover ? <img alt="" src={airPlayCover} /> : <Cast size={42} />}
           </div>
           <div className="connect-now-copy">
-            <span>{airPlayStateLabel[airPlayReceiverStatus.state]}</span>
+            <span>{t(airPlayStateLabel[airPlayReceiverStatus.state])}</span>
             <h2>{airPlayTitle}</h2>
-            <p>{airPlayArtist}{airPlayAlbum ? ` 路 ${airPlayAlbum}` : ''}</p>
-            <div className="connect-progress" aria-label="AirPlay 播放进度">
+            <p>{airPlayArtist}{airPlayAlbum ? ` · ${airPlayAlbum}` : ''}</p>
+            <div className="connect-progress" aria-label={t('connectPage.airplay.progressAria')}>
               <span style={{ width: `${airPlayProgressPercent}%` }} />
             </div>
             <small>
@@ -3193,14 +3200,14 @@ export const ConnectPage = (): JSX.Element => {
           </div>
           <div className="connect-receiver-meta">
             <span>{airPlayReceiverStatus.advertisedName}</span>
-            <small>{airPlayReceiverStatus.currentClient ? `来自 ${airPlayReceiverStatus.currentClient.address}` : '等待 iPhone / iPad'}</small>
+            <small>{airPlayReceiverStatus.currentClient ? t('connectPage.receiver.fromClient', { address: airPlayReceiverStatus.currentClient.address }) : t('connectPage.airplay.waitingDevice')}</small>
             <small>
-              {airPlayReceiverStatus.error ?? (airPlayReceiverStatus.nativeAvailable ? 'RAOP 后端已加载' : '需要可用的 AirPlay 原生后端')}
+              {airPlayReceiverStatus.error ?? (airPlayReceiverStatus.nativeAvailable ? t('connectPage.airplay.nativeLoaded') : t('connectPage.airplay.nativeRequired'))}
             </small>
             <small>
-              {airPlayReceiverProtocol === 'airplay2' ? '当前使用 AirPlay 2 实验发现' : '当前使用 AirPlay 1 / RAOP'}
+              {airPlayReceiverProtocol === 'airplay2' ? t('connectPage.airplay.currentAirplay2') : t('connectPage.airplay.currentAirplay1')}
             </small>
-            <small>播放器进度条可拖动，是否响应取决于发送端</small>
+            <small>{t('connectPage.airplay.seekHint')}</small>
           </div>
           <button
             className="settings-action-button"
@@ -3209,19 +3216,19 @@ export const ConnectPage = (): JSX.Element => {
             disabled={isAirPlayReceiverBusy || !airPlayReceiverStatus.currentSourceId}
           >
             <Square size={15} />
-            停止 AirPlay
+            {t('connectPage.airplay.stop')}
           </button>
         </div>
-        <details className="connect-receiver-debug" aria-label="AirPlay receiver log">
+        <details className="connect-receiver-debug" aria-label={t('connectPage.airplay.debugAria')}>
           <summary>
-            <span>AirPlay Debug</span>
+            <span>{t('connectPage.airplay.debugTitle')}</span>
             <div className="connect-receiver-debug__actions">
-              <small>{airPlayReceiverStatus.debugEvents.length > 0 ? `${airPlayReceiverStatus.debugEvents.length} recent` : 'No requests'}</small>
+              <small>{airPlayReceiverStatus.debugEvents.length > 0 ? t('connectPage.outgoing.recent', { count: airPlayReceiverStatus.debugEvents.length }) : t('connectPage.receiver.debugEmpty')}</small>
               <button
                 className="connect-debug-copy-button"
                 type="button"
-                aria-label="Copy AirPlay Debug"
-                title="Copy AirPlay Debug"
+                aria-label={t('connectPage.airplay.copyDebug')}
+                title={t('connectPage.airplay.copyDebug')}
                 disabled={!airPlayDebugText}
                 onClick={(event) => {
                   event.preventDefault();
@@ -3241,7 +3248,7 @@ export const ConnectPage = (): JSX.Element => {
                 </code>
               ))
             ) : (
-              <small>No AirPlay events yet</small>
+              <small>{t('connectPage.airplay.debugNoneYet')}</small>
             )}
           </div>
         </details>

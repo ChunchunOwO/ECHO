@@ -2195,6 +2195,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetPlaybackStatsDashboard, (_event, query: unknown) =>
     getLibraryService().getPlaybackStatsDashboardPlaybackSafe(normalizePlaybackHistoryQuery(query)),
   );
+  ipcMain.handle(IpcChannels.LibraryGetPlaybackMemoryGraph, (_event, query: unknown) =>
+    getLibraryService().getPlaybackMemoryGraphPlaybackSafe(normalizePlaybackHistoryQuery(query)),
+  );
   ipcMain.handle(IpcChannels.LibraryRefreshInvalidPlaybackHistory, () =>
     getLibraryService().refreshInvalidPlaybackHistory(),
   );

@@ -160,9 +160,8 @@ export const ArtistsPage = (): JSX.Element => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [initialArtistDetailRequest] = useState(() => consumePendingArtistDetailNavigation());
-  const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(() => initialArtistDetailRequest?.artist ?? null);
-  const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(() => initialArtistDetailRequest?.returnTo ?? null);
+  const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(null);
+  const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(null);
   const [isArtistWallReturning, setIsArtistWallReturning] = useState(false);
   const [artistWallAlbumArtwork, setArtistWallAlbumArtwork] = useState(false);
   const [artistWallAlbumFallbackForMissingAvatars, setArtistWallAlbumFallbackForMissingAvatars] = useState(false);

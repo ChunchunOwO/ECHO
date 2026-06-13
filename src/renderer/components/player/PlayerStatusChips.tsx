@@ -45,6 +45,14 @@ const formatHqPlayerOutputRate = (value: number | null | undefined): string | nu
   return formatSpecRate(value);
 };
 
+const formatPlaybackRateLabel = (value: number | null | undefined): string | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value - 1) < 0.005) {
+    return null;
+  }
+
+  return `${trimFixed(value, 2)}x`;
+};
+
 const codecClassName = (codec: string): string => {
   if (codec === 'FLAC' || codec === 'ALAC' || codec === 'DSF' || codec === 'DFF') {
     return 'tag-flac';
@@ -173,6 +181,7 @@ export const PlayerStatusChips = ({ hqPlayerActiveRate = null, status, state, tr
   const channels = formatAudioChannelLayout(status?.channels);
   const formattedRate = formatSpecRate(sampleRate);
   const playbackRate = status?.playbackRate ?? 1;
+  const playbackRateLabel = formatPlaybackRateLabel(playbackRate);
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const automixLabel = formatAutomixLabel(status);
@@ -184,6 +193,7 @@ export const PlayerStatusChips = ({ hqPlayerActiveRate = null, status, state, tr
     : null;
   const hqPlayerOutputRateLabel =
     hqPlayerRate && (!sampleRate || hqPlayerRate > sampleRate + 1) ? formatHqPlayerOutputRate(hqPlayerRate) : null;
+  const upsamplingActive = Boolean((status?.resampling && status.echoSrcActive) || hqPlayerOutputRateLabel);
   const chips: Chip[] = uniqueChips([
     isLoadingRemoteTrack ? { label: '加载中', className: 'tag-loading' } : null,
     windowsAudioRateWarning
@@ -195,14 +205,17 @@ export const PlayerStatusChips = ({ hqPlayerActiveRate = null, status, state, tr
     status?.dspLimiterProtecting ? { label: 'Protect', className: 'tag-warning' } : null,
     !status?.dspLimiterProtecting && status?.dspClippingRisk ? { label: 'DSP Risk', className: 'tag-warning' } : null,
     status?.dspActive && Math.abs(status?.dspHeadroomDb ?? 0) > 0.05 ? { label: `Headroom ${status?.dspHeadroomDb?.toFixed(1)}dB`, className: 'tag-warning' } : null,
-    status?.eqEnabled ? { label: 'EQ', className: 'tag-warning' } : null,
+    status?.eqEnabled ? { label: 'EQ', className: 'tag-eq' } : null,
     status?.channelBalanceEnabled ? { label: 'Balance', className: 'tag-warning' } : null,
     automixLabel ? { label: automixLabel, className: 'tag-automix' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
     streamingLabel ? { label: streamingLabel, className: 'tag-streaming' } : null,
+    status?.bitPerfectCandidate ? { label: 'Bit-Perfect', className: 'tag-bit-perfect' } : null,
+    upsamplingActive ? { label: 'Rate Lift', className: 'tag-upsampling' } : null,
     hqPlayerOutputRateLabel ? { label: 'HQPlayer', className: 'tag-hqplayer' } : null,
     hqPlayerOutputRateLabel ? { label: hqPlayerOutputRateLabel, className: 'tag-hqplayer' } : null,
+    playbackRateLabel ? { label: playbackRateLabel, className: 'tag-speed' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitDepth, codec, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,

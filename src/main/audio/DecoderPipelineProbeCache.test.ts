@@ -5,13 +5,19 @@ import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseFile } from 'music-metadata';
+import { readMetadata } from 'taglib-wasm';
 import { DecoderPipeline, type DecoderPipelineDependencies } from './DecoderPipeline';
 
 vi.mock('music-metadata', () => ({
   parseFile: vi.fn(),
 }));
 
+vi.mock('taglib-wasm', () => ({
+  readMetadata: vi.fn(),
+}));
+
 const parseFileMock = vi.mocked(parseFile);
+const readTagLibMetadataMock = vi.mocked(readMetadata);
 
 const uint32Be = (value: number): Buffer => {
   const buffer = Buffer.alloc(4);
@@ -52,6 +58,7 @@ const createDecoder = (): DecoderPipeline => {
 describe('DecoderPipeline probe cache', () => {
   afterEach(() => {
     parseFileMock.mockReset();
+    readTagLibMetadataMock.mockReset();
   });
 
   it('reuses local probe metadata while the file fingerprint is unchanged', async () => {
@@ -151,6 +158,52 @@ describe('DecoderPipeline probe cache', () => {
       expect(result.codec).toBe('E-AC-3');
       expect(result.channels).toBe(6);
       expect(parseFileMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to TagLib technical metadata when a mislabeled WAV parses as empty metadata', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'echo-probe-cache-'));
+    const filePath = join(tempDir, 'mislabeled.wav');
+    await writeFile(filePath, Buffer.concat([
+      Buffer.from('ID3', 'ascii'),
+      Buffer.alloc(128),
+    ]));
+    parseFileMock.mockResolvedValue({
+      format: {
+        tagTypes: [],
+        trackInfo: [],
+        hasAudio: false,
+        hasVideo: false,
+      },
+    } as never);
+    readTagLibMetadataMock.mockResolvedValue({
+      tags: {},
+      properties: {
+        duration: 48.776,
+        sampleRate: 48000,
+        channels: 2,
+        bitsPerSample: 0,
+        bitrate: 192,
+        codec: 'MP3',
+        containerFormat: 'MP3',
+      },
+      hasCoverArt: false,
+    } as never);
+
+    try {
+      const decoder = createDecoder();
+      const result = await decoder.probeLocalFile(filePath);
+
+      expect(result).toMatchObject({
+        filePath,
+        durationSeconds: 48.776,
+        fileSampleRate: 48000,
+        channels: 2,
+        codec: 'MP3',
+        bitrate: 192000,
+      });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

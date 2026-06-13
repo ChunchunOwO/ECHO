@@ -4759,23 +4759,6 @@ export const SettingsPage = (): JSX.Element => {
         terms: [t('settings.general.playerWaveformProgress.title'), t('settings.general.playerWaveformProgress.description'), '波形进度条', '波形進度條', '波形播放进度', 'waveform progress', 'waveform seekbar', 'waveform scrubber', 'roon'],
       },
       {
-        id: 'row-listening-room',
-        sectionKey: 'general',
-        targetId: 'settings-row-listening-room',
-        title: t('settings.general.listeningRoom.title'),
-        description: t('settings.general.listeningRoom.description'),
-        terms: [
-          t('settings.general.listeningRoom.title'),
-          t('settings.general.listeningRoom.description'),
-          'Listening Room',
-          'immersive playback',
-          'stage',
-          '沉浸播放室',
-          '播放室',
-          '主舞台',
-        ],
-      },
-      {
         id: 'row-home-waveform-visualizer',
         sectionKey: 'general',
         targetId: 'settings-row-home-waveform-visualizer',
@@ -8265,10 +8248,6 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleOpenDspPage = (): void => {
     window.dispatchEvent(new Event('app:navigate:dsp'));
-  };
-
-  const handleOpenListeningRoom = (): void => {
-    window.dispatchEvent(new Event('app:navigate:listening-room'));
   };
 
   const handleOpenPluginDirectory = async (): Promise<void> => {

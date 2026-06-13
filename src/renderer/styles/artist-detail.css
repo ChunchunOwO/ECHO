@@ -647,6 +647,265 @@
   transform: rotate(180deg);
 }
 
+.artist-related-artists {
+  padding-top: 2px;
+}
+
+.artist-related-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.artist-related-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 58%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), color-mix(in srgb, var(--theme-panel-bg) 78%, #e8f5f1 22%)),
+    var(--theme-panel-bg);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--theme-panel-border) 18%, transparent);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.artist-related-card:hover,
+.artist-related-card[data-expanded="true"] {
+  border-color: color-mix(in srgb, var(--theme-accent-primary) 34%, var(--theme-panel-border));
+  box-shadow: 0 16px 38px color-mix(in srgb, var(--theme-accent-primary) 18%, transparent);
+}
+
+.artist-related-card:hover {
+  transform: translateY(-1px);
+}
+
+.artist-related-main {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  gap: 13px;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.artist-related-main:focus-visible,
+.artist-related-expand:focus-visible,
+.artist-constellation-node:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--theme-accent-primary) 48%, transparent);
+  outline-offset: 3px;
+}
+
+.artist-related-expand {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: #627188;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 64%, transparent);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.64);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.artist-related-expand:hover {
+  color: #27364a;
+  border-color: color-mix(in srgb, var(--theme-accent-primary) 30%, var(--theme-panel-border));
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.artist-related-expand[aria-expanded="true"] {
+  color: #2c6f74;
+  transform: rotate(180deg);
+}
+
+.artist-related-avatar {
+  display: grid;
+  width: 56px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  place-items: center;
+  color: #59758c;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 72%, transparent);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 28% 26%, rgba(255, 255, 255, 0.9), transparent 36%),
+    linear-gradient(145deg, #eef8f5, #e9edf8);
+  font-size: 18px;
+  font-weight: 880;
+}
+
+.artist-related-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artist-related-copy {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.artist-related-copy strong {
+  overflow: hidden;
+  color: #1f2d40;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-related-copy span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.artist-related-copy small {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+  color: #657487;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 64%, transparent);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-related-chip {
+  color: #2c6f74;
+  background: color-mix(in srgb, #dff5ef 74%, #ffffff 26%);
+}
+
+.artist-related-constellation {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 11px 0 0 13px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-panel-border) 58%, transparent);
+}
+
+.artist-related-constellation p {
+  margin: 0;
+  color: #748296;
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.artist-related-constellation p[data-state="error"] {
+  color: #9e4d58;
+}
+
+.artist-constellation-branch {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.artist-constellation-branch::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(93, 120, 170, 0.42), rgba(64, 137, 126, 0.24));
+  content: "";
+}
+
+.artist-constellation-node {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 54%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-panel-bg) 72%, transparent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.artist-constellation-node:hover {
+  border-color: color-mix(in srgb, var(--theme-accent-primary) 28%, var(--theme-panel-border));
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.artist-constellation-avatar {
+  display: grid;
+  width: 30px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  place-items: center;
+  color: #5e748c;
+  border: 1px solid color-mix(in srgb, var(--theme-panel-border) 62%, transparent);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #eef8f5, #e9edf8);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.artist-constellation-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.artist-constellation-node strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #223248;
+  font-size: 12px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-constellation-node small {
+  max-width: 88px;
+  overflow: hidden;
+  color: #6d7d90;
+  font-size: 11px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .artist-overview-tracks {
   padding-top: 2px;
 }
@@ -1391,6 +1650,99 @@ html[data-theme="dark"] .artist-overview-track-card {
   border-color: var(--color-border);
   background: rgba(24, 31, 41, 0.58);
   box-shadow: none;
+}
+
+html[data-theme="dark"] .artist-related-card {
+  border-color: var(--color-border);
+  background:
+    linear-gradient(135deg, rgba(30, 39, 50, 0.9), rgba(23, 30, 39, 0.72)),
+    rgba(24, 31, 41, 0.58);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .artist-related-card:hover,
+html[data-theme="dark"] .artist-related-card[data-expanded="true"] {
+  border-color: rgba(100, 181, 255, 0.32);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] .artist-related-expand {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .artist-related-expand:hover {
+  color: var(--echo-heading-text);
+  border-color: rgba(100, 181, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="dark"] .artist-related-expand[aria-expanded="true"] {
+  color: #afe4dc;
+}
+
+html[data-theme="dark"] .artist-related-avatar {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border);
+  background:
+    radial-gradient(circle at 30% 26%, rgba(106, 132, 164, 0.3), transparent 38%),
+    linear-gradient(145deg, #273441, #202732);
+}
+
+html[data-theme="dark"] .artist-related-copy strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .artist-related-copy small {
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .artist-related-chip {
+  color: #afe4dc;
+  background: rgba(80, 148, 139, 0.18);
+}
+
+html[data-theme="dark"] .artist-related-constellation {
+  border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .artist-related-constellation p {
+  color: var(--color-muted);
+}
+
+html[data-theme="dark"] .artist-related-constellation p[data-state="error"] {
+  color: #f0a3ad;
+}
+
+html[data-theme="dark"] .artist-constellation-branch::before {
+  background: linear-gradient(180deg, rgba(125, 172, 230, 0.34), rgba(91, 177, 164, 0.18));
+}
+
+html[data-theme="dark"] .artist-constellation-node {
+  border-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"] .artist-constellation-node:hover {
+  border-color: rgba(100, 181, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .artist-constellation-avatar {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border);
+  background: linear-gradient(145deg, #273441, #202732);
+}
+
+html[data-theme="dark"] .artist-constellation-node strong {
+  color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .artist-constellation-node small {
+  color: var(--color-muted);
 }
 
 html[data-theme="dark"] .artist-overview-track-copy strong {

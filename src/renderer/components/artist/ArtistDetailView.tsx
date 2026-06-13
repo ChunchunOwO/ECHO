@@ -2,13 +2,23 @@ import { startTransition, type KeyboardEvent, type MouseEvent, useCallback, useE
 import { ArrowLeft, ChevronDown, Disc3, Download, ExternalLink, ListPlus, Play, RefreshCw, Shuffle } from 'lucide-react';
 import { defaultArtistStreamingAlbumsProvider, type AppSettings, type ArtistStreamingAlbumsProvider } from '../../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
-import type { ArtistInsights, ArtistOnlineInfoBio, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import type {
+  ArtistInsightEdge,
+  ArtistInsightNode,
+  ArtistInsightRelationKind,
+  ArtistInsights,
+  ArtistOnlineInfoBio,
+  LibraryAlbum,
+  LibraryArtist,
+  LibraryTrack,
+} from '../../../shared/types/library';
 import type { StreamingAlbum, StreamingAlbumDetail, StreamingProviderDescriptor, StreamingProviderName, StreamingTrack } from '../../../shared/types/streaming';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { useProgressiveRenderLimit } from '../../hooks/useProgressiveRenderLimit';
 import { useI18n } from '../../i18n/I18nProvider';
 import { readStreamingQualityPreference } from '../../preferences/streamingQualityPreference';
 import { isPlaybackCancellationError, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { requestArtistDetailNavigation } from '../../utils/artistNavigation';
 import { AlbumDetailView } from '../album/AlbumDetailView';
 import { readPageScrollTop, writePageScrollTop } from '../ui/InfiniteScrollSentinel';
 import { ArtistAlbumGrid } from './ArtistAlbumGrid';
@@ -30,6 +40,34 @@ const streamingAlbumTrackRenderDelayMs = 80;
 const overviewTrackInitialCount = 6;
 const overviewTrackLoadStep = 6;
 const streamingAlbumDownloadQueueYieldMs = 90;
+const relatedArtistCardLimit = 8;
+const relatedArtistConstellationLimit = 4;
+
+const visibleArtistRelationKinds = new Set<ArtistInsightRelationKind>([
+  'collaboration',
+  'same_album',
+  'member',
+  'playback_adjacent',
+]);
+
+const artistRelationPriority = {
+  collaboration: 0,
+  same_album: 1,
+  member: 2,
+  playback_adjacent: 3,
+  online_similar: 4,
+  same_genre: 5,
+  similar_bpm: 6,
+  external_url: 7,
+} satisfies Record<ArtistInsightRelationKind, number>;
+
+type RelatedArtistCard = {
+  node: ArtistInsightNode;
+  edge: ArtistInsightEdge;
+};
+
+const omitRecordKey = <T,>(record: Record<string, T>, key: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key)) as Record<string, T>;
 
 type StreamingAlbumProviderPageState = {
   nextPage: number;
@@ -599,6 +637,96 @@ const eventSecondaryInfo = (event: ArtistInsights['concerts']['events'][number])
     event.country && event.country !== event.city && event.country !== event.region ? event.country : null,
   ].filter(Boolean).join(' / ');
 
+const getRelatedArtistTargetId = (edge: ArtistInsightEdge, currentArtistId: string): string | null => {
+  if (edge.sourceArtistId === currentArtistId) {
+    return edge.targetArtistId;
+  }
+  if (edge.targetArtistId === currentArtistId) {
+    return edge.sourceArtistId;
+  }
+  return null;
+};
+
+const isBetterArtistRelation = (candidate: ArtistInsightEdge, previous: ArtistInsightEdge): boolean => {
+  const candidatePriority = artistRelationPriority[candidate.kind];
+  const previousPriority = artistRelationPriority[previous.kind];
+  if (candidatePriority !== previousPriority) {
+    return candidatePriority < previousPriority;
+  }
+  return candidate.weight > previous.weight;
+};
+
+const getRelatedArtistCards = (insights: ArtistInsights | null, currentArtistId: string): RelatedArtistCard[] => {
+  if (!insights) {
+    return [];
+  }
+
+  const nodesById = new Map(insights.nodes.map((node) => [node.id, node]));
+  const bestEdgesByArtistId = new Map<string, ArtistInsightEdge>();
+
+  for (const edge of insights.edges) {
+    if (edge.source !== 'local' || !visibleArtistRelationKinds.has(edge.kind)) {
+      continue;
+    }
+
+    const targetArtistId = getRelatedArtistTargetId(edge, currentArtistId);
+    if (!targetArtistId || targetArtistId === currentArtistId || !nodesById.has(targetArtistId)) {
+      continue;
+    }
+
+    const previous = bestEdgesByArtistId.get(targetArtistId);
+    if (!previous || isBetterArtistRelation(edge, previous)) {
+      bestEdgesByArtistId.set(targetArtistId, edge);
+    }
+  }
+
+  return Array.from(bestEdgesByArtistId.entries())
+    .map(([artistId, edge]) => ({ node: nodesById.get(artistId)!, edge }))
+    .sort((left, right) => {
+      const relationDelta = artistRelationPriority[left.edge.kind] - artistRelationPriority[right.edge.kind];
+      if (relationDelta !== 0) {
+        return relationDelta;
+      }
+      const weightDelta = right.edge.weight - left.edge.weight;
+      if (weightDelta !== 0) {
+        return weightDelta;
+      }
+      return left.node.name.localeCompare(right.node.name);
+    })
+    .slice(0, relatedArtistCardLimit);
+};
+
+const getRelatedArtistConstellationCards = (
+  insights: ArtistInsights | null,
+  currentArtistId: string,
+  rootArtistId: string,
+): RelatedArtistCard[] =>
+  getRelatedArtistCards(insights, currentArtistId)
+    .filter(({ node }) => node.id !== rootArtistId)
+    .slice(0, relatedArtistConstellationLimit);
+
+const artistRelationLabel = (kind: ArtistInsightRelationKind, t: Translate): string => {
+  switch (kind) {
+    case 'collaboration':
+      return t('artistDetail.relation.collaboration');
+    case 'same_album':
+      return t('artistDetail.relation.sameAlbum');
+    case 'same_genre':
+      return t('artistDetail.relation.genre');
+    case 'similar_bpm':
+      return t('artistDetail.relation.bpm');
+    case 'playback_adjacent':
+      return t('artistDetail.relation.history');
+    case 'member':
+      return t('artistDetail.relation.member');
+    case 'external_url':
+      return t('artistDetail.relation.link');
+    case 'online_similar':
+    default:
+      return t('artistDetail.relation.similar');
+  }
+};
+
 export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX.Element => {
   const { t } = useI18n();
   const { appendToQueue, playTrack, replaceQueue } = usePlaybackQueue();
@@ -612,6 +740,10 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const [playError, setPlayError] = useState<string | null>(null);
   const [artistInsights, setArtistInsights] = useState<ArtistInsights | null>(null);
   const [areInsightsLoading, setAreInsightsLoading] = useState(false);
+  const [expandedRelatedArtistIds, setExpandedRelatedArtistIds] = useState<Record<string, true>>({});
+  const [relatedArtistInsightsById, setRelatedArtistInsightsById] = useState<Record<string, ArtistInsights>>({});
+  const [loadingRelatedArtistIds, setLoadingRelatedArtistIds] = useState<Record<string, true>>({});
+  const [relatedArtistInsightErrors, setRelatedArtistInsightErrors] = useState<Record<string, string>>({});
   const [onlineRefreshRequest, setOnlineRefreshRequest] = useState(0);
   const [configuredConcertSources, setConfiguredConcertSources] = useState<string[]>([]);
   const [configuredConcertRegion, setConfiguredConcertRegion] = useState<string | null>(null);
@@ -734,6 +866,10 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setQueuedStreamingTrackKey(null);
     setAreConcertsExpanded(true);
     setOverviewTrackVisibleCount(overviewTrackInitialCount);
+    setExpandedRelatedArtistIds({});
+    setRelatedArtistInsightsById({});
+    setLoadingRelatedArtistIds({});
+    setRelatedArtistInsightErrors({});
     setActiveTab('overview');
   }, [artist.id]);
 
@@ -1149,6 +1285,62 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setOverviewTrackVisibleCount(loadedTracks.length);
   }, [loadedTracks.length]);
 
+  const handleOpenRelatedArtist = useCallback(async (node: ArtistInsightNode): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.getArtist) {
+      setVerifyError(t('artistDetail.error.desktopBridgeRead'));
+      return;
+    }
+
+    try {
+      setVerifyError(null);
+      const relatedArtist = await library.getArtist(node.id);
+      if (!relatedArtist) {
+        setVerifyError(t('artistDetail.missing.title'));
+        return;
+      }
+      requestArtistDetailNavigation(relatedArtist);
+    } catch (error) {
+      setVerifyError(error instanceof Error ? error.message : String(error));
+    }
+  }, [t]);
+
+  const handleToggleRelatedArtistConstellation = useCallback(async (node: ArtistInsightNode): Promise<void> => {
+    const isExpanded = Boolean(expandedRelatedArtistIds[node.id]);
+
+    if (isExpanded) {
+      setExpandedRelatedArtistIds((current) => omitRecordKey(current, node.id));
+      return;
+    }
+
+    setExpandedRelatedArtistIds((current) => ({ ...current, [node.id]: true }));
+
+    if (relatedArtistInsightsById[node.id] || loadingRelatedArtistIds[node.id]) {
+      return;
+    }
+
+    const library = window.echo?.library;
+    if (!library?.getArtistInsights) {
+      setRelatedArtistInsightErrors((current) => ({ ...current, [node.id]: t('artistDetail.error.desktopBridgeRead') }));
+      return;
+    }
+
+    setLoadingRelatedArtistIds((current) => ({ ...current, [node.id]: true }));
+    setRelatedArtistInsightErrors((current) => omitRecordKey(current, node.id));
+
+    try {
+      const insights = await library.getArtistInsights(node.id, { limit: 8, includeOnline: false });
+      setRelatedArtistInsightsById((current) => ({ ...current, [node.id]: insights }));
+    } catch (error) {
+      setRelatedArtistInsightErrors((current) => ({
+        ...current,
+        [node.id]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setLoadingRelatedArtistIds((current) => omitRecordKey(current, node.id));
+    }
+  }, [expandedRelatedArtistIds, loadingRelatedArtistIds, relatedArtistInsightsById, t]);
+
   const handleSelectAlbum = useCallback((album: LibraryAlbum): void => {
     detailScrollTopRef.current = readPageScrollTop(detailRootRef.current);
     shouldRestoreDetailScrollRef.current = true;
@@ -1461,6 +1653,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const visibleOverviewTrackCount = Math.min(overviewTrackVisibleCount, loadedTracks.length);
   const overviewPreviewTracks = loadedTracks.slice(0, visibleOverviewTrackCount);
   const hasMoreOverviewTracks = visibleOverviewTrackCount < loadedTracks.length;
+  const relatedArtistCards = useMemo(() => getRelatedArtistCards(artistInsights, artist.id), [artist.id, artistInsights]);
 
   if (selectedStreamingAlbum) {
     const album = selectedStreamingAlbumDetail ?? selectedStreamingAlbum;
@@ -1717,6 +1910,85 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
               ) : null}
             </aside>
           </section>
+
+          {relatedArtistCards.length > 0 ? (
+            <section className="artist-section artist-related-artists" aria-label={t('artistDetail.aria.relationshipMap')}>
+              <header>
+                <div>
+                  <span>{t('artistDetail.section.localNetwork')}</span>
+                  <h2>{t('artistDetail.section.relationshipMap')}</h2>
+                </div>
+                <small>{t('artistDetail.status.linkedArtists', { count: relatedArtistCards.length })}</small>
+              </header>
+              <div className="artist-related-strip">
+                {relatedArtistCards.map(({ node, edge }) => {
+                  const avatarSrc = node.avatarUrl ?? node.coverThumb;
+                  const relationLabel = artistRelationLabel(edge.kind, t);
+                  const isConstellationExpanded = Boolean(expandedRelatedArtistIds[node.id]);
+                  const isConstellationLoading = Boolean(loadingRelatedArtistIds[node.id]);
+                  const constellationError = relatedArtistInsightErrors[node.id] ?? null;
+                  const constellationCards = isConstellationExpanded
+                    ? getRelatedArtistConstellationCards(relatedArtistInsightsById[node.id] ?? null, node.id, artist.id)
+                    : [];
+
+                  return (
+                    <article className="artist-related-card" data-expanded={isConstellationExpanded} key={node.id}>
+                      <button className="artist-related-main" type="button" onClick={() => void handleOpenRelatedArtist(node)}>
+                        <span className="artist-related-avatar" data-empty={!avatarSrc} aria-hidden="true">
+                          {avatarSrc ? <img alt="" decoding="async" draggable={false} loading="lazy" src={avatarSrc} /> : artistMark(node.name)}
+                        </span>
+                        <span className="artist-related-copy">
+                          <strong>{node.name}</strong>
+                          <span>
+                            <small className="artist-related-chip">{relationLabel}</small>
+                            <small>{t('artistDetail.meta.tracks', { count: node.trackCount })}</small>
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        className="artist-related-expand"
+                        type="button"
+                        aria-expanded={isConstellationExpanded}
+                        aria-label={t(isConstellationExpanded ? 'artistDetail.constellation.collapseAria' : 'artistDetail.constellation.expandAria', { artist: node.name })}
+                        title={t(isConstellationExpanded ? 'artistDetail.constellation.collapse' : 'artistDetail.constellation.expand')}
+                        onClick={() => void handleToggleRelatedArtistConstellation(node)}
+                      >
+                        <ChevronDown size={15} />
+                      </button>
+                      {isConstellationExpanded ? (
+                        <div className="artist-related-constellation" aria-live="polite">
+                          {isConstellationLoading ? <p>{t('artistDetail.constellation.loading')}</p> : null}
+                          {!isConstellationLoading && constellationError ? (
+                            <p data-state="error">{t('artistDetail.constellation.error', { message: constellationError })}</p>
+                          ) : null}
+                          {!isConstellationLoading && !constellationError && constellationCards.length === 0 ? (
+                            <p>{t('artistDetail.constellation.empty')}</p>
+                          ) : null}
+                          {constellationCards.length > 0 ? (
+                            <div className="artist-constellation-branch">
+                              {constellationCards.map(({ node: childNode, edge: childEdge }) => {
+                                const childAvatarSrc = childNode.avatarUrl ?? childNode.coverThumb;
+
+                                return (
+                                  <button className="artist-constellation-node" key={childNode.id} type="button" onClick={() => void handleOpenRelatedArtist(childNode)}>
+                                    <span className="artist-constellation-avatar" data-empty={!childAvatarSrc} aria-hidden="true">
+                                      {childAvatarSrc ? <img alt="" decoding="async" draggable={false} loading="lazy" src={childAvatarSrc} /> : artistMark(childNode.name)}
+                                    </span>
+                                    <strong>{childNode.name}</strong>
+                                    <small>{artistRelationLabel(childEdge.kind, t)}</small>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <section className="artist-section artist-overview-tracks" aria-label={t('artistDetail.tracks.aria', { artist: displayArtist.name })}>
             <header>

@@ -55,17 +55,6 @@ export const EchoSongsIcon = createNavIcon(
   </>,
 );
 
-export const EchoListeningRoomIcon = createNavIcon(
-  'EchoListeningRoomIcon',
-  <>
-    <rect x="4.6" y="5.2" width="14.8" height="10.2" rx="2.3" />
-    <path d="M8.1 18.8h7.8" />
-    <path d="M12 15.4v3.4" />
-    <path d="M8.2 11.8c.9-1 1.7-1 2.6 0s1.7 1 2.6 0 1.7-1 2.6 0" />
-    <path d="M8.2 8.9h7.6" />
-  </>,
-);
-
 export const EchoDownloadsIcon = createNavIcon(
   'EchoDownloadsIcon',
   <>

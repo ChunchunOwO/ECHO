@@ -241,6 +241,7 @@ export const IpcChannels = {
   LibraryGetPlaybackHistory: 'library:get-playback-history',
   LibraryGetPlaybackHistorySummary: 'library:get-playback-history-summary',
   LibraryGetPlaybackStatsDashboard: 'library:get-playback-stats-dashboard',
+  LibraryGetPlaybackMemoryGraph: 'library:get-playback-memory-graph',
   LibraryRefreshInvalidPlaybackHistory: 'library:refresh-invalid-playback-history',
   LibraryDeletePlaybackHistoryEntry: 'library:delete-playback-history-entry',
   LibraryClearPlaybackHistory: 'library:clear-playback-history',

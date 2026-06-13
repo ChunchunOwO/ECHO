@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistsPage } from './ArtistsPage';
@@ -210,6 +211,26 @@ describe('ArtistsPage', () => {
 
     requestArtistDetailNavigation(targetArtist, { returnTo: 'home' });
     const { container } = renderArtistsPage();
+
+    expect(screen.getByText('Detail: BURTON')).toBeTruthy();
+    expect(container.querySelector('.artists-page')?.getAttribute('data-detail-open')).toBe('true');
+  });
+
+  it('keeps pending artist detail navigation under React StrictMode startup', () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+
+    requestArtistDetailNavigation(targetArtist, { returnTo: 'albums' });
+    const { container } = render(
+      <StrictMode>
+        <I18nProvider>
+          <main className="page-surface">
+            <ArtistsPage />
+          </main>
+        </I18nProvider>
+      </StrictMode>,
+    );
 
     expect(screen.getByText('Detail: BURTON')).toBeTruthy();
     expect(container.querySelector('.artists-page')?.getAttribute('data-detail-open')).toBe('true');

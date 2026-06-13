@@ -55,6 +55,7 @@ describe('PlayerStatusChips', () => {
   it('adds restrained HQPlayer output chips when HQPlayer upsamples the source', () => {
     render(<PlayerStatusChips hqPlayerActiveRate={22579200} status={null} state="playing" track={track({ sampleRate: 48000 })} />);
 
+    expect(screen.getByText('Rate Lift').className).toContain('tag-upsampling');
     expect(screen.getByText('HQPlayer').className).toContain('tag-hqplayer');
     expect(screen.getByText('22.58MHz').className).toContain('tag-hqplayer');
     expect(screen.getByText('24bit / 48kHz')).toBeTruthy();
@@ -64,6 +65,40 @@ describe('PlayerStatusChips', () => {
     render(<PlayerStatusChips hqPlayerActiveRate={48000} status={null} state="playing" track={track({ sampleRate: 48000 })} />);
 
     expect(screen.queryByText('HQPlayer')).toBeNull();
+  });
+
+  it('shows playback path tags for bit-perfect, upsampling, and EQ', () => {
+    render(
+      <PlayerStatusChips
+        status={{
+          bitPerfectCandidate: true,
+          echoSrcActive: true,
+          eqEnabled: true,
+          playbackRate: 1,
+          resampling: true,
+          sampleRateMismatch: false,
+        } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.getByText('Bit-Perfect').className).toContain('tag-bit-perfect');
+    expect(screen.getByText('Rate Lift').className).toContain('tag-upsampling');
+    expect(screen.getByText('EQ').className).toContain('tag-eq');
+  });
+
+  it('shows the playback speed chip only when playback is not 1x', () => {
+    const { rerender } = render(
+      <PlayerStatusChips status={{ playbackRate: 1.25, sampleRateMismatch: false } as never} state="playing" track={track()} />,
+    );
+
+    expect(screen.getByText('1.25x').className).toContain('tag-speed');
+    expect(screen.getByText('FLAC')).toBeTruthy();
+
+    rerender(<PlayerStatusChips status={{ playbackRate: 1, sampleRateMismatch: false } as never} state="playing" track={track()} />);
+
+    expect(screen.queryByText('1x')).toBeNull();
   });
 
   it('hides KuGou source chips while keeping audio spec chips', () => {

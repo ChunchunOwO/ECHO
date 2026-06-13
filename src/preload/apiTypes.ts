@@ -138,6 +138,7 @@ import type {
   PlaybackHistoryQuery,
   PlaybackHistoryRefreshResult,
   PlaybackHistorySummary,
+  PlaybackMemoryGraph,
   PlaybackStatsDashboard,
   SmartPlaylistGenerateRequest,
   SmartPlaylistGenerateResult,
@@ -472,6 +473,7 @@ export type EchoApi = {
     getPlaybackHistory: (query?: PlaybackHistoryQuery) => Promise<LibraryPage<PlaybackHistoryEntry>>;
     getPlaybackHistorySummary: (query?: PlaybackHistoryQuery) => Promise<PlaybackHistorySummary>;
     getPlaybackStatsDashboard: (query?: PlaybackHistoryQuery) => Promise<PlaybackStatsDashboard>;
+    getPlaybackMemoryGraph: (query?: PlaybackHistoryQuery) => Promise<PlaybackMemoryGraph>;
     refreshInvalidPlaybackHistory: () => Promise<PlaybackHistoryRefreshResult>;
     deletePlaybackHistoryEntry: (id: string) => Promise<void>;
     clearPlaybackHistory: () => Promise<void>;

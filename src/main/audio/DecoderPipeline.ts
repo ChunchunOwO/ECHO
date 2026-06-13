@@ -378,6 +378,28 @@ export class DecoderPipeline {
       bitrate: normalizePositiveInteger(format.bitrate),
     };
     result.codec = await resolveMp4ContainerAudioCodec(probePath, result.codec);
+    if (
+      result.durationSeconds <= 0 ||
+      result.fileSampleRate === null ||
+      result.codec === null ||
+      result.bitrate === null
+    ) {
+      try {
+        const tagLibTechnical = await readTagLibAudioTechnicalMetadata(probePath);
+        if (tagLibTechnical) {
+          result.durationSeconds = tagLibTechnical.durationSeconds ?? result.durationSeconds;
+          result.fileSampleRate = tagLibTechnical.sampleRate ?? result.fileSampleRate;
+          result.bitDepth = tagLibTechnical.bitDepth ?? result.bitDepth;
+          result.bitrate = tagLibTechnical.bitrate ?? result.bitrate;
+          result.codec = tagLibTechnical.codec ?? result.codec;
+          result.channels = Math.max(1, Math.min(8, tagLibTechnical.channels ?? result.channels));
+        }
+      } catch (error) {
+        if (verboseAudioLogsEnabled) {
+          this.logger(`[DecoderPipeline] TagLib probe fallback unavailable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
     if (shouldPreferTagLibForAlacTechnicalFields(probePath, result.codec)) {
       try {
         const tagLibTechnical = await readTagLibAudioTechnicalMetadata(probePath);

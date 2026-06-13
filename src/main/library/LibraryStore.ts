@@ -85,6 +85,9 @@ import type {
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
   PlaybackHistorySummary,
+  PlaybackMemoryGraph,
+  PlaybackMemoryTimeBucketId,
+  PlaybackMemoryTrackInsight,
   PlaybackStatsDashboard,
   LibraryScanStatus,
   LibrarySummary,
@@ -104,6 +107,30 @@ import type {
 import { COVER_CACHE_VERSION as currentCoverCacheVersion } from './libraryTypes';
 
 type DbRow = Record<string, unknown>;
+
+type PlaybackMemoryEvent = {
+  id: string;
+  key: string;
+  trackId: string | null;
+  trackPath: string;
+  title: string;
+  artist: string;
+  album: string;
+  coverId: string | null;
+  coverSnapshot: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  playedSeconds: number;
+  durationSeconds: number;
+  completed: boolean;
+  isLiked: boolean;
+};
+
+type PlaybackMemoryTrackAggregate = PlaybackMemoryTrackInsight & {
+  coverId: string | null;
+  coverSnapshot: string | null;
+};
+
 type PlaybackHistoryValidationCandidate = {
   historyKey: string;
   trackPath: string;
@@ -584,6 +611,12 @@ const pageFromHistoryQuery = (
 });
 
 const playbackStatsActivityDays = 371;
+const playbackMemoryEventLimit = 800;
+const playbackMemoryComebackDays = 45;
+const playbackMemoryComebackGapDays = 14;
+const playbackMemoryForgottenDays = 45;
+const playbackMemoryTransitionMaxGapSeconds = 45 * 60;
+const playbackMemoryBucketIds: PlaybackMemoryTimeBucketId[] = ['lateNight', 'morning', 'day', 'evening'];
 
 const playbackStatsActivityStartIso = (): string => {
   const start = new Date();
@@ -3951,6 +3984,149 @@ export class LibraryStore {
     return this.mapPlaybackStatsDashboard(totalsRow, topTrackRows, topArtistRows, topAlbumRows, formatRows, qualityRows, dayRows);
   }
 
+  getPlaybackMemoryGraph(query?: PlaybackHistoryQuery): PlaybackMemoryGraph {
+    const { search, from, to, completedOnly } = pageFromHistoryQuery(query);
+    const searchOptions = this.readSearchOptions();
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('history.title'),
+      likePredicate('history.artist'),
+      likePredicate("COALESCE(history.album, '')"),
+      likePredicate("COALESCE(history.title_snapshot, '')"),
+      likePredicate("COALESCE(history.artist_snapshot, '')"),
+      likePredicate('history.track_path'),
+    ], searchOptions);
+    const clauses = ['history.ended_at IS NOT NULL'];
+    const params: unknown[] = [];
+
+    if (searchFilter.sql) {
+      clauses.push(searchFilter.sql);
+      params.push(...searchFilter.params);
+    }
+
+    if (from) {
+      clauses.push('history.started_at >= ?');
+      params.push(from);
+    }
+
+    if (to) {
+      clauses.push('history.started_at < ?');
+      params.push(to);
+    }
+
+    if (completedOnly) {
+      clauses.push('history.completed > 0');
+    }
+
+    const whereSql = `WHERE ${clauses.join(' AND ')}`;
+    const rows = this.allRows(
+      `SELECT
+         history.*,
+         COALESCE(history.stable_key, history.track_id, history.track_path) AS history_key
+       FROM playback_history AS history
+       ${whereSql}
+       ORDER BY history.started_at DESC, history.created_at DESC, history.id DESC
+       LIMIT ?`,
+      ...params,
+      playbackMemoryEventLimit,
+    );
+    const trackIds = Array.from(new Set(rows.map((row) => textOrNull(row.track_id)).filter((trackId): trackId is string => Boolean(trackId))));
+    const likedTrackIds = trackIds.length > 0 ? this.getLikedTrackIds(trackIds) : {};
+    const events = rows.map((row) => this.mapPlaybackMemoryEvent(row, likedTrackIds));
+    const eventsAscending = [...events].sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+    const aggregates = new Map<string, PlaybackMemoryTrackAggregate>();
+    const eventsByKey = new Map<string, PlaybackMemoryEvent[]>();
+    const bucketAggregates = new Map(
+      playbackMemoryBucketIds.map((id) => [
+        id,
+        {
+          id,
+          playCount: 0,
+          completedCount: 0,
+          skippedCount: 0,
+          playedSeconds: 0,
+          tracks: new Map<string, PlaybackMemoryTrackAggregate>(),
+        },
+      ]),
+    );
+    let skippedCount = 0;
+    let completedCount = 0;
+    let playedSeconds = 0;
+
+    for (const event of events) {
+      const skipped = this.isPlaybackMemorySkipped(event);
+      if (skipped) {
+        skippedCount += 1;
+      }
+      if (event.completed) {
+        completedCount += 1;
+      }
+      playedSeconds += event.playedSeconds;
+
+      this.updatePlaybackMemoryAggregate(aggregates, event, skipped);
+      const eventList = eventsByKey.get(event.key) ?? [];
+      eventList.push(event);
+      eventsByKey.set(event.key, eventList);
+
+      const bucketId = this.playbackMemoryBucketFor(event.startedAt);
+      const bucket = bucketAggregates.get(bucketId);
+      if (bucket) {
+        bucket.playCount += 1;
+        bucket.completedCount += event.completed ? 1 : 0;
+        bucket.skippedCount += skipped ? 1 : 0;
+        bucket.playedSeconds += event.playedSeconds;
+        this.updatePlaybackMemoryAggregate(bucket.tracks, event, skipped);
+      }
+    }
+
+    const trackInsights = Array.from(aggregates.values()).map((aggregate) => this.toPlaybackMemoryTrackInsight(aggregate));
+    const recentFlow = this.playbackMemoryRecentFlow(events, aggregates);
+    const forgottenTrack = !from && !to
+      ? this.getPlaybackMemoryForgottenTrack(search, completedOnly)
+      : this.playbackMemoryTopTrack(
+        trackInsights.filter((track) => this.playbackMemoryDaysSince(track.lastPlayedAt) >= playbackMemoryForgottenDays && track.playCount >= 2),
+        'forgotten',
+      );
+    const likedTrackResult = !from && !to ? this.getPlaybackMemoryLikedTrack(search, completedOnly) : null;
+
+    return {
+      generatedAt: nowIso(),
+      totals: {
+        playCount: events.length,
+        completedCount,
+        skippedCount,
+        playedSeconds,
+        uniqueTracks: aggregates.size,
+        transitionCount: Math.max(0, eventsAscending.length - 1),
+      },
+      timeBuckets: playbackMemoryBucketIds.map((id) => {
+        const bucket = bucketAggregates.get(id);
+        return {
+          id,
+          playCount: bucket?.playCount ?? 0,
+          completedCount: bucket?.completedCount ?? 0,
+          skippedCount: bucket?.skippedCount ?? 0,
+          playedSeconds: bucket?.playedSeconds ?? 0,
+          topTrack: bucket ? this.playbackMemoryTopTrack(Array.from(bucket.tracks.values()).map((track) => this.toPlaybackMemoryTrackInsight(track)), 'plays') : null,
+        };
+      }),
+      lateNightTrack: this.playbackMemoryTopTrack(
+        Array.from(bucketAggregates.get('lateNight')?.tracks.values() ?? []).map((track) => this.toPlaybackMemoryTrackInsight(track)),
+        'plays',
+      ),
+      comebackTrack: this.getPlaybackMemoryComebackTrack(eventsByKey, aggregates),
+      forgottenTrack,
+      likedTrack: likedTrackResult?.track ?? this.playbackMemoryTopTrack(trackInsights.filter((track) => track.isLiked), 'plays'),
+      skippedTrack: this.playbackMemoryTopTrack(trackInsights.filter((track) => track.skippedCount > 0), 'skips'),
+      transition: this.getPlaybackMemoryTransition(eventsAscending, aggregates),
+      recentFlow,
+      coverage: {
+        rawEventCount: events.length,
+        likedTrackMatches: likedTrackResult?.matchCount ?? trackInsights.filter((track) => track.isLiked).length,
+        outputDeviceHistory: false,
+      },
+    };
+  }
+
   getPlaybackStatsDashboardActivity(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
     const { search, from, to, completedOnly } = pageFromHistoryQuery(query);
     const searchOptions = this.readSearchOptions();
@@ -4192,6 +4368,468 @@ export class LibraryStore {
     );
 
     return this.mapPlaybackStatsDashboard(totalsRow, topTrackRows, topArtistRows, topAlbumRows, formatRows, qualityRows, dayRows);
+  }
+
+  private mapPlaybackMemoryEvent(row: DbRow, likedTrackIds: Record<string, boolean>): PlaybackMemoryEvent {
+    const trackId = textOrNull(row.track_id);
+    const coverId = textOrNull(row.cover_id);
+    const key = textOrNull(row.history_key) ?? textOrNull(row.stable_key) ?? trackId ?? String(row.track_path);
+
+    return {
+      id: String(row.id),
+      key,
+      trackId,
+      trackPath: String(row.track_path),
+      title: textOrNull(row.title_snapshot) ?? String(row.title ?? ''),
+      artist: textOrNull(row.artist_snapshot) ?? String(row.artist ?? ''),
+      album: textOrNull(row.album_snapshot) ?? String(row.album ?? ''),
+      coverId,
+      coverSnapshot: textOrNull(row.cover_snapshot),
+      startedAt: String(row.started_at),
+      endedAt: textOrNull(row.ended_at),
+      playedSeconds: Number(row.played_seconds ?? 0),
+      durationSeconds: Number(row.duration_seconds ?? row.duration_snapshot ?? 0),
+      completed: Number(row.completed ?? 0) > 0,
+      isLiked: trackId ? likedTrackIds[trackId] === true : false,
+    };
+  }
+
+  private isPlaybackMemorySkipped(event: PlaybackMemoryEvent): boolean {
+    if (event.completed || !event.endedAt) {
+      return false;
+    }
+
+    if (event.durationSeconds > 0) {
+      return event.playedSeconds / event.durationSeconds < 0.45;
+    }
+
+    return event.playedSeconds < 45;
+  }
+
+  private playbackMemoryBucketFor(iso: string): PlaybackMemoryTimeBucketId {
+    const hour = new Date(iso).getHours();
+    if (hour >= 22 || hour < 5) {
+      return 'lateNight';
+    }
+    if (hour < 11) {
+      return 'morning';
+    }
+    if (hour < 17) {
+      return 'day';
+    }
+    return 'evening';
+  }
+
+  private updatePlaybackMemoryAggregate(
+    aggregates: Map<string, PlaybackMemoryTrackAggregate>,
+    event: PlaybackMemoryEvent,
+    skipped: boolean,
+  ): PlaybackMemoryTrackAggregate {
+    const existing = aggregates.get(event.key);
+    const latestStartedAt = existing?.lastPlayedAt ? Date.parse(existing.lastPlayedAt) : -Infinity;
+    const eventStartedAt = Date.parse(event.startedAt);
+    const aggregate = existing ?? {
+      id: event.key,
+      trackId: event.trackId,
+      title: event.title,
+      artist: event.artist,
+      album: event.album,
+      coverThumb: this.playbackMemoryCoverThumb(event.coverId, event.coverSnapshot),
+      playCount: 0,
+      completedCount: 0,
+      skippedCount: 0,
+      playedSeconds: 0,
+      durationSeconds: event.durationSeconds,
+      firstPlayedAt: event.startedAt,
+      lastPlayedAt: event.startedAt,
+      isLiked: event.isLiked,
+      coverId: event.coverId,
+      coverSnapshot: event.coverSnapshot,
+    };
+
+    aggregate.playCount += 1;
+    aggregate.completedCount += event.completed ? 1 : 0;
+    aggregate.skippedCount += skipped ? 1 : 0;
+    aggregate.playedSeconds += event.playedSeconds;
+    aggregate.isLiked = aggregate.isLiked || event.isLiked;
+    if (event.durationSeconds > 0) {
+      aggregate.durationSeconds = event.durationSeconds;
+    }
+    if (!aggregate.firstPlayedAt || eventStartedAt < Date.parse(aggregate.firstPlayedAt)) {
+      aggregate.firstPlayedAt = event.startedAt;
+    }
+    if (!aggregate.lastPlayedAt || eventStartedAt >= latestStartedAt) {
+      aggregate.trackId = event.trackId;
+      aggregate.title = event.title;
+      aggregate.artist = event.artist;
+      aggregate.album = event.album;
+      aggregate.coverId = event.coverId;
+      aggregate.coverSnapshot = event.coverSnapshot;
+      aggregate.coverThumb = this.playbackMemoryCoverThumb(event.coverId, event.coverSnapshot);
+      aggregate.lastPlayedAt = event.startedAt;
+    }
+
+    aggregates.set(event.key, aggregate);
+    return aggregate;
+  }
+
+  private playbackMemoryCoverThumb(coverId: string | null, coverSnapshot: string | null): string | null {
+    return coverId ? this.toCoverUrl(coverId, 'thumb') : coverSnapshot;
+  }
+
+  private toPlaybackMemoryTrackInsight(aggregate: PlaybackMemoryTrackAggregate): PlaybackMemoryTrackInsight {
+    return {
+      id: aggregate.id,
+      trackId: aggregate.trackId,
+      title: aggregate.title,
+      artist: aggregate.artist,
+      album: aggregate.album,
+      coverThumb: aggregate.coverThumb,
+      playCount: aggregate.playCount,
+      completedCount: aggregate.completedCount,
+      skippedCount: aggregate.skippedCount,
+      playedSeconds: aggregate.playedSeconds,
+      durationSeconds: aggregate.durationSeconds,
+      firstPlayedAt: aggregate.firstPlayedAt,
+      lastPlayedAt: aggregate.lastPlayedAt,
+      isLiked: aggregate.isLiked,
+    };
+  }
+
+  private playbackMemoryTopTrack(
+    tracks: PlaybackMemoryTrackInsight[],
+    mode: 'plays' | 'skips' | 'forgotten',
+  ): PlaybackMemoryTrackInsight | null {
+    return tracks.reduce<PlaybackMemoryTrackInsight | null>((best, track) => {
+      if (!best) {
+        return track;
+      }
+
+      if (mode === 'skips') {
+        return track.skippedCount > best.skippedCount ||
+          (track.skippedCount === best.skippedCount && track.playCount > best.playCount)
+          ? track
+          : best;
+      }
+
+      if (mode === 'forgotten') {
+        return track.playCount > best.playCount ||
+          (track.playCount === best.playCount && track.playedSeconds > best.playedSeconds) ||
+          (track.playCount === best.playCount &&
+            track.playedSeconds === best.playedSeconds &&
+            this.playbackMemoryDaysSince(track.lastPlayedAt) > this.playbackMemoryDaysSince(best.lastPlayedAt))
+          ? track
+          : best;
+      }
+
+      return track.playCount > best.playCount ||
+        (track.playCount === best.playCount && track.playedSeconds > best.playedSeconds) ||
+        (track.playCount === best.playCount &&
+          track.playedSeconds === best.playedSeconds &&
+          Date.parse(track.lastPlayedAt ?? '') > Date.parse(best.lastPlayedAt ?? ''))
+        ? track
+        : best;
+    }, null);
+  }
+
+  private playbackMemoryRecentFlow(
+    eventsDescending: PlaybackMemoryEvent[],
+    aggregates: Map<string, PlaybackMemoryTrackAggregate>,
+  ): PlaybackMemoryTrackInsight[] {
+    const seen = new Set<string>();
+    const flow: PlaybackMemoryTrackInsight[] = [];
+
+    for (const event of eventsDescending) {
+      if (seen.has(event.key)) {
+        continue;
+      }
+      const aggregate = aggregates.get(event.key);
+      if (!aggregate) {
+        continue;
+      }
+      seen.add(event.key);
+      flow.push(this.toPlaybackMemoryTrackInsight(aggregate));
+      if (flow.length >= 6) {
+        break;
+      }
+    }
+
+    return flow.reverse();
+  }
+
+  private getPlaybackMemoryComebackTrack(
+    eventsByKey: Map<string, PlaybackMemoryEvent[]>,
+    aggregates: Map<string, PlaybackMemoryTrackAggregate>,
+  ): PlaybackMemoryTrackInsight | null {
+    const now = Date.now();
+    let best: { gapDays: number; track: PlaybackMemoryTrackInsight } | null = null;
+
+    for (const [key, events] of eventsByKey) {
+      if (events.length < 2) {
+        continue;
+      }
+
+      const ordered = [...events].sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+      const latest = ordered.at(-1);
+      const previous = ordered.at(-2);
+      if (!latest || !previous) {
+        continue;
+      }
+
+      const latestAt = Date.parse(latest.startedAt);
+      const previousAt = Date.parse(previous.startedAt);
+      const recentDays = (now - latestAt) / 86_400_000;
+      const gapDays = (latestAt - previousAt) / 86_400_000;
+      if (recentDays > playbackMemoryComebackDays || gapDays < playbackMemoryComebackGapDays) {
+        continue;
+      }
+
+      const aggregate = aggregates.get(key);
+      if (!aggregate) {
+        continue;
+      }
+      const track = this.toPlaybackMemoryTrackInsight(aggregate);
+      if (!best || gapDays > best.gapDays || (gapDays === best.gapDays && track.playCount > best.track.playCount)) {
+        best = { gapDays, track };
+      }
+    }
+
+    return best?.track ?? null;
+  }
+
+  private getPlaybackMemoryTransition(
+    eventsAscending: PlaybackMemoryEvent[],
+    aggregates: Map<string, PlaybackMemoryTrackAggregate>,
+  ): PlaybackMemoryGraph['transition'] {
+    const transitions = new Map<string, {
+      fromKey: string;
+      toKey: string;
+      count: number;
+      totalGapSeconds: number;
+      lastPlayedAt: string | null;
+    }>();
+
+    for (let index = 0; index < eventsAscending.length - 1; index += 1) {
+      const from = eventsAscending[index];
+      const to = eventsAscending[index + 1];
+      if (!from || !to || from.key === to.key) {
+        continue;
+      }
+
+      const gapSeconds = (Date.parse(to.startedAt) - Date.parse(from.startedAt)) / 1000;
+      if (!Number.isFinite(gapSeconds) || gapSeconds < 0 || gapSeconds > playbackMemoryTransitionMaxGapSeconds) {
+        continue;
+      }
+
+      const transitionKey = `${from.key}\u001f${to.key}`;
+      const transition = transitions.get(transitionKey) ?? {
+        fromKey: from.key,
+        toKey: to.key,
+        count: 0,
+        totalGapSeconds: 0,
+        lastPlayedAt: null,
+      };
+      transition.count += 1;
+      transition.totalGapSeconds += gapSeconds;
+      if (!transition.lastPlayedAt || Date.parse(to.startedAt) > Date.parse(transition.lastPlayedAt)) {
+        transition.lastPlayedAt = to.startedAt;
+      }
+      transitions.set(transitionKey, transition);
+    }
+
+    const best = Array.from(transitions.entries()).reduce<[
+      string,
+      {
+        fromKey: string;
+        toKey: string;
+        count: number;
+        totalGapSeconds: number;
+        lastPlayedAt: string | null;
+      },
+    ] | null>((currentBest, transition) => {
+      if (!currentBest) {
+        return transition;
+      }
+
+      const [, bestValue] = currentBest;
+      const [, nextValue] = transition;
+      if (nextValue.count > bestValue.count) {
+        return transition;
+      }
+      if (nextValue.count === bestValue.count && Date.parse(nextValue.lastPlayedAt ?? '') > Date.parse(bestValue.lastPlayedAt ?? '')) {
+        return transition;
+      }
+      return currentBest;
+    }, null);
+
+    if (!best) {
+      return null;
+    }
+
+    const [id, transition] = best;
+    const from = aggregates.get(transition.fromKey);
+    const to = aggregates.get(transition.toKey);
+    if (!from || !to) {
+      return null;
+    }
+
+    return {
+      id,
+      from: this.toPlaybackMemoryTrackInsight(from),
+      to: this.toPlaybackMemoryTrackInsight(to),
+      count: transition.count,
+      averageGapSeconds: transition.count > 0 ? transition.totalGapSeconds / transition.count : 0,
+      lastPlayedAt: transition.lastPlayedAt,
+    };
+  }
+
+  private playbackMemoryDaysSince(iso: string | null): number {
+    if (!iso) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const parsed = Date.parse(iso);
+    return Number.isFinite(parsed) ? Math.max(0, (Date.now() - parsed) / 86_400_000) : Number.POSITIVE_INFINITY;
+  }
+
+  private getPlaybackMemoryForgottenTrack(search: string, completedOnly: boolean): PlaybackMemoryTrackInsight | null {
+    const searchOptions = this.readSearchOptions();
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('history.title'),
+      likePredicate('history.artist'),
+      likePredicate("COALESCE(history.album, '')"),
+      likePredicate("COALESCE(history.title_snapshot, '')"),
+      likePredicate("COALESCE(history.artist_snapshot, '')"),
+      likePredicate('history.track_path'),
+    ], searchOptions);
+    const clauses = ['history.play_count >= 2', 'history.last_started_at < ?'];
+    const params: unknown[] = [new Date(Date.now() - playbackMemoryForgottenDays * 86_400_000).toISOString()];
+
+    if (searchFilter.sql) {
+      clauses.push(searchFilter.sql);
+      params.push(...searchFilter.params);
+    }
+
+    if (completedOnly) {
+      clauses.push('history.completed_count > 0');
+    }
+
+    const row = this.getRow(
+      `SELECT
+         history.history_key AS id,
+         history.track_id,
+         history.title_snapshot,
+         history.artist_snapshot,
+         history.album_snapshot,
+         history.title,
+         history.artist,
+         history.album,
+         history.cover_id,
+         history.cover_snapshot,
+         history.duration_seconds,
+         history.play_count,
+         history.completed_count,
+         history.total_played_seconds AS played_seconds,
+         history.last_started_at AS last_played_at
+       FROM playback_history_stats AS history
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY history.play_count DESC, history.total_played_seconds DESC, history.last_started_at ASC
+       LIMIT 1`,
+      ...params,
+    );
+
+    return row ? this.mapPlaybackMemoryTrackFromStatsRow(row, false) : null;
+  }
+
+  private getPlaybackMemoryLikedTrack(
+    search: string,
+    completedOnly: boolean,
+  ): { matchCount: number; track: PlaybackMemoryTrackInsight | null } {
+    const searchOptions = this.readSearchOptions();
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('history.title'),
+      likePredicate('history.artist'),
+      likePredicate("COALESCE(history.album, '')"),
+      likePredicate("COALESCE(history.title_snapshot, '')"),
+      likePredicate("COALESCE(history.artist_snapshot, '')"),
+      likePredicate('history.track_path'),
+    ], searchOptions);
+    const clauses = [
+      'playlist_items.playlist_id = ?',
+      "playlist_items.media_type IN ('track', 'stream_track')",
+      'playlist_items.media_id = history.track_id',
+    ];
+    const params: unknown[] = [likedSongsSourcePlaylistId];
+
+    if (searchFilter.sql) {
+      clauses.push(searchFilter.sql);
+      params.push(...searchFilter.params);
+    }
+
+    if (completedOnly) {
+      clauses.push('history.completed_count > 0');
+    }
+
+    const whereSql = `WHERE ${clauses.join(' AND ')}`;
+    const countRow = this.getRow(
+      `SELECT COUNT(DISTINCT history.history_key) AS total
+       FROM playback_history_stats AS history
+       INNER JOIN playlist_items ON playlist_items.media_id = history.track_id
+       ${whereSql}`,
+      ...params,
+    );
+    const row = this.getRow(
+      `SELECT
+         history.history_key AS id,
+         history.track_id,
+         history.title_snapshot,
+         history.artist_snapshot,
+         history.album_snapshot,
+         history.title,
+         history.artist,
+         history.album,
+         history.cover_id,
+         history.cover_snapshot,
+         history.duration_seconds,
+         history.play_count,
+         history.completed_count,
+         history.total_played_seconds AS played_seconds,
+         history.last_started_at AS last_played_at
+       FROM playback_history_stats AS history
+       INNER JOIN playlist_items ON playlist_items.media_id = history.track_id
+       ${whereSql}
+       ORDER BY history.play_count DESC, history.total_played_seconds DESC, history.last_started_at DESC
+       LIMIT 1`,
+      ...params,
+    );
+
+    return {
+      matchCount: Number(countRow?.total ?? 0),
+      track: row ? this.mapPlaybackMemoryTrackFromStatsRow(row, true) : null,
+    };
+  }
+
+  private mapPlaybackMemoryTrackFromStatsRow(row: DbRow, isLiked: boolean): PlaybackMemoryTrackInsight {
+    const playCount = Number(row.play_count ?? 0);
+    const completedCount = Number(row.completed_count ?? 0);
+    const coverId = textOrNull(row.cover_id);
+
+    return {
+      id: String(row.id),
+      trackId: textOrNull(row.track_id),
+      title: textOrNull(row.title_snapshot) ?? String(row.title ?? ''),
+      artist: textOrNull(row.artist_snapshot) ?? String(row.artist ?? ''),
+      album: textOrNull(row.album_snapshot) ?? String(row.album ?? ''),
+      coverThumb: this.playbackMemoryCoverThumb(coverId, textOrNull(row.cover_snapshot)),
+      playCount,
+      completedCount,
+      skippedCount: Math.max(0, playCount - completedCount),
+      playedSeconds: Number(row.played_seconds ?? 0),
+      durationSeconds: Number(row.duration_seconds ?? 0),
+      firstPlayedAt: null,
+      lastPlayedAt: textOrNull(row.last_played_at),
+      isLiked,
+    };
   }
 
   private mapPlaybackStatsDashboard(

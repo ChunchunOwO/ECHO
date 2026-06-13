@@ -107,6 +107,7 @@ import type {
   PlaybackHistoryQuery,
   PlaybackHistoryRefreshResult,
   PlaybackHistorySummary,
+  PlaybackMemoryGraph,
   PlaybackStatsDashboard,
   StartPlaybackHistoryRequest,
   StartPlaybackHistoryResult,
@@ -1363,6 +1364,14 @@ export class LibraryService {
     const dashboard = this.store.getPlaybackStatsDashboard(query);
     this.rememberPlaybackStatsDashboard(query, dashboard);
     return dashboard;
+  }
+
+  getPlaybackMemoryGraph(query?: PlaybackHistoryQuery): PlaybackMemoryGraph {
+    return this.store.getPlaybackMemoryGraph(query);
+  }
+
+  async getPlaybackMemoryGraphPlaybackSafe(query?: PlaybackHistoryQuery): Promise<PlaybackMemoryGraph> {
+    return runMainBackgroundTask('library:get-playback-memory-graph', () => this.getPlaybackMemoryGraph(query));
   }
 
   async getPlaybackStatsDashboardPlaybackSafe(query?: PlaybackHistoryQuery): Promise<PlaybackStatsDashboard> {

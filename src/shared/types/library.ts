@@ -955,6 +955,68 @@ export type PlaybackStatsDashboard = {
   dailyActivity: PlaybackStatsDay[];
 };
 
+export type PlaybackMemoryTimeBucketId = 'lateNight' | 'morning' | 'day' | 'evening';
+
+export type PlaybackMemoryTrackInsight = {
+  id: string;
+  trackId: string | null;
+  title: string;
+  artist: string;
+  album: string;
+  coverThumb: string | null;
+  playCount: number;
+  completedCount: number;
+  skippedCount: number;
+  playedSeconds: number;
+  durationSeconds: number;
+  firstPlayedAt: string | null;
+  lastPlayedAt: string | null;
+  isLiked: boolean;
+};
+
+export type PlaybackMemoryTransition = {
+  id: string;
+  from: PlaybackMemoryTrackInsight;
+  to: PlaybackMemoryTrackInsight;
+  count: number;
+  averageGapSeconds: number;
+  lastPlayedAt: string | null;
+};
+
+export type PlaybackMemoryTimeBucket = {
+  id: PlaybackMemoryTimeBucketId;
+  playCount: number;
+  completedCount: number;
+  skippedCount: number;
+  playedSeconds: number;
+  topTrack: PlaybackMemoryTrackInsight | null;
+};
+
+export type PlaybackMemoryGraph = {
+  generatedAt: string;
+  totals: {
+    playCount: number;
+    completedCount: number;
+    skippedCount: number;
+    playedSeconds: number;
+    uniqueTracks: number;
+    transitionCount: number;
+  };
+  timeBuckets: PlaybackMemoryTimeBucket[];
+  lateNightTrack: PlaybackMemoryTrackInsight | null;
+  comebackTrack: PlaybackMemoryTrackInsight | null;
+  forgottenTrack: PlaybackMemoryTrackInsight | null;
+  likedTrack: PlaybackMemoryTrackInsight | null;
+  skippedTrack: PlaybackMemoryTrackInsight | null;
+  transition: PlaybackMemoryTransition | null;
+  recentFlow: PlaybackMemoryTrackInsight[];
+  coverage: {
+    rawEventCount: number;
+    likedTrackMatches: number;
+    outputDeviceHistory: boolean;
+  };
+};
+
 export type LibraryTrack = {
   id: string;
   mediaType?: 'local' | 'remote' | 'streaming';

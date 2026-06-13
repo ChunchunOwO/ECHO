@@ -6,6 +6,7 @@ import type { AppSettings } from '../../../shared/types/appSettings';
 import type { ArtistInsights, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 import type { StreamingAlbum, StreamingTrack } from '../../../shared/types/streaming';
 import { I18nProvider } from '../../i18n/I18nProvider';
+import { artistDetailNavigationEvent, consumePendingArtistDetailNavigation } from '../../utils/artistNavigation';
 
 const queueMock = {
   appendToQueue: vi.fn(),
@@ -187,6 +188,7 @@ afterEach(() => {
   queueMock.playTrack.mockResolvedValue({});
   queueMock.playTrackNext.mockReset();
   queueMock.replaceQueue.mockReset();
+  consumePendingArtistDetailNavigation();
   mockTracks = [];
   mockTotal = 0;
   mockIsLoading = false;
@@ -397,6 +399,165 @@ describe('ArtistDetailView', () => {
     expect(screen.getByText('14 of 14 tracks')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Expand all' })).toBeNull();
+  });
+
+  it('shows local artist relationships and opens the selected collaborator', async () => {
+    const collaborator = artist({
+      id: 'artist-2',
+      name: 'Echo Friend',
+      trackCount: 4,
+      albumCount: 1,
+      avatarThumbUrl: 'echo-artist-image://thumb/echo-friend',
+    });
+    const getArtist = vi.fn().mockImplementation((artistId: string) =>
+      Promise.resolve(artistId === collaborator.id ? collaborator : artist()));
+    const getArtistInsights = vi.fn().mockResolvedValue(artistInsights({
+      nodes: [
+        { ...artist(), source: 'local' },
+        {
+          id: collaborator.id,
+          name: collaborator.name,
+          trackCount: collaborator.trackCount,
+          albumCount: collaborator.albumCount,
+          coverThumb: null,
+          avatarUrl: collaborator.avatarThumbUrl,
+          source: 'local',
+        },
+      ],
+      edges: [
+        {
+          id: 'artist-1-artist-2-collaboration',
+          sourceArtistId: 'artist-1',
+          targetArtistId: collaborator.id,
+          kind: 'collaboration',
+          weight: 4,
+          evidence: '4 shared track signals',
+          source: 'local',
+        },
+      ],
+    }));
+    const navigatedArtists: LibraryArtist[] = [];
+    const handleNavigation = (event: Event): void => {
+      const request = (event as CustomEvent<{ artist: LibraryArtist }>).detail;
+      navigatedArtists.push(request.artist);
+    };
+    window.addEventListener(artistDetailNavigationEvent, handleNavigation);
+
+    try {
+      installLibrary(getArtist, undefined, getArtistInsights);
+      renderDetail(artist());
+
+      expect(await screen.findByText('Artist Relationships')).toBeTruthy();
+      const relatedButton = screen.getByRole('button', { name: /^Echo Friend/i });
+      expect(screen.getByText('Collaboration')).toBeTruthy();
+      expect((relatedButton.querySelector('img') as HTMLImageElement | null)?.getAttribute('src')).toBe('echo-artist-image://thumb/echo-friend');
+
+      fireEvent.click(relatedButton);
+
+      await waitFor(() => expect(getArtist).toHaveBeenCalledWith(collaborator.id));
+      await waitFor(() => expect(navigatedArtists.at(-1)?.id).toBe(collaborator.id));
+    } finally {
+      window.removeEventListener(artistDetailNavigationEvent, handleNavigation);
+      consumePendingArtistDetailNavigation();
+    }
+  });
+
+  it('expands a collaborator constellation from local artist insights', async () => {
+    const collaborator = artist({
+      id: 'artist-2',
+      name: 'Echo Friend',
+      trackCount: 4,
+      albumCount: 1,
+      avatarThumbUrl: 'echo-artist-image://thumb/echo-friend',
+    });
+    const neighbor = artist({
+      id: 'artist-3',
+      name: 'Echo Neighbor',
+      trackCount: 2,
+      albumCount: 1,
+      avatarThumbUrl: 'echo-artist-image://thumb/echo-neighbor',
+    });
+    const rootInsights = artistInsights({
+      nodes: [
+        { ...artist(), source: 'local' },
+        {
+          id: collaborator.id,
+          name: collaborator.name,
+          trackCount: collaborator.trackCount,
+          albumCount: collaborator.albumCount,
+          coverThumb: null,
+          avatarUrl: collaborator.avatarThumbUrl,
+          source: 'local',
+        },
+      ],
+      edges: [
+        {
+          id: 'artist-1-artist-2-collaboration',
+          sourceArtistId: 'artist-1',
+          targetArtistId: collaborator.id,
+          kind: 'collaboration',
+          weight: 4,
+          evidence: '4 shared track signals',
+          source: 'local',
+        },
+      ],
+    });
+    const collaboratorInsights = artistInsights({
+      artist: collaborator,
+      nodes: [
+        {
+          id: collaborator.id,
+          name: collaborator.name,
+          trackCount: collaborator.trackCount,
+          albumCount: collaborator.albumCount,
+          coverThumb: null,
+          avatarUrl: collaborator.avatarThumbUrl,
+          source: 'local',
+        },
+        { ...artist(), source: 'local' },
+        {
+          id: neighbor.id,
+          name: neighbor.name,
+          trackCount: neighbor.trackCount,
+          albumCount: neighbor.albumCount,
+          coverThumb: null,
+          avatarUrl: neighbor.avatarThumbUrl,
+          source: 'local',
+        },
+      ],
+      edges: [
+        {
+          id: 'artist-2-artist-1-collaboration',
+          sourceArtistId: collaborator.id,
+          targetArtistId: 'artist-1',
+          kind: 'collaboration',
+          weight: 4,
+          evidence: '4 shared track signals',
+          source: 'local',
+        },
+        {
+          id: 'artist-2-artist-3-same-album',
+          sourceArtistId: collaborator.id,
+          targetArtistId: neighbor.id,
+          kind: 'same_album',
+          weight: 2,
+          evidence: '2 shared albums',
+          source: 'local',
+        },
+      ],
+    });
+    const getArtistInsights = vi.fn().mockImplementation((artistId: string) =>
+      Promise.resolve(artistId === collaborator.id ? collaboratorInsights : rootInsights));
+
+    installLibrary(vi.fn().mockResolvedValue(artist()), undefined, getArtistInsights);
+    renderDetail(artist());
+
+    expect(await screen.findByText('Artist Relationships')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand artist constellation for Echo Friend' }));
+
+    expect(await screen.findByText('Echo Neighbor')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Echo Unit/i })).toBeNull();
+    expect(getArtistInsights).toHaveBeenCalledWith(collaborator.id, { limit: 8, includeOnline: false });
   });
 
   it('plays the return animation before leaving after Escape', async () => {

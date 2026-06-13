@@ -3133,6 +3133,66 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('playback memory graph summarizes raw listening patterns', async () => {
+    const harness = createHarness();
+    const nightFile = writeAudioFile(harness.folder, 'Memory Night.flac');
+    const followFile = writeAudioFile(harness.folder, 'Memory Follow.flac');
+    harness.metadataService.overrides.set(nightFile, baseMetadata({ title: 'Memory Night', artist: 'Night Artist', album: 'Memory Album', duration: 120 }));
+    harness.metadataService.overrides.set(followFile, baseMetadata({ title: 'Memory Follow', artist: 'Flow Artist', album: 'Memory Album', duration: 120 }));
+    harness.addFolder();
+    await harness.scanFolder();
+    const tracks = harness.service.getTracks({ pageSize: 10 }).items;
+    const night = tracks.find((track) => track.title === 'Memory Night')!;
+    const follow = tracks.find((track) => track.title === 'Memory Follow')!;
+    harness.service.toggleTrackLiked(night.id);
+
+    const oldNight = harness.service.startPlaybackHistory({ trackId: night.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    const newNight = harness.service.startPlaybackHistory({ trackId: night.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    const afterNight = harness.service.startPlaybackHistory({ trackId: follow.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    const skippedFollow = harness.service.startPlaybackHistory({ trackId: follow.id, sourceType: 'songs', sourceLabel: 'Songs' });
+    harness.service.finishPlaybackHistory({ historyId: oldNight.historyId, playedSeconds: 80 });
+    harness.service.finishPlaybackHistory({ historyId: newNight.historyId, playedSeconds: 90 });
+    harness.service.finishPlaybackHistory({ historyId: afterNight.historyId, playedSeconds: 70 });
+    harness.service.finishPlaybackHistory({ historyId: skippedFollow.historyId, playedSeconds: 5 });
+
+    const now = new Date();
+    const oldNightDate = new Date(now);
+    oldNightDate.setDate(oldNightDate.getDate() - 22);
+    oldNightDate.setHours(23, 0, 0, 0);
+    const newNightDate = new Date(now);
+    newNightDate.setDate(newNightDate.getDate() - 1);
+    newNightDate.setHours(23, 0, 0, 0);
+    const afterNightDate = new Date(newNightDate);
+    afterNightDate.setMinutes(afterNightDate.getMinutes() + 4);
+    const skippedFollowDate = new Date(now);
+    skippedFollowDate.setHours(9, 0, 0, 0);
+
+    const database = createDatabase(harness.databasePath);
+    const moveHistoryEntry = database.prepare('UPDATE playback_history SET started_at = ?, ended_at = ?, created_at = ? WHERE id = ?');
+    const moveHistoryStats = database.prepare('UPDATE playback_history_stats SET last_started_at = ?, last_ended_at = ?, updated_at = ? WHERE track_id = ?');
+    moveHistoryEntry.run(oldNightDate.toISOString(), oldNightDate.toISOString(), oldNightDate.toISOString(), oldNight.historyId);
+    moveHistoryEntry.run(newNightDate.toISOString(), newNightDate.toISOString(), newNightDate.toISOString(), newNight.historyId);
+    moveHistoryEntry.run(afterNightDate.toISOString(), afterNightDate.toISOString(), afterNightDate.toISOString(), afterNight.historyId);
+    moveHistoryEntry.run(skippedFollowDate.toISOString(), skippedFollowDate.toISOString(), skippedFollowDate.toISOString(), skippedFollow.historyId);
+    moveHistoryStats.run(newNightDate.toISOString(), newNightDate.toISOString(), newNightDate.toISOString(), night.id);
+    moveHistoryStats.run(skippedFollowDate.toISOString(), skippedFollowDate.toISOString(), skippedFollowDate.toISOString(), follow.id);
+    database.close();
+
+    const memory = harness.service.getPlaybackMemoryGraph();
+
+    expect(memory.lateNightTrack).toMatchObject({ title: 'Memory Night', playCount: 2 });
+    expect(memory.comebackTrack).toMatchObject({ title: 'Memory Night' });
+    expect(memory.likedTrack).toMatchObject({ title: 'Memory Night', isLiked: true });
+    expect(memory.skippedTrack).toMatchObject({ title: 'Memory Follow', skippedCount: 1 });
+    expect(memory.transition).toMatchObject({
+      count: 1,
+      from: expect.objectContaining({ title: 'Memory Night' }),
+      to: expect.objectContaining({ title: 'Memory Follow' }),
+    });
+    expect(memory.coverage.outputDeviceHistory).toBe(false);
+    harness.cleanup();
+  });
+
   it('getAlbums search matches tracks inside an album', async () => {
     const harness = createHarness();
     const first = writeAudioFile(harness.folder, 'A.flac');

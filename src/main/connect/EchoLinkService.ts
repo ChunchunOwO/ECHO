@@ -636,7 +636,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       border-radius: 18px;
       background: rgba(0,0,0,0.1);
       box-shadow: 0 15px 42px rgba(0,0,0,var(--card-shadow, 0.32));
-      transform: translate3d(0, var(--depth-y, 0), var(--depth-z, 0px)) rotateX(var(--pitch, 0deg)) rotateY(var(--yaw, 0deg)) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
+      transform: translate3d(0, var(--depth-y, 0), 0) rotate(var(--tilt, 0deg)) scale(var(--card-scale, 1));
       opacity: var(--opacity, 1);
       filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1)) blur(var(--card-blur, 0px));
       contain: layout paint style;
@@ -671,7 +671,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .album-card:hover {
       border-color: rgba(255,255,255,0.16);
       box-shadow: 0 30px 78px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
-      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 80px) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(1.025);
+      transform: translate3d(0, calc(var(--depth-y, 0) - 10px), 0) rotate(0deg) scale(1.025);
       filter: saturate(1.08) brightness(1.04) blur(0);
       opacity: 1;
     }
@@ -690,14 +690,13 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       opacity: 0.78;
     }
     .album-card[data-layer="back"] {
-      pointer-events: none;
-      filter: saturate(calc(var(--card-sat, 1) * 0.82)) brightness(calc(var(--card-bright, 1) * 0.78)) blur(var(--card-blur, 1.4px));
+      filter: saturate(calc(var(--card-sat, 1) * 0.96)) brightness(calc(var(--card-bright, 1) * 0.94)) blur(var(--card-blur, 0.8px));
     }
     .album-card[data-layer="back"] .album-copy {
-      opacity: 0.62;
+      opacity: 0.86;
     }
     .album-card[data-layer="back"] .album-mini-controls {
-      opacity: 0;
+      opacity: 0.72;
     }
     .album-card button {
       position: relative;
@@ -804,6 +803,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       font-style: normal;
       font-size: 10px;
       font-weight: 900;
+      cursor: pointer;
+      pointer-events: auto;
     }
     .album-track-count {
       display: none;
@@ -825,8 +826,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .album-mini-controls em {
       display: grid;
       width: 100%;
-      max-width: 28px;
-      height: 28px;
+      max-width: 30px;
+      height: 30px;
       place-items: center;
       border: 0;
       border-radius: 999px;
@@ -837,9 +838,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       font-weight: 900;
     }
     .album-mini-controls i {
-      width: 32px;
-      max-width: 32px;
-      height: 32px;
+      width: 34px;
+      max-width: 34px;
+      height: 34px;
       color: rgba(248, 245, 239, 0.9);
       border-color: transparent;
       background: rgba(255,255,255,0.14);
@@ -866,7 +867,16 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     .stage[data-dragging="true"] .album-card {
       transition: none;
       will-change: transform;
-      box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+      filter: saturate(var(--card-sat, 1.05)) brightness(var(--card-bright, 1));
+      box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+    .stage[data-dragging="true"] .album-card::before,
+    .stage[data-dragging="true"] .album-card::after {
+      opacity: 0.12;
+    }
+    .stage[data-dragging="true"] .album-copy {
+      background: rgba(0,0,0,0.68);
+      backdrop-filter: none;
     }
     .stage[data-dragging="true"] .album-mural {
       filter: none;
@@ -1172,7 +1182,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     };
     const $ = (id) => document.getElementById(id);
     const stage = document.querySelector('.stage');
-    const maxRenderedAlbums = 180;
+    const maxRenderedAlbums = 260;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const fmt = (ms) => {
       const safe = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -1215,8 +1225,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       state.lastTap = { albumId: album.id, at: now, x, y };
       state.clickTimer = window.setTimeout(() => {
         state.clickTimer = 0;
-        selectAlbum(album).catch((error) => toast(error.message));
-      }, 230);
+        playAlbum(album).catch((error) => toast(error.message));
+      }, 120);
     };
     const setAlbumBusy = (albumId, busy) => {
       document.querySelectorAll('.album-card').forEach((card) => {
@@ -1390,14 +1400,14 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const count = Math.max(1, Math.min(maxRenderedAlbums, state.albums.length));
       const wide = window.innerWidth >= 760;
       const aspect = Math.max(0.72, Math.min(2.2, window.innerWidth / Math.max(1, window.innerHeight)));
-      layout.cellW = wide ? 238 : 176;
-      layout.cellH = wide ? 312 : 248;
+      layout.cellW = wide ? 138 : 108;
+      layout.cellH = wide ? 190 : 154;
       layout.cols = wide
-        ? Math.max(9, Math.ceil(Math.sqrt(count * aspect * 0.88)))
-        : Math.max(5, Math.ceil(Math.sqrt(count * aspect * 0.5)));
+        ? Math.max(10, Math.ceil(Math.sqrt(count * aspect * 0.96)))
+        : Math.max(6, Math.ceil(Math.sqrt(count * aspect * 0.56)));
       layout.rows = Math.max(wide ? 6 : 7, Math.ceil(count / layout.cols));
-      world.width = Math.max(Math.ceil(window.innerWidth * 2.04), layout.cols * layout.cellW + 460);
-      world.height = Math.max(Math.ceil(window.innerHeight * 2.02), layout.rows * layout.cellH + 390);
+      world.width = Math.max(Math.ceil(window.innerWidth * 1.48), layout.cols * layout.cellW + 260);
+      world.height = Math.max(Math.ceil(window.innerHeight * 1.5), layout.rows * layout.cellH + 250);
       const sea = $('albumSea');
       sea.style.width = world.width + 'px';
       sea.style.height = world.height + 'px';
@@ -1407,6 +1417,26 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       return raw - Math.floor(raw);
     };
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const greatestCommonDivisor = (a, b) => {
+      let left = Math.abs(a);
+      let right = Math.abs(b);
+      while (right) {
+        const next = left % right;
+        left = right;
+        right = next;
+      }
+      return left || 1;
+    };
+    const albumSlotStride = (slotCount) => {
+      let stride = Math.max(3, layout.cols * 2 + 1);
+      if (stride % 2 === 0) {
+        stride += 1;
+      }
+      while (stride < slotCount && greatestCommonDivisor(stride, slotCount) !== 1) {
+        stride += 2;
+      }
+      return stride;
+    };
     const frontSlots = () => {
       const wide = window.innerWidth >= 760;
       const viewportW = Math.max(320, window.innerWidth);
@@ -1428,7 +1458,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         [0.50, 0.74, 0.80, 0.60], [0.24, 0.28, 0.66, 0.38], [0.76, 0.30, 0.66, 0.38],
         [0.50, 0.17, 0.58, 0.30],
       ];
-      return (wide ? desktop : mobile).filter((slot) => slot[3] >= 0.3).map((slot, index) => {
+      return (wide ? desktop : mobile).filter((slot) => slot[3] >= (wide ? 0.18 : 0.3)).map((slot, index) => {
         const size = Math.round(baseW * slot[2] + (seeded(index, 1) - 0.5) * (wide ? 12 : 8));
         const ratio = cardRatio - (slot[3] < 0.55 ? 0.04 : 0);
         const cardH = size * ratio;
@@ -1478,34 +1508,36 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const frontCount = frontAlbumCount();
       const backIndex = index - frontCount;
       const far = depth < 0.46;
-      const baseSize = far ? (wide ? 64 : 52) : (wide ? 78 : 60);
-      const size = Math.round(baseSize + seeded(index, 1) * (wide ? 18 : 12));
+      const baseSize = far ? (wide ? 82 : 62) : (wide ? 108 : 82);
+      const size = Math.round(baseSize + seeded(index, 1) * (wide ? 28 : 18));
       const slotCount = Math.max(1, layout.cols * layout.rows);
-      const slot = (backIndex * 37 + Math.floor(seeded(index, 15) * slotCount)) % slotCount;
+      const slot = (backIndex * albumSlotStride(slotCount) + Math.floor((state.randomSeed % 997) / 997 * slotCount)) % slotCount;
       const col = slot % layout.cols;
       const row = Math.floor(slot / layout.cols);
-      const originX = Math.round((world.width - layout.cols * layout.cellW) / 2 + (wide ? 22 : 12));
-      const originY = Math.round((world.height - layout.rows * layout.cellH) / 2 + (wide ? 24 : 16));
-      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.22;
-      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.14;
-      const jitterX = (seeded(index, 2) - 0.5) * Math.min(118, layout.cellW * 0.34);
-      const jitterY = (seeded(index, 3) - 0.5) * Math.min(132, layout.cellH * 0.3);
-      const x = Math.round(originX + col * layout.cellW + waveX + jitterX);
-      const y = Math.round(originY + row * layout.cellH + waveY + jitterY);
+      const originX = Math.round((world.width - layout.cols * layout.cellW) / 2 + (wide ? 8 : 6));
+      const originY = Math.round((world.height - layout.rows * layout.cellH) / 2 + (wide ? 10 : 8));
+      const rowStagger = (row % 2 === 1 ? layout.cellW * 0.46 : 0) + Math.sin(row * 0.67 + state.randomSeed * 0.05) * layout.cellW * 0.16;
+      const columnLift = Math.cos(col * 0.73 + state.randomSeed * 0.04) * layout.cellH * 0.14;
+      const waveX = Math.sin(row * 1.42 + col * 0.37 + state.randomSeed * 0.09) * layout.cellW * 0.24;
+      const waveY = Math.cos(col * 1.18 + row * 0.29 + state.randomSeed * 0.07) * layout.cellH * 0.16;
+      const jitterX = (seeded(index, 2) - 0.5) * Math.min(116, layout.cellW * 0.34);
+      const jitterY = (seeded(index, 3) - 0.5) * Math.min(126, layout.cellH * 0.31);
+      const x = Math.round(clamp(originX + col * layout.cellW + rowStagger + waveX + jitterX, 8, world.width - size - 8));
+      const y = Math.round(clamp(originY + row * layout.cellH + columnLift + waveY + jitterY, 8, world.height - size * 1.42 - 8));
       const tilt = (seeded(index, 4) - 0.5) * (far ? 7.8 : 5.2);
-      const scale = far ? 0.52 + seeded(index, 6) * 0.16 : 0.66 + seeded(index, 6) * 0.16;
-      const opacity = far ? 0.1 + seeded(index, 5) * 0.12 : 0.18 + seeded(index, 5) * 0.16;
+      const scale = far ? 0.58 + seeded(index, 6) * 0.16 : 0.78 + seeded(index, 6) * 0.15;
+      const opacity = far ? 0.32 + seeded(index, 5) * 0.18 : 0.54 + seeded(index, 5) * 0.24;
       const depthY = Math.round((seeded(index, 7) - 0.5) * (far ? 60 : 36));
-      const depthZ = far ? -170 - Math.round(seeded(index, 13) * 150) : -56 - Math.round(seeded(index, 13) * 76);
-      const z = far ? 3 + Math.round(seeded(index, 11) * 7) : 14 + Math.round(seeded(index, 11) * 15);
-      const bright = far ? 0.72 : 0.86;
-      const sat = far ? 0.78 : 0.92;
-      const shadow = far ? 0.18 : 0.26;
-      const sparkle = far ? 0.28 + seeded(index, 12) * 0.22 : 0.38 + seeded(index, 12) * 0.26;
+      const depthZ = far ? -118 - Math.round(seeded(index, 13) * 92) : -34 - Math.round(seeded(index, 13) * 54);
+      const z = far ? 18 + Math.round(seeded(index, 11) * 12) : 34 + Math.round(seeded(index, 11) * 20);
+      const bright = far ? 0.86 : 0.96;
+      const sat = far ? 0.9 : 1.02;
+      const shadow = far ? 0.24 : 0.32;
+      const sparkle = far ? 0.36 + seeded(index, 12) * 0.26 : 0.46 + seeded(index, 12) * 0.3;
       const pitch = far ? (seeded(index, 14) - 0.5) * 5 : (seeded(index, 14) - 0.5) * 2;
       const yaw = far ? (seeded(index, 16) - 0.5) * 7 : (seeded(index, 16) - 0.5) * 3;
       const ratio = far ? 1.38 : 1.42;
-      const blur = far ? 2.2 : 1.2;
+      const blur = far ? 1.1 : 0.45;
       return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--card-ratio:' + ratio.toFixed(2) + ';--card-blur:' + blur + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
     };
     const renderAlbums = () => {
@@ -1543,6 +1575,12 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
           event.stopPropagation();
           clearClickTimer();
           playAlbum(album).catch((error) => toast(error.message));
+        });
+        card.querySelector('.album-more')?.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clearClickTimer();
+          selectAlbum(album).catch((error) => toast(error.message));
         });
         card.querySelector('button').addEventListener('click', (event) => {
           event.preventDefault();
@@ -1682,6 +1720,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         await command({ command: 'queueReplace', trackIds, startTrackId: safeStartTrackId, output: 'pc' });
         state.selectedAlbum = album;
         state.selectedTracks = tracks;
+        $('albumDetail').dataset.open = 'false';
         syncSelectedAlbum();
         toast('已切到 ' + (album.title || 'Untitled Album'));
       } finally {

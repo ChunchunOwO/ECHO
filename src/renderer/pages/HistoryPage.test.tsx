@@ -5,6 +5,7 @@ import type {
   LibraryPage,
   PlaybackHistoryEntry,
   PlaybackHistorySummary,
+  PlaybackMemoryGraph,
   PlaybackStatsDashboard,
 } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
@@ -114,12 +115,88 @@ const stats = (): PlaybackStatsDashboard => ({
   },
 });
 
+const memoryGraph = (): PlaybackMemoryGraph => ({
+  comebackTrack: {
+    album: 'History Album',
+    artist: 'History Artist',
+    completedCount: 1,
+    coverThumb: null,
+    durationSeconds: 180,
+    firstPlayedAt: '2026-04-01T09:00:00.000Z',
+    id: 'memory-comeback',
+    isLiked: false,
+    lastPlayedAt: '2026-05-25T09:00:00.000Z',
+    playCount: 2,
+    playedSeconds: 360,
+    skippedCount: 0,
+    title: 'Comeback Song',
+    trackId: 'memory-comeback',
+  },
+  coverage: {
+    likedTrackMatches: 1,
+    outputDeviceHistory: false,
+    rawEventCount: 4,
+  },
+  forgottenTrack: null,
+  generatedAt: '2026-05-25T09:00:00.000Z',
+  lateNightTrack: {
+    album: 'History Album',
+    artist: 'Night Artist',
+    completedCount: 2,
+    coverThumb: null,
+    durationSeconds: 180,
+    firstPlayedAt: '2026-05-20T23:00:00.000Z',
+    id: 'memory-night',
+    isLiked: false,
+    lastPlayedAt: '2026-05-25T23:00:00.000Z',
+    playCount: 2,
+    playedSeconds: 360,
+    skippedCount: 0,
+    title: 'Night Song',
+    trackId: 'memory-night',
+  },
+  likedTrack: {
+    album: 'History Album',
+    artist: 'History Artist',
+    completedCount: 2,
+    coverThumb: null,
+    durationSeconds: 180,
+    firstPlayedAt: null,
+    id: 'memory-liked',
+    isLiked: true,
+    lastPlayedAt: '2026-05-25T09:00:00.000Z',
+    playCount: 3,
+    playedSeconds: 540,
+    skippedCount: 1,
+    title: 'Liked Song',
+    trackId: 'memory-liked',
+  },
+  recentFlow: [],
+  skippedTrack: null,
+  timeBuckets: [
+    { completedCount: 2, id: 'lateNight', playCount: 2, playedSeconds: 360, skippedCount: 0, topTrack: null },
+    { completedCount: 1, id: 'morning', playCount: 1, playedSeconds: 180, skippedCount: 0, topTrack: null },
+    { completedCount: 0, id: 'day', playCount: 0, playedSeconds: 0, skippedCount: 0, topTrack: null },
+    { completedCount: 0, id: 'evening', playCount: 1, playedSeconds: 20, skippedCount: 1, topTrack: null },
+  ],
+  totals: {
+    completedCount: 3,
+    playCount: 4,
+    playedSeconds: 560,
+    skippedCount: 1,
+    transitionCount: 2,
+    uniqueTracks: 3,
+  },
+  transition: null,
+});
+
 const installLibraryMock = (overrides: Partial<NonNullable<typeof window.echo>['library']> = {}) => {
   const library = {
     clearPlaybackHistory: vi.fn().mockResolvedValue(undefined),
     deletePlaybackHistoryEntry: vi.fn().mockResolvedValue(undefined),
     getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('fresh')])),
     getPlaybackHistorySummary: vi.fn().mockResolvedValue(historySummary()),
+    getPlaybackMemoryGraph: vi.fn().mockResolvedValue(memoryGraph()),
     getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats()),
     refreshInvalidPlaybackHistory: vi.fn().mockResolvedValue({
       removedCount: 0,
@@ -242,6 +319,21 @@ describe('HistoryPage', () => {
     await waitFor(() => expect(library.getPlaybackStatsDashboard).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('播放统计仪表盘')).toBeTruthy();
     expect(screen.getByText('Top History Song')).toBeTruthy();
+  });
+
+  it('renders the ECHO Memory graph from playback history insights', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('memory')])),
+    });
+
+    renderHistoryPage();
+
+    await screen.findAllByText('History memory');
+    await waitFor(() => expect(library.getPlaybackMemoryGraph).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('ECHO Memory')).toBeTruthy();
+    expect(screen.getByText('Night Song')).toBeTruthy();
+    expect(screen.getByText('Comeback Song')).toBeTruthy();
+    expect(screen.getByText(/Output device is not stored in history yet/i)).toBeTruthy();
   });
 
   it('defers the stats dashboard refresh while playback is active', async () => {

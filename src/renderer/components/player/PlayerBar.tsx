@@ -25,6 +25,8 @@ import {
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
 import { isActiveConnectPlaybackStatus, isHqPlayerConnectStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
+import { audioOutputRouteStatusChangedEvent, type AudioOutputRouteStatusChangedDetail } from '../../utils/audioOutputRouteEvents';
+import { recordAudioRouteFlightObservation } from '../../utils/audioRouteFlightRecorder';
 import { getDacCapabilityAtlasProfile, recordDacCapabilityObservation, type DacCapabilityAtlasProfile } from '../../utils/dacCapabilityAtlas';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
@@ -812,6 +814,7 @@ export const PlayerBar = ({
   const streamingDownloadNoticeTimerRef = useRef<number | null>(null);
   const dacArrivalNoticeTimerRef = useRef<number | null>(null);
   const lastDacArrivalRouteRef = useRef<string | null>(null);
+  const explicitDacArrivalRouteRef = useRef<string | null>(null);
   const mvPreloadTrackRef = useRef<string | null>(null);
   const seekAnchorRef = useRef<{ positionSeconds: number; trackKey: string | null; updatedAtMs: number } | null>(null);
   const activeTrackIdRef = useRef<string | null>(null);
@@ -1236,29 +1239,53 @@ export const PlayerBar = ({
   useEffect(() => () => clearDacArrivalNoticeTimer(), [clearDacArrivalNoticeTimer]);
 
   useEffect(() => {
+    const handleOutputRouteStatusChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<AudioOutputRouteStatusChangedDetail>).detail;
+      if (!detail?.status) {
+        return;
+      }
+
+      explicitDacArrivalRouteRef.current = dacArrivalRouteKey(detail.status);
+      setOutputRouteStatus(detail.status);
+    };
+
+    window.addEventListener(audioOutputRouteStatusChangedEvent, handleOutputRouteStatusChanged);
+    return () => window.removeEventListener(audioOutputRouteStatusChangedEvent, handleOutputRouteStatusChanged);
+  }, []);
+
+  useEffect(() => {
     const ceremonyStatus = outputRouteStatus ?? audioStatus;
+    recordAudioRouteFlightObservation(ceremonyStatus, currentTrack);
     const profile = recordDacCapabilityObservation(ceremonyStatus, currentTrack) ?? getDacCapabilityAtlasProfile(ceremonyStatus);
     const routeKey = dacArrivalRouteKey(ceremonyStatus);
     if (!routeKey) {
       lastDacArrivalRouteRef.current = null;
+      explicitDacArrivalRouteRef.current = null;
       return;
     }
 
+    const explicitRoute = explicitDacArrivalRouteRef.current === routeKey;
     if (!isDacArrivalCandidateStatus(ceremonyStatus)) {
       lastDacArrivalRouteRef.current = routeKey;
+      if (explicitRoute) {
+        explicitDacArrivalRouteRef.current = null;
+      }
       return;
     }
 
-    if (lastDacArrivalRouteRef.current === null) {
+    if (lastDacArrivalRouteRef.current === null && !explicitRoute) {
       lastDacArrivalRouteRef.current = routeKey;
       return;
     }
 
-    if (lastDacArrivalRouteRef.current === routeKey) {
+    if (lastDacArrivalRouteRef.current === routeKey && !explicitRoute) {
       return;
     }
 
     lastDacArrivalRouteRef.current = routeKey;
+    if (explicitRoute) {
+      explicitDacArrivalRouteRef.current = null;
+    }
     const notice = buildDacArrivalCeremonyNotice(ceremonyStatus, profile, t);
     if (notice) {
       showDacArrivalNotice(notice);

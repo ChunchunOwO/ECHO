@@ -7,6 +7,8 @@ import type {
   OpraHeadphoneCorrectionProductResult,
   OpraHeadphoneCorrectionVendorResult,
 } from '../../../shared/types/opra';
+import { useOptionalI18n } from '../../i18n/I18nProvider';
+import type { Locale } from '../../i18n/locales';
 import { getEchoBridge, getEqBridge } from '../../utils/echoBridge';
 import { computeEqResponseGainDbAtFrequency, formatFrequencyLabel } from './eqPanelUtils';
 
@@ -22,6 +24,187 @@ type StoredHeadphoneProduct = {
   vendorId: string;
   vendorName: string;
   assetUrl: string | null;
+};
+
+type HeadphoneCorrectionTextKey =
+  | 'action.apply'
+  | 'action.openSource'
+  | 'aria.favorites'
+  | 'aria.panel'
+  | 'aria.preview'
+  | 'aria.products'
+  | 'aria.recent'
+  | 'aria.search'
+  | 'aria.vendors'
+  | 'control.detail.empty'
+  | 'control.status.disabled'
+  | 'control.status.enabled'
+  | 'control.status.noPreset'
+  | 'control.toggle.enable'
+  | 'control.toggle.on'
+  | 'curve.aria'
+  | 'empty.detail'
+  | 'empty.title'
+  | 'favorite.add'
+  | 'favorite.remove'
+  | 'intro.detail'
+  | 'intro.kicker'
+  | 'message.applied'
+  | 'message.cacheEmpty'
+  | 'message.chooseBeforeEnable'
+  | 'message.disabled'
+  | 'message.enabled'
+  | 'message.noMatches'
+  | 'message.unavailable'
+  | 'metric.adjusted'
+  | 'metric.filters'
+  | 'metric.preamp'
+  | 'preset.filterCount'
+  | 'preset.panel.empty'
+  | 'product.presetCount.many'
+  | 'product.presetCount.one'
+  | 'search.clear'
+  | 'search.placeholder'
+  | 'search.refresh'
+  | 'search.submit'
+  | 'shortcut.favorites'
+  | 'shortcut.recent'
+  | 'status.eqCount'
+  | 'status.productCount'
+  | 'status.source.cache'
+  | 'status.source.empty'
+  | 'status.source.network'
+  | 'status.vendorCount'
+  | 'title'
+  | 'vendors.all'
+  | 'vendor.stats';
+
+type HeadphoneCorrectionTranslateOptions = Record<string, string | number>;
+
+const headphoneCorrectionTextZhCN: Record<HeadphoneCorrectionTextKey, string> = {
+  'action.apply': '应用耳机校正',
+  'action.openSource': '打开来源',
+  'aria.favorites': '收藏型号',
+  'aria.panel': '耳机校正',
+  'aria.preview': '耳机校正预览',
+  'aria.products': '耳机型号',
+  'aria.recent': '最近使用',
+  'aria.search': '按型号或生产商搜索',
+  'aria.vendors': '所有生产商',
+  'control.detail.empty': '选择一个型号和预设后启用',
+  'control.status.disabled': '已关闭',
+  'control.status.enabled': '已启用',
+  'control.status.noPreset': '未选择预设',
+  'control.toggle.enable': '开启',
+  'control.toggle.on': '已开启',
+  'curve.aria': 'OPRA EQ 曲线预览',
+  'empty.detail': '按生产商或型号浏览，找到合适的校正预设。',
+  'empty.title': '未选择预设',
+  'favorite.add': '收藏型号',
+  'favorite.remove': '取消收藏型号',
+  'intro.detail': 'OPRA 是开放、社区维护的耳机型号与 EQ 补偿曲线目录。先按生产商浏览，也可以直接搜索型号。',
+  'intro.kicker': 'OPRA by Roon',
+  'message.applied': '已应用 {vendor} {product}',
+  'message.cacheEmpty': 'OPRA 数据库还没有缓存，点刷新库获取品牌和型号。',
+  'message.chooseBeforeEnable': '先选择一个生产商、型号和预设。',
+  'message.disabled': '耳机校正已关闭。',
+  'message.enabled': '耳机校正已启用。',
+  'message.noMatches': '没有找到匹配的耳机型号。',
+  'message.unavailable': '耳机校正数据库暂不可用。',
+  'metric.adjusted': '调整',
+  'metric.filters': 'OPRA 滤波器',
+  'metric.preamp': '前级',
+  'preset.filterCount': '{count} 个 OPRA 滤波器',
+  'preset.panel.empty': '选择生产商和型号后会显示可用预设。',
+  'product.presetCount.many': '{count} 个预设',
+  'product.presetCount.one': '{count} 个预设',
+  'search.clear': '清除搜索',
+  'search.placeholder': '按型号名称或制造商搜索',
+  'search.refresh': '刷新库',
+  'search.submit': '搜索',
+  'shortcut.favorites': '收藏型号',
+  'shortcut.recent': '最近使用',
+  'status.eqCount': '{count} 条曲线',
+  'status.productCount': '{count} 款耳机',
+  'status.source.cache': '本地缓存',
+  'status.source.empty': '未缓存',
+  'status.source.network': '刚刚更新',
+  'status.vendorCount': '{count} 个品牌',
+  'title': '耳机校正',
+  'vendors.all': '所有生产商',
+  'vendor.stats': '{productCount} 款 / {eqCount} 个预设',
+};
+
+const headphoneCorrectionTextEnUS: Record<HeadphoneCorrectionTextKey, string> = {
+  'action.apply': 'Apply headphone correction',
+  'action.openSource': 'Open source',
+  'aria.favorites': 'Favorite models',
+  'aria.panel': 'Headphone correction',
+  'aria.preview': 'Headphone correction preview',
+  'aria.products': 'Headphone models',
+  'aria.recent': 'Recently used',
+  'aria.search': 'Search by model or manufacturer',
+  'aria.vendors': 'All manufacturers',
+  'control.detail.empty': 'Choose a model and preset before enabling',
+  'control.status.disabled': 'Disabled',
+  'control.status.enabled': 'Enabled',
+  'control.status.noPreset': 'No preset selected',
+  'control.toggle.enable': 'Enable',
+  'control.toggle.on': 'Enabled',
+  'curve.aria': 'OPRA EQ curve preview',
+  'empty.detail': 'Browse by manufacturer or model to find a matching correction preset.',
+  'empty.title': 'No preset selected',
+  'favorite.add': 'Favorite model',
+  'favorite.remove': 'Remove favorite model',
+  'intro.detail': 'OPRA is an open, community-maintained catalog of headphone models and EQ compensation curves. Browse by manufacturer first, or search for a model directly.',
+  'intro.kicker': 'OPRA by Roon',
+  'message.applied': 'Applied {vendor} {product}',
+  'message.cacheEmpty': 'The OPRA database is not cached yet. Refresh the library to fetch brands and models.',
+  'message.chooseBeforeEnable': 'Choose a manufacturer, model, and preset first.',
+  'message.disabled': 'Headphone correction is disabled.',
+  'message.enabled': 'Headphone correction is enabled.',
+  'message.noMatches': 'No matching headphone models found.',
+  'message.unavailable': 'Headphone correction database is unavailable.',
+  'metric.adjusted': 'Adjusted',
+  'metric.filters': 'OPRA filters',
+  'metric.preamp': 'Preamp',
+  'preset.filterCount': '{count} OPRA filters',
+  'preset.panel.empty': 'Choose a manufacturer and model to show available presets.',
+  'product.presetCount.many': '{count} presets',
+  'product.presetCount.one': '{count} preset',
+  'search.clear': 'Clear search',
+  'search.placeholder': 'Search by model name or manufacturer',
+  'search.refresh': 'Refresh library',
+  'search.submit': 'Search',
+  'shortcut.favorites': 'Favorite models',
+  'shortcut.recent': 'Recently used',
+  'status.eqCount': '{count} curves',
+  'status.productCount': '{count} headphones',
+  'status.source.cache': 'Local cache',
+  'status.source.empty': 'Not cached',
+  'status.source.network': 'Updated now',
+  'status.vendorCount': '{count} brands',
+  'title': 'Headphone correction',
+  'vendors.all': 'All manufacturers',
+  'vendor.stats': '{productCount} models / {eqCount} presets',
+};
+
+const headphoneCorrectionTexts: Record<Locale, Record<HeadphoneCorrectionTextKey, string>> = {
+  'zh-CN': headphoneCorrectionTextZhCN,
+  'zh-TW': headphoneCorrectionTextZhCN,
+  'ja-JP': headphoneCorrectionTextEnUS,
+  'en-US': headphoneCorrectionTextEnUS,
+};
+
+const interpolateText = (text: string, options?: HeadphoneCorrectionTranslateOptions): string => {
+  if (!options) {
+    return text;
+  }
+
+  return Object.entries(options).reduce(
+    (current, [key, value]) => current.replaceAll(`{${key}}`, String(value)),
+    text,
+  );
 };
 
 const formatDb = (value: number): string => `${value > 0 ? '+' : ''}${Math.round(value * 10) / 10} dB`;
@@ -121,6 +304,11 @@ const previewToStoredProduct = (preview: OpraHeadphoneCorrectionPreview): Stored
 });
 
 export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRefresh }: HeadphoneCorrectionPanelProps): JSX.Element => {
+  const i18n = useOptionalI18n();
+  const localText = headphoneCorrectionTexts[i18n?.locale ?? 'zh-CN'] ?? headphoneCorrectionTextZhCN;
+  const t = useCallback((key: HeadphoneCorrectionTextKey, options?: HeadphoneCorrectionTranslateOptions): string => {
+    return interpolateText(localText[key], options);
+  }, [localText]);
   const [query, setQuery] = useState('');
   const [browse, setBrowse] = useState<OpraHeadphoneCorrectionBrowseResult | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
@@ -152,7 +340,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
     ? eqState.presetName.replace(/^耳机校正 -\s*/u, '')
     : selectedPreview
       ? `${selectedPreview.vendorName} / ${selectedPreview.productName} / ${selectedPreview.author}`
-      : '选择一个型号和 preset 后启用';
+      : t('control.detail.empty');
 
   const loadBrowse = useCallback(async (next: {
     vendorId?: string | null;
@@ -162,7 +350,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
   } = {}): Promise<void> => {
     const eq = getEqBridge();
     if (!eq?.browseHeadphoneCorrections) {
-      setMessage('耳机校正数据库暂不可用。');
+      setMessage(t('message.unavailable'));
       return;
     }
 
@@ -185,16 +373,16 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
       setSelectedProductId(nextSelectedProduct?.productId ?? null);
       setSelectedEqId(nextSelectedProduct?.eqs[0]?.eqId ?? '');
       if (result.status.source === 'empty') {
-        setMessage('OPRA 数据库还没有缓存，点刷新库获取品牌和型号。');
+        setMessage(t('message.cacheEmpty'));
       } else if (result.products.length === 0 && (nextVendorId || nextQuery.trim())) {
-        setMessage('没有找到匹配的耳机型号。');
+        setMessage(t('message.noMatches'));
       }
     } catch (browseError) {
       setMessage(browseError instanceof Error ? browseError.message : String(browseError));
     } finally {
       setBusy(null);
     }
-  }, [query, selectedProductId, selectedVendorId]);
+  }, [query, selectedProductId, selectedVendorId, t]);
 
   useEffect(() => {
     void loadBrowse();
@@ -253,7 +441,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
 
     const eq = getEqBridge();
     if (!eq?.applyHeadphoneCorrection) {
-      setMessage('耳机校正数据库暂不可用。');
+      setMessage(t('message.unavailable'));
       return;
     }
 
@@ -264,18 +452,18 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
       onApplied?.(result.state);
       await onAppliedStatusRefresh?.();
       rememberRecentProduct(previewToStoredProduct(result.preview));
-      setMessage(`已应用 ${result.preview.vendorName} ${result.preview.productName}`);
+      setMessage(t('message.applied', { vendor: result.preview.vendorName, product: result.preview.productName }));
     } catch (applyError) {
       setMessage(applyError instanceof Error ? applyError.message : String(applyError));
     } finally {
       setBusy(null);
     }
-  }, [onApplied, onAppliedStatusRefresh, rememberRecentProduct]);
+  }, [onApplied, onAppliedStatusRefresh, rememberRecentProduct, t]);
 
   const toggleHeadphoneCorrection = useCallback(async (): Promise<void> => {
     const eq = getEqBridge();
     if (!eq) {
-      setMessage('耳机校正数据库暂不可用。');
+      setMessage(t('message.unavailable'));
       return;
     }
 
@@ -286,7 +474,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
         const nextState = await eq.setEnabled(!eqState.enabled);
         onApplied?.(nextState);
         await onAppliedStatusRefresh?.();
-        setMessage(nextState.enabled ? '耳机校正已启用。' : '耳机校正已关闭。');
+        setMessage(nextState.enabled ? t('message.enabled') : t('message.disabled'));
       } catch (toggleError) {
         setMessage(toggleError instanceof Error ? toggleError.message : String(toggleError));
       } finally {
@@ -300,15 +488,15 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
       return;
     }
 
-    setMessage('先选择一个生产商、型号和 preset。');
-  }, [applyCorrection, eqState.enabled, hasAppliedHeadphoneCorrection, onApplied, onAppliedStatusRefresh, selectedPreview]);
+    setMessage(t('message.chooseBeforeEnable'));
+  }, [applyCorrection, eqState.enabled, hasAppliedHeadphoneCorrection, onApplied, onAppliedStatusRefresh, selectedPreview, t]);
 
   return (
-    <section className="opra-browser" aria-label="耳机校正">
+    <section className="opra-browser" aria-label={t('aria.panel')}>
       <header className="opra-browser-control">
         <div>
-          <span>耳机校正</span>
-          <strong>{headphoneCorrectionEnabled ? '已启用' : hasAppliedHeadphoneCorrection ? '已关闭' : '未选择 preset'}</strong>
+          <span>{t('title')}</span>
+          <strong>{headphoneCorrectionEnabled ? t('control.status.enabled') : hasAppliedHeadphoneCorrection ? t('control.status.disabled') : t('control.status.noPreset')}</strong>
           <small>{controlDetail}</small>
         </div>
         <label className="opra-enable-switch" data-active={headphoneCorrectionEnabled}>
@@ -319,16 +507,16 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
             onChange={() => void toggleHeadphoneCorrection()}
           />
           <span aria-hidden="true" />
-          <strong>{headphoneCorrectionEnabled ? '开启中' : '开启'}</strong>
+          <strong>{headphoneCorrectionEnabled ? t('control.toggle.on') : t('control.toggle.enable')}</strong>
         </label>
       </header>
       <div className="opra-browser-main">
         <header className="opra-browser-intro">
           <div>
-            <span>OPRA by Roon</span>
-            <strong>耳机校正</strong>
+            <span>{t('intro.kicker')}</span>
+            <strong>{t('title')}</strong>
           </div>
-          <p>OPRA 是开放、社区维护的耳机型号与 EQ 补偿曲线目录。先按生产商浏览，也可以直接搜索型号。</p>
+          <p>{t('intro.detail')}</p>
         </header>
 
         <form
@@ -340,15 +528,15 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
         >
           <Search size={18} aria-hidden="true" />
           <input
-            aria-label="按型号或生产商搜索"
-            placeholder="按型号名称或制造商搜索"
+            aria-label={t('aria.search')}
+            placeholder={t('search.placeholder')}
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
           {query ? (
             <button
               type="button"
-              aria-label="清除搜索"
+              aria-label={t('search.clear')}
               onClick={() => {
                 setQuery('');
                 void loadBrowse({ query: '', productId: null });
@@ -357,14 +545,14 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
               <X size={15} aria-hidden="true" />
             </button>
           ) : null}
-          <button type="submit" disabled={busy !== null}>搜索</button>
+          <button type="submit" disabled={busy !== null}>{t('search.submit')}</button>
           <button type="button" disabled={busy !== null} onClick={() => void loadBrowse({ refresh: true })}>
-            <RefreshCw size={15} aria-hidden="true" />刷新库
+            <RefreshCw size={15} aria-hidden="true" />{t('search.refresh')}
           </button>
         </form>
 
         <div className="opra-browser-crumbs">
-          <button type="button" data-active={!selectedVendorId} onClick={() => chooseVendor(null)}>所有生产商</button>
+          <button type="button" data-active={!selectedVendorId} onClick={() => chooseVendor(null)}>{t('vendors.all')}</button>
           {selectedVendor ? (
             <>
               <ChevronRight size={15} aria-hidden="true" />
@@ -376,10 +564,10 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
         {favoriteProducts.length > 0 || recentProducts.length > 0 ? (
           <div className="opra-shortcuts">
             {favoriteProducts.length > 0 ? (
-              <section aria-label="收藏型号">
+              <section aria-label={t('aria.favorites')}>
                 <header>
                   <Star size={14} aria-hidden="true" />
-                  <span>收藏型号</span>
+                  <span>{t('shortcut.favorites')}</span>
                 </header>
                 <div>
                   {favoriteProducts.map((product) => (
@@ -392,10 +580,10 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
               </section>
             ) : null}
             {recentProducts.length > 0 ? (
-              <section aria-label="最近使用">
+              <section aria-label={t('aria.recent')}>
                 <header>
                   <Clock3 size={14} aria-hidden="true" />
-                  <span>最近使用</span>
+                  <span>{t('shortcut.recent')}</span>
                 </header>
                 <div>
                   {recentProducts.map((product) => (
@@ -412,26 +600,26 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
 
         {status ? (
           <div className="opra-browser-status">
-            <span>{status.vendorCount} 个品牌</span>
-            <span>{status.productCount} 款耳机</span>
-            <span>{status.eqCount} 条曲线</span>
-            <span>{status.source === 'network' ? '刚刚更新' : status.source === 'cache' ? '本地缓存' : '未缓存'}</span>
+            <span>{t('status.vendorCount', { count: status.vendorCount })}</span>
+            <span>{t('status.productCount', { count: status.productCount })}</span>
+            <span>{t('status.eqCount', { count: status.eqCount })}</span>
+            <span>{status.source === 'network' ? t('status.source.network') : status.source === 'cache' ? t('status.source.cache') : t('status.source.empty')}</span>
           </div>
         ) : null}
         {message ? <p className="opra-browser-message">{message}</p> : null}
 
         {!selectedVendorId && !query.trim() ? (
-          <div className="opra-vendor-grid" aria-label="所有生产商">
+          <div className="opra-vendor-grid" aria-label={t('aria.vendors')}>
             {(browse?.vendors ?? []).map((vendor) => (
               <button type="button" key={vendor.vendorId} onClick={() => chooseVendor(vendor)}>
                 {vendor.logoUrl || vendor.sampleAssetUrl ? <img src={vendor.logoUrl ?? vendor.sampleAssetUrl ?? ''} alt="" loading="lazy" /> : <strong>{createVendorInitials(vendor.vendorName)}</strong>}
                 <span>{vendor.vendorName}</span>
-                <small>{vendor.productCount} 款 / {vendor.eqCount} preset</small>
+                <small>{t('vendor.stats', { productCount: vendor.productCount, eqCount: vendor.eqCount })}</small>
               </button>
             ))}
           </div>
         ) : (
-          <div className="opra-product-list" aria-label="耳机型号">
+          <div className="opra-product-list" aria-label={t('aria.products')}>
             {(browse?.products ?? []).map((product) => (
               <button
                 type="button"
@@ -444,16 +632,16 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
                   <strong>{product.productName}</strong>
                   <small>{product.vendorName}</small>
                 </span>
-                <em>{product.eqs.length} preset{product.eqs.length === 1 ? '' : 's'}</em>
+                <em>{t(product.eqs.length === 1 ? 'product.presetCount.one' : 'product.presetCount.many', { count: product.eqs.length })}</em>
               </button>
             ))}
           </div>
         )}
       </div>
 
-      <aside className="opra-browser-preview" aria-label="耳机校正预览">
+      <aside className="opra-browser-preview" aria-label={t('aria.preview')}>
         <div className="opra-curve">
-          <svg viewBox="0 0 100 100" role="img" aria-label="OPRA EQ curve preview" preserveAspectRatio="none">
+          <svg viewBox="0 0 100 100" role="img" aria-label={t('curve.aria')} preserveAspectRatio="none">
             <g className="opra-curve-grid">
               {[20, 32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequency) => <line key={frequency} x1={frequencyToX(frequency)} x2={frequencyToX(frequency)} y1="0" y2="100" />)}
               {[-18, -12, -6, 0, 6, 12, 18].map((gain) => <line key={gain} x1="0" x2="100" y1={gainToY(gain)} y2={gainToY(gain)} />)}
@@ -483,8 +671,8 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
           {!selectedPreview ? (
             <div className="opra-empty-preset">
               <Headphones size={28} aria-hidden="true" />
-              <strong>No preset selected</strong>
-              <span>Browse by manufacturer or model and find the perfect preset for you.</span>
+              <strong>{t('empty.title')}</strong>
+              <span>{t('empty.detail')}</span>
             </div>
           ) : null}
         </div>
@@ -501,7 +689,7 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
                 <button
                   className="opra-favorite-button"
                   type="button"
-                  aria-label={selectedProductFavorited ? '取消收藏型号' : '收藏型号'}
+                  aria-label={selectedProductFavorited ? t('favorite.remove') : t('favorite.add')}
                   data-active={selectedProductFavorited}
                   onClick={toggleFavoriteProduct}
                 >
@@ -512,31 +700,31 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
                 {selectedProduct.eqs.map((preview) => (
                   <button type="button" data-active={selectedPreview?.eqId === preview.eqId} key={preview.eqId} onClick={() => setSelectedEqId(preview.eqId)}>
                     <span>{preview.author}</span>
-                    <small>{preview.details ?? `${preview.importedBandCount} OPRA filters`}</small>
+                    <small>{preview.details ?? t('preset.filterCount', { count: preview.importedBandCount })}</small>
                   </button>
                 ))}
               </div>
             </>
           ) : (
-            <p>选择生产商和型号后会显示可用 preset。</p>
+            <p>{t('preset.panel.empty')}</p>
           )}
 
           {selectedPreview ? (
             <>
               <div className="opra-preset-metrics">
-                <span><em>Preamp</em><strong>{formatDb(selectedPreview.preset.preampDb)}</strong></span>
-                <span><em>OPRA filters</em><strong>{selectedPreviewActiveFilterCount}/{selectedPreview.originalBandCount}</strong></span>
-                <span><em>调整</em><strong>{selectedPreview.adjustedBandCount}</strong></span>
+                <span><em>{t('metric.preamp')}</em><strong>{formatDb(selectedPreview.preset.preampDb)}</strong></span>
+                <span><em>{t('metric.filters')}</em><strong>{selectedPreviewActiveFilterCount}/{selectedPreview.originalBandCount}</strong></span>
+                <span><em>{t('metric.adjusted')}</em><strong>{selectedPreview.adjustedBandCount}</strong></span>
               </div>
               {selectedPreview.warnings.length > 0 ? <p>{selectedPreview.warnings.join(' ')}</p> : null}
               <div className="opra-preset-actions">
                 {selectedPreview.link ? (
                   <button type="button" onClick={() => void getEchoBridge()?.app?.openExternalUrl(selectedPreview.link!)}>
-                    打开来源
+                    {t('action.openSource')}
                   </button>
                 ) : null}
                 <button type="button" disabled={busy === 'apply'} onClick={() => void applyCorrection(selectedPreview)}>
-                  应用耳机校正
+                  {t('action.apply')}
                 </button>
               </div>
             </>

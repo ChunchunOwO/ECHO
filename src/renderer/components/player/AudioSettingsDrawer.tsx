@@ -38,6 +38,7 @@ import { detectAsioCompatibilityProfile } from '../../../shared/utils/asioCompat
 import { isHiResAudioSpec } from '../../../shared/utils/audioQuality';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
+import { dispatchAudioOutputRouteStatusChanged } from '../../utils/audioOutputRouteEvents';
 import { createOutputSettings, normalizeSharedBackend, readRememberedAudioOutput, resolveSupportedLatencyProfile, writeRememberedAudioOutput } from './audioOutputMemory';
 import { AudioProfessionalStatusPanel } from './AudioProfessionalStatusPanel';
 import { formatAudioDiagnostics } from './audioDiagnosticsFormat';
@@ -1314,6 +1315,7 @@ export const AudioSettingsDrawer = ({
           ),
         );
         onStatusChange(nextStatus);
+        dispatchAudioOutputRouteStatusChanged(nextStatus);
         if (shouldLeaveHqPlayerTakeover) {
           onHqPlayerTakeoverEnabledChange(false);
         }

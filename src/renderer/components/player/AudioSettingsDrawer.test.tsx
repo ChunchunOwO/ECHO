@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AudioSettingsDrawer } from './AudioSettingsDrawer';
 import type { AudioDeviceInfo, AudioStatus } from '../../../shared/types/audio';
+import { audioOutputRouteStatusChangedEvent } from '../../utils/audioOutputRouteEvents';
 
 const testTranslations: Record<string, string> = {
   'audioDrawer.buffer.asio': 'ASIO buffer',
@@ -511,10 +512,17 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     });
 
     const asioButton = await screen.findByRole('button', { name: /TEAC ASIO/ });
+    const routeEvents: AudioStatus[] = [];
+    const handleRouteEvent = (event: Event): void => {
+      routeEvents.push((event as CustomEvent<{ status: AudioStatus }>).detail.status);
+    };
+    window.addEventListener(audioOutputRouteStatusChangedEvent, handleRouteEvent);
     fireEvent.click(asioButton);
 
     await waitFor(() => expect(window.echo?.connect?.disconnect).toHaveBeenCalled());
     await waitFor(() => expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({ outputMode: 'asio' })));
+    await waitFor(() => expect(routeEvents).toEqual([expect.objectContaining({ outputMode: 'asio' })]));
+    window.removeEventListener(audioOutputRouteStatusChangedEvent, handleRouteEvent);
     expect(onHqPlayerTakeoverEnabledChange).toHaveBeenCalledWith(false);
   });
 

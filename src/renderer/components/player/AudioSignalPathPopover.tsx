@@ -18,6 +18,12 @@ import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { isHqPlayerConnectStatus } from '../../utils/connectPlayback';
 import {
+  audioRouteFlightTrackKey,
+  getAudioRouteFlightEntries,
+  recordAudioRouteFlightObservation,
+  type AudioRouteFlightEntry,
+} from '../../utils/audioRouteFlightRecorder';
+import {
   getDacCapabilityAtlasProfile,
   recordDacCapabilityObservation,
   type DacCapabilityAtlasProfile,
@@ -534,6 +540,66 @@ const atlasResamplingAdvice = (
     rate: formatRoonRate(profile.lastNativeRate) ?? t('audioSignalPath.atlas.pending'),
   });
 };
+
+const flightKindTitle = (entry: AudioRouteFlightEntry, t: Translate = fallbackT): string => {
+  if (entry.kind === 'takeover') {
+    return t('audioSignalPath.flight.kind.takeover');
+  }
+  if (entry.kind === 'rate-conversion') {
+    return t('audioSignalPath.flight.kind.rateConversion');
+  }
+  if (entry.kind === 'failure') {
+    return t('audioSignalPath.flight.kind.failure');
+  }
+  if (entry.kind === 'fallback') {
+    return t('audioSignalPath.flight.kind.fallback');
+  }
+  return t('audioSignalPath.flight.kind.routeChange');
+};
+
+const formatFlightTime = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '--:--:--';
+  }
+
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
+
+const flightRateLabel = (rate: number | null, t: Translate = fallbackT): string =>
+  formatRoonRate(rate) ?? t('audioSignalPath.flight.ratePending');
+
+const flightEntryDetail = (entry: AudioRouteFlightEntry, t: Translate = fallbackT): string => {
+  const from = entry.previousRouteLabel ?? t('audioSignalPath.flight.routeUnknown');
+  const to = entry.routeLabel || outputModeLabel(entry.outputMode, t);
+  const outputRate = flightRateLabel(entry.outputRate, t);
+  const ratePath = `${flightRateLabel(entry.sourceRate, t)} -> ${outputRate}`;
+  const reason = cleanReason(entry.reason) ?? t('audioSignalPath.flight.reasonUnknown');
+
+  if (entry.kind === 'takeover') {
+    return t('audioSignalPath.flight.detail.takeover', { device: entry.deviceName, route: to, rate: outputRate });
+  }
+  if (entry.kind === 'rate-conversion') {
+    return t('audioSignalPath.flight.detail.rateConversion', { path: ratePath, device: entry.deviceName });
+  }
+  if (entry.kind === 'failure') {
+    return t('audioSignalPath.flight.detail.failure', { device: entry.deviceName, route: to, reason });
+  }
+  if (entry.kind === 'fallback') {
+    return t('audioSignalPath.flight.detail.fallback', { from, to, reason });
+  }
+
+  return t('audioSignalPath.flight.detail.routeChange', { from, to, device: entry.deviceName });
+};
+
+const flightEntryTrackLabel = (
+  entry: AudioRouteFlightEntry,
+  currentTrackKey: string | null,
+  t: Translate = fallbackT,
+): string =>
+  currentTrackKey && entry.trackKey === currentTrackKey
+    ? t('audioSignalPath.flight.currentTrack')
+    : entry.trackTitle ?? t('audioSignalPath.flight.recentRoute');
 
 const sourceLabel = (status: AudioStatus | null, track: LibraryTrack | null, t: Translate = fallbackT): string => {
   const codec = normalizeCodec(track?.codec ?? status?.codec);
@@ -1446,8 +1512,10 @@ export const AudioSignalPathPopover = ({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isDoctorCollapsed, setIsDoctorCollapsed] = useState(true);
   const [isAtlasCollapsed, setIsAtlasCollapsed] = useState(true);
+  const [isFlightRecorderCollapsed, setIsFlightRecorderCollapsed] = useState(true);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
   const [atlasProfile, setAtlasProfile] = useState<DacCapabilityAtlasProfile | null>(() => getDacCapabilityAtlasProfile(status));
+  const [flightEntries, setFlightEntries] = useState<AudioRouteFlightEntry[]>(() => getAudioRouteFlightEntries());
   const closeTimerRef = useRef<number | null>(null);
   const hqPlayerSignalActive = isHqPlayerSignalPath(connectStatus);
   const hqPlayerSessionKey = hqPlayerSignalActive
@@ -1486,22 +1554,26 @@ export const AudioSignalPathPopover = ({
     setHqPlayerStatus(null);
     setIsDoctorCollapsed(true);
     setIsAtlasCollapsed(true);
+    setIsFlightRecorderCollapsed(true);
   }, [hqPlayerSessionKey]);
 
   useEffect(() => {
     if (isOpen) {
       setIsDoctorCollapsed(true);
       setIsAtlasCollapsed(true);
+      setIsFlightRecorderCollapsed(true);
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (hqPlayerSignalActive) {
       setAtlasProfile(null);
+      setFlightEntries(getAudioRouteFlightEntries());
       return;
     }
 
     setAtlasProfile(recordDacCapabilityObservation(status, track) ?? getDacCapabilityAtlasProfile(status));
+    setFlightEntries(recordAudioRouteFlightObservation(status, track));
   }, [hqPlayerSignalActive, status, track]);
 
   useEffect(() => {
@@ -1565,12 +1637,21 @@ export const AudioSignalPathPopover = ({
   };
   const pathLabel = getDisplaySignalPathLabel(status, connectStatus, t);
   const showAtlas = !hqPlayerSignalActive;
+  const showFlightRecorder = showAtlas;
   const atlasTone = atlasProfileTone(atlasProfile);
   const atlasDeviceName = atlasProfile?.deviceName ?? status?.outputDeviceName ?? t('audioSignalPath.output.systemDefaultDevice');
   const atlasFactRows = atlasFacts(atlasProfile, t);
   const atlasModes = atlasModeViews(atlasProfile, status, t);
   const atlasToggleLabel = isAtlasCollapsed ? t('audioSignalPath.atlas.expand') : t('audioSignalPath.atlas.collapse');
   const doctorToggleLabel = isDoctorCollapsed ? t('audioSignalPath.doctor.expand') : t('audioSignalPath.doctor.collapse');
+  const flightToggleLabel = isFlightRecorderCollapsed ? t('audioSignalPath.flight.expand') : t('audioSignalPath.flight.collapse');
+  const currentFlightTrackKey = audioRouteFlightTrackKey(status, track);
+  const currentFlightEntries = currentFlightTrackKey ? flightEntries.filter((entry) => entry.trackKey === currentFlightTrackKey) : [];
+  const recentFlightEntries = currentFlightTrackKey ? flightEntries.filter((entry) => entry.trackKey !== currentFlightTrackKey) : flightEntries;
+  const flightEntriesForDisplay = [...currentFlightEntries, ...recentFlightEntries].slice(0, 8);
+  const flightSummaryLabel = flightEntries.length
+    ? t('audioSignalPath.flight.count', { current: currentFlightEntries.length, total: flightEntries.length })
+    : t('audioSignalPath.flight.empty');
   const doctorHintCountLabel = t(
     theater.doctorInsights.length === 1 ? 'audioSignalPath.doctor.hintCount.one' : 'audioSignalPath.doctor.hintCount.many',
     { count: theater.doctorInsights.length },
@@ -1727,6 +1808,51 @@ export const AudioSignalPathPopover = ({
                 ))}
               </div>
             </>
+          ) : null}
+        </section>
+      ) : null}
+
+      {showFlightRecorder ? (
+        <section
+          className="signal-path-flight"
+          data-collapsed={isFlightRecorderCollapsed ? 'true' : undefined}
+          aria-label={t('audioSignalPath.flight.title')}
+        >
+          <button
+            className="signal-path-flight__header"
+            type="button"
+            aria-expanded={!isFlightRecorderCollapsed}
+            aria-label={flightToggleLabel}
+            title={flightToggleLabel}
+            onClick={() => setIsFlightRecorderCollapsed((current) => !current)}
+          >
+            <div>
+              <span>{t('audioSignalPath.flight.eyebrow')}</span>
+              <strong>{t('audioSignalPath.flight.title')}</strong>
+            </div>
+            <em>{flightSummaryLabel}</em>
+            <ChevronDown size={15} />
+          </button>
+          {!isFlightRecorderCollapsed ? (
+            flightEntriesForDisplay.length ? (
+              <div className="signal-path-flight__timeline">
+                {flightEntriesForDisplay.map((entry) => (
+                  <article className="signal-path-flight__event" data-tone={entry.tone} key={entry.id}>
+                    <time dateTime={entry.at}>{formatFlightTime(entry.at)}</time>
+                    <div>
+                      <span>{flightEntryTrackLabel(entry, currentFlightTrackKey, t)}</span>
+                      <strong>{flightKindTitle(entry, t)}</strong>
+                      <em>{flightEntryDetail(entry, t)}</em>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="signal-path-flight__empty">
+                <span>{t('audioSignalPath.flight.empty')}</span>
+                <em>{t('audioSignalPath.flight.emptyDetail')}</em>
+              </div>
+            )
           ) : null}
         </section>
       ) : null}

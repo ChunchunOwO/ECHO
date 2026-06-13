@@ -870,6 +870,28 @@ export type TranslationKey =
   | 'audioSignalPath.atlas.resampleNoneDetail'
   | 'audioSignalPath.atlas.resampleTendency'
   | 'audioSignalPath.atlas.title'
+  | 'audioSignalPath.flight.collapse'
+  | 'audioSignalPath.flight.count'
+  | 'audioSignalPath.flight.currentTrack'
+  | 'audioSignalPath.flight.detail.failure'
+  | 'audioSignalPath.flight.detail.fallback'
+  | 'audioSignalPath.flight.detail.rateConversion'
+  | 'audioSignalPath.flight.detail.routeChange'
+  | 'audioSignalPath.flight.detail.takeover'
+  | 'audioSignalPath.flight.empty'
+  | 'audioSignalPath.flight.emptyDetail'
+  | 'audioSignalPath.flight.expand'
+  | 'audioSignalPath.flight.eyebrow'
+  | 'audioSignalPath.flight.kind.failure'
+  | 'audioSignalPath.flight.kind.fallback'
+  | 'audioSignalPath.flight.kind.rateConversion'
+  | 'audioSignalPath.flight.kind.routeChange'
+  | 'audioSignalPath.flight.kind.takeover'
+  | 'audioSignalPath.flight.ratePending'
+  | 'audioSignalPath.flight.reasonUnknown'
+  | 'audioSignalPath.flight.recentRoute'
+  | 'audioSignalPath.flight.routeUnknown'
+  | 'audioSignalPath.flight.title'
   | 'audioSignalPath.decode.auto'
   | 'audioSignalPath.decode.keepRate'
   | 'audioSignalPath.decode.originalRate'
@@ -4622,7 +4644,108 @@ const songsPageEnUS = {
 const songsPageZhTW = songsPageZhCN;
 const songsPageJaJP = songsPageEnUS;
 
+const audioSignalPathFlightRecorderZhCN = {
+  'audioSignalPath.flight.collapse': '收起声音链路黑匣子',
+  'audioSignalPath.flight.count': '当前曲目 {current} 条 / 共 {total} 条',
+  'audioSignalPath.flight.currentTrack': '当前曲目',
+  'audioSignalPath.flight.detail.failure': '{device} / {route} / {reason}',
+  'audioSignalPath.flight.detail.fallback': '{from} -> {to} / {reason}',
+  'audioSignalPath.flight.detail.rateConversion': '{path} / {device}',
+  'audioSignalPath.flight.detail.routeChange': '{from} -> {to} / {device}',
+  'audioSignalPath.flight.detail.takeover': '{device} / {route} / {rate}',
+  'audioSignalPath.flight.empty': '暂无链路事件',
+  'audioSignalPath.flight.emptyDetail': '播放或切换输出后，ECHO 会在这里留下最近 20 条只读记录。',
+  'audioSignalPath.flight.expand': '展开声音链路黑匣子',
+  'audioSignalPath.flight.eyebrow': 'Route memory',
+  'audioSignalPath.flight.kind.failure': '打开失败',
+  'audioSignalPath.flight.kind.fallback': '回到共享输出',
+  'audioSignalPath.flight.kind.rateConversion': '采样率转换',
+  'audioSignalPath.flight.kind.routeChange': '链路切换',
+  'audioSignalPath.flight.kind.takeover': 'DAC 接管成功',
+  'audioSignalPath.flight.ratePending': 'rate pending',
+  'audioSignalPath.flight.reasonUnknown': '原因未上报',
+  'audioSignalPath.flight.recentRoute': '最近链路',
+  'audioSignalPath.flight.routeUnknown': '上一条链路',
+  'audioSignalPath.flight.title': '声音链路黑匣子',
+} satisfies Partial<Record<TranslationKey, string>>;
+
+const audioSignalPathFlightRecorderZhTW = {
+  'audioSignalPath.flight.collapse': '收起聲音鏈路黑匣子',
+  'audioSignalPath.flight.count': '目前曲目 {current} 筆 / 共 {total} 筆',
+  'audioSignalPath.flight.currentTrack': '目前曲目',
+  'audioSignalPath.flight.detail.failure': '{device} / {route} / {reason}',
+  'audioSignalPath.flight.detail.fallback': '{from} -> {to} / {reason}',
+  'audioSignalPath.flight.detail.rateConversion': '{path} / {device}',
+  'audioSignalPath.flight.detail.routeChange': '{from} -> {to} / {device}',
+  'audioSignalPath.flight.detail.takeover': '{device} / {route} / {rate}',
+  'audioSignalPath.flight.empty': '暫無鏈路事件',
+  'audioSignalPath.flight.emptyDetail': '播放或切換輸出後，ECHO 會在這裡留下最近 20 筆唯讀記錄。',
+  'audioSignalPath.flight.expand': '展開聲音鏈路黑匣子',
+  'audioSignalPath.flight.eyebrow': 'Route memory',
+  'audioSignalPath.flight.kind.failure': '開啟失敗',
+  'audioSignalPath.flight.kind.fallback': '回到共享輸出',
+  'audioSignalPath.flight.kind.rateConversion': '取樣率轉換',
+  'audioSignalPath.flight.kind.routeChange': '鏈路切換',
+  'audioSignalPath.flight.kind.takeover': 'DAC 接管成功',
+  'audioSignalPath.flight.ratePending': 'rate pending',
+  'audioSignalPath.flight.reasonUnknown': '原因未上報',
+  'audioSignalPath.flight.recentRoute': '最近鏈路',
+  'audioSignalPath.flight.routeUnknown': '上一條鏈路',
+  'audioSignalPath.flight.title': '聲音鏈路黑匣子',
+} satisfies Partial<Record<TranslationKey, string>>;
+
+const audioSignalPathFlightRecorderJaJP = {
+  'audioSignalPath.flight.collapse': 'Audio Route Flight Recorder を閉じる',
+  'audioSignalPath.flight.count': '現在の曲 {current} 件 / 合計 {total} 件',
+  'audioSignalPath.flight.currentTrack': '現在の曲',
+  'audioSignalPath.flight.detail.failure': '{device} / {route} / {reason}',
+  'audioSignalPath.flight.detail.fallback': '{from} -> {to} / {reason}',
+  'audioSignalPath.flight.detail.rateConversion': '{path} / {device}',
+  'audioSignalPath.flight.detail.routeChange': '{from} -> {to} / {device}',
+  'audioSignalPath.flight.detail.takeover': '{device} / {route} / {rate}',
+  'audioSignalPath.flight.empty': '経路イベントはまだありません',
+  'audioSignalPath.flight.emptyDetail': '再生または出力切替後、ECHO は直近 20 件の読み取り専用記録をここに残します。',
+  'audioSignalPath.flight.expand': 'Audio Route Flight Recorder を展開',
+  'audioSignalPath.flight.eyebrow': 'Route memory',
+  'audioSignalPath.flight.kind.failure': '開始失敗',
+  'audioSignalPath.flight.kind.fallback': '共有出力へ戻る',
+  'audioSignalPath.flight.kind.rateConversion': 'サンプルレート変換',
+  'audioSignalPath.flight.kind.routeChange': '経路切替',
+  'audioSignalPath.flight.kind.takeover': 'DAC テイクオーバー成功',
+  'audioSignalPath.flight.ratePending': 'rate pending',
+  'audioSignalPath.flight.reasonUnknown': '理由は未報告',
+  'audioSignalPath.flight.recentRoute': '最近の経路',
+  'audioSignalPath.flight.routeUnknown': '前の経路',
+  'audioSignalPath.flight.title': 'Audio Route Flight Recorder',
+} satisfies Partial<Record<TranslationKey, string>>;
+
+const audioSignalPathFlightRecorderEnUS = {
+  'audioSignalPath.flight.collapse': 'Collapse Audio Route Flight Recorder',
+  'audioSignalPath.flight.count': '{current} current / {total} total',
+  'audioSignalPath.flight.currentTrack': 'Current track',
+  'audioSignalPath.flight.detail.failure': '{device} / {route} / {reason}',
+  'audioSignalPath.flight.detail.fallback': '{from} -> {to} / {reason}',
+  'audioSignalPath.flight.detail.rateConversion': '{path} / {device}',
+  'audioSignalPath.flight.detail.routeChange': '{from} -> {to} / {device}',
+  'audioSignalPath.flight.detail.takeover': '{device} / {route} / {rate}',
+  'audioSignalPath.flight.empty': 'No route events yet',
+  'audioSignalPath.flight.emptyDetail': 'Play or switch outputs and ECHO will keep the last 20 read-only route events here.',
+  'audioSignalPath.flight.expand': 'Expand Audio Route Flight Recorder',
+  'audioSignalPath.flight.eyebrow': 'Route memory',
+  'audioSignalPath.flight.kind.failure': 'Open failed',
+  'audioSignalPath.flight.kind.fallback': 'Returned to shared output',
+  'audioSignalPath.flight.kind.rateConversion': 'Sample-rate conversion',
+  'audioSignalPath.flight.kind.routeChange': 'Route changed',
+  'audioSignalPath.flight.kind.takeover': 'DAC takeover succeeded',
+  'audioSignalPath.flight.ratePending': 'rate pending',
+  'audioSignalPath.flight.reasonUnknown': 'Reason not reported',
+  'audioSignalPath.flight.recentRoute': 'Recent route',
+  'audioSignalPath.flight.routeUnknown': 'Previous route',
+  'audioSignalPath.flight.title': 'Audio Route Flight Recorder',
+} satisfies Partial<Record<TranslationKey, string>>;
+
 const audioSignalPathExtrasZhCN = {
+  ...audioSignalPathFlightRecorderZhCN,
   'audioSignalPath.atlas.eyebrow': '设备图谱',
   'audioSignalPath.atlas.collapse': '收起 DAC 能力图谱',
   'audioSignalPath.atlas.expand': '展开 DAC 能力图谱',
@@ -4733,6 +4856,7 @@ const audioSignalPathExtrasZhCN = {
 };
 
 const audioSignalPathExtrasZhTW = {
+  ...audioSignalPathFlightRecorderZhTW,
   'audioSignalPath.atlas.eyebrow': '裝置圖譜',
   'audioSignalPath.atlas.collapse': '收合 DAC 能力圖譜',
   'audioSignalPath.atlas.expand': '展開 DAC 能力圖譜',
@@ -4843,6 +4967,7 @@ const audioSignalPathExtrasZhTW = {
 };
 
 const audioSignalPathExtrasJaJP = {
+  ...audioSignalPathFlightRecorderJaJP,
   'audioSignalPath.atlas.eyebrow': 'デバイス図鑑',
   'audioSignalPath.atlas.collapse': 'DAC Capability Atlas を閉じる',
   'audioSignalPath.atlas.expand': 'DAC Capability Atlas を展開',
@@ -4953,6 +5078,7 @@ const audioSignalPathExtrasJaJP = {
 };
 
 const audioSignalPathExtrasEnUS = {
+  ...audioSignalPathFlightRecorderEnUS,
   'audioSignalPath.atlas.eyebrow': 'Device atlas',
   'audioSignalPath.atlas.collapse': 'Collapse DAC Capability Atlas',
   'audioSignalPath.atlas.expand': 'Expand DAC Capability Atlas',

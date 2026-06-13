@@ -673,6 +673,16 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       pointer-events: none;
       opacity: 0.78;
     }
+    .album-card[data-layer="back"] {
+      pointer-events: none;
+      filter: saturate(calc(var(--card-sat, 1) * 0.82)) brightness(calc(var(--card-bright, 1) * 0.78));
+    }
+    .album-card[data-layer="back"] .album-copy {
+      opacity: 0.62;
+    }
+    .album-card[data-layer="back"] .album-mini-controls {
+      opacity: 0.18;
+    }
     .album-card button {
       position: relative;
       z-index: 1;
@@ -1133,7 +1143,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     };
     const $ = (id) => document.getElementById(id);
     const stage = document.querySelector('.stage');
-    const maxRenderedAlbums = 300;
+    const maxRenderedAlbums = 180;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const fmt = (ms) => {
       const safe = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -1367,6 +1377,44 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const raw = Math.sin((index + 1) * 9283.123 + state.randomSeed * 31 + salt * 97) * 10000;
       return raw - Math.floor(raw);
     };
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const frontSlots = () => {
+      const wide = window.innerWidth >= 760;
+      const viewportW = Math.max(320, window.innerWidth);
+      const viewportH = Math.max(480, window.innerHeight);
+      const safeTop = wide ? 112 : 94;
+      const safeBottom = wide ? 42 : 112;
+      const baseW = wide ? clamp(Math.round(viewportW / 8.9), 118, 150) : clamp(Math.round(viewportW / 3.8), 88, 112);
+      const copyH = wide ? 98 : 82;
+      const desktop = [
+        [0.50, 0.50, 1.08, 1.00], [0.39, 0.53, 1.00, 0.98], [0.58, 0.38, 0.98, 0.94],
+        [0.34, 0.34, 0.92, 0.90], [0.66, 0.52, 0.90, 0.86], [0.25, 0.50, 0.84, 0.78],
+        [0.73, 0.33, 0.80, 0.72], [0.47, 0.72, 0.82, 0.78], [0.34, 0.74, 0.76, 0.68],
+        [0.64, 0.73, 0.78, 0.70], [0.20, 0.30, 0.68, 0.58], [0.81, 0.58, 0.70, 0.58],
+        [0.17, 0.68, 0.64, 0.50], [0.85, 0.24, 0.62, 0.48], [0.12, 0.44, 0.56, 0.42],
+        [0.90, 0.45, 0.56, 0.42], [0.28, 0.18, 0.66, 0.52], [0.50, 0.18, 0.64, 0.50],
+        [0.76, 0.80, 0.64, 0.48], [0.24, 0.88, 0.58, 0.42], [0.90, 0.78, 0.54, 0.38],
+        [0.07, 0.22, 0.50, 0.32], [0.08, 0.82, 0.50, 0.32], [0.94, 0.16, 0.48, 0.30],
+      ];
+      const mobile = [
+        [0.50, 0.42, 1.06, 1.00], [0.30, 0.55, 0.88, 0.76], [0.71, 0.57, 0.86, 0.74],
+        [0.50, 0.72, 0.82, 0.68], [0.24, 0.28, 0.70, 0.46], [0.76, 0.29, 0.70, 0.46],
+        [0.18, 0.78, 0.58, 0.34], [0.84, 0.80, 0.58, 0.34], [0.50, 0.18, 0.60, 0.38],
+      ];
+      return (wide ? desktop : mobile).map((slot, index) => {
+        const size = Math.round(baseW * slot[2] + (seeded(index, 1) - 0.5) * (wide ? 12 : 8));
+        const cardH = size + copyH;
+        const jitterX = (seeded(index, 2) - 0.5) * (wide ? 22 : 12);
+        const jitterY = (seeded(index, 3) - 0.5) * (wide ? 18 : 10);
+        const x = clamp(slot[0] * viewportW - size / 2 + jitterX, wide ? -size * 0.22 : 8, viewportW - size - (wide ? -size * 0.2 : 8));
+        const y = clamp(slot[1] * viewportH - cardH / 2 + jitterY, safeTop, viewportH - safeBottom - cardH);
+        return { x, y, size, opacity: slot[3], primary: index < 5, viewportW, viewportH };
+      });
+    };
+    const frontAlbumCount = () => {
+      return Math.min(frontSlots().length, state.albums.length);
+    };
+    const isFrontAlbum = (index) => index < Math.min(frontAlbumCount(), state.albums.length);
     const renderMural = () => {
       const mural = $('albumMural');
       if (!mural) {
@@ -1376,85 +1424,54 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     };
     const albumStyle = (index) => {
       const wide = window.innerWidth >= 760;
-      const heroOffsets = [
-        [-390, -252],
-        [-160, -250],
-        [72, -248],
-        [304, -250],
-        [-510, -62],
-        [-286, -48],
-        [-60, -38],
-        [166, -38],
-        [394, -50],
-        [592, -72],
-        [-442, 130],
-        [-220, 146],
-        [0, 132],
-        [224, 146],
-        [450, 130],
-        [642, 108],
-        [-346, 320],
-        [-120, 330],
-        [122, 330],
-        [362, 320],
-        [-562, 278],
-        [592, 272],
-        [-116, -430],
-        [174, -430],
-        [450, -420],
-        [-548, -302],
-      ];
-      const mobileHeroOffsets = [
-        [-176, -214],
-        [-34, -218],
-        [112, -210],
-        [-226, -54],
-        [-78, -42],
-        [76, -44],
-        [218, -56],
-        [-172, 126],
-        [-20, 136],
-        [134, 128],
-        [-228, 304],
-        [-82, 296],
-        [78, 304],
-        [232, 286],
-      ];
-      const activeHeroOffsets = wide ? heroOffsets : mobileHeroOffsets;
       const depth = seeded(index, 10);
-      const hero = index < activeHeroOffsets.length;
-      const primary = hero && index < 5;
-      const near = hero ? index < 17 : depth > 0.72;
-      const far = hero ? index >= 23 : depth < 0.28;
-      const baseSize = primary ? (wide ? 130 : 104) : near ? (wide ? 112 : 88) : far ? (wide ? 76 : 58) : (wide ? 92 : 72);
-      const size = Math.round(baseSize + seeded(index, 1) * (primary ? (wide ? 20 : 16) : near ? (wide ? 18 : 16) : far ? (wide ? 14 : 12) : (wide ? 18 : 14)));
+      if (isFrontAlbum(index)) {
+        const slot = frontSlots()[index];
+        const x = Math.round(world.width / 2 + slot.x - slot.viewportW / 2);
+        const y = Math.round(world.height / 2 + slot.y - slot.viewportH / 2);
+        const size = slot.size;
+        const tilt = (seeded(index, 4) - 0.5) * (slot.primary ? 2.2 : 4.6);
+        const scale = slot.primary ? 1 + seeded(index, 6) * 0.04 : 0.96 + seeded(index, 6) * 0.08;
+        const opacity = clamp(slot.opacity + seeded(index, 5) * 0.05, 0.28, 1);
+        const depthY = Math.round((seeded(index, 7) - 0.5) * (slot.primary ? 10 : 24));
+        const depthZ = slot.primary ? 86 + Math.round(seeded(index, 13) * 42) : -18 + Math.round(seeded(index, 13) * 58);
+        const z = slot.primary ? 120 + Math.round(seeded(index, 11) * 20) : 44 + Math.round(slot.opacity * 52) + Math.round(seeded(index, 11) * 12);
+        const bright = slot.primary ? 1.04 : 0.9 + slot.opacity * 0.13;
+        const sat = slot.primary ? 1.1 : 0.92 + slot.opacity * 0.12;
+        const shadow = slot.primary ? 0.48 : 0.24 + slot.opacity * 0.14;
+        const sparkle = slot.primary ? 0.76 + seeded(index, 14) * 0.34 : 0.34 + seeded(index, 14) * 0.3;
+        const pitch = (seeded(index, 15) - 0.5) * (slot.primary ? 1.5 : 3.4);
+        const yaw = (seeded(index, 16) - 0.5) * (slot.primary ? 2.2 : 5);
+        return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
+      }
+
+      const frontCount = frontAlbumCount();
+      const backIndex = index - frontCount;
+      const far = depth < 0.46;
+      const baseSize = far ? (wide ? 64 : 52) : (wide ? 78 : 60);
+      const size = Math.round(baseSize + seeded(index, 1) * (wide ? 18 : 12));
       const slotCount = Math.max(1, layout.cols * layout.rows);
-      const slot = (index * 37 + Math.floor(seeded(index, 15) * slotCount)) % slotCount;
+      const slot = (backIndex * 37 + Math.floor(seeded(index, 15) * slotCount)) % slotCount;
       const col = slot % layout.cols;
       const row = Math.floor(slot / layout.cols);
       const originX = Math.round((world.width - layout.cols * layout.cellW) / 2 + (wide ? 22 : 12));
       const originY = Math.round((world.height - layout.rows * layout.cellH) / 2 + (wide ? 24 : 16));
-      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.18;
-      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.1;
-      const jitterX = (seeded(index, 2) - 0.5) * Math.min(92, layout.cellW * 0.28);
-      const jitterY = (seeded(index, 3) - 0.5) * Math.min(112, layout.cellH * 0.26);
-      const heroOffset = activeHeroOffsets[index] || [0, 0];
-      const x = hero
-        ? Math.round(world.width / 2 + heroOffset[0] + (seeded(index, 2) - 0.5) * 28)
-        : Math.round(originX + col * layout.cellW + waveX + jitterX);
-      const y = hero
-        ? Math.round(world.height / 2 + heroOffset[1] + (seeded(index, 3) - 0.5) * 28)
-        : Math.round(originY + row * layout.cellH + waveY + jitterY);
-      const tilt = (seeded(index, 4) - 0.5) * (primary ? 1.4 : near ? 3.4 : far ? 7.4 : 4.8);
-      const scale = primary ? 1 + seeded(index, 6) * 0.06 : near ? 0.82 + seeded(index, 6) * 0.16 : far ? 0.5 + seeded(index, 6) * 0.14 : 0.66 + seeded(index, 6) * 0.16;
-      const opacity = primary ? 0.98 : near ? 0.76 + seeded(index, 5) * 0.18 : far ? 0.18 + seeded(index, 5) * 0.18 : 0.46 + seeded(index, 5) * 0.22;
-      const depthY = Math.round((seeded(index, 7) - 0.5) * (primary ? 8 : near ? 18 : far ? 64 : 34));
-      const depthZ = primary ? 96 + Math.round(seeded(index, 13) * 36) : near ? 24 + Math.round(seeded(index, 13) * 48) : far ? -156 - Math.round(seeded(index, 13) * 150) : -42 - Math.round(seeded(index, 13) * 70);
-      const z = primary ? 80 + Math.round(seeded(index, 11) * 20) : near ? 44 + Math.round(seeded(index, 11) * 18) : far ? 4 + Math.round(seeded(index, 11) * 8) : 18 + Math.round(seeded(index, 11) * 18);
-      const bright = primary ? 1.07 : near ? 1.01 : far ? 0.76 : 0.9;
-      const sat = primary ? 1.1 : near ? 1.05 : far ? 0.82 : 0.95;
-      const shadow = primary ? 0.48 : near ? 0.38 : far ? 0.22 : 0.3;
-      const sparkle = primary ? 0.78 + seeded(index, 12) * 0.38 : near ? 0.56 + seeded(index, 12) * 0.34 : far ? 0.32 + seeded(index, 12) * 0.24 : 0.42 + seeded(index, 12) * 0.28;
+      const waveX = Math.sin(row * 1.42 + state.randomSeed * 0.09) * layout.cellW * 0.22;
+      const waveY = Math.cos(col * 1.18 + state.randomSeed * 0.07) * layout.cellH * 0.14;
+      const jitterX = (seeded(index, 2) - 0.5) * Math.min(118, layout.cellW * 0.34);
+      const jitterY = (seeded(index, 3) - 0.5) * Math.min(132, layout.cellH * 0.3);
+      const x = Math.round(originX + col * layout.cellW + waveX + jitterX);
+      const y = Math.round(originY + row * layout.cellH + waveY + jitterY);
+      const tilt = (seeded(index, 4) - 0.5) * (far ? 7.8 : 5.2);
+      const scale = far ? 0.52 + seeded(index, 6) * 0.16 : 0.66 + seeded(index, 6) * 0.16;
+      const opacity = far ? 0.1 + seeded(index, 5) * 0.12 : 0.18 + seeded(index, 5) * 0.16;
+      const depthY = Math.round((seeded(index, 7) - 0.5) * (far ? 60 : 36));
+      const depthZ = far ? -170 - Math.round(seeded(index, 13) * 150) : -56 - Math.round(seeded(index, 13) * 76);
+      const z = far ? 3 + Math.round(seeded(index, 11) * 7) : 14 + Math.round(seeded(index, 11) * 15);
+      const bright = far ? 0.72 : 0.86;
+      const sat = far ? 0.78 : 0.92;
+      const shadow = far ? 0.18 : 0.26;
+      const sparkle = far ? 0.28 + seeded(index, 12) * 0.22 : 0.38 + seeded(index, 12) * 0.26;
       const pitch = far ? (seeded(index, 14) - 0.5) * 5 : (seeded(index, 14) - 0.5) * 2;
       const yaw = far ? (seeded(index, 16) - 0.5) * 7 : (seeded(index, 16) - 0.5) * 3;
       return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
@@ -1475,6 +1492,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         card.dataset.albumId = album.id;
         card.dataset.albumTitle = album.title || '';
         card.dataset.albumArtist = album.albumArtist || '';
+        card.dataset.layer = isFrontAlbum(index) ? 'front' : 'back';
         card.style.cssText = albumStyle(index);
         card.innerHTML =
           '<button type="button">' +

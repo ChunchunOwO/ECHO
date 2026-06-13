@@ -12,6 +12,8 @@ import type { SmtcCommand } from '../../../shared/types/smtc';
 import { I18nProvider, translateFallback } from '../../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, setPlaybackStatusSnapshot } from '../../stores/playbackStatusStore';
+import { audioOutputRouteStatusChangedEvent } from '../../utils/audioOutputRouteEvents';
+import { recordAudioRouteFlightObservation } from '../../utils/audioRouteFlightRecorder';
 import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlaybackCommandController } from './PlaybackCommandController';
 import { PlayerBar } from './PlayerBar';
@@ -763,6 +765,69 @@ describe('PlayerBar', () => {
     expect(resampledDialog.textContent).toContain('Atlas last saw this device play native-rate via Exclusive at 44.1kHz');
   });
 
+  it('shows Audio Route Flight Recorder below Atlas with current-track route events', async () => {
+    window.localStorage.setItem('echo-next.locale', 'en-US');
+    const track = makeTrack(41, { title: 'Flight Recorder Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const sharedStatus = {
+      ...audioStatus(track),
+      outputDeviceName: 'Windows Mixer',
+      outputMode: 'shared' as const,
+      outputBackend: 'wasapi-shared',
+      decoderOutputSampleRate: 48000,
+      requestedOutputSampleRate: 48000,
+      actualDeviceSampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      bitPerfectCandidate: false,
+      resampling: true,
+    };
+    const exclusiveStatus = {
+      ...audioStatus(track),
+      outputDeviceName: 'TEAC USB DAC',
+      outputMode: 'exclusive' as const,
+      outputBackend: 'wasapi-exclusive',
+      decoderOutputSampleRate: 44100,
+      requestedOutputSampleRate: 44100,
+      actualDeviceSampleRate: 44100,
+      sharedDeviceSampleRate: null,
+      bitPerfectCandidate: true,
+      resampling: false,
+    };
+    const failedStatus = {
+      ...exclusiveStatus,
+      state: 'error' as const,
+      error: 'driver init timeout',
+    };
+    const fallbackStatus = {
+      ...sharedStatus,
+      warnings: ['Exclusive fallback to Shared after device instability'],
+      resampling: true,
+    };
+
+    recordAudioRouteFlightObservation(sharedStatus, track);
+    recordAudioRouteFlightObservation(exclusiveStatus, track);
+    recordAudioRouteFlightObservation(failedStatus, track);
+    recordAudioRouteFlightObservation(fallbackStatus, track);
+
+    render(
+      <I18nProvider>
+        <AudioSignalPathPopover isOpen={true} status={fallbackStatus} track={track} onClose={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: 'Signal path' });
+    await waitFor(() => expect(dialog.textContent).toContain('Audio Route Flight Recorder'));
+    expect(dialog.textContent).not.toContain('driver init timeout');
+    const flightToggle = screen.getByRole('button', { name: 'Expand Audio Route Flight Recorder' });
+    expect(flightToggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(flightToggle);
+    expect(flightToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(dialog.textContent).toContain('Current track');
+    expect(dialog.textContent).toContain('DAC takeover succeeded');
+    expect(dialog.textContent).toContain('Sample-rate conversion');
+    expect(dialog.textContent).toContain('Returned to shared output');
+    expect(dialog.textContent).toContain('driver init timeout');
+  });
+
   it('shows ECHO SRC as upsampling in the signal path', () => {
     const track = makeTrack(36, { title: 'Upsampled Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
     const status = {
@@ -793,7 +858,7 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).not.toContain('96kHz -> 48kHz');
   });
 
-  it('shows DAC arrival ceremony when ASIO takes over the output device while idle', async () => {
+  it('shows DAC arrival ceremony when audio settings reports ASIO takeover while idle', async () => {
     window.localStorage.setItem('echo-next.locale', 'en-US');
     const track = makeTrack(40, { title: 'Arrival Track', sampleRate: 96000, bitDepth: 24 });
     const statusHandlers: Array<(status: AudioStatus) => void> = [];
@@ -869,7 +934,7 @@ describe('PlayerBar', () => {
     expect(screen.queryByText('TEAC USB DAC taken over')).toBeNull();
 
     act(() => {
-      emitAudioStatus(statusHandlers, asioStatus);
+      window.dispatchEvent(new CustomEvent(audioOutputRouteStatusChangedEvent, { detail: { status: asioStatus } }));
     });
 
     const arrivalTitle = await screen.findByText('TEAC USB DAC taken over');

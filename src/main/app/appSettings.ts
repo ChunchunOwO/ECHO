@@ -2047,11 +2047,19 @@ const containsProThemeCustomTheme = (themes: unknown): boolean =>
 const containsFinalThemePresetOverride = (overrides: unknown): boolean =>
   Boolean(overrides && typeof overrides === 'object' && !Array.isArray(overrides) && Object.prototype.hasOwnProperty.call(overrides, 'FINAL'));
 
-const shouldPersistFinalThemeRelock = (source: Partial<AppSettings>, normalized: AppSettings): boolean =>
-  (proOnlyThemePresetSet.has(source.appearanceThemePreset as AppThemePreset) && normalized.appearanceThemePreset !== source.appearanceThemePreset) ||
-  (typeof source.finalThemeUnlockVersion === 'string' && source.finalThemeUnlockVersion !== normalized.finalThemeUnlockVersion) ||
-  containsProThemeCustomTheme(source.appearanceCustomThemes) ||
-  containsFinalThemePresetOverride(source.appearanceThemePresetOverrides);
+const shouldPersistFinalThemeRelock = (source: Partial<AppSettings>, normalized: AppSettings): boolean => {
+  if (source.finalThemeUnlockVersion === finalThemeUnlockVersion) {
+    // A locked read can happen before the unlock plugin finishes reporting during startup.
+    return false;
+  }
+
+  return (
+    (proOnlyThemePresetSet.has(source.appearanceThemePreset as AppThemePreset) && normalized.appearanceThemePreset !== source.appearanceThemePreset) ||
+    (typeof source.finalThemeUnlockVersion === 'string' && source.finalThemeUnlockVersion !== normalized.finalThemeUnlockVersion) ||
+    containsProThemeCustomTheme(source.appearanceCustomThemes) ||
+    containsFinalThemePresetOverride(source.appearanceThemePresetOverrides)
+  );
+};
 
 const persistNormalizedSettings = (settings: AppSettings): void => {
   const settingsPath = getSettingsPath();

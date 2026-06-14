@@ -165,6 +165,8 @@ const formatJsonBlock = (value: unknown): string => `\`\`\`json\n${JSON.stringif
 
 const formatTextBlock = (value: string): string => `\`\`\`text\n${value.trim() || 'n/a'}\n\`\`\``;
 
+const aiReportReviewTip = 'AI review tip: Copy this report and paste it into AI to help identify the problem.';
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -750,6 +752,7 @@ export class CrashReportService {
       '',
       `Generated: ${nowIso()}`,
       `Report file: ${basename(options.reportPath)}`,
+      aiReportReviewTip,
       '',
       '## Summary',
       '',
@@ -809,6 +812,7 @@ export class CrashReportService {
       '',
       `Generated: ${nowIso()}`,
       `Report file: ${basename(options.reportPath)}`,
+      aiReportReviewTip,
       '',
       '## Summary',
       '',

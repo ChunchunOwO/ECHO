@@ -22802,6 +22802,13 @@ html[data-theme="dark"] .app-shell--wallpaper-ready {
   transition: width 180ms ease;
 }
 
+.signal-path-theater__meter-note {
+  color: rgba(74, 84, 104, 0.72);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
 .signal-path-theater__meter[data-tone="muted"] .signal-path-theater__meter-rail span {
   background: #8d98a8;
 }
@@ -23764,6 +23771,10 @@ html[data-theme="dark"] .signal-path-theater__hero p,
 html[data-theme="dark"] .signal-path-theater__meter em,
 html[data-theme="dark"] .signal-path-theater__metric em {
   color: #b8c4dc;
+}
+
+html[data-theme="dark"] .signal-path-theater__meter-note {
+  color: rgba(210, 220, 238, 0.72);
 }
 
 html[data-theme="dark"] .signal-path-theater__meter,

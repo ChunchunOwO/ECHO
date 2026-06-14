@@ -1695,6 +1695,7 @@ export const AudioSignalPathPopover = ({
           <div className="signal-path-theater__meter-rail" aria-hidden="true">
             <span />
           </div>
+          <small className="signal-path-theater__meter-note">{t('audioSignalPath.meter.note')}</small>
         </div>
         <div className="signal-path-theater__grid">
           {theater.metrics.map((metric) => (

@@ -429,6 +429,7 @@ describe('CrashReportService', () => {
       pathHash: expect.any(String),
     });
     expect(readableReport).toContain('# ECHO Next Audio Crash Report');
+    expect(readableReport).toContain('AI review tip: Copy this report and paste it into AI to help identify the problem.');
     expect(readableReport).toContain('## Why This Error Happened');
     expect(readableReport).toContain('the native audio host was launched, but it did not send its ready event');
     expect(readableReport).toContain('shared_output_recovered_to_default_device');
@@ -622,6 +623,7 @@ describe('CrashReportService', () => {
     const report = readFileSync(reportPath, 'utf8');
     expect(reportPath).toBe(join(service.getSessionDir()!, 'crash-report.md'));
     expect(report).toContain('# ECHO Next Crash Report');
+    expect(report).toContain('AI review tip: Copy this report and paste it into AI to help identify the problem.');
     expect(report).toContain('Synthetic crash');
     expect(report).not.toContain('D:\\Music\\private-song.flac');
     const { shell } = await import('electron');

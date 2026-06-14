@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -604,6 +604,50 @@ describe('app settings normalization', () => {
       },
     ]);
     expect(normalized.appearanceThemePresetOverrides?.FINAL).toEqual({ light: { accent: '#ffffff' } });
+  });
+
+  it('does not rewrite a marked Pro theme when the runtime unlock status is temporarily stale', async () => {
+    vi.resetModules();
+    const { finalThemeUnlockVersion } = await import('../../shared/constants/featureUnlocks');
+    userDataPath = join(tmpdir(), `echo-next-settings-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    tempRoots.push(userDataPath);
+    mkdirSync(userDataPath, { recursive: true });
+    const settingsPath = join(userDataPath, 'echo-settings.json');
+    const savedSettings = {
+      appearanceTheme: 'dark',
+      appearanceThemePreset: 'nyanCat',
+      finalThemeUnlockVersion,
+      appearanceThemeCustomId: 'theme-pro',
+      appearanceCustomThemes: [
+        {
+          id: 'theme-pro',
+          name: 'Pro Copy',
+          basePreset: 'nyanCat',
+          createdAt: '2026-06-08T00:00:00.000Z',
+          updatedAt: '2026-06-08T00:00:00.000Z',
+        },
+      ],
+      appearanceThemePresetOverrides: {
+        FINAL: { light: { accent: '#ffffff' } },
+      },
+    };
+    writeFileSync(settingsPath, `${JSON.stringify(savedSettings, null, 2)}\n`, 'utf8');
+
+    const { getAppSettings } = await import('./appSettings');
+    const lockedView = getAppSettings({ finalThemeUnlocked: false });
+    const persisted = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+
+    expect(lockedView.appearanceThemePreset).toBe('classic');
+    expect(lockedView.finalThemeUnlockVersion).toBeNull();
+    expect(persisted.appearanceThemePreset).toBe('nyanCat');
+    expect(persisted.finalThemeUnlockVersion).toBe(finalThemeUnlockVersion);
+    expect(persisted.appearanceThemeCustomId).toBe('theme-pro');
+    expect(persisted.appearanceCustomThemes).toEqual([
+      expect.objectContaining({ basePreset: 'nyanCat' }),
+    ]);
+    expect(persisted.appearanceThemePresetOverrides).toEqual({
+      FINAL: { light: { accent: '#ffffff' } },
+    });
   });
 
   it('normalizes appearance theme preset expansion state', async () => {

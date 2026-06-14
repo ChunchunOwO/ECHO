@@ -3319,6 +3319,10 @@ export class EchoLinkService {
       durationMs: statusDurationMs > 0 ? statusDurationMs : Math.max(0, Math.round((fallbackTrack?.duration ?? 0) * 1000)),
       sourceLabel: fallbackTrack ? sourceLabelForTrack(fallbackTrack) : 'Current Playback',
       canPlayOnPhone: fallbackTrack ? canPlayOnPhone(fallbackTrack) : Boolean(audioStatus.currentFilePath && existsSync(audioStatus.currentFilePath)),
+      codec: fallbackTrack?.codec ?? null,
+      sampleRate: fallbackTrack?.sampleRate ?? null,
+      bitDepth: fallbackTrack?.bitDepth ?? null,
+      bitrate: fallbackTrack?.bitrate ?? null,
     };
   }
 
@@ -3383,6 +3387,10 @@ export class EchoLinkService {
       durationMs: Math.max(0, Math.round((track.duration ?? 0) * 1000)),
       sourceLabel: sourceLabelForTrack(track),
       canPlayOnPhone: canPlayOnPhone(track),
+      codec: track.codec,
+      sampleRate: track.sampleRate,
+      bitDepth: track.bitDepth,
+      bitrate: track.bitrate,
     };
   }
 

@@ -4701,6 +4701,25 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-upcoming-track-notice',
+        sectionKey: 'general',
+        targetId: 'settings-row-upcoming-track-notice',
+        title: t('settings.general.upcomingTrackNotice.title'),
+        description: t('settings.general.upcomingTrackNotice.description'),
+        terms: [
+          t('settings.general.upcomingTrackNotice.title'),
+          t('settings.general.upcomingTrackNotice.description'),
+          '\u4e0b\u4e00\u9996',
+          '\u64ad\u653e\u9884\u544a',
+          '\u5de6\u4e0a\u89d2\u901a\u77e5',
+          '\u5c01\u9762\u63d0\u793a',
+          'up next',
+          'next track notice',
+          'upcoming track',
+          'now playing notice',
+        ],
+      },
+      {
         id: 'row-track-context-menu-extra-actions',
         sectionKey: 'general',
         targetId: 'settings-row-track-context-menu-extra-actions',
@@ -11150,6 +11169,18 @@ export const SettingsPage = (): JSX.Element => {
                   active={appSettings?.notificationsDisabled === true}
                   disabled={!appSettings}
                   onClick={() => patchAppSettings({ notificationsDisabled: !(appSettings?.notificationsDisabled ?? false) })}
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-upcoming-track-notice"
+                highlighted={highlightedSettingId === 'settings-row-upcoming-track-notice'}
+                title={t('settings.general.upcomingTrackNotice.title')}
+                description={t('settings.general.upcomingTrackNotice.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.upcomingTrackNoticeEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ upcomingTrackNoticeEnabled: !(appSettings?.upcomingTrackNoticeEnabled ?? false) })}
                 />
               </SettingRow>
               <SettingRow

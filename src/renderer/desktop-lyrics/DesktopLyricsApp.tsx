@@ -17,7 +17,11 @@ import { titleFromPath } from '../components/player/playerFormat';
 import { logLyricsConsole } from '../diagnostics/lyricsConsole';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 import { registerAppearanceFontFile, serializeFontList } from '../preferences/appearancePreferences';
-import { createMusicReactiveScene, musicReactiveSceneToCssVars } from '../../shared/utils/musicReactiveScene';
+import {
+  createMusicReactiveScene,
+  musicReactiveSceneToCssVars,
+  musicReactiveVisualsFeatureEnabled,
+} from '../../shared/utils/musicReactiveScene';
 
 type DesktopLyricsSettings = Required<Pick<
   AppSettings,
@@ -37,6 +41,7 @@ type DesktopLyricsSettings = Required<Pick<
   | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
+  | 'desktopLyricsHideWhenNoLyricsEnabled'
   | 'lyricsMusicReactiveVisualsEnabled'
 >> & Pick<AppSettings, 'desktopLyricsBounds'>;
 
@@ -87,6 +92,7 @@ const fallbackSettings: DesktopLyricsSettings = {
   desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
+  desktopLyricsHideWhenNoLyricsEnabled: false,
   lyricsMusicReactiveVisualsEnabled: false,
   desktopLyricsBounds: null,
 };
@@ -310,6 +316,7 @@ const pickDesktopLyricsSettings = (settings: Partial<AppSettings> | null | undef
   desktopLyricsTextDirection: settings?.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings?.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings?.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
+  desktopLyricsHideWhenNoLyricsEnabled: settings?.desktopLyricsHideWhenNoLyricsEnabled === true,
   lyricsMusicReactiveVisualsEnabled: settings?.lyricsMusicReactiveVisualsEnabled === true,
   desktopLyricsBounds: settings?.desktopLyricsBounds ?? null,
 });
@@ -735,6 +742,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
   }));
   const [enhancedLowLoadPlaybackActive, setEnhancedLowLoadPlaybackActive] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPinnedVisible, setMenuPinnedVisible] = useState(false);
   const lyricsRequestRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
   const lastActiveClockLogRef = useRef<{ key: string; positionMs: number } | null>(null);
@@ -873,6 +881,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
         (
           !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackModeEnabled') &&
           !Object.prototype.hasOwnProperty.call(detail, 'lowLoadPlaybackEnhancementsEnabled') &&
+          !Object.prototype.hasOwnProperty.call(detail, 'desktopLyricsHideWhenNoLyricsEnabled') &&
           !Object.prototype.hasOwnProperty.call(detail, 'lyricsMusicReactiveVisualsEnabled')
         )
       ) {
@@ -883,6 +892,13 @@ export const DesktopLyricsApp = (): JSX.Element => {
         setSettings((current) => pickDesktopLyricsSettings({
           ...current,
           lyricsMusicReactiveVisualsEnabled: detail.lyricsMusicReactiveVisualsEnabled === true,
+        }));
+      }
+
+      if (Object.prototype.hasOwnProperty.call(detail, 'desktopLyricsHideWhenNoLyricsEnabled')) {
+        setSettings((current) => pickDesktopLyricsSettings({
+          ...current,
+          desktopLyricsHideWhenNoLyricsEnabled: detail.desktopLyricsHideWhenNoLyricsEnabled === true,
         }));
       }
 
@@ -911,6 +927,14 @@ export const DesktopLyricsApp = (): JSX.Element => {
     };
   }, []);
 
+  const currentLine = activeIndex >= 0 ? lyrics.lines[activeIndex] : lyrics.lines[0];
+  const shouldHideForMissingLyrics =
+    settings.desktopLyricsHideWhenNoLyricsEnabled === true &&
+    (
+      lyrics.kind === 'instrumental' ||
+      (clockHasIdentity(activeClock) && !lineText(currentLine))
+    );
+
   useEffect(() => {
     const desktopLyrics = window.echo?.desktopLyrics;
     if (!desktopLyrics?.setMousePassthrough) {
@@ -927,7 +951,17 @@ export const DesktopLyricsApp = (): JSX.Element => {
       desktopLyrics.setMousePassthrough(passthrough);
     };
 
+    if (shouldHideForMissingLyrics) {
+      setMenuPinnedVisible(false);
+      setMenuVisible(false);
+      setPassthrough(true);
+      return () => {
+        desktopLyrics.setMousePassthrough(false);
+      };
+    }
+
     if (settings.desktopLyricsLocked) {
+      setMenuPinnedVisible(false);
       setPassthrough(true);
       return () => {
         desktopLyrics.setMousePassthrough(false);
@@ -949,6 +983,10 @@ export const DesktopLyricsApp = (): JSX.Element => {
       }
     };
     const scheduleIdleHideMenu = (): void => {
+      if (menuPinnedVisible) {
+        return;
+      }
+
       clearIdleHideMenuTimer();
       idleHideMenuTimer = window.setTimeout(() => {
         idleHideMenuTimer = null;
@@ -964,6 +1002,12 @@ export const DesktopLyricsApp = (): JSX.Element => {
       }
 
       clearIdleHideMenuTimer();
+      if (menuPinnedVisible) {
+        clearHideMenuTimer();
+        setMenuVisible(true);
+        return;
+      }
+
       if (delayed) {
         if (hideMenuTimer === null) {
           hideMenuTimer = window.setTimeout(() => {
@@ -999,6 +1043,14 @@ export const DesktopLyricsApp = (): JSX.Element => {
       setPassthrough(!overInteractiveSurface);
     };
     const passthroughOnLeave = (): void => {
+      if (menuPinnedVisible) {
+        clearHideMenuTimer();
+        clearIdleHideMenuTimer();
+        setMenuVisible(true);
+        setPassthrough(true);
+        return;
+      }
+
       updateMenuVisible(false);
       setPassthrough(true);
     };
@@ -1018,7 +1070,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
       document.removeEventListener('visibilitychange', passthroughOnLeave);
       desktopLyrics.setMousePassthrough(false);
     };
-  }, [settings.desktopLyricsLocked]);
+  }, [menuPinnedVisible, settings.desktopLyricsLocked, shouldHideForMissingLyrics]);
 
   useEffect(() => {
     const desktopLyrics = window.echo?.desktopLyrics;
@@ -1033,24 +1085,24 @@ export const DesktopLyricsApp = (): JSX.Element => {
       }
     };
     const unsubscribe = desktopLyrics.onRevealMenu(() => {
-      if (settings.desktopLyricsLocked) {
+      if (settings.desktopLyricsLocked || shouldHideForMissingLyrics) {
         return;
       }
 
       clearExternalRevealHideTimer();
-      setMenuVisible(true);
-      desktopLyrics.setMousePassthrough?.(false);
-      externalRevealHideTimerRef.current = window.setTimeout(() => {
-        externalRevealHideTimerRef.current = null;
-        setMenuVisible(false);
-      }, desktopLyricsMenuIdleHideDelayMs);
+      setMenuPinnedVisible((current) => {
+        const next = !current;
+        setMenuVisible(next);
+        desktopLyrics.setMousePassthrough?.(!next);
+        return next;
+      });
     });
 
     return () => {
       clearExternalRevealHideTimer();
       unsubscribe();
     };
-  }, [settings.desktopLyricsLocked]);
+  }, [settings.desktopLyricsLocked, shouldHideForMissingLyrics]);
 
   useEffect(() => {
     if (!settings.desktopLyricsFontFilePath) {
@@ -1436,7 +1488,6 @@ export const DesktopLyricsApp = (): JSX.Element => {
     }
   }, []);
 
-  const currentLine = activeIndex >= 0 ? lyrics.lines[activeIndex] : lyrics.lines[0];
   const canShowRomanization = shouldShowRomanizationForLyrics(lyrics.lines);
   const primaryText =
     lyrics.kind === 'instrumental'
@@ -1583,6 +1634,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
       : 'var(--desktop-lyrics-theme-stroke-color)';
   const desktopLyricsGradient = `linear-gradient(92deg, ${settings.desktopLyricsGradientStartColor} 0%, color-mix(in srgb, ${settings.desktopLyricsGradientStartColor} 42%, ${settings.desktopLyricsGradientEndColor} 58%) 48%, ${settings.desktopLyricsGradientEndColor} 100%)`;
   const shouldUseDesktopMusicReactiveVisuals =
+    musicReactiveVisualsFeatureEnabled &&
     settings.lyricsMusicReactiveVisualsEnabled === true &&
     enhancedLowLoadPlaybackActive !== true;
   const musicReactiveAudioStatus = useMemo(() => {
@@ -1641,7 +1693,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
       data-text-direction={settings.desktopLyricsTextDirection}
       style={style}
     >
-      {shouldUseDesktopMusicReactiveVisuals ? <div className="desktop-lyrics-reactive-backdrop" aria-hidden="true" /> : null}
+      {!shouldHideForMissingLyrics && shouldUseDesktopMusicReactiveVisuals ? <div className="desktop-lyrics-reactive-backdrop" aria-hidden="true" /> : null}
+      {!shouldHideForMissingLyrics ? (
       <section className="desktop-lyrics-stage" aria-label={t('desktopLyrics.aria.stage')}>
         <div className="desktop-lyrics-cluster">
           <div className="desktop-lyrics-lines" onContextMenu={(event) => void unlockFromContextMenu(event)}>
@@ -1837,19 +1890,20 @@ export const DesktopLyricsApp = (): JSX.Element => {
               <Languages size={14} />
               <span>{t('desktopLyrics.control.translationShort')}</span>
             </button>
+            <button type="button" title={t('desktopLyrics.control.close')} aria-label={t('desktopLyrics.control.close')} onClick={hideWindow}>
+              <X size={14} />
+            </button>
             <button type="button" title={t('desktopLyrics.control.lock')} aria-label={t('desktopLyrics.control.lock')} onClick={() => void setLocked()}>
               <Lock size={14} />
             </button>
             <button type="button" title={t('desktopLyrics.control.resetPosition')} aria-label={t('desktopLyrics.control.resetPosition')} onClick={resetBounds}>
               <RotateCcw size={14} />
             </button>
-            <button type="button" title={t('desktopLyrics.control.close')} aria-label={t('desktopLyrics.control.close')} onClick={hideWindow}>
-              <X size={14} />
-            </button>
             </div>
           ) : null}
         </div>
       </section>
+      ) : null}
     </main>
   );
 };

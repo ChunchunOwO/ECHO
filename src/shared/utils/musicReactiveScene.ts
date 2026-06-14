@@ -1,5 +1,7 @@
 import type { AudioStatus } from '../types/audio';
 
+export const musicReactiveVisualsFeatureEnabled = false;
+
 export type MusicReactiveSceneMode = 'idle' | 'flow' | 'beat' | 'limit';
 
 export type MusicReactiveScene = {

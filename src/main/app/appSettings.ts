@@ -66,6 +66,7 @@ import {
   type ChannelBalanceState,
 } from '../../shared/types/audio';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
+import { musicReactiveVisualsFeatureEnabled } from '../../shared/utils/musicReactiveScene';
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 const imageWallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
@@ -426,6 +427,7 @@ export const defaultSettings: AppSettings = {
   autoAccountCheckOnStartup: true,
   suppressAccountExpiryNotices: true,
   notificationsDisabled: false,
+  upcomingTrackNoticeEnabled: false,
   spotifyAutoLaunchOfficialPlayer: true,
   spotifyClientId: null,
   spotifyRedirectUri: null,
@@ -545,6 +547,7 @@ export const defaultSettings: AppSettings = {
   desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
+  desktopLyricsHideWhenNoLyricsEnabled: false,
   desktopLyricsBounds: null,
   miniPlayerEnabled: false,
   miniPlayerLocked: false,
@@ -1740,6 +1743,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
     autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
     suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices !== false,
     notificationsDisabled: settings.notificationsDisabled === true,
+    upcomingTrackNoticeEnabled: settings.upcomingTrackNoticeEnabled === true,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
     spotifyClientId: normalizeSpotifyClientId(settings.spotifyClientId),
     spotifyRedirectUri: normalizeSpotifyRedirectUri(settings.spotifyRedirectUri),
@@ -1877,7 +1881,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
       ? Math.round(clamp(lyricsImmersiveCoverGlassBlurPx, 0, 32))
       : defaultSettings.lyricsImmersiveCoverGlassBlurPx,
     lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
-    lyricsMusicReactiveVisualsEnabled: settings.lyricsMusicReactiveVisualsEnabled === true,
+    lyricsMusicReactiveVisualsEnabled: musicReactiveVisualsFeatureEnabled && settings.lyricsMusicReactiveVisualsEnabled === true,
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),
     lyricsCoverOpacityPercent: Number.isFinite(lyricsCoverOpacityPercent)
@@ -1914,6 +1918,7 @@ export const normalizeSettings = (value: unknown, options: NormalizeSettingsOpti
     desktopLyricsTextDirection: normalizeLyricsTextDirection(settings.desktopLyricsTextDirection),
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled !== false,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled !== false,
+    desktopLyricsHideWhenNoLyricsEnabled: settings.desktopLyricsHideWhenNoLyricsEnabled === true,
     desktopLyricsBounds: normalizeDesktopLyricsBounds(settings.desktopLyricsBounds),
     miniPlayerEnabled: settings.miniPlayerEnabled === true,
     miniPlayerLocked: false,

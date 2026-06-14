@@ -42,6 +42,7 @@ import {
   recordLyricsSourceQualityCandidates,
   recordLyricsSourceQualityOutcome,
 } from './lyricsSourceQualityMemory';
+import { musicReactiveVisualsFeatureEnabled } from '../../../shared/utils/musicReactiveScene';
 
 type LyricsSettingsDrawerProps = {
   currentTrackTools?: ReactNode;
@@ -128,6 +129,7 @@ type LyricsDrawerSettings = Pick<
   | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
+  | 'desktopLyricsHideWhenNoLyricsEnabled'
 >;
 
 const fallbackSettings: LyricsDrawerSettings = {
@@ -190,6 +192,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
+  desktopLyricsHideWhenNoLyricsEnabled: false,
 };
 
 const colorSwatches = ['#314054', '#FFFFFF', '#F6D365', '#8FCFBD', '#A8C7FA', '#FF8A80'];
@@ -714,6 +717,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   desktopLyricsTextDirection: settings.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
+  desktopLyricsHideWhenNoLyricsEnabled: settings.desktopLyricsHideWhenNoLyricsEnabled === true,
 });
 
 export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
@@ -806,6 +810,10 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
     desktopLyricsState?.settings.desktopLyricsTranslationEnabled ??
     effectiveSettings.desktopLyricsTranslationEnabled ??
     fallbackSettings.desktopLyricsTranslationEnabled;
+  const desktopLyricsHideWhenNoLyricsEnabled =
+    desktopLyricsState?.settings.desktopLyricsHideWhenNoLyricsEnabled ??
+    effectiveSettings.desktopLyricsHideWhenNoLyricsEnabled ??
+    fallbackSettings.desktopLyricsHideWhenNoLyricsEnabled;
   const desktopLyricsTextDirection =
     desktopLyricsState?.settings.desktopLyricsTextDirection ??
     effectiveSettings.desktopLyricsTextDirection ??
@@ -2085,6 +2093,19 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
                   onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsTranslationEnabled: event.currentTarget.checked })}
                 />
               </label>
+              <label className="audio-toggle-row lyrics-desktop-hide-empty-toggle">
+                <span>
+                  <EyeOff size={17} />
+                  <strong>{t('lyricsSettings.display.desktopHideWhenNoLyrics')}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={desktopLyricsHideWhenNoLyricsEnabled === true}
+                  disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                  onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsHideWhenNoLyricsEnabled: event.currentTarget.checked })}
+                />
+              </label>
+              <p>{t('lyricsSettings.display.desktopHideWhenNoLyricsDescription')}</p>
               <div className="lyrics-color-panel__header">
                 <span>
                   <Rows3 size={15} />
@@ -2814,19 +2835,23 @@ export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'd
             </div>
           ) : null}
 
-          <label className="audio-toggle-row lyrics-music-reactive-toggle">
-            <span>
-              <Zap size={17} />
-              <strong>{t('lyricsSettings.background.musicReactiveVisuals')}</strong>
-            </span>
-            <input
-              type="checkbox"
-              checked={effectiveSettings.lyricsMusicReactiveVisualsEnabled === true}
-              disabled={isBusy}
-              onChange={(event) => void patchSettings({ lyricsMusicReactiveVisualsEnabled: event.currentTarget.checked })}
-            />
-          </label>
-          <p>{t('lyricsSettings.background.musicReactiveVisualsDescription')}</p>
+          {musicReactiveVisualsFeatureEnabled ? (
+            <>
+              <label className="audio-toggle-row lyrics-music-reactive-toggle">
+                <span>
+                  <Zap size={17} />
+                  <strong>{t('lyricsSettings.background.musicReactiveVisuals')}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={effectiveSettings.lyricsMusicReactiveVisualsEnabled === true}
+                  disabled={isBusy}
+                  onChange={(event) => void patchSettings({ lyricsMusicReactiveVisualsEnabled: event.currentTarget.checked })}
+                />
+              </label>
+              <p>{t('lyricsSettings.background.musicReactiveVisualsDescription')}</p>
+            </>
+          ) : null}
 
           <label className="audio-toggle-row lyrics-smart-readable-toggle">
             <span>

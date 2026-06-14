@@ -18,6 +18,7 @@ export type DesktopLyricsStylePatch = Partial<Pick<
   | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
+  | 'desktopLyricsHideWhenNoLyricsEnabled'
 >>;
 
 export type DesktopLyricsState = {
@@ -42,6 +43,7 @@ export type DesktopLyricsState = {
     | 'desktopLyricsTextDirection'
     | 'desktopLyricsRomanizationEnabled'
     | 'desktopLyricsTranslationEnabled'
+    | 'desktopLyricsHideWhenNoLyricsEnabled'
     | 'desktopLyricsBounds'
     | 'lyricsMusicReactiveVisualsEnabled'
   >;

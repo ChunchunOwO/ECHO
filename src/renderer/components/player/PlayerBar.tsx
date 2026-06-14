@@ -44,7 +44,6 @@ import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
 
 type PlayerBarProps = {
-  desktopLyricsLocked?: boolean;
   desktopLyricsVisible?: boolean;
   hasDesktopLyricsBridge?: boolean;
   onOpenAudioSettings?: () => void;
@@ -53,7 +52,6 @@ type PlayerBarProps = {
   showSignalPathControl?: boolean;
   onToggleDesktopLyrics?: () => void;
   onRevealDesktopLyricsMenu?: () => void;
-  onUnlockDesktopLyrics?: () => void;
 };
 
 const lowLoadProgressRenderIntervalMs = 1000;
@@ -756,7 +754,6 @@ const PlayerMarqueeText = ({
 };
 
 export const PlayerBar = ({
-  desktopLyricsLocked = false,
   desktopLyricsVisible = false,
   hasDesktopLyricsBridge = false,
   onOpenAudioSettings,
@@ -765,7 +762,6 @@ export const PlayerBar = ({
   showSignalPathControl = false,
   onToggleDesktopLyrics,
   onRevealDesktopLyricsMenu,
-  onUnlockDesktopLyrics,
 }: PlayerBarProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const queue = usePlaybackQueue();
@@ -3068,21 +3064,16 @@ export const PlayerBar = ({
             className={`icon-button ${desktopLyricsVisible ? 'is-soft-active' : ''}`}
             type="button"
             aria-label={desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
-            title={desktopLyricsLocked ? '右键解锁并显示桌面歌词设置栏' : desktopLyricsVisible ? '隐藏桌面歌词，右键显示设置栏' : '显示桌面歌词，右键显示设置栏'}
+            title={desktopLyricsVisible ? '隐藏桌面歌词，右键自动解锁并常驻或隐藏设置栏' : '显示桌面歌词，右键自动解锁并常驻或隐藏设置栏'}
             aria-pressed={desktopLyricsVisible}
             onClick={() => onToggleDesktopLyrics?.()}
             onContextMenu={(event) => {
-              if (!onRevealDesktopLyricsMenu && !desktopLyricsLocked) {
+              if (!onRevealDesktopLyricsMenu) {
                 return;
               }
 
               event.preventDefault();
-              if (onRevealDesktopLyricsMenu) {
-                onRevealDesktopLyricsMenu();
-                return;
-              }
-
-              onUnlockDesktopLyrics?.();
+              onRevealDesktopLyricsMenu();
             }}
           >
             <Captions size={17} />

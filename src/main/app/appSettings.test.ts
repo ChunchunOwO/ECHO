@@ -298,6 +298,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ settingsOptionalSectionsVisible: 'true' as never }).settingsOptionalSectionsVisible).toBe(false);
   });
 
+  it('normalizes the upcoming track notice as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).upcomingTrackNoticeEnabled).toBe(false);
+    expect(normalizeSettings({ upcomingTrackNoticeEnabled: true }).upcomingTrackNoticeEnabled).toBe(true);
+    expect(normalizeSettings({ upcomingTrackNoticeEnabled: 'true' as never }).upcomingTrackNoticeEnabled).toBe(false);
+  });
+
   it('normalizes data protection disable as an explicit opt-in', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -1718,6 +1726,7 @@ describe('app settings normalization', () => {
       desktopLyricsTextDirection: 'horizontal',
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
+      desktopLyricsHideWhenNoLyricsEnabled: false,
     });
 
 
@@ -1753,6 +1762,7 @@ describe('app settings normalization', () => {
         desktopLyricsGradientStartColor: '#4f46e5',
         desktopLyricsGradientEndColor: '#ec4899',
         desktopLyricsTextDirection: 'vertical',
+        desktopLyricsHideWhenNoLyricsEnabled: true,
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
@@ -1774,7 +1784,7 @@ describe('app settings normalization', () => {
       lyricsImmersiveCoverGlassBlurPx: 13,
       lyricsSmartAlignmentEnabled: true,
       lyricsHighResolutionNetworkCoverEnabled: true,
-      lyricsMusicReactiveVisualsEnabled: true,
+      lyricsMusicReactiveVisualsEnabled: false,
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,
       lyricsCoverBlurPx: 13,
@@ -1785,6 +1795,7 @@ describe('app settings normalization', () => {
       desktopLyricsGradientStartColor: '#4F46E5',
       desktopLyricsGradientEndColor: '#EC4899',
       desktopLyricsTextDirection: 'vertical',
+      desktopLyricsHideWhenNoLyricsEnabled: true,
       lyricsRomanizationEnabled: true,
       lyricsTranslationEnabled: true,
       lyricsWordHighlightEnabled: true,

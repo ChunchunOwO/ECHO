@@ -2009,7 +2009,7 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
   });
 
-  it("renders the music reactive lyrics visual layer from live audio telemetry when enabled", async () => {
+  it("keeps the music reactive lyrics visual layer disabled even if old settings enabled it", async () => {
     const track = makeTrack({ coverId: "cover 1" });
     const { emitAudioStatus } = mockEcho(track, 0, {
       lyricsBackgroundMode: "cover",
@@ -2047,12 +2047,13 @@ describe("LyricsPage", () => {
     });
 
     const page = container.querySelector(".lyrics-page") as HTMLElement;
-    await waitFor(() => expect(page.dataset.musicReactive).toBe("beat"));
-    expect(page.dataset.musicReactiveTelemetry).toBe("pcm");
-    expect(container.querySelector(".lyrics-music-reactive-layer")).toBeTruthy();
-    expect(container.querySelectorAll(".lyrics-music-reactive-spectrum span")).toHaveLength(12);
-    expect(page.style.getPropertyValue("--lyrics-reactive-energy")).toBe("0.680");
-    expect(page.style.getPropertyValue("--lyrics-reactive-transient")).toBe("0.560");
+    await waitFor(() => expect(page.dataset.background).toBe("cover"));
+    expect(page.dataset.musicReactive).toBeUndefined();
+    expect(page.dataset.musicReactiveTelemetry).toBeUndefined();
+    expect(container.querySelector(".lyrics-music-reactive-layer")).toBeNull();
+    expect(container.querySelectorAll(".lyrics-music-reactive-spectrum span")).toHaveLength(0);
+    expect(page.style.getPropertyValue("--lyrics-reactive-energy")).toBe("");
+    expect(page.style.getPropertyValue("--lyrics-reactive-transient")).toBe("");
   });
 
   it("uses the current album cover as a full-page lyrics background when immersive cover style is enabled", async () => {

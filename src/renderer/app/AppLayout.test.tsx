@@ -11,6 +11,7 @@ import type { LibraryTrack } from '../../shared/types/library';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import { useAnimatedBackNavigation } from '../hooks/useAnimatedBackNavigation';
 import { setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
+import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -99,6 +100,43 @@ const unlockedDonatorStatus = {
 const setViewportSize = (width: number, height: number): void => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+};
+
+const track = (id: string, overrides: Partial<LibraryTrack> = {}): LibraryTrack => ({
+  id,
+  path: `D:\\Music\\${id}.flac`,
+  title: id,
+  artist: 'Artist',
+  album: 'Album',
+  albumArtist: 'Artist',
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: 180,
+  codec: null,
+  sampleRate: null,
+  bitDepth: null,
+  bitrate: null,
+  coverId: null,
+  coverThumb: null,
+  fieldSources: {},
+  ...overrides,
+});
+
+const QueueSetupProbe = ({ tracks, startTrackId }: { tracks: LibraryTrack[]; startTrackId: string }): JSX.Element => {
+  const queue = usePlaybackQueue();
+  const initializedRef = useRef(false);
+
+  useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+    queue.replaceQueue(tracks, { startTrackId });
+  }, [queue, startTrackId, tracks]);
+
+  return <div>Queue setup ready</div>;
 };
 
 const SharedStatusProbe = (): JSX.Element => {
@@ -504,6 +542,61 @@ describe('AppLayout standalone routes', () => {
     window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'This should stay hidden' }));
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  it('shows the upcoming track card near the end of the current song when enabled', async () => {
+    const getSettings = vi.fn().mockResolvedValue({
+      lyricsPlayerBarDrawerEnabled: false,
+      notificationsDisabled: false,
+      upcomingTrackNoticeEnabled: true,
+      smtcEnabled: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      diagnostics: {
+        getLastCrashSummary: vi.fn().mockResolvedValue(null),
+      },
+    } as unknown as Window['echo'];
+    const currentTrack = track('track-current', { title: 'Current Song' });
+    const nextTrack = track('track-next', {
+      title: 'Next Song',
+      artist: 'Next Artist',
+      album: 'Next Album',
+      coverThumb: 'echo-cover://thumb/next',
+    });
+
+    render(
+      <AppProviders>
+        <QueueSetupProbe tracks={[currentTrack, nextTrack]} startTrackId={currentTrack.id} />
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    await screen.findByText('Queue setup ready');
+
+    act(() => {
+      setPlaybackStatusSnapshot({
+        audioStatus: null,
+        playbackStatus: {
+          state: 'playing',
+          currentTrackId: currentTrack.id,
+          filePath: currentTrack.path,
+          positionMs: 171_000,
+          durationMs: 180_000,
+        },
+        error: null,
+      });
+    });
+
+    const notice = await screen.findByText('Next Song');
+    const card = notice.closest('.upcoming-track-notice') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('Next Artist');
+    expect(card.textContent).toContain('Next Album');
+    expect(within(card).getByRole('img', { name: /Next Song/ }).getAttribute('src')).toBe('echo-cover://thumb/next');
   });
 
   it('shows an upper-left thank-you notice when the donator unlock is verified', async () => {

@@ -21,6 +21,7 @@ import type { AudioStatus } from '../../shared/types/audio';
 import type { AccountProvider, AccountStatus } from '../../shared/types/accounts';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob } from '../../shared/types/downloads';
+import type { LibraryTrack } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { useI18n } from '../i18n/I18nProvider';
 import { likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
@@ -28,7 +29,7 @@ import type { TranslationKey } from '../i18n/locales';
 import { logLyricsConsole } from '../diagnostics/lyricsConsole';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import { clearSongsFirstPageSnapshot } from '../stores/songsFirstPageSnapshot';
-import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { usePlaybackQueue, type QueueItem } from '../stores/PlaybackQueueProvider';
 import { setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
@@ -352,11 +353,80 @@ const lyricsMiniPlayerAutoHideRevealBandPx = 164;
 const lyricsMiniPlayerAutoHideDelayMs = 280;
 const defaultChromeNoticeAutoHideMs = 5000;
 const quickAudioNoticeAutoHideMs = 1800;
+const upcomingTrackNoticeLeadSeconds = 10;
+const upcomingTrackNoticeAutoHideMs = 6400;
 const temporarilyBlockedRouteIds = new Set<AppRouteId>(['streaming']);
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 const readNotificationsDisabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.notificationsDisabled === true;
+const readUpcomingTrackNoticeEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.upcomingTrackNoticeEnabled === true;
+
+type UpcomingTrackNotice = {
+  key: string;
+  track: LibraryTrack;
+};
+
+const getPlaybackClock = (
+  snapshot: ReturnType<typeof useSharedPlaybackStatus>,
+): { state: string; trackId: string | null; positionSeconds: number; durationSeconds: number } | null => {
+  const audioStatus = snapshot.audioStatus;
+  if (audioStatus) {
+    return {
+      state: audioStatus.state,
+      trackId: audioStatus.currentTrackId,
+      positionSeconds: audioStatus.positionSeconds,
+      durationSeconds: audioStatus.durationSeconds,
+    };
+  }
+
+  const playbackStatus = snapshot.playbackStatus;
+  if (!playbackStatus) {
+    return null;
+  }
+
+  return {
+    state: playbackStatus.state,
+    trackId: playbackStatus.currentTrackId,
+    positionSeconds: playbackStatus.positionMs / 1000,
+    durationSeconds: playbackStatus.durationMs / 1000,
+  };
+};
+
+const findCurrentQueueIndex = (
+  items: QueueItem[],
+  currentQueueId: string | null,
+  currentTrackId: string | null,
+): number => {
+  const queueIndex = currentQueueId ? items.findIndex((item) => item.queueId === currentQueueId) : -1;
+  if (queueIndex >= 0) {
+    return queueIndex;
+  }
+  return currentTrackId ? items.findIndex((item) => item.track.id === currentTrackId) : -1;
+};
+
+const resolveUpcomingQueueItem = (
+  items: QueueItem[],
+  currentQueueId: string | null,
+  currentTrackId: string | null,
+  repeatMode: 'off' | 'one' | 'all',
+): QueueItem | null => {
+  if (items.length === 0 || repeatMode === 'one') {
+    return null;
+  }
+
+  const currentIndex = findCurrentQueueIndex(items, currentQueueId, currentTrackId);
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  if (currentIndex < items.length - 1) {
+    return items[currentIndex + 1] ?? null;
+  }
+
+  return repeatMode === 'all' ? items[0] ?? null : null;
+};
 
 const trimRateTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 
@@ -454,6 +524,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const suppressAccountExpiryNoticesRef = useRef(false);
   const [notificationsDisabled, setNotificationsDisabled] = useState(false);
   const notificationsDisabledRef = useRef(false);
+  const [upcomingTrackNoticeEnabled, setUpcomingTrackNoticeEnabled] = useState(false);
+  const upcomingTrackNoticeEnabledRef = useRef(false);
+  const [upcomingTrackNotice, setUpcomingTrackNotice] = useState<UpcomingTrackNotice | null>(null);
+  const [isUpcomingTrackNoticeVisible, setIsUpcomingTrackNoticeVisible] = useState(false);
+  const lastUpcomingTrackNoticeKeyRef = useRef<string | null>(null);
+  const lastUpcomingTrackPlaybackIdentityRef = useRef<string | null>(null);
   const [audioErrorNotice, setAudioErrorNotice] = useState<{ message: string } | null>(null);
   const [diagnosticsNotice, setDiagnosticsNotice] = useState(false);
   const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null);
@@ -1371,6 +1447,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     setChromeNotice(null);
     setIsChromeNoticeVisible(false);
     setAccountNotice(null);
+    setUpcomingTrackNotice(null);
+    setIsUpcomingTrackNoticeVisible(false);
     setAudioErrorNotice(null);
     setDiagnosticsNotice(false);
   }, []);
@@ -1453,6 +1531,88 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [showChromeNotice]);
 
   useEffect(() => {
+    if (!upcomingTrackNotice || notificationsDisabled || !upcomingTrackNoticeEnabled) {
+      return undefined;
+    }
+
+    setIsUpcomingTrackNoticeVisible(true);
+
+    const timer = window.setTimeout(() => {
+      setIsUpcomingTrackNoticeVisible(false);
+    }, upcomingTrackNoticeAutoHideMs);
+
+    return () => window.clearTimeout(timer);
+  }, [notificationsDisabled, upcomingTrackNotice, upcomingTrackNoticeEnabled]);
+
+  useEffect(() => {
+    if (!upcomingTrackNotice || isUpcomingTrackNoticeVisible) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setUpcomingTrackNotice(null);
+    }, 220);
+
+    return () => window.clearTimeout(timer);
+  }, [isUpcomingTrackNoticeVisible, upcomingTrackNotice]);
+
+  useEffect(() => {
+    if (notificationsDisabledRef.current || !upcomingTrackNoticeEnabledRef.current) {
+      return;
+    }
+
+    const clock = getPlaybackClock(playbackStatusSnapshot);
+    if (!clock || clock.state !== 'playing') {
+      return;
+    }
+
+    const durationSeconds = Number.isFinite(clock.durationSeconds) ? clock.durationSeconds : 0;
+    const positionSeconds = Number.isFinite(clock.positionSeconds) ? clock.positionSeconds : 0;
+    const remainingSeconds = durationSeconds - positionSeconds;
+    if (
+      durationSeconds <= upcomingTrackNoticeLeadSeconds ||
+      positionSeconds < 0 ||
+      remainingSeconds <= 0 ||
+      remainingSeconds > upcomingTrackNoticeLeadSeconds
+    ) {
+      return;
+    }
+
+    const currentIdentity = clock.trackId ?? playbackQueue.currentQueueId ?? playbackQueue.currentTrackId ?? 'unknown';
+    if (lastUpcomingTrackPlaybackIdentityRef.current !== currentIdentity) {
+      lastUpcomingTrackPlaybackIdentityRef.current = currentIdentity;
+      lastUpcomingTrackNoticeKeyRef.current = null;
+    }
+
+    const upcomingItem = resolveUpcomingQueueItem(
+      playbackQueue.items,
+      playbackQueue.currentQueueId,
+      clock.trackId ?? playbackQueue.currentTrackId,
+      playbackQueue.repeatMode,
+    );
+    if (!upcomingItem) {
+      return;
+    }
+
+    const noticeKey = `${currentIdentity}->${upcomingItem.queueId}:${upcomingItem.track.id}`;
+    if (lastUpcomingTrackNoticeKeyRef.current === noticeKey) {
+      return;
+    }
+
+    lastUpcomingTrackNoticeKeyRef.current = noticeKey;
+    setUpcomingTrackNotice({
+      key: noticeKey,
+      track: upcomingItem.track,
+    });
+  }, [
+    playbackQueue.currentQueueId,
+    playbackQueue.currentTrackId,
+    playbackQueue.items,
+    playbackQueue.repeatMode,
+    playbackStatusSnapshot,
+  ]);
+
+  useEffect(() => {
     if (!accountNotice) {
       return undefined;
     }
@@ -1486,6 +1646,16 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         setNotificationsDisabled(disabled);
         if (disabled) {
           clearNotificationNotices();
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(settings, 'upcomingTrackNoticeEnabled')) {
+        const enabled = readUpcomingTrackNoticeEnabled(settings);
+        upcomingTrackNoticeEnabledRef.current = enabled;
+        setUpcomingTrackNoticeEnabled(enabled);
+        if (!enabled) {
+          setUpcomingTrackNotice(null);
+          setIsUpcomingTrackNoticeVisible(false);
         }
       }
     };
@@ -2434,21 +2604,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
   }, [desktopLyricsVisible]);
 
-  const handleUnlockDesktopLyrics = useCallback(async (): Promise<void> => {
-    const desktopLyrics = window.echo?.desktopLyrics;
-    if (!desktopLyrics || !desktopLyricsLocked) {
-      return;
-    }
-
-    try {
-      const state = await desktopLyrics.setLocked(false);
-      setDesktopLyricsVisible(state.visible === true);
-      setDesktopLyricsLocked(state.locked === true);
-    } catch {
-      setDesktopLyricsLocked((current) => current);
-    }
-  }, [desktopLyricsLocked]);
-
   const handleRevealDesktopLyricsMenu = useCallback(async (): Promise<void> => {
     const desktopLyrics = window.echo?.desktopLyrics;
     if (!desktopLyrics?.revealMenu) {
@@ -2456,12 +2611,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
 
     try {
-      if (desktopLyricsLocked) {
-        const unlockedState = await desktopLyrics.setLocked(false);
-        setDesktopLyricsVisible(unlockedState.visible === true);
-        setDesktopLyricsLocked(unlockedState.locked === true);
-      }
-
       const state = await desktopLyrics.revealMenu();
       setDesktopLyricsVisible(state.visible === true);
       setDesktopLyricsLocked(state.locked === true);
@@ -2469,7 +2618,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       setDesktopLyricsVisible((current) => current);
       setDesktopLyricsLocked((current) => current);
     }
-  }, [desktopLyricsLocked]);
+  }, []);
 
   return (
     <div
@@ -2648,6 +2797,40 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         </div>
       ) : null}
 
+      {!notificationsDisabled && upcomingTrackNotice ? (
+        <div className={`chrome-notice upcoming-track-notice ${isUpcomingTrackNoticeVisible ? 'is-visible' : 'is-hiding'}`} role="status" aria-live="polite">
+          <div className="upcoming-track-notice__cover" data-empty={!upcomingTrackNotice.track.coverThumb}>
+            {upcomingTrackNotice.track.coverThumb ? (
+              <img
+                alt={t('notice.upcomingTrack.coverAlt', { title: upcomingTrackNotice.track.title })}
+                src={upcomingTrackNotice.track.coverThumb}
+              />
+            ) : (
+              <span aria-hidden="true" />
+            )}
+          </div>
+          <div className="upcoming-track-notice__copy">
+            <span>{t('notice.upcomingTrack.kicker')}</span>
+            <strong title={upcomingTrackNotice.track.title}>{upcomingTrackNotice.track.title}</strong>
+            <em title={upcomingTrackNotice.track.artist || t('queue.unknownArtist')}>
+              {upcomingTrackNotice.track.artist || t('queue.unknownArtist')}
+            </em>
+            <small title={upcomingTrackNotice.track.album || t('queue.unknownAlbum')}>
+              {upcomingTrackNotice.track.album || t('queue.unknownAlbum')}
+            </small>
+          </div>
+          <button
+            className="chrome-notice-close"
+            type="button"
+            aria-label={t('notice.action.closeNotice')}
+            title={t('notice.action.closeNotice')}
+            onClick={() => setIsUpcomingTrackNoticeVisible(false)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+
       {!notificationsDisabled && diagnosticsNotice ? (
         <div className="chrome-notice chrome-notice--diagnostics" role="status">
           <span>{t('notice.diagnosticsCrash.description')}</span>
@@ -2728,7 +2911,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >
           <PlayerBar
-            desktopLyricsLocked={desktopLyricsLocked}
             desktopLyricsVisible={desktopLyricsVisible}
             hasDesktopLyricsBridge={hasDesktopLyricsBridge}
             onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
@@ -2737,7 +2919,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             showSignalPathControl={!isLyricsRoute && signalPathControlEnabled}
             onRevealDesktopLyricsMenu={() => void handleRevealDesktopLyricsMenu()}
             onToggleDesktopLyrics={handleToggleDesktopLyrics}
-            onUnlockDesktopLyrics={handleUnlockDesktopLyrics}
           />
         </div>
       ) : null}

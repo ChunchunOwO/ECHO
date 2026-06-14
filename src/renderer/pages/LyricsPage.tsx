@@ -59,7 +59,11 @@ import { beginPlaybackSeekSnapshot, refreshPlaybackStatus, useSharedPlaybackStat
 import { logLyricsConsole } from "../diagnostics/lyricsConsole";
 import { openAlbumDetailForTrack } from "../utils/albumNavigation";
 import { serializeFontList } from "../preferences/appearancePreferences";
-import { createMusicReactiveScene, musicReactiveSceneToCssVars } from "../../shared/utils/musicReactiveScene";
+import {
+  createMusicReactiveScene,
+  musicReactiveSceneToCssVars,
+  musicReactiveVisualsFeatureEnabled,
+} from "../../shared/utils/musicReactiveScene";
 
 type LyricsPageProps = {
   initialLyrics?: LyricLine[];
@@ -2022,6 +2026,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     [activeAudioStatus],
   );
   const shouldUseMusicReactiveVisuals =
+    musicReactiveVisualsFeatureEnabled &&
     lyricsDisplaySettings.lyricsMusicReactiveVisualsEnabled === true &&
     lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true &&
     lyricsViewMode === "lyrics";

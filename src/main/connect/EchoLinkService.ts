@@ -858,19 +858,19 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       right: 0;
       bottom: 0;
       z-index: 2;
-      min-height: 64px;
+      min-height: 54px;
       margin: 0;
-      padding: 12px 12px 42px;
+      padding: 9px 11px 34px;
       border: 0;
       border-radius: 0;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.74);
       backdrop-filter: none;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
     }
     .album-card[data-focused="true"] .album-copy,
     .album-card[data-spotlight="true"] .album-copy {
-      background: rgba(0, 0, 0, 0.65);
-      backdrop-filter: blur(12px) saturate(1.08);
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(7px) saturate(1.05);
     }
     .album-copy strong, .album-copy span {
       display: -webkit-box;
@@ -881,22 +881,22 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       -webkit-line-clamp: 2;
       padding-right: 26px;
       color: var(--text);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
-      line-height: 1.5;
+      line-height: 1.26;
       text-shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
     .album-copy span {
-      margin-top: 4px;
+      margin-top: 3px;
       -webkit-line-clamp: 1;
       color: rgba(255, 255, 255, 0.6);
-      font-size: 11px;
-      line-height: 1.5;
+      font-size: 10px;
+      line-height: 1.28;
     }
     .album-more {
       position: absolute;
-      top: 10px;
-      right: 10px;
+      top: 8px;
+      right: 8px;
       display: grid;
       width: 22px;
       height: 22px;
@@ -916,15 +916,15 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     }
     .album-mini-controls {
       position: absolute;
-      left: 12px;
-      right: 12px;
-      bottom: 12px;
+      left: 10px;
+      right: 10px;
+      bottom: 8px;
       z-index: 4;
       display: grid;
       grid-template-columns: 1fr 1.18fr 1fr 1fr;
       align-items: center;
       justify-items: center;
-      gap: 4px;
+      gap: 3px;
       margin-top: 0;
     }
     .album-mini-controls i,
@@ -932,8 +932,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       position: relative;
       display: grid;
       width: 100%;
-      max-width: 28px;
-      height: 26px;
+      max-width: 24px;
+      height: 23px;
       place-items: center;
       border: 0;
       border-radius: 999px;
@@ -944,9 +944,9 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       font-weight: 900;
     }
     .album-mini-controls i {
-      width: 30px;
-      max-width: 30px;
-      height: 30px;
+      width: 27px;
+      max-width: 27px;
+      height: 27px;
       color: rgba(255, 255, 255, 0.9);
       border-color: transparent;
       background: rgba(255,255,255,0.15);
@@ -1035,23 +1035,29 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         radial-gradient(circle at center, transparent 44%, #071210 46%, #071210 54%, transparent 56%),
         rgba(155, 232, 244, 0.94);
     }
+    .stage[data-moving="true"] .album-card,
     .stage[data-dragging="true"] .album-card {
       transition: none;
-      will-change: transform, opacity;
-      filter: blur(var(--display-blur, var(--card-blur, 0.5px)));
+      will-change: transform;
+      filter: none;
       box-shadow: 0 8px 22px rgba(0,0,0,0.24);
     }
+    .stage[data-moving="true"] .album-card[data-spotlight="true"],
     .stage[data-dragging="true"] .album-card[data-spotlight="true"] {
       box-shadow: 0 28px 72px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.1);
     }
+    .stage[data-moving="true"] .album-card::before,
+    .stage[data-moving="true"] .album-card::after,
     .stage[data-dragging="true"] .album-card::before,
     .stage[data-dragging="true"] .album-card::after {
       opacity: 0.12;
     }
+    .stage[data-moving="true"] .album-copy,
     .stage[data-dragging="true"] .album-copy {
       background: rgba(0,0,0,0.76);
       backdrop-filter: none;
     }
+    .stage[data-moving="true"] .album-mural,
     .stage[data-dragging="true"] .album-mural {
       filter: none;
     }
@@ -1244,29 +1250,29 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         width: var(--card-w, 132px);
       }
       .album-copy {
-        min-height: 74px;
-        padding: 11px 10px 38px;
+        min-height: 52px;
+        padding: 8px 9px 32px;
       }
       .album-copy strong {
-        font-size: 13px;
+        font-size: 11.5px;
       }
       .album-copy span {
-        font-size: 11.5px;
+        font-size: 10px;
       }
       .album-mini-controls {
         left: 10px;
         right: 10px;
-        bottom: 9px;
+        bottom: 7px;
       }
       .album-mini-controls i,
       .album-mini-controls em {
-        max-width: 24px;
-        height: 25px;
+        max-width: 22px;
+        height: 22px;
       }
       .album-mini-controls i {
-        width: 28px;
-        max-width: 28px;
-        height: 28px;
+        width: 25px;
+        max-width: 25px;
+        height: 25px;
       }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -1346,6 +1352,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       velocityY: 0,
       momentumFrame: 0,
       panFrame: 0,
+      wheelIdleTimer: 0,
       clickTimer: 0,
       playingAlbumId: null,
       commandBusy: 0,
@@ -1361,7 +1368,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
     };
     const $ = (id) => document.getElementById(id);
     const stage = document.querySelector('.stage');
-    const maxRenderedAlbums = window.innerWidth >= 1700 ? 168 : 132;
+    const maxRenderedAlbums = window.innerWidth >= 1700 ? 132 : 100;
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const fmt = (ms) => {
       const safe = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -1638,8 +1645,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       state.focusClientY = clamp(y, 0, window.innerHeight);
     };
     const focusWorldPoint = () => ({
-      x: (window.innerWidth / 2 + (state.focusClientX - window.innerWidth / 2) * (state.drag ? 0.34 : 0)) - window.innerWidth / 2 - state.panX,
-      y: (window.innerHeight / 2 + (state.focusClientY - window.innerHeight / 2) * (state.drag ? 0.34 : 0)) - window.innerHeight / 2 - state.panY,
+      x: (window.innerWidth / 2 + (state.focusClientX - window.innerWidth / 2) * 0.24) - window.innerWidth / 2 - state.panX,
+      y: (window.innerHeight / 2 + (state.focusClientY - window.innerHeight / 2) * 0.24) - window.innerHeight / 2 - state.panY,
     });
     const stopMomentum = () => {
       if (state.momentumFrame) {
@@ -1652,15 +1659,21 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       }
       state.velocityX = 0;
       state.velocityY = 0;
+      if (stage && !state.drag) {
+        delete stage.dataset.moving;
+      }
     };
     const startMomentum = () => {
       if (reduceMotion || Math.abs(state.velocityX) + Math.abs(state.velocityY) < 0.45) {
         stopMomentum();
         return;
       }
+      if (stage) {
+        stage.dataset.moving = 'true';
+      }
       const step = () => {
-        state.velocityX *= 0.935;
-        state.velocityY *= 0.935;
+        state.velocityX *= 0.948;
+        state.velocityY *= 0.948;
         const nextX = state.panX + state.velocityX;
         const nextY = state.panY + state.velocityY;
         const constrained = constrainPan(nextX, nextY);
@@ -1673,7 +1686,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         state.panX = constrained.x;
         state.panY = constrained.y;
         applyPan();
-        if (Math.abs(state.velocityX) + Math.abs(state.velocityY) < 0.18) {
+        if (Math.abs(state.velocityX) + Math.abs(state.velocityY) < 0.14) {
           stopMomentum();
           return;
         }
@@ -1696,8 +1709,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const count = Math.max(1, Math.min(maxRenderedAlbums, state.albums.length));
       const wide = window.innerWidth >= 760;
       const aspect = Math.max(0.72, Math.min(2.2, window.innerWidth / Math.max(1, window.innerHeight)));
-      layout.cellW = wide ? 172 : 122;
-      layout.cellH = wide ? 242 : 172;
+      layout.cellW = wide ? 204 : 144;
+      layout.cellH = wide ? 286 : 204;
       layout.cols = wide
         ? Math.max(13, Math.ceil(Math.sqrt(count * aspect * 1.18)))
         : Math.max(8, Math.ceil(Math.sqrt(count * aspect * 0.8)));
@@ -2014,6 +2027,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const viewRight = -state.panX + window.innerWidth + viewPad;
       const viewBottom = -state.panY + window.innerHeight + viewPad;
       const dragging = Boolean(state.drag);
+      const moving = dragging || stage?.dataset.moving === 'true';
       const visible = [];
       for (const meta of state.renderedCards) {
         if (meta.x > viewRight || meta.x + meta.w < viewLeft || meta.y > viewBottom || meta.y + meta.h < viewTop) {
@@ -2043,16 +2057,16 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
         const focus = item.focus;
         const halo = item.halo;
         const isSpotlight = spotlight?.meta === meta;
-        const spotlightBoost = isSpotlight ? (dragging ? 0.07 : 0.04) : 0;
-        const displayScale = Math.min(dragging ? 1.26 : 1.24, meta.baseScale * (1 + focus * (dragging ? 0.52 : 0.44) + spotlightBoost));
+        const spotlightBoost = isSpotlight ? (moving ? 0.04 : 0.035) : 0;
+        const displayScale = Math.min(moving ? 1.18 : 1.2, meta.baseScale * (1 + focus * (moving ? 0.38 : 0.42) + spotlightBoost));
         const displayOpacity = clamp(meta.baseOpacity + halo * (1 - meta.baseOpacity) * 0.92 + focus * 0.08, 0.28, 1);
-        const minBlur = meta.layer === 'front' ? 0.45 : 0.5;
-        const blurCeiling = dragging ? 1.75 : meta.baseBlur;
-        const displayBlur = Math.min(blurCeiling, Math.max(minBlur, meta.baseBlur - focus * meta.baseBlur * 0.84));
+        const minBlur = moving ? 0 : (meta.layer === 'front' ? 0.18 : 0.25);
+        const blurCeiling = moving ? 0 : Math.min(1.45, meta.baseBlur);
+        const displayBlur = moving ? 0 : Math.min(blurCeiling, Math.max(minBlur, meta.baseBlur - focus * meta.baseBlur * 0.9));
         const displayZ = Math.round(meta.baseZ + focus * 320 + halo * 30 + (isSpotlight ? 230 : 0));
         const flatten = 1 - focus * 0.92;
         const repelDistance = Math.max(1, item.distance);
-        const repel = dragging ? halo * 48 * (1 - focus * 0.35) : 0;
+        const repel = moving ? halo * 28 * (1 - focus * 0.35) : 0;
         const repelX = Math.round((item.dx / repelDistance) * repel);
         const repelY = Math.round((item.dy / repelDistance) * repel * 0.5);
         const focusYOffset = -Math.round(focus * (isSpotlight ? 26 : 20)) + repelY;
@@ -2079,17 +2093,19 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const kept = [];
       for (const update of updates.slice().sort((a, b) => b.displayZ - a.displayZ)) {
         let occluded = false;
-        for (const other of kept) {
-          const overlapX = Math.max(0, Math.min(update.box.x + update.box.width, other.box.x + other.box.width) - Math.max(update.box.x, other.box.x));
-          const overlapY = Math.max(0, Math.min(update.box.y + update.box.height, other.box.y + other.box.height) - Math.max(update.box.y, other.box.y));
-          const overlapArea = overlapX * overlapY;
-          if (overlapArea <= 1) {
-            continue;
-          }
-          const overlapRatio = overlapArea / Math.min(update.box.width * update.box.height, other.box.width * other.box.height);
-          if (overlapRatio > 0.18 && update.focus < other.focus + 0.18) {
-            occluded = true;
-            break;
+        if (!moving) {
+          for (const other of kept) {
+            const overlapX = Math.max(0, Math.min(update.box.x + update.box.width, other.box.x + other.box.width) - Math.max(update.box.x, other.box.x));
+            const overlapY = Math.max(0, Math.min(update.box.y + update.box.height, other.box.y + other.box.height) - Math.max(update.box.y, other.box.y));
+            const overlapArea = overlapX * overlapY;
+            if (overlapArea <= 1) {
+              continue;
+            }
+            const overlapRatio = overlapArea / Math.min(update.box.width * update.box.height, other.box.width * other.box.height);
+            if (overlapRatio > 0.18 && update.focus < other.focus + 0.18) {
+              occluded = true;
+              break;
+            }
           }
         }
         if (occluded) {
@@ -2128,8 +2144,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const depth = seeded(index, 10);
       const backIndex = index;
       const far = depth < 0.48;
-      const baseSize = far ? (wide ? 116 : 78) : (wide ? 130 : 92);
-      const size = Math.round(baseSize + seeded(index, 1) * (wide ? 30 : 20));
+      const baseSize = far ? (wide ? 122 : 80) : (wide ? 140 : 98);
+      const size = Math.round(baseSize + seeded(index, 1) * (wide ? 26 : 18));
       const slotCount = Math.max(1, layout.cols * layout.rows);
       const slot = (backIndex * albumSlotStride(slotCount) + Math.floor((state.randomSeed % 997) / 997 * slotCount)) % slotCount;
       const col = slot % layout.cols;
@@ -2162,8 +2178,8 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const sparkle = far ? 0.26 + seeded(index, 12) * 0.22 : 0.36 + seeded(index, 12) * 0.26;
       const pitch = far ? (seeded(index, 14) - 0.5) * 2.8 : (seeded(index, 14) - 0.5) * 1.4;
       const yaw = far ? (seeded(index, 16) - 0.5) * 3.6 : (seeded(index, 16) - 0.5) * 2;
-      const ratio = far ? 1.38 : 1.42;
-      const blur = far ? 3.5 : 2.2;
+      const ratio = far ? 1.32 : 1.34;
+      const blur = far ? 1.2 : 0.65;
       return '--card-x:' + x + 'px;--card-y:' + y + 'px;--card-w:' + size + 'px;--card-ratio:' + ratio.toFixed(2) + ';--card-blur:' + blur + 'px;--tilt:' + tilt.toFixed(2) + 'deg;--opacity:' + opacity.toFixed(3) + ';--card-scale:' + scale.toFixed(3) + ';--depth-y:' + depthY + 'px;--depth-z:' + depthZ + 'px;--pitch:' + pitch.toFixed(2) + 'deg;--yaw:' + yaw.toFixed(2) + 'deg;--card-z:' + z + ';--card-bright:' + bright.toFixed(2) + ';--card-sat:' + sat.toFixed(2) + ';--card-shadow:' + shadow.toFixed(2) + ';--spark-scale:' + sparkle.toFixed(2);
     };
     const renderAlbums = () => {
@@ -2433,6 +2449,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       $('seaViewport').setPointerCapture(event.pointerId);
       if (stage) {
         stage.dataset.dragging = 'true';
+        stage.dataset.moving = 'true';
       }
     });
     $('seaViewport').addEventListener('pointermove', (event) => {
@@ -2453,7 +2470,7 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       if (state.dragMoved) {
         state.suppressClickUntil = Date.now() + 180;
       }
-      const constrained = constrainPan(state.drag.panX + dx, state.drag.panY + dy, 0.36);
+      const constrained = constrainPan(state.drag.panX + dx, state.drag.panY + dy, 0);
       state.panX = constrained.x;
       state.panY = constrained.y;
       requestPan();
@@ -2482,11 +2499,17 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
           clearClickTimer();
           playAlbum(album).catch((error) => toast(error.message));
           window.setTimeout(() => { state.dragMoved = false; }, 0);
+          if (stage) {
+            delete stage.dataset.moving;
+          }
           return;
         }
         if (album) {
           handleAlbumTap(album, event.clientX, event.clientY);
         }
+      }
+      if (!state.dragMoved && stage) {
+        delete stage.dataset.moving;
       }
       window.setTimeout(() => { state.dragMoved = false; }, 0);
     };
@@ -2509,10 +2532,20 @@ const createWebControlHtml = (token: string): string => `<!doctype html>
       const dx = event.shiftKey && Math.abs(event.deltaX) < Math.abs(event.deltaY) ? event.deltaY : event.deltaX;
       const dy = event.shiftKey ? 0 : event.deltaY;
       setFocusClientPoint(event.clientX, event.clientY);
-      const constrained = constrainPan(state.panX - dx, state.panY - dy, 0.18);
+      if (stage) {
+        stage.dataset.moving = 'true';
+      }
+      const constrained = constrainPan(state.panX - dx, state.panY - dy, 0);
       state.panX = constrained.x;
       state.panY = constrained.y;
       requestPan();
+      window.clearTimeout(state.wheelIdleTimer);
+      state.wheelIdleTimer = window.setTimeout(() => {
+        if (stage && !state.drag && !state.momentumFrame) {
+          delete stage.dataset.moving;
+          requestPan();
+        }
+      }, 120);
     }, { passive: false });
     $('seaViewport').addEventListener('dblclick', (event) => {
       const card = event.target.closest?.('.album-card');

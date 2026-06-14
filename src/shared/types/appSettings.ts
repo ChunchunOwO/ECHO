@@ -242,6 +242,7 @@ export type AppSettings = {
   autoAccountCheckOnStartup?: boolean;
   suppressAccountExpiryNotices?: boolean;
   notificationsDisabled?: boolean;
+  upcomingTrackNoticeEnabled?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;
   spotifyClientId?: string | null;
   spotifyRedirectUri?: string | null;
@@ -361,6 +362,7 @@ export type AppSettings = {
   desktopLyricsTextDirection?: LyricsTextDirection;
   desktopLyricsRomanizationEnabled?: boolean;
   desktopLyricsTranslationEnabled?: boolean;
+  desktopLyricsHideWhenNoLyricsEnabled?: boolean;
   desktopLyricsBounds?: DesktopLyricsBounds | null;
   miniPlayerEnabled?: boolean;
   miniPlayerLocked?: boolean;

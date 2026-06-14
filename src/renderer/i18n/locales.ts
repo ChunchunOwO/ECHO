@@ -1646,6 +1646,8 @@ export type TranslationKey =
   | 'notice.audioError.title'
   | 'notice.audioDefaultFormatWarning'
   | 'notice.diagnosticsCrash.description'
+  | 'notice.upcomingTrack.coverAlt'
+  | 'notice.upcomingTrack.kicker'
   | 'notice.importFiles.empty'
   | 'notice.importFiles.failed'
   | 'notice.importFiles.imported'
@@ -2075,6 +2077,8 @@ export type TranslationKey =
   | 'lyricsSettings.display.customColor'
   | 'lyricsSettings.display.defaultMicrosoftYahei'
   | 'lyricsSettings.display.desktopFont'
+  | 'lyricsSettings.display.desktopHideWhenNoLyrics'
+  | 'lyricsSettings.display.desktopHideWhenNoLyricsDescription'
   | 'lyricsSettings.display.desktopLyrics'
   | 'lyricsSettings.display.desktopLyricsDescription'
   | 'lyricsSettings.display.desktopOpacity'
@@ -2928,6 +2932,8 @@ export type TranslationKey =
   | 'settings.general.featureCommentsHidden.title'
   | 'settings.general.notificationsDisabled.description'
   | 'settings.general.notificationsDisabled.title'
+  | 'settings.general.upcomingTrackNotice.description'
+  | 'settings.general.upcomingTrackNotice.title'
   | 'settings.general.trackContextMenuExtraActions.description'
   | 'settings.general.trackContextMenuExtraActions.title'
   | 'settings.general.touchKeyboard.description'
@@ -6737,6 +6743,8 @@ const zhCN: TranslationMap = {
   'notice.audioError.title': '音频错误',
   'notice.audioDefaultFormatWarning': '音频设置提醒：Windows 默认格式设置偏高，当前是 {rate}。ECHO 只会提醒，不会修改系统设置；建议改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。请复制报告丢给 AI 判断问题。',
+  'notice.upcomingTrack.coverAlt': '{title} 的封面',
+  'notice.upcomingTrack.kicker': '下一首即将播放',
   'notice.importFiles.empty': '没有可导入的音频文件。',
   'notice.importFiles.failed': '{count} 个文件导入失败',
   'notice.importFiles.imported': '已入库 {count} 个文件',
@@ -7533,6 +7541,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.customColor': '自定义颜色',
   'lyricsSettings.display.defaultMicrosoftYahei': '默认微软雅黑，可换系统字体',
   'lyricsSettings.display.desktopFont': '桌面歌词字体',
+  'lyricsSettings.display.desktopHideWhenNoLyrics': '无歌词时隐藏桌面歌词',
+  'lyricsSettings.display.desktopHideWhenNoLyricsDescription': '当前歌曲没有歌词或标记为纯音乐时，桌面歌词窗口不显示“暂无歌词 / 纯音乐”占位文字。',
   'lyricsSettings.display.desktopLyrics': '桌面歌词',
   'lyricsSettings.display.desktopLyricsDescription': '开启后用独立透明窗口在桌面置顶显示当前歌词。',
   'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
@@ -8366,6 +8376,8 @@ const zhCN: TranslationMap = {
   'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
   'settings.general.notificationsDisabled.title': '关闭所有通知',
   'settings.general.notificationsDisabled.description': '开启后禁用 ECHO 内的提醒卡片、左上角通知和播放栏通知。默认关闭。',
+  'settings.general.upcomingTrackNotice.title': '下一首预告',
+  'settings.general.upcomingTrackNotice.description': '开启后，每首歌快播完时在左上角显示下一首的封面、歌曲名、艺人和专辑。默认关闭。',
   'settings.general.trackContextMenuExtraActions.title': '右键菜单扩展动作',
   'settings.general.trackContextMenuExtraActions.description': '开启后在曲目右键菜单中显示 osu! Timing、使用系统默认应用打开、复制/保存歌曲卡片图片。默认隐藏以保持菜单精简。',
   'settings.general.touchKeyboard.title': '启用屏幕键盘',
@@ -9642,6 +9654,8 @@ const zhTW: TranslationMap = {
   'notice.audioError.title': '音訊錯誤',
   'notice.audioDefaultFormatWarning': '音訊設定提醒：Windows 預設格式設定偏高，目前是 {rate}。ECHO 只會提醒，不會修改系統設定；建議改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 未正常結束，已準備 Markdown 報告用於排查。請複製報告丟給 AI 判斷問題。',
+  'notice.upcomingTrack.coverAlt': '{title} 的封面',
+  'notice.upcomingTrack.kicker': '下一首即將播放',
   'notice.importFiles.empty': '沒有可匯入的音訊檔案。',
   'notice.importFiles.failed': '{count} 個檔案匯入失敗',
   'notice.importFiles.imported': '已加入曲庫 {count} 個檔案',
@@ -11164,6 +11178,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.customColor': '自訂顏色',
   'lyricsSettings.display.defaultMicrosoftYahei': '預設微軟雅黑，可換系統字體',
   'lyricsSettings.display.desktopFont': '桌面歌詞字體',
+  'lyricsSettings.display.desktopHideWhenNoLyrics': '無歌詞時隱藏桌面歌詞',
+  'lyricsSettings.display.desktopHideWhenNoLyricsDescription': '目前歌曲沒有歌詞或標記為純音樂時，桌面歌詞視窗不顯示「暫無歌詞 / 純音樂」佔位文字。',
   'lyricsSettings.display.desktopLyrics': '桌面歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '開啟後用獨立透明視窗在桌面置頂顯示目前歌詞。',
   'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
@@ -12025,6 +12041,8 @@ const zhTW: TranslationMap = {
   'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
   'settings.general.notificationsDisabled.title': '關閉所有通知',
   'settings.general.notificationsDisabled.description': '開啟後停用 ECHO 內的提醒卡片、左上角通知和播放列通知。預設關閉。',
+  'settings.general.upcomingTrackNotice.title': '下一首預告',
+  'settings.general.upcomingTrackNotice.description': '開啟後，每首歌快播完時在左上角顯示下一首的封面、歌曲名、藝人和專輯。預設關閉。',
   'settings.general.trackContextMenuExtraActions.title': '右鍵選單擴充操作',
   'settings.general.trackContextMenuExtraActions.description': '開啟後在曲目右鍵選單中顯示 osu! Timing、使用系統預設應用程式打開、複製/儲存歌曲卡片圖片。預設隱藏以保持選單精簡。',
   'settings.general.touchKeyboard.title': '啟用螢幕鍵盤',
@@ -13087,6 +13105,8 @@ const jaJP: TranslationMap = {
   'notice.audioError.title': '音声エラー',
   'notice.audioDefaultFormatWarning': '音声設定の通知: Windows の既定形式が高めです。現在は {rate} です。ECHO は通知のみを行い、システム設定は変更しません。48 kHz への変更をおすすめします。',
   'notice.diagnosticsCrash.description': '前回 ECHO Next は正常終了しませんでした。調査用の Markdown レポートを準備しました。レポートをコピーして AI に貼り付け、問題の判断に使ってください。',
+  'notice.upcomingTrack.coverAlt': '{title} のカバー',
+  'notice.upcomingTrack.kicker': '次に再生',
   'notice.importFiles.empty': '取り込める音声ファイルがありません。',
   'notice.importFiles.failed': '{count} 個のファイルの取り込みに失敗しました',
   'notice.importFiles.imported': '{count} 個のファイルをライブラリに追加しました',
@@ -14625,6 +14645,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.customColor': 'カスタム色',
   'lyricsSettings.display.defaultMicrosoftYahei': '既定は Microsoft YaHei。システムフォントに変更できます',
   'lyricsSettings.display.desktopFont': 'デスクトップ歌詞フォント',
+  'lyricsSettings.display.desktopHideWhenNoLyrics': '歌詞がないときはデスクトップ歌詞を隠す',
+  'lyricsSettings.display.desktopHideWhenNoLyricsDescription': '現在の曲に歌詞がない、またはインスト曲としてマークされている場合、「歌詞なし / インスト」のプレースホルダーを表示しません。',
   'lyricsSettings.display.desktopLyrics': 'デスクトップ歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '独立した透明ウィンドウで現在の歌詞をデスクトップ最前面に表示します。',
   'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
@@ -15517,6 +15539,8 @@ const jaJP: TranslationMap = {
   'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
   'settings.general.notificationsDisabled.title': 'すべての通知をオフ',
   'settings.general.notificationsDisabled.description': '有効にすると、ECHO の通知カード、左上の通知、プレイヤーバー通知を表示しません。既定ではオフです。',
+  'settings.general.upcomingTrackNotice.title': '次の曲の通知',
+  'settings.general.upcomingTrackNotice.description': '有効にすると、各曲の終わりが近づいたとき、左上に次の曲のカバー、曲名、アーティスト、アルバムを表示します。既定ではオフです。',
   'settings.general.trackContextMenuExtraActions.title': '右クリックメニューの追加操作',
   'settings.general.trackContextMenuExtraActions.description': '有効にすると、曲目の右クリックメニューに osu! Timing、システム既定アプリで開く、曲カード画像のコピー/保存を表示します。メニューを短く保つため既定では非表示です。',
   'settings.general.touchKeyboard.title': 'スクリーンキーボードを有効化',
@@ -16612,6 +16636,8 @@ const enUS: TranslationMap = {
   'notice.audioError.title': 'Audio Error',
   'notice.audioDefaultFormatWarning': 'Audio settings reminder: the Windows default format looks too high at {rate}. ECHO will only warn you and will not change system settings; 48 kHz is recommended.',
   'notice.diagnosticsCrash.description': 'ECHO Next did not exit normally last time. A Markdown report is ready for troubleshooting. Copy the report and paste it into AI to identify the problem.',
+  'notice.upcomingTrack.coverAlt': 'Cover for {title}',
+  'notice.upcomingTrack.kicker': 'Up next',
   'notice.importFiles.empty': 'No audio files can be imported.',
   'notice.importFiles.failed': '{count} files failed to import',
   'notice.importFiles.imported': 'Imported {count} files into the library',
@@ -18150,6 +18176,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.customColor': 'Custom color',
   'lyricsSettings.display.defaultMicrosoftYahei': 'Defaults to Microsoft YaHei; you can switch to a system font',
   'lyricsSettings.display.desktopFont': 'Desktop lyrics font',
+  'lyricsSettings.display.desktopHideWhenNoLyrics': 'Hide desktop lyrics when no lyrics',
+  'lyricsSettings.display.desktopHideWhenNoLyricsDescription': 'When the current track has no lyrics or is marked instrumental, the desktop lyrics window will not show placeholder text.',
   'lyricsSettings.display.desktopLyrics': 'Desktop Lyrics',
   'lyricsSettings.display.desktopLyricsDescription': 'Shows the current lyrics in an independent transparent always-on-top desktop window.',
   'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
@@ -19112,6 +19140,8 @@ const enUS: TranslationMap = {
   'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
   'settings.general.notificationsDisabled.title': 'Disable All Notifications',
   'settings.general.notificationsDisabled.description': 'Hide ECHO reminder cards, upper-left notices, and player-bar notifications. Off by default.',
+  'settings.general.upcomingTrackNotice.title': 'Up Next Notice',
+  'settings.general.upcomingTrackNotice.description': 'Show the next track cover, title, artist, and album in the upper-left corner when the current song is almost over. Off by default.',
   'settings.general.trackContextMenuExtraActions.title': 'Context Menu Extra Actions',
   'settings.general.trackContextMenuExtraActions.description': 'Show osu! Timing, open with the system default app, and copy/save song card image in the track context menu. Hidden by default to keep the menu compact.',
   'settings.general.touchKeyboard.title': 'Enable On-Screen Keyboard',

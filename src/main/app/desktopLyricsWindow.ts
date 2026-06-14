@@ -13,7 +13,7 @@ import { recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnos
 
 const mainOutputDir = import.meta.dirname;
 const defaultDesktopLyricsSize = {
-  width: 760,
+  width: 1760,
   height: 150,
 } as const;
 const defaultVerticalDesktopLyricsSize = {
@@ -27,6 +27,10 @@ const desktopLyricsMinimumSize = {
 const verticalDesktopLyricsReadableMinimumSize = {
   width: 360,
   height: 640,
+} as const;
+const horizontalDesktopLyricsReadableMinimumSize = {
+  width: 1760,
+  height: 150,
 } as const;
 const rememberBoundsDebounceMs = 300;
 const forwardedAudioStatusMaxAgeMs = 30_000;
@@ -57,6 +61,7 @@ const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
     desktopLyricsTextDirection: settings.desktopLyricsTextDirection,
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled,
+    desktopLyricsHideWhenNoLyricsEnabled: settings.desktopLyricsHideWhenNoLyricsEnabled,
     desktopLyricsBounds: settings.desktopLyricsBounds,
     lyricsMusicReactiveVisualsEnabled: settings.lyricsMusicReactiveVisualsEnabled,
   };
@@ -129,13 +134,27 @@ const expandBoundsToReadableVerticalArea = (bounds: DesktopLyricsBounds): Deskto
   });
 };
 
+const expandBoundsToReadableHorizontalArea = (bounds: DesktopLyricsBounds): DesktopLyricsBounds => {
+  const display = screen.getDisplayMatching(bounds);
+  const area = getDesktopLyricsConstrainArea(display);
+  const width = Math.max(bounds.width, Math.min(horizontalDesktopLyricsReadableMinimumSize.width, area.width));
+  const height = Math.max(bounds.height, Math.min(horizontalDesktopLyricsReadableMinimumSize.height, area.height));
+
+  return clampBoundsToVisibleArea({
+    x: Math.round(bounds.x - (width - bounds.width) / 2),
+    y: bounds.y,
+    width,
+    height,
+  });
+};
+
 const shouldUseVerticalDesktopLyricsBounds = (): boolean =>
   getAppSettings().desktopLyricsTextDirection === 'vertical';
 
 const normalizeDesktopLyricsBoundsForTextDirection = (bounds: DesktopLyricsBounds): DesktopLyricsBounds =>
   shouldUseVerticalDesktopLyricsBounds()
     ? expandBoundsToReadableVerticalArea(bounds)
-    : clampBoundsToVisibleArea(bounds);
+    : expandBoundsToReadableHorizontalArea(bounds);
 
 export const resolveInitialDesktopLyricsBounds = (): DesktopLyricsBounds => {
   const savedBounds = getAppSettings().desktopLyricsBounds;
@@ -191,19 +210,21 @@ const scheduleRememberDesktopLyricsBounds = (window: BrowserWindow): void => {
 };
 
 const applyDesktopLyricsReadableBoundsForTextDirection = (window: BrowserWindow): void => {
-  if (window.isDestroyed() || !shouldUseVerticalDesktopLyricsBounds()) {
+  if (window.isDestroyed()) {
     return;
   }
 
   const bounds = window.getBounds();
+  const nextBounds = normalizeDesktopLyricsBoundsForTextDirection(bounds);
   if (
-    bounds.width >= verticalDesktopLyricsReadableMinimumSize.width &&
-    bounds.height >= verticalDesktopLyricsReadableMinimumSize.height
+    bounds.x === nextBounds.x &&
+    bounds.y === nextBounds.y &&
+    bounds.width === nextBounds.width &&
+    bounds.height === nextBounds.height
   ) {
     return;
   }
 
-  const nextBounds = expandBoundsToReadableVerticalArea(bounds);
   window.setBounds(nextBounds);
   setAppSettings({ desktopLyricsBounds: nextBounds });
 };
@@ -298,6 +319,7 @@ export const showDesktopLyricsWindow = (): DesktopLyricsState => {
   setAppSettings({ desktopLyricsEnabled: true });
   desktopLyricsMousePassthrough = getAppSettings().desktopLyricsLocked === true;
   const window = createDesktopLyricsWindow();
+  applyDesktopLyricsReadableBoundsForTextDirection(window);
   applyDesktopLyricsLockState(window);
   if (!window.isVisible()) {
     window.showInactive();
@@ -318,10 +340,13 @@ export const hideDesktopLyricsWindow = (): DesktopLyricsState => {
 };
 
 export const revealDesktopLyricsMenu = (): DesktopLyricsState => {
+  setAppSettings({ desktopLyricsLocked: false });
+  desktopLyricsMousePassthrough = false;
   const state = showDesktopLyricsWindow();
   const window = desktopLyricsWindow;
 
   if (window && !window.isDestroyed()) {
+    window.setIgnoreMouseEvents(false, { forward: true });
     for (const delayMs of desktopLyricsRevealMenuRetryDelaysMs) {
       setTimeout(() => {
         if (!window.isDestroyed()) {

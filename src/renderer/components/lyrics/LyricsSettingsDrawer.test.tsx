@@ -67,6 +67,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsCoverBrightnessPercent: 100,
   lyricsBackgroundScalePercent: 100,
   desktopLyricsTextDirection: 'horizontal',
+  desktopLyricsHideWhenNoLyricsEnabled: false,
   mvEnabledProviders: ['bilibili', 'youtube'],
   mvProviderOrder: ['bilibili', 'youtube'],
   mvAutoSearch: true,
@@ -206,6 +207,7 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
     desktopLyricsRomanizationEnabled: true,
     desktopLyricsTranslationEnabled: true,
     desktopLyricsTextDirection: 'horizontal',
+    desktopLyricsHideWhenNoLyricsEnabled: false,
     desktopLyricsBounds: null,
     lyricsMusicReactiveVisualsEnabled: false,
   },
@@ -1344,12 +1346,40 @@ describe('LyricsSettingsDrawer', () => {
     window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
   });
 
-  it('toggles music reactive visuals from the lyrics background section', async () => {
+  it('toggles hiding desktop lyrics when the current track has no lyrics', async () => {
+    const setStyle = vi.fn(async (patch: Partial<AppSettings>) => makeDesktopLyricsState({
+      settings: {
+        ...makeDesktopLyricsState().settings,
+        ...patch,
+      },
+    }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      desktopLyrics: {
+        getState: vi.fn().mockResolvedValue(makeDesktopLyricsState({ visible: true })),
+        setStyle,
+        show: vi.fn(),
+        hide: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-desktop-hide-empty-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-desktop-hide-empty-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ desktopLyricsHideWhenNoLyricsEnabled: true }));
+  });
+
+  it('hides the temporarily disabled music reactive visuals control', async () => {
     const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings(patch));
-    const settingsChangedListener = vi.fn();
-    const displaySettingsChangedListener = vi.fn();
-    window.addEventListener('settings:changed', settingsChangedListener);
-    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
     window.echo = {
       app: {
         getSettings: vi.fn().mockResolvedValue(makeSettings()),
@@ -1360,23 +1390,9 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => expect(container.querySelector('.lyrics-music-reactive-toggle input')).toBeTruthy());
-    const toggle = container.querySelector('.lyrics-music-reactive-toggle input') as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
-
-    fireEvent.click(toggle);
-
-    expect(toggle.checked).toBe(true);
-    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsMusicReactiveVisualsEnabled: true }));
-    expect(settingsChangedListener).toHaveBeenCalledWith(
-      expect.objectContaining({ detail: { lyricsMusicReactiveVisualsEnabled: true } }),
-    );
-    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
-      expect.objectContaining({ detail: { lyricsMusicReactiveVisualsEnabled: true } }),
-    );
-
-    window.removeEventListener('settings:changed', settingsChangedListener);
-    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    await waitFor(() => expect(container.querySelector('.lyrics-background-select__trigger')).toBeTruthy());
+    expect(container.querySelector('.lyrics-music-reactive-toggle')).toBeNull();
+    expect(setSettings).not.toHaveBeenCalled();
   });
 
   it('switches lyrics background to cover color from the background select', async () => {

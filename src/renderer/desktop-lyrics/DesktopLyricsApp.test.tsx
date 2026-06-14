@@ -35,6 +35,7 @@ const makeDesktopLyricsSettingsBase = (locked: boolean) => ({
   desktopLyricsTranslationEnabled: true,
   desktopLyricsTextDirection: 'horizontal',
   lyricsMusicReactiveVisualsEnabled: false,
+  desktopLyricsHideWhenNoLyricsEnabled: false,
   desktopLyricsBounds: null,
 });
 
@@ -282,6 +283,13 @@ describe('desktop lyrics text fitting', () => {
     expect(css).toMatch(/\.desktop-lyrics-upright-character\[data-sideways="true"\] \+ \.desktop-lyrics-upright-character\[data-sideways="true"\][\s\S]*?margin-top: 0\.28em;/);
   });
 
+  it('lets the floating menu use its full width without horizontal scrolling', () => {
+    const css = readFileSync('src/renderer/styles/desktop-lyrics.css', 'utf8');
+
+    expect(css).toMatch(/\.desktop-lyrics-menu \{[\s\S]*?max-width: none;[\s\S]*?overflow: visible;/);
+    expect(css).not.toContain('overflow-x: auto;');
+  });
+
   it('hides text that would overflow the desktop lyrics window', () => {
     expect(shouldShowDesktopLyricsText({
       text: '短歌词',
@@ -525,7 +533,7 @@ describe('desktop lyrics text fitting', () => {
     expect(setMousePassthrough).not.toHaveBeenCalledWith(false);
   });
 
-  it('renders the desktop lyrics music reactive backdrop from forwarded audio telemetry when enabled', async () => {
+  it('keeps the desktop lyrics music reactive backdrop disabled even if old settings enabled it', async () => {
     const track = makeDesktopLyricsTrack();
     const { container } = renderDesktopLyricsApp(false, {
       settings: { lyricsMusicReactiveVisualsEnabled: true },
@@ -542,10 +550,53 @@ describe('desktop lyrics text fitting', () => {
     });
 
     const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
-    await waitFor(() => expect(app?.getAttribute('data-music-reactive')).toBe('beat'));
-    expect(container.querySelector('.desktop-lyrics-reactive-backdrop')).toBeTruthy();
-    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-energy')).toBe('0.640');
-    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-transient')).toBe('0.520');
+    await waitFor(() => expect(container.textContent).toContain('Reactive line'));
+    expect(app?.getAttribute('data-music-reactive')).toBeNull();
+    expect(container.querySelector('.desktop-lyrics-reactive-backdrop')).toBeNull();
+    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-energy')).toBe('');
+    expect(app?.style.getPropertyValue('--desktop-lyrics-reactive-transient')).toBe('');
+  });
+
+  it('hides placeholder desktop lyrics when no lyrics are available and the option is enabled', async () => {
+    const track = makeDesktopLyricsTrack();
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsHideWhenNoLyricsEnabled: true },
+      audioStatus: makeDesktopAudioStatus(track),
+      track,
+      lyrics: makeDesktopTrackLyrics([], { kind: 'empty' }),
+      playbackStatus: {
+        currentTrackId: track.id,
+        filePath: track.path,
+        state: 'playing',
+        positionMs: 12_000,
+        durationMs: 188_000,
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector('.desktop-lyrics-app')).toBeTruthy());
+    expect(container.querySelector('.desktop-lyrics-stage')).toBeNull();
+    expect(container.textContent).not.toContain('暂无歌词');
+    expect(container.textContent).not.toContain('Desktop Lyrics');
+  });
+
+  it('still shows real desktop lyrics when the hide-empty option is enabled', async () => {
+    const track = makeDesktopLyricsTrack();
+    const { container } = renderDesktopLyricsApp(false, {
+      settings: { desktopLyricsHideWhenNoLyricsEnabled: true },
+      audioStatus: makeDesktopAudioStatus(track),
+      track,
+      lyrics: makeDesktopTrackLyrics([{ timeMs: 0, text: 'Visible line' }]),
+      playbackStatus: {
+        currentTrackId: track.id,
+        filePath: track.path,
+        state: 'playing',
+        positionMs: 12_000,
+        durationMs: 188_000,
+      },
+    });
+
+    await waitFor(() => expect(container.textContent).toContain('Visible line'));
+    expect(container.querySelector('.desktop-lyrics-stage')).toBeTruthy();
   });
 
   it('hides the desktop lyrics menu on mouse leave even after a control keeps focus', async () => {
@@ -562,6 +613,23 @@ describe('desktop lyrics text fitting', () => {
 
     window.dispatchEvent(new MouseEvent('mouseleave'));
 
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('false'));
+  });
+
+  it('toggles a pinned desktop lyrics menu from the footer context-menu command', async () => {
+    const { container, triggerRevealMenu } = renderDesktopLyricsApp(false);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+
+    expect(app).toBeTruthy();
+    expect(app?.getAttribute('data-menu-visible')).toBe('false');
+
+    triggerRevealMenu();
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+
+    window.dispatchEvent(new MouseEvent('mouseleave'));
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+
+    triggerRevealMenu();
     await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('false'));
   });
 

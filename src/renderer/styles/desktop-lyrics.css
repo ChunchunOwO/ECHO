@@ -382,10 +382,10 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
   left: 50%;
   display: flex;
   width: max-content;
-  max-width: calc(100vw - 24px);
+  max-width: none;
   align-items: center;
   gap: 5px;
-  overflow-x: auto;
+  overflow: visible;
   padding: 6px;
   color: #eef6ff;
   border: 1px solid rgb(255 255 255 / 0.2);
@@ -407,7 +407,7 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
   right: 12px;
   bottom: 8px;
   left: auto;
-  max-width: calc(100vw - 24px);
+  max-width: none;
   transform: translateY(3px);
 }
 
@@ -419,10 +419,6 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
 
 .desktop-lyrics-app[data-text-direction="vertical"][data-menu-visible="true"] .desktop-lyrics-menu {
   transform: translateY(0);
-}
-
-.desktop-lyrics-menu::-webkit-scrollbar {
-  height: 0;
 }
 
 .desktop-lyrics-menu button,

@@ -164,9 +164,9 @@ describe('desktop lyrics window bounds', () => {
     const { resolveInitialDesktopLyricsBounds } = await import('./desktopLyricsWindow');
 
     expect(resolveInitialDesktopLyricsBounds()).toEqual({
-      x: 480,
+      x: 0,
       y: 0,
-      width: 760,
+      width: 1760,
       height: 150,
     });
   });
@@ -175,10 +175,42 @@ describe('desktop lyrics window bounds', () => {
     const { resolveInitialDesktopLyricsBounds } = await import('./desktopLyricsWindow');
 
     expect(resolveInitialDesktopLyricsBounds()).toEqual({
+      x: 80,
+      y: 846,
+      width: 1760,
+      height: 150,
+    });
+  });
+
+  it('expands an already-created horizontal desktop lyrics window before showing', async () => {
+    const { createDesktopLyricsWindow, showDesktopLyricsWindow } = await import('./desktopLyricsWindow');
+
+    createDesktopLyricsWindow();
+    const window = mocks.createdWindows[0];
+    window.bounds = {
       x: 580,
       y: 846,
       width: 760,
       height: 150,
+    };
+    window.setBounds.mockClear();
+    mocks.setAppSettings.mockClear();
+
+    showDesktopLyricsWindow();
+
+    expect(window.setBounds).toHaveBeenCalledWith({
+      x: 80,
+      y: 846,
+      width: 1760,
+      height: 150,
+    });
+    expect(mocks.setAppSettings).toHaveBeenCalledWith({
+      desktopLyricsBounds: {
+        x: 80,
+        y: 846,
+        width: 1760,
+        height: 150,
+      },
     });
   });
 
@@ -255,5 +287,26 @@ describe('desktop lyrics startup memory', () => {
 
     expect(mocks.setAppSettings).toHaveBeenCalledWith({ desktopLyricsEnabled: true });
     expect(mocks.createdWindows[0].destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('desktop lyrics menu reveal', () => {
+  beforeEach(() => {
+    mocks.settings.desktopLyricsEnabled = true;
+    mocks.settings.desktopLyricsLocked = true;
+    mocks.settings.desktopLyricsBounds = null;
+    mocks.settings.desktopLyricsTextDirection = 'horizontal';
+    mocks.createdWindows.splice(0);
+    mocks.setAppSettings.mockClear();
+    vi.resetModules();
+  });
+
+  it('unlocks mouse interaction before revealing the floating menu', async () => {
+    const { revealDesktopLyricsMenu } = await import('./desktopLyricsWindow');
+
+    revealDesktopLyricsMenu();
+
+    expect(mocks.setAppSettings).toHaveBeenCalledWith({ desktopLyricsLocked: false });
+    expect(mocks.createdWindows[0].setIgnoreMouseEvents).toHaveBeenLastCalledWith(false, { forward: true });
   });
 });
